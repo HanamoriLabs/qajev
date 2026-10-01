@@ -356,7 +356,7 @@ h2 { margin-top: 14px; font-weight: 800; font-size: clamp(36px, 4.6vw, 64px); li
     <span class="pill">Open source · MIT · a CLI and an MCP server</span>
     <h1>Test your website the way <em>a person</em> uses it.</h1>
     <div class="hero-row">
-      <p class="lede">Write one goal in plain words. <strong>Jev</strong>, a small, fast model, walks it in a real Chrome on desktop and on a phone, every time. QAJev reads the verdict off the page, never off the model.</p>
+      <p class="lede">Describe what a visitor should be able to do, in plain English. <strong>Jev</strong>, a small and fast model, tries it in a real Chrome, on desktop and on a phone. QAJev then checks the page against what you expected, so a pass means the page really showed it.</p>
       <div class="actions">
         <div class="install" role="group" aria-label="Install command">
           <code><span class="dollar">$ </span>uv tool install git+https://github.com/hanamorilabs/qajev</code>
@@ -405,15 +405,15 @@ h2 { margin-top: 14px; font-weight: 800; font-size: clamp(36px, 4.6vw, 64px); li
         </div>
       </div>
       <figcaption class="route-foot">
-        <p>Each of Jev's moves takes about a quarter of a second. The verdict comes from the page, not from Jev.</p>
+        <p>Each of Jev's moves takes about a quarter of a second. The result comes from checking the page.</p>
         <span class="route-log" id="route-log" aria-hidden="true">gate: PASS</span>
         <button class="route-ctl" type="button" id="route-ctl" aria-label="Pause the animation"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></svg><span>Pause</span></button>
       </figcaption>
     </figure>
 
     <div class="realstrip">
-      <b>Real phone browsers, when you want them.</b>
-      <span>Add <code class="hero-code">--real-devices</code> and the same scenarios also run in Chrome on an Android emulator. Safari on the iOS Simulator is next.</span>
+      <b>Testing in a phone's own browser</b>
+      <span>Add <code class="hero-code">--real-devices</code> and the same tests also run in Chrome on an Android emulator. Safari on the iOS Simulator isn't supported yet.</span>
     </div>
   </div>
 </section>
@@ -423,13 +423,13 @@ h2 { margin-top: 14px; font-weight: 800; font-size: clamp(36px, 4.6vw, 64px); li
   <div class="wrap leg">
     <div class="spine" aria-hidden="true"></div>
     <div class="leg-body">
-      <span class="kicker">How it works</span>
-      <h2 class="reveal">Plain words in. A verdict out.</h2>
-      <p class="sec-lede reveal">No selectors to maintain. A test says what a visitor wants and how you'll know they got it, so it still works after a redesign.</p>
+      <span class="kicker">The basics</span>
+      <h2 class="reveal">How a test works</h2>
+      <p class="sec-lede reveal">You don't write CSS selectors. A test says what a visitor wants to do and what the page should show at the end, so it keeps working when the layout changes.</p>
       <div class="cards">
         <article class="card reveal">
           <span class="num" aria-hidden="true">1</span>
-          <h3>Say what a visitor wants</h3>
+          <h3>Write the goal</h3>
           <p>One goal per scenario, ending with "Stop when…", and what the page must show.</p>
           <div class="snippet"><span class="k">goal:</span> Find what the Pro plan costs per month. Stop when that price is visible.
 <span class="k">expect:</span>
@@ -438,12 +438,12 @@ h2 { margin-top: 14px; font-weight: 800; font-size: clamp(36px, 4.6vw, 64px); li
         </article>
         <article class="card reveal">
           <span class="num" aria-hidden="true">2</span>
-          <h3>Jev walks it in a real Chrome</h3>
-          <p>Jev reads the page as text and picks one action at a time, in about a quarter of a second each, for a fraction of a cent. It types, scrolls and follows links like a person.</p>
+          <h3>Jev tries it in Chrome</h3>
+          <p>Jev reads the page as text and picks one action at a time: click, type, scroll or follow a link. Each decision takes about a quarter of a second and costs a fraction of a cent.</p>
         </article>
         <article class="card reveal">
           <span class="num" aria-hidden="true">3</span>
-          <h3>The page decides</h3>
+          <h3>QAJev checks the page</h3>
           <p>Jev saying "done" is only a hint. Your expectations are checked against the real page, then written up in a report you can read.</p>
           <ul class="checks">
             <li>on screen: '$29 per month'</li>
@@ -460,32 +460,32 @@ h2 { margin-top: 14px; font-weight: 800; font-size: clamp(36px, 4.6vw, 64px); li
   <div class="wrap leg cont">
     <div class="spine" aria-hidden="true"></div>
     <div class="leg-body">
-      <span class="kicker">Verdicts you can trust</span>
-      <h2 class="reveal">Every route ends in one of four places.</h2>
-      <p class="sec-lede reveal">Each scenario ends with one outcome, and each one says whose problem it is. These reasons come from real reports.</p>
+      <span class="kicker">Results</span>
+      <h2 class="reveal">Every test ends with one of four results</h2>
+      <p class="sec-lede reveal">Each result says whose problem it is. The example reasons below are from real reports.</p>
       <div class="cards verdicts">
         <article class="vd pass reveal">
           <span class="word">pass</span>
-          <h3>Every expectation held.</h3>
+          <h3>All checks passed</h3>
           <p>Nothing to do.</p>
           <blockquote>all 2 check(s) passed</blockquote>
         </article>
         <article class="vd fail reveal">
           <span class="word">fail</span>
-          <h3>The product is wrong.</h3>
-          <p>A check failed or the page didn't load. Jev's "done" doesn't fool anyone.</p>
+          <h3>Something on the site is wrong</h3>
+          <p>A check failed or the page didn't load, even if Jev thought it had finished.</p>
           <blockquote>Jev reported DONE but: page shows '$25 per month'</blockquote>
         </article>
         <article class="vd stuck reveal">
           <span class="word">stuck</span>
-          <h3>A visitor got lost.</h3>
-          <p>Jev found no way forward. That's often a real usability issue.</p>
+          <h3>Jev couldn't find a way forward</h3>
+          <p>A real visitor might get stuck here too, so it's worth a look.</p>
           <blockquote>the expected text is in the page but 1 screen(s) of scrolling did not bring it on screen</blockquote>
         </article>
         <article class="vd harness reveal">
           <span class="word">harness</span>
-          <h3>QAJev's problem, never yours.</h3>
-          <p>A time or cost budget ran out, or the page never stopped changing.</p>
+          <h3>QAJev ran into a problem</h3>
+          <p>A time or cost limit ran out, or the page never stopped changing. This isn't counted against your site.</p>
           <blockquote>3 of Jev's moves went stale before they ran (the page kept changing)</blockquote>
         </article>
       </div>
@@ -499,8 +499,8 @@ h2 { margin-top: 14px; font-weight: 800; font-size: clamp(36px, 4.6vw, 64px); li
   <div class="wrap leg cont">
     <div class="spine" aria-hidden="true"></div>
     <div class="leg-body">
-      <span class="kicker">Desktop and phone. Always.</span>
-      <h2 class="reveal">Every test runs twice. You don't have to ask.</h2>
+      <span class="kicker">Desktop and phone</span>
+      <h2 class="reveal">Every test runs on desktop and on a phone</h2>
       <p class="sec-lede reveal">Each website scenario also runs in a phone view: a phone-sized screen, touch and an iPhone user agent, like your browser's device mode. A failure that only shows on the phone is a real mobile bug, and the report says so.</p>
       <div class="split">
         <div class="rows reveal">
@@ -511,7 +511,7 @@ h2 { margin-top: 14px; font-weight: 800; font-size: clamp(36px, 4.6vw, 64px); li
         </div>
         <div class="realbox dark reveal">
           <h3>Real phone browsers, opt-in</h3>
-          <p>Some bugs only show on the device itself. Add <code>--real-devices android</code> and the same scenarios also run in Chrome on a read-only Android emulator QAJev starts for the run. Safari on the iOS Simulator is next: QAJev can't read its page content yet, and says so instead of guessing.</p>
+          <p>Some bugs only show on the device itself. Add <code>--real-devices android</code> and the same scenarios also run in Chrome on a read-only Android emulator QAJev starts for the run. Safari on the iOS Simulator isn't supported yet: QAJev can't read the page there, and reports that instead of a result.</p>
           <pre>qajev run shop.yaml --real-devices android
 qajev run --project shop --real-devices android</pre>
         </div>
@@ -525,8 +525,8 @@ qajev run --project shop --real-devices android</pre>
   <div class="wrap leg cont">
     <div class="spine" aria-hidden="true"></div>
     <div class="leg-body">
-      <span class="kicker">Reports people read</span>
-      <h2 class="reveal">A report a person can read.</h2>
+      <span class="kicker">Reports</span>
+      <h2 class="reveal">Every run writes a report</h2>
       <p class="sec-lede reveal">Every run writes a self-contained <code>report.html</code> (light and dark), plus Markdown and JSON for programs. Projects remember the previous run and show what changed.</p>
       <div class="tabs" role="tablist" aria-label="Report examples">
         <button class="tab" type="button" role="tab" id="t-ov" aria-controls="p-ov" aria-selected="true">Overview</button>
@@ -552,8 +552,8 @@ qajev run --project shop --real-devices android</pre>
   <div class="wrap leg">
     <div class="spine" aria-hidden="true"></div>
     <div class="leg-body">
-      <span class="kicker">Built for AI agents</span>
-      <h2 class="reveal">Your agent asks QAJev before it says "done".</h2>
+      <span class="kicker">For AI agents</span>
+      <h2 class="reveal">Use it from your coding agent</h2>
       <p class="sec-lede reveal">QAJev is an MCP server too. Your coding agent can crawl a site, check a change the way a user would, read the report and look at the screenshots, then tell you what it found.</p>
       <div class="split">
         <div class="reveal">
@@ -582,10 +582,10 @@ args = [<span class="s">"mcp"</span>]</pre></div>
           </ul>
         </div>
         <ul class="points">
-          <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12H5.2L4 17.5z"/><path d="M8 8h8M8 12h5"/></svg></span><div><h3>A ready-made agent prompt</h3><p>Paste <a href="https://github.com/hanamorilabs/qajev/blob/HEAD/AGENT_PROMPT.md">AGENT_PROMPT.md</a> into your agent's instructions. It knows which tool to use, how to write a good check and how to report the result honestly.</p></div></li>
-          <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><h3>Jobs anyone can follow or stop</h3><p>Long runs return a job id at once. Any agent, or you, can see progress, what Jev is doing right now and the money spent, and stop it cleanly.</p></div></li>
+          <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12H5.2L4 17.5z"/><path d="M8 8h8M8 12h5"/></svg></span><div><h3>A ready-made agent prompt</h3><p>Paste <a href="https://github.com/hanamorilabs/qajev/blob/HEAD/AGENT_PROMPT.md">AGENT_PROMPT.md</a> into your agent's instructions. It tells the agent which tool to use, how to write a good check and how to report the result.</p></div></li>
+          <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><h3>Follow or stop long runs</h3><p>Long runs return a job id at once. Any agent, or you, can see progress, what Jev is doing right now and the money spent, and stop it cleanly.</p></div></li>
           <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h12"/></svg></span><div><h3>One queue per machine</h3><p>Many agents can share a laptop. Browser runs take turns and say what they're waiting for, so nobody starts a second copy by accident.</p></div></li>
-          <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/></svg></span><div><h3>Headless and throwaway by default</h3><p>Agent runs use QAJev's own invisible Chrome with a fresh profile. Nothing pops up on your screen and nothing is left behind.</p></div></li>
+          <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/></svg></span><div><h3>Runs in the background</h3><p>Agent runs use QAJev's own invisible Chrome with a fresh profile. Nothing pops up on your screen and nothing is left behind.</p></div></li>
         </ul>
       </div>
       <figure class="flow reveal" style="margin-left:0;margin-right:0">
@@ -593,7 +593,7 @@ args = [<span class="s">"mcp"</span>]</pre></div>
       </figure>
       <div class="top-row">
         <div class="reveal">
-          <h3>See every run, live.</h3>
+          <h3>See what's running</h3>
           <p><code>qajev top</code> shows what's queued and running on the machine, what Jev is doing at this moment, and what each run costs, down to a hundredth of a cent.</p>
         </div>
         <img class="reveal" src="assets/top.webp" width="1600" height="1048" alt="qajev top in a terminal: a queued smoke crawl, a running project with Jev typing a name into a field, finished runs with PASS, FAIL and INCOMPLETE gates and their costs, the Chrome QAJev started, and recent reports." loading="lazy">
@@ -607,15 +607,15 @@ args = [<span class="s">"mcp"</span>]</pre></div>
   <div class="wrap leg">
     <div class="spine" aria-hidden="true"></div>
     <div class="leg-body">
-      <span class="kicker">Apps and games</span>
-      <h2 class="reveal">Same plain words, beyond the browser.</h2>
-      <p class="sec-lede reveal">The same plain-language steps work in a native app on a simulator, or in a game's menus while its own bot plays in real time.</p>
+      <span class="kicker">Beyond websites</span>
+      <h2 class="reveal">Mobile apps and games</h2>
+      <p class="sec-lede reveal">The same kind of test works in a native app on a simulator, or in a game's menus while the game's own bot plays.</p>
       <div class="cards beyond">
         <article class="card bcard reveal">
           <div class="media" aria-hidden="true"><div class="sims"><div>iOS Simulator</div><div>Android emulator</div></div></div>
           <div class="body">
             <h3>Mobile apps</h3>
-            <p>Native apps and mobile websites on the iOS Simulator and an Android emulator, on a throwaway device QAJev starts and removes itself.</p>
+            <p>Native apps on the iOS Simulator and an Android emulator. QAJev starts the device for the run: a temporary copy of an iPhone simulator that's deleted afterwards, or an Android emulator in read-only mode.</p>
             <div class="snippet">qajev play ios:com.example.app
 qajev play android:com.example.app</div>
             <ul class="pills"><li>iOS Simulator</li><li>Android emulator</li><li>throwaway devices</li></ul>
@@ -641,14 +641,14 @@ qajev play android:com.example.app</div>
     <div class="spine" aria-hidden="true"></div>
     <div class="leg-body">
       <span class="kicker">Safe by default</span>
-      <h2 class="reveal">Point it at a real site. Nothing changes.</h2>
-      <p class="sec-lede reveal">None of this depends on the model behaving well. The rules are enforced in the page and in QAJev itself.</p>
+      <h2 class="reveal">What QAJev won't do</h2>
+      <p class="sec-lede reveal">These limits don't rely on the model behaving. QAJev enforces them in the page and in its own code.</p>
       <div class="cards safety">
         <div class="sf reveal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><h3>Read-only on real sites</h3><p>Form posts and deletes are blocked inside the page. Tests that change data only run on your own machine.</p></div>
-        <div class="sf reveal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0112 5c6.5 0 10 7 10 7a17 17 0 01-3.2 4.2M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/></svg><h3>Dangerous buttons hidden</h3><p>Sign out, delete, pay, billing, "close all"… Jev never sees them, so it can't press them.</p></div>
+        <div class="sf reveal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0112 5c6.5 0 10 7 10 7a17 17 0 01-3.2 4.2M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/></svg><h3>Risky buttons hidden</h3><p>Buttons like sign out, delete, pay and billing are hidden from Jev, so it can't press them.</p></div>
         <div class="sf reveal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg><h3>No passwords, no cards</h3><p>Secret and payment fields are disabled. For signed-in areas, you sign in once yourself in QAJev's own browser.</p></div>
         <div class="sf reveal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.5c-.5-.9-1.5-1.5-2.5-1.5-1.7 0-3 1-3 2.2 0 3 6 1.6 6 4.6 0 1.2-1.3 2.2-3 2.2-1.1 0-2.1-.6-2.6-1.5M12 6v2M12 16v2"/></svg><h3>A hard cost cap</h3><p>Every run has one ($1 unless you say otherwise), checked before every paid call.</p></div>
-        <div class="sf reveal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0M12 17v4"/><path d="M3 3l18 18"/></svg><h3>A deaf microphone</h3><p>Pages that listen hear only what your test says. On simulators, microphone prompts are refused.</p></div>
+        <div class="sf reveal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0M12 17v4"/><path d="M3 3l18 18"/></svg><h3>No real microphone</h3><p>Pages that ask for the microphone get a fake one that only "hears" text from your test. On simulators, microphone prompts are refused.</p></div>
         <div class="sf reveal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/><path d="M3 3l18 18"/></svg><h3>No downloads</h3><p>Every download is refused. The smoke crawl checks download links without fetching the file.</p></div>
         <div class="sf reveal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg><h3>Its own browser</h3><p>QAJev runs its own Chrome with its own profiles. Your everyday browser and accounts are never touched.</p></div>
         <div class="sf reveal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg><h3>Polite crawling</h3><p>The smoke crawl reads robots.txt and waits between pages. QAJev is not a load tester.</p></div>
@@ -662,8 +662,8 @@ qajev play android:com.example.app</div>
   <div class="wrap leg cont">
     <div class="spine" aria-hidden="true"></div>
     <div class="leg-body">
-      <span class="kicker">Fast and cheap</span>
-      <h2 class="reveal" id="numbers-h">A fraction of a cent per step.</h2>
+      <span class="kicker">Speed and cost</span>
+      <h2 class="reveal" id="numbers-h">What a run costs</h2>
       <div class="numbers">
         <div class="reveal"><b>~0.25 s</b><span>for each of Jev's decisions</span></div>
         <div class="reveal"><b>$0.0046</b><span>for a five-scenario run, in a real report</span></div>
@@ -679,8 +679,8 @@ qajev play android:com.example.app</div>
   <div class="wrap leg">
     <div class="spine" aria-hidden="true"></div>
     <div class="leg-body" style="padding-bottom:104px">
-      <span class="kicker">Last stop: get started</span>
-      <h2>Your first report in five minutes.</h2>
+      <span class="kicker">Get started</span>
+      <h2>Install and run your first test</h2>
       <div class="start-grid">
         <div>
           <p class="sec-lede">You need a Mac or Linux machine, Chrome, and one key for Jev from <a href="https://docs.typesafe.ai" style="color:#fff">TypeSafe</a> or <a href="https://openrouter.ai/keys" style="color:#fff">OpenRouter</a>. The smoke crawl doesn't even need the key.</p>
@@ -743,7 +743,7 @@ qajev play android:com.example.app</div>
         </ul>
       </div>
     </div>
-    <div class="fine"><span>© 2026 José Airosa · MIT License</span><span>Made with a lot of clicks we didn't have to do.</span></div>
+    <div class="fine"><span>© 2026 José Airosa · MIT License</span><span>Built by HanamoriLabs</span></div>
   </div>
 </footer>
 
