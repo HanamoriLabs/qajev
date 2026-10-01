@@ -654,6 +654,26 @@ def _stats(timeline):
             **{f"end_{k}": last.get(k) for k in TIMELINE_KEYS if k in last}}
 
 
+def idle_for(game, *, name, seconds, emit=None, every=10.0):
+    """No input for `seconds` while the game runs on its own (a release build has no bot for a `play` step); it must
+    keep answering. -> None, or the step's harness result when it stopped (crashed or closed)."""
+    started = told = time.monotonic()
+    while (left := seconds - (time.monotonic() - started)) > 0:
+        time.sleep(min(1.0, left))
+        try:
+            game.observe()
+        except NativeError as e:
+            waited = time.monotonic() - started
+            return {"name": name, "outcome": "harness", "stop": "browser_error", "checks": [], "screens": [],
+                    "findings": [{"severity": "S1", "kind": "game crashed or closed", "detail": str(e)[:200],
+                                  "scenario": name, "url": None}],
+                    "reason": f"the game stopped answering after {waited:.0f} s of {seconds:.0f} s idle: {e}"}
+        if time.monotonic() - told >= every:
+            told = time.monotonic()
+            _step(emit, name, None, f"idle {told - started:.0f} of {seconds:.0f} s, no input")
+    return None
+
+
 def _answers(game):
     """Is the game or device still there? A failed tap or launch is not a lost device."""
     try:
@@ -710,8 +730,10 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
             with contextlib.suppress(NativeError):  # Jev has the controls: a game's bot would undo its moves
                 game.call(op="pilot", on=False)
             budget = {"actions": 20, "seconds": 90, **(step.get("budget") or {})}
-            r = play(game, name=name, goal=step.get("goal"), expect=step.get("expect") or {}, budget=budget,
-                     ledger=ledger, run_dir=run_dir, shots=shots, emit=emit)
+            # idle: the game runs untouched for that long first (then the step's goal, if any, and its checks)
+            r = (step.get("idle") and idle_for(game, name=name, seconds=float(step["idle"]), emit=emit)) or play(
+                game, name=name, goal=step.get("goal"), expect=step.get("expect") or {}, budget=budget,
+                ledger=ledger, run_dir=run_dir, shots=shots, emit=emit)
         r["cost_usd"] = round(ledger.spent() - spent, 5)
         results.append(r)
         if callable(emit):

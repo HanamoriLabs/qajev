@@ -22,7 +22,10 @@ window.__qajevAdapter = {
       keys.push(key('skip_ending', 'Skip the ending cutscene', 'Escape'));
     } else if (on('.tut-dialog')) {
       screen = 'DOJO OFFER';
-      keys.push(key('just_fight', 'Just fight (skip the dojo)', 'Escape'), key('train_first', 'Train first (the dojo)', 'Enter'));
+      // The game's JUST FIGHT and Esc both decline and go back to the title menu (Tutorial.offer on 9cf3bea); "Just
+      // fight" read to Jev as starting a run, so a goal in the menu stopped here.
+      keys.push(key('just_fight', 'No thanks: go to the main menu (skip the dojo)', 'Escape'),
+        key('train_first', 'Train first (the dojo)', 'Enter'));
     } else if (on('.overlay.gameover.on')) {
       screen = 'GAME OVER';
     } else if (on('.levelup.on')) {
@@ -56,7 +59,9 @@ window.__qajevAdapter = {
     } else if (titleOn) {
       const stage = title.dataset.stage || (title.classList.contains('quick') ? 'quick' : '');
       screen = { press: 'TITLE', menu: 'TITLE MENU', difficulty: 'DIFFICULTY', quick: 'TITLE' }[stage] || 'TITLE';
-      if (stage === 'press' || stage === 'quick') keys.push(key('press_start', 'Press Enter to start', 'Enter'));
+      // Named for where it leads: "Press Enter to start" next to a goal that began "From the main menu" read to Jev
+      // as no way forward (BLOCKED 0.65 on 9cf3bea).
+      if (stage === 'press' || stage === 'quick') keys.push(key('press_start', 'Go to the main menu (press Enter)', 'Enter'));
       if (stage === 'difficulty') keys.push(key('back', 'Back to the title menu', 'Escape'));
     } else if (on('.hud-root')) {
       screen = 'PLAYING';
@@ -66,7 +71,32 @@ window.__qajevAdapter = {
 
     // Controls a QA run must not use: Twitch sign-in, and anything that uploads.
     const deny = /\b(connect|disconnect|twitch|workshop|upload|log ?in|sign ?in)\b/i;
-    let actions = [...keys, ...base.actions.filter((a) => !deny.test(a.label))];
+    // The title's own PRESS ANY KEY button does what press_start does; one way forward reads clearer to Jev.
+    const dup = keys.some((k) => k.id === 'press_start') ? /^press any (key|button)$/i
+      : keys.some((k) => k.id === 'just_fight') ? /^(just fight|train first)$/i : null;
+
+    // SETTINGS: every ON/OFF row has buttons with the same text, and the generic look keeps only the first of each
+    // label, so "OFF" for Vibration was not offered at all. Each option becomes "<row>: <option>" here.
+    const options = [];
+    const optionTexts = new Set();
+    if (screen === 'SETTINGS') {
+      for (const b of document.querySelectorAll('.settings-screen.on [role="radio"]')) {
+        if (!(b.checkVisibility && b.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))) continue;
+        const r = b.getBoundingClientRect();
+        const x = r.x + r.width / 2, y = r.y + r.height / 2;
+        if (r.width <= 2 || r.height <= 2 || r.top >= innerHeight || r.bottom <= 0) continue;
+        if (!b.contains(document.elementFromPoint(x, y))) continue; // covered
+        const group = b.closest('[role="radiogroup"]');
+        const name = group && document.getElementById(group.getAttribute('aria-labelledby') || '');
+        const row = name ? String(name.innerText || '').replace(/\s+/g, ' ').trim() : '';
+        const opt = String(b.innerText || '').replace(/\s+/g, ' ').trim();
+        optionTexts.add(opt);
+        const label = (row ? row + ': ' : '') + opt + (b.getAttribute('aria-checked') === 'true' ? ' (current)' : '');
+        options.push({ id: 'set:' + options.length + ':' + label.slice(0, 40), label: label.slice(0, 120), kind: 'click', x, y });
+      }
+    }
+    let actions = [...keys, ...options, ...base.actions.filter((a) => !deny.test(a.label) && !(dup && dup.test(a.label))
+      && !optionTexts.has(a.label))];
 
     // The game's bot (dev build, ?autoplay) waits on every decision a player makes (level-up cards, dialogue
     // choices, the bag, talents, stalls, the game-over card...) and lists its options: those are Jev's to pick.
@@ -83,6 +113,8 @@ window.__qajevAdapter = {
     const state = { screen };
     const tab = $('.inv.on [id^="inv-tab-"].on, .inv.on [id^="inv-tab-"][aria-selected="true"]');
     if (tab) state.bag_tab = tab.id.replace('inv-tab-', '');
+    const setTab = $('.settings-screen.on [id^="set-tab-"][aria-selected="true"]');
+    if (setTab) state.settings_tab = setTab.id.replace('set-tab-', '');
     const lvl = text('.lvl-badge'), kills = text('.kills'), timer = text('.timer');
     if (lvl) state.level_text = lvl;
     if (kills) state.kills_text = kills;

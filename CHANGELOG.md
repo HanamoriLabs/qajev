@@ -7,6 +7,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `qajev smoke` and `qajev play` now wait for the load gate (`--load-high`, `--load-ok`, `--load-wait`, or the
   `QAJEV_LOAD_*` variables) before they start, like `check` and `run` do before each scenario. If the machine
   stays busy they exit with code 4 and start nothing. `play` gains the three flags.
+- `idle: SECONDS` suite step for `qajev play`: the game runs untouched for that long (no pilot needed, so a
+  release build works), then the step's checks run; a crash or close meanwhile is an S1 finding.
+- I'M HIM! adapter: settings options are offered by row ("Vibration: OFF", "(current)" on the selected one; only
+  the first "ON"/"OFF" was offered before), the open settings tab is in the state, and the title and first-launch
+  offer actions say they lead to the main menu (Jev answered BLOCKED on them before).
 
 ## 0.1.0: first public release
 

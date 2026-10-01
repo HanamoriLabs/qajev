@@ -36,11 +36,15 @@ qajev play MyGame.app --adapter my-game.js --goal "Open the settings. Stop when 
 
 A **suite** plays one game session in steps, in order. Each step is either:
 
-- a **goal** step: Jev works the menus, as above; or
+- a **goal** step: Jev works the menus, as above;
 - a **play** step: the game is played in real time for a while. The adapter's **pilot** steers (usually the
   game's own bot or autopilot), and Jev makes every **decision** the game stops for (level-up cards, dialogue
   choices, which item to wear...). QAJev samples frames per second, frame time, memory and the game's state every
-  half second.
+  half second; or
+- an **idle** step (`idle: 90`): nobody touches the game for that many seconds, then the step's checks run. It
+  needs no pilot, so it works on a release build, for example to leave the game running while something outside
+  watches it (a `--game-arg=--log-net-log=...` network log). If the game crashes or closes meanwhile, the step
+  stops with an S1 finding and the rest of the session is skipped.
 
 ```yaml
 # my-game.yaml;  run: qajev play path/to/my-game --suite my-game.yaml
@@ -66,6 +70,9 @@ steps:
   - name: playing on until the game ends (up to 5 minutes)
     play: {seconds: 300, until: {game_over: true}}
     expect: {min_fps: 30}
+  - name: the game over screen stays put for a minute
+    idle: 60
+    expect: {screen: GAME OVER}
 ```
 
 A play step **fails** on a **soft-lock** (the game stops advancing while nothing waits for the player), a crash,
@@ -83,7 +90,19 @@ optionally pilots it. Three real ones ship with QAJev as examples:
 |---|---|---|
 | `qajev/bridges/godot/adapters/suho.gd` | a Godot horde-survival game | describe a menu the game draws itself; level-up decisions; pilot with touch input |
 | `qajev/bridges/godot/adapters/hypervolley.gd` | a Godot racket game | read match state; pilot with the game's own autopilot; hide online screens |
-| `qajev/bridges/web/adapters/imhim.js` | an Electron brawler | screens from DOM overlays; keys; hand every decision the game's bot waits on to Jev |
+| `qajev/bridges/web/adapters/imhim.js` | an Electron brawler | screens from DOM overlays; keys; label settings options by their row; hand every decision the game's bot waits on to Jev |
+
+Two lessons from these adapters:
+
+- **Name an action for where it leads.** Jev picks by meaning: "Go to the main menu (press Enter)" gets chosen
+  for a goal in the menus, while "Press Enter to start" next to the same goal reads as no way forward.
+- **Give same-text buttons their context.** The generic look keeps only the first of identical labels, so a
+  settings screen with several ON/OFF rows offers one "OFF". The I'M HIM! adapter turns them into
+  "Vibration: OFF" and marks the selected one "(current)", which an `expect: {text: ...}` can check.
+
+When the game opens on a title screen, logos or a first-launch offer, say so in the goal ("Get past the intro
+screens and offers to the main menu, then open SETTINGS ..."). A goal that starts "From the main menu" can leave
+Jev answering BLOCKED on a pop-up it was not told to expect.
 
 ### A Godot adapter
 

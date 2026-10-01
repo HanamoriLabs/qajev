@@ -364,3 +364,43 @@ def test_steps_after_an_app_that_would_not_open_are_skipped_until_the_next_open(
     results = native.run_session(Device(), steps, ledger=Ledger(), run_dir=None, shots=False)
     assert [r["outcome"] for r in results] == ["harness", "skipped", "pass"]
     assert "missing.app" in results[1]["reason"]
+
+
+def test_an_idle_step_keeps_the_game_running_untouched_then_checks(monkeypatch):
+    # I'M HIM! analytics opt-out proof: a release build (no bot, so no `play` step) had to run about 90 s untouched
+    # in the same session, because the setting lives in that session's throwaway profile.
+    clock = {"t": 0.0}
+    monkeypatch.setattr(native.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(native.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s))
+
+    class Device:
+        errors = []
+
+        def __init__(self, dies_at=None):
+            self.dies_at, self.acted = dies_at, []
+
+        def call(self, **request):
+            return {"ok": True}
+
+        def observe(self):
+            if self.dies_at is not None and clock["t"] >= self.dies_at:
+                raise native.NativeError("the game closed its bridge (crashed or quit)")
+            return {"screen": "SETTINGS", "texts": ["Settings"], "actions": [], "state": {}}
+
+        def act(self, action):
+            self.acted.append(action)
+
+        def shot(self, _path):
+            return None
+
+    events, game = [], Device()
+    steps = [{"name": "stay a while", "idle": 90, "expect": {"text": ["Settings"]}}]
+    [r] = native.run_session(game, steps, ledger=_NoLedger(), run_dir=None, shots=False, emit=events.append)
+    assert r["outcome"] == "pass" and clock["t"] >= 90 and game.acted == []
+    assert any("idle" in e["doing"] for e in events if e["event"] == "step")
+
+    clock["t"] = 0.0
+    steps.append({"name": "after", "expect": {}})
+    r, after = native.run_session(Device(dies_at=30), steps, ledger=_NoLedger(), run_dir=None, shots=False)
+    assert r["outcome"] == "harness" and r["findings"][0]["kind"] == "game crashed or closed"
+    assert after["outcome"] == "skipped"
