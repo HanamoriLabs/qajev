@@ -1,0 +1,13 @@
+{
+  "name": "QAJev",
+  "short_name": "QAJev",
+  "description": "Test your website the way a person uses it.",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#2430c9",
+  "theme_color": "#2430c9",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

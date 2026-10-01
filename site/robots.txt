@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://qajev.com/sitemap.xml

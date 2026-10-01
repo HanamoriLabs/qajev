@@ -1,0 +1,21 @@
+# Workers static assets read this file; it is not served. Rules that match the same path add up.
+
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests
+
+# Images and icons change rarely and keep their names: a week in the browser, then revalidate.
+/assets/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+/og.png
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+/favicon.svg
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+/apple-touch-icon.png
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+/icon-:size
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
