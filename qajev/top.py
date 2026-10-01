@@ -270,10 +270,10 @@ def render(snap, *, width=120, selected=0, detail=None, message=None):
             else j.get("gate") or j.get("error") or ""
         )
         cost = f"${j['cost_usd']:.4f}" if isinstance(j.get("cost_usd"), (int, float)) else ""
-        text = (
-            f"{'›' if i == selected else ' '} {j['state']:<8} {_bar(p['done'], p.get('total'))} {count:>5}  "
-            f"{_ago(j['seconds']):>7}  {j['title'][:44]:<44} {cost:>8}  {tail}"
-        )
+        lead = (f"{'›' if i == selected else ' '} {j['state']:<8} {_bar(p['done'], p.get('total'))} {count:>5}  "
+                f"{_ago(j['seconds']):>7}  ")
+        tw = max(44, min(80, width - len(lead) - 30))  # a wide terminal widens the title; cost and gate keep 30
+        text = f"{lead}{j['title'][:tw]:<{tw}} {cost:>8}  {tail}"
         add((text[:width], "sel" if i == selected else _job_style(j)))
         now = j.get("now") if j["state"] == "running" else None
         if now and now.get("doing"):

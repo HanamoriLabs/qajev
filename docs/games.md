@@ -94,6 +94,9 @@ steps:
     expect: {closed: true}
 ```
 
+Without a suite: `qajev play GAME --goal "... choose QUIT ..." --allow QUIT --expect-closed`, or from MCP
+`qa_play(..., allow=["QUIT"], expect_closed=true)`.
+
 `closed: true` passes only when the game's process exits by itself with code 0; a crash, or a game still running
 at the end of the step, does not pass. Put the quit last: steps after it are skipped.
 

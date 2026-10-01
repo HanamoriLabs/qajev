@@ -9,6 +9,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   stays busy they exit with code 4 and start nothing. `play` gains the three flags.
 - `idle: SECONDS` suite step for `qajev play`: the game runs untouched for that long (no pilot needed, so a
   release build works), then the step's checks run; a crash or close meanwhile is an S1 finding.
+- Job titles in `qajev jobs`, `qajev top` and `qa_jobs` say what a run is about: the project or site and the goal
+  for website runs, the game and the test's name for games (not `play desktop`), for older jobs too. `qajev top`
+  widens the title on a wide terminal.
+- `qajev play --allow LABEL --hide LABEL --expect-closed`, and the same on MCP `qa_play` (`allow`, `hide`,
+  `expect_closed`).
 - Game suites (Godot and Electron) take `hide` and `allow` labels, as mobile suites do, and `expect: {closed:
   true}` passes when the game quits by itself with exit code 0: a test can press QUIT on purpose
   (`allow: [QUIT]`). Fixed: an Electron app that closed mid-step ended the whole run with a traceback.

@@ -24,6 +24,16 @@ qajev jobs 20261001-101502-a3f9         # one job: progress, scenarios finished 
 qajev stop 20261001-101502-a3f9         # stop it
 ```
 
+Every job's title says what it is about, so a list of runs from several agents stays readable:
+
+| Run | Title |
+|---|---|
+| a website check | `check foley /pricing · Find what the Pro plan costs per month`: the QAJev project the URL belongs to (else its host), the page, and the goal without its "Stop when ..." |
+| a crawl | `smoke foley` |
+| a project | `run project shop · core` |
+| a game | `play imhim · quit sends session_end`: the bundled adapter or the game's folder (never `desktop`, `game`, `godot` or a worktree), then `--name` or the suite's `name:` |
+| a mobile app | `play android:com.example.app · onboarding` |
+
 Stopping a job is clean: it closes its browser, keeps the scenarios that already finished, and still writes its
 report (marked INCOMPLETE). Finished jobs are forgotten after 7 days; their reports stay.
 

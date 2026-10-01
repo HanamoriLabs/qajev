@@ -151,19 +151,23 @@ qajev play path/to/game --suite session.yaml
 | Option | Does |
 |---|---|
 | `--goal`, `-g` | what a player wants, ending with "Stop when ..." |
-| `--suite FILE` | several steps in one game session: goal steps and real-time play steps |
+| `--suite FILE` | several steps in one game session: goal steps, real-time play steps and idle steps (see [Games](games.md)) |
 | `--adapter NAME\|PATH` | the game's adapter (bundled name, or a `.gd` / `.js` file) |
 | `--expect-screen NAME` | the screen the game must be on at the end |
 | `--expect-text TEXT` | the game must show this (repeatable) |
 | `--expect-state KEY=VALUE` | a game state value, e.g. `game_over=false` or `kills=">= 1"` (repeatable) |
 | `--min-fps N` | the frame rate must be at least this |
 | `--allow-errors` | engine or script errors do not fail the run |
+| `--expect-closed` | the game must quit by itself with exit code 0 (to test a normal quit) |
+| `--allow LABEL` | offer this exact label to Jev although it is hidden by default, e.g. `QUIT` (repeatable) |
+| `--hide LABEL` | never offer this exact label to Jev (repeatable) |
 | `--game-env KEY=VALUE` | an environment setting for the game (repeatable) |
 | `--game-arg ARG` | a switch for an Electron app, e.g. `--game-arg=--fullscreen` (repeatable) |
 | `--device NAME` | mobile: the iOS simulator to clone, or the Android virtual device to boot |
 | `--install FILE` | mobile: an `.apk` or simulator `.app` to install on the throwaway device first |
 | `--headless` | no window: fastest, no screenshots (Godot) |
-| `--name`, `--max-actions`, `--max-seconds`, `--no-shots`, `--out`, `--cost-cap`, `--load-high`, `--load-ok`, `--load-wait`, `--json`, `--events`, `--quiet`, `--background` | as above |
+| `--name` | the test's name, shown with the game's in `qajev jobs` and `qajev top` |
+| `--max-actions`, `--max-seconds`, `--no-shots`, `--out`, `--cost-cap`, `--load-high`, `--load-ok`, `--load-wait`, `--json`, `--events`, `--quiet`, `--background` | as above |
 
 ## `qajev report`
 

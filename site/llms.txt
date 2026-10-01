@@ -91,7 +91,8 @@ take turns, one at a time per machine; never start a second copy of a queued run
 Rules: never type passwords, one-time codes or payment details (for a signed-in test, the person signs in once
 with `qa_browser(action="login", profile=NAME, url=LOGIN_URL)`). Production is read-only; tests that change data
 run only against localhost. Dangerous buttons are hidden from Jev on purpose; do not work around that. Keep the
-cost cap low for exploratory runs (`cost_cap: 0.10`).
+cost cap low for exploratory runs (`cost_cap: 0.10`). A game's QUIT is hidden too; to test a normal quit pass
+`allow: ["QUIT"]` and `expect_closed: true`.
 
 ## More
 

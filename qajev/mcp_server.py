@@ -425,6 +425,9 @@ async def qa_play(
     expect_state: dict | None = None,
     min_fps: float | None = None,
     allow_errors: bool = False,
+    expect_closed: bool = False,
+    allow: list[str] | None = None,
+    hide: list[str] | None = None,
     name: str | None = None,
     max_actions: int = 20,
     max_seconds: float = 90,
@@ -434,13 +437,16 @@ async def qa_play(
     verbose: bool = False,
     background: bool = False,
 ) -> dict:
-    """Native: QA a game through QAJev's bridge: a Godot project folder, an Electron .app or an Electron project
-    folder. Jev plays the UI a player uses (menus, start, pause, choices), reading each screen as text; input goes
-    into the game only, and the game gets a throwaway save folder. `adapter`: a bundled name (suho, hypervolley,
-    imhim) or a path, for games that draw their own UI. `suite`: a YAML file of steps in one game session (goal
-    steps and real-time play steps). `game_env`: environment settings for the game; `game_args`: switches for an
-    Electron app. expect_state: game state values, e.g. {"game_over": false, "kills": ">= 1"}. headless (default,
-    Godot only) is invisible and fastest but has no screenshots; headless=false opens a small window."""
+    """Native: QA a game or a mobile app through QAJev's bridge: a Godot project folder, an Electron .app or project
+    folder, or a mobile target (ios:<bundle id or URL>, android:<package or URL>). Jev plays the UI a player uses
+    (menus, start, pause, choices), reading each screen as text; input goes into the game only, and the game gets a
+    throwaway save folder. `adapter`: a bundled name (suho, hypervolley, imhim) or a path, for games that draw their
+    own UI. `suite`: a YAML file of steps in one session: goal steps, real-time play steps (`play:`, needs the
+    game's bot), idle steps (`idle: SECONDS`, the game runs untouched), with top-level `allow`/`hide` labels.
+    `game_env`: environment settings for the game; `game_args`: switches for an Electron app. expect_state: game
+    state values, e.g. {"game_over": false, "kills": ">= 1"}. Quit, exit and delete-save buttons are hidden from Jev;
+    to test a normal quit pass allow=["QUIT"] and expect_closed=true (passes only on exit code 0). `name` titles the
+    run in qa_jobs. headless (default, Godot only) is invisible and fastest but has no screenshots."""
     args = ["play", project, "--max-actions", str(max_actions), "--max-seconds", str(max_seconds),
             "--out", out_dir or str(DEFAULT_OUT)]
     for flag, value in (("--goal", goal), ("--adapter", adapter), ("--suite", suite),
@@ -458,11 +464,16 @@ async def qa_play(
         args += ["--min-fps", str(min_fps)]
     if allow_errors:
         args.append("--allow-errors")
+    if expect_closed:
+        args.append("--expect-closed")
+    for flag, labels in (("--allow", allow), ("--hide", hide)):
+        for label in labels or []:
+            args += [flag, label]
     if headless:
         args.append("--headless")
     if cost_cap is not None:
         args += ["--cost-cap", str(cost_cap)]
-    return _trim(await _run_report(args, ctx, background, f"play {name or Path(project).name}"), verbose)
+    return _trim(await _run_report(args, ctx, background), verbose)  # titled like the CLI: game and test name
 
 
 @server.tool()

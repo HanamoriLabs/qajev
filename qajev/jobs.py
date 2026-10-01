@@ -9,8 +9,10 @@ Chrome and daemon and keeps the scenarios that finished, exactly like Ctrl-C.
 
 import contextlib
 import fcntl
+import functools
 import json
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -18,6 +20,9 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
+
+import yaml
 
 from .config import HOME
 
@@ -69,25 +74,110 @@ def alive(pid):
     return not state.startswith("Z")
 
 
-def describe_argv(argv):
-    """A short title for a run from its CLI arguments: "check https://…", "run project shop", "smoke …"."""
+# Folders named for their role, not the game: "<game>/godot", "<repo>/desktop", "out/ImHim-darwin-arm64"...
+_GENERIC = {"godot", "game", "games", "project", "desktop", "app", "apps", "electron", "src", "client", "out", "build",
+            "dist", "release", "web", "packages"}
+
+
+def _flag(argv, *names):
+    for name in names:
+        if name in argv[:-1]:
+            return argv[argv.index(name) + 1]
+        for a in argv:
+            if a.startswith(name + "="):
+                return a.split("=", 1)[1]
+    return None
+
+
+@functools.lru_cache(maxsize=256)
+def _suite_meta(path, _mtime):
+    try:
+        data = yaml.safe_load(Path(path).read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _suite(path):
+    """A suite file's name: and adapter:, or {} (cached while the file is unchanged)."""
+    try:
+        return _suite_meta(str(path), Path(path).stat().st_mtime)
+    except OSError:
+        return {}
+
+
+@functools.lru_cache(maxsize=8)
+def _projects(_minute):
+    from . import project
+
+    try:
+        return [(urlsplit(url).netloc, p["name"]) for p in project.listing() if not p.get("error")
+                for url in (p.get("envs") or {}).values() if url]
+    except Exception:  # a broken project file must not break `qajev jobs`
+        return []
+
+
+def _site(url):
+    """A website as a person names it: the QAJev project it belongs to, else its host; plus a non-root path."""
+    parts = urlsplit(url if "://" in url else f"https://{url}")
+    host = parts.netloc or url
+    name = next((n for h, n in _projects(int(time.time() // 60)) if h == host), host.removeprefix("www."))
+    path = parts.path.rstrip("/")
+    return f"{name} {path[:30]}" if path else name
+
+
+def _game(target):
+    """A game's own name from its path: an .app's name, else the nearest folder that is not a role or a worktree."""
+    parts = [x for x in target.rstrip("/").split("/") if x]
+    if ".claude" in parts:  # <repo>/.claude/worktrees/<branch>/...: the repo is the game
+        parts = parts[:parts.index(".claude")] + [p for p in parts[parts.index(".claude") + 3:]]
+    for part in reversed(parts):
+        if part.endswith(".app"):
+            return part.removesuffix(".app")
+        if part.lower() not in _GENERIC and not re.search(r"-(darwin|linux|win32)-(arm64|x64)$", part):
+            return part
+    return parts[-1] if parts else "game"
+
+
+def _goal(goal):
+    """The goal's intention, without its "Stop when ..." ending."""
+    first = re.split(r"(?<=[.!?])\s+|\s+Stop when\b", goal.strip(), maxsplit=1)[0].rstrip(".")
+    return first[:48]
+
+
+def describe_argv(argv, cwd=None):
+    """A short title for a run that says what it is about: the project, site or game, then the test.
+    "check foley /pricing · Find the Pro price", "play imhim · quit sends session_end", "run project shop · core"."""
     argv = [a for a in argv if a not in ("--background", "--json", "--events", "--quiet", "-q")]
     if not argv:
         return "qajev"
-    for flag in ("--project", "-p"):
-        if flag in argv[:-1]:
-            return f"{argv[0]} project {argv[argv.index(flag) + 1]}"
+    cmd = argv[0]
+    project = _flag(argv, "--project", "-p")
+    if project:
+        suite = _flag(argv, "--suite", "-s")
+        return f"{cmd} project {project}" + (f" · {suite}" if suite else "")
     target = argv[1] if len(argv) > 1 and not argv[1].startswith("-") else ""
-    if argv[0] == "play" and target.startswith(("ios:", "android:")):  # a mobile app or page
-        return f"play {target[:60]}"
-    if argv[0] == "play" and target:  # a game: its folder (Godot projects often live in <game>/godot) and suite
-        parts = [x for x in target.rstrip("/").split("/") if x]
-        game = parts[-2] if len(parts) > 1 and parts[-1] in ("godot", "game", "project") else parts[-1]
-        suite = argv[argv.index("--suite") + 1].rsplit("/", 1)[-1] if "--suite" in argv[:-1] else ""
-        return f"play {game}" + (f" {suite.removesuffix('.yaml').removesuffix('.yml')}" if suite else "")
-    if "/" in target and "://" not in target:
-        target = target.rsplit("/", 1)[-1]  # a suite file: its name is enough
-    return f"{argv[0]} {target}".strip()
+    suite_path = _flag(argv, "--suite")
+    if suite_path and cwd:
+        suite_path = str(Path(cwd, suite_path))  # relative to where the run started
+    meta = _suite(suite_path) if suite_path else {}
+    label = _flag(argv, "--name") or meta.get("name") or (
+        Path(suite_path).stem if suite_path else None)
+    if cmd == "play" and target:
+        adapter = str(_flag(argv, "--adapter") or meta.get("adapter") or "")
+        bundled = adapter and "/" not in adapter and not adapter.endswith((".gd", ".js"))  # suho, imhim...
+        game = target[:60] if target.startswith(("ios:", "android:")) else adapter if bundled else _game(target)
+        squash = lambda s: re.sub(r"[^a-z0-9]", "", str(s).lower())  # noqa: E731
+        if label and squash(game) in squash(label):
+            return f"play {label}"
+        return f"play {game}" + (f" · {label}" if label else "")
+    if cmd in ("check", "smoke") and target:
+        goal = _flag(argv, "--goal", "-g")
+        return f"{cmd} {_site(target)}" + (f" · {_goal(goal)}" if goal else "")
+    if cmd == "run" and target:
+        meta = _suite(Path(cwd, target) if cwd else target)
+        return f"run {meta.get('name') or Path(target).stem}"
+    return f"{cmd} {target}".strip()
 
 
 # ---- the machine-wide lock ----
@@ -155,11 +245,25 @@ def _new_folder():
     return folder
 
 
+def _title(meta):
+    """An automatic title follows describe_argv, so older jobs get today's names too; a given title is kept."""
+    argv = meta.get("argv") or []
+    auto = meta.get("auto_title", bool(argv) and argv[0] in ("play", "check", "smoke")
+                    and str(meta.get("title", "")).startswith(argv[0] + " "))
+    if not auto:
+        return meta["title"]
+    try:
+        return describe_argv(argv, cwd=meta.get("cwd"))
+    except Exception:  # an odd old argv must not break `qajev jobs`
+        return meta["title"]
+
+
 def register(argv, title=None):
     """A run started in the foreground records itself as a job (no wrapper): the same files, written by the run
     itself, so `qajev jobs`, `qajev top` and `qajev stop` see and stop it like any other. -> the job folder."""
     folder = _new_folder()
-    meta = {"id": folder.name, "title": title or describe_argv(argv), "argv": argv, "pid": os.getpid(),
+    meta = {"id": folder.name, "title": title or describe_argv(argv), "auto_title": title is None, "argv": argv,
+            "pid": os.getpid(),
             "started_at": time.time(), "cwd": os.getcwd(), "started_by": os.getppid(), "foreground": True}
     (folder / "job.json").write_text(json.dumps(meta, indent=2))
     return folder
@@ -175,7 +279,8 @@ def start(argv, title=None, *, command=None, cwd=None):
                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             start_new_session=True)
     _children[job_id] = proc
-    meta = {"id": job_id, "title": title or describe_argv(argv), "argv": argv, "pid": proc.pid,
+    meta = {"id": job_id, "title": title or describe_argv(argv), "auto_title": title is None, "argv": argv,
+            "pid": proc.pid,
             "started_at": time.time(), "cwd": cwd or os.getcwd(), "started_by": os.getpid()}
     (folder / "job.json").write_text(json.dumps(meta, indent=2))
     return status(job_id)
@@ -270,7 +375,7 @@ def status(job_id, detail=False):
     else:
         state = "stopped" if meta.get("stop_requested") else "lost"  # killed without recording an exit code
     out = {
-        "id": job_id, "title": meta["title"], "state": state, "pid": meta["pid"],
+        "id": job_id, "title": _title(meta), "state": state, "pid": meta["pid"],
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(meta["started_at"])),
         "seconds": round(_ended(folder, state) - meta["started_at"]),
         "run_dir": run.get("run_dir") or (final or {}).get("run_dir"),

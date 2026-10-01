@@ -56,7 +56,7 @@ def test_second_run_queues_behind_the_first_and_names_it():
 
 def test_a_job_reports_progress_while_running_and_its_gate_when_done():
     job = jobs.start(["check", "https://a.example"], command=fake(1.5))
-    assert job["title"] == "check https://a.example"
+    assert job["title"] == "check a.example"
     running = wait_for(lambda: (s := jobs.status(job["id"], detail=True))["progress"]["done"] == 1 and s)
     assert running["state"] == "running" and running["current"] == "pricing"
     assert running["run_dir"] == "/tmp/demo-run" and running["progress"]["total"] == 2
@@ -97,12 +97,41 @@ def test_cli_jobs_and_stop(capsys):
 
 
 def test_describe_argv():
-    assert jobs.describe_argv(["run", "--project", "shop", "--suite", "core", "--json"]) == "run project shop"
-    assert jobs.describe_argv(["check", "https://a.example", "--goal", "x"]) == "check https://a.example"
-    assert jobs.describe_argv(["smoke", "--background", "https://b.example"]) == "smoke https://b.example"
+    assert jobs.describe_argv(["run", "--project", "shop", "--suite", "core", "--json"]) == "run project shop · core"
+    assert jobs.describe_argv(["check", "https://a.example", "--goal", "x"]) == "check a.example · x"
+    assert jobs.describe_argv(["smoke", "--background", "https://b.example"]) == "smoke b.example"
     assert jobs.describe_argv(["play", "/g/mygame/godot", "--suite", "/q/suites/suho-long-play.yaml"]) == \
-        "play mygame suho-long-play"
+        "play mygame · suho-long-play"
     assert jobs.describe_argv(["play", "/g/hypervolley", "--goal", "x"]) == "play hypervolley"
+
+
+def test_a_job_always_says_which_game_or_site(monkeypatch, tmp_path):
+    # qajev top listed "play game", "play desktop" and "check http://127.0.0.1:8765/": folders named after their role,
+    # not the game, and no word on which site or what the check was for.
+    from qajev import project
+
+    monkeypatch.setattr(project, "listing", lambda: [{"name": "foley", "envs": {"prod": "https://foleyapp.com"}}])
+    jobs._projects.cache_clear()  # cached per minute; another test may have filled it
+    goal = "Find what the Pro plan costs per month. Stop when that price is visible."
+    assert jobs.describe_argv(["check", "https://foleyapp.com/pricing", "--goal", goal]) == \
+        "check foley /pricing · Find what the Pro plan costs per month"
+    assert jobs.describe_argv(["check", "http://127.0.0.1:8765/", "--goal", goal]) == \
+        "check 127.0.0.1:8765 · Find what the Pro plan costs per month"
+    assert jobs.describe_argv(["smoke", "https://foleyapp.com/"]) == "smoke foley"
+    # a game: its adapter or a real folder name, never "desktop", "game" or a worktree; then what the test is
+    wt = "/r/games/sidescroller/.claude/worktrees/steam-de44e47/desktop"
+    assert jobs.describe_argv(["play", wt, "--adapter", "imhim"]) == "play imhim"
+    assert jobs.describe_argv(["play", wt]) == "play sidescroller"
+    assert jobs.describe_argv(["play", "/r/suho/game"]) == "play suho"
+    assert jobs.describe_argv(["play", "/r/out/ImHim-darwin-arm64/ImHim.app", "--name", "settings rehearsal"]) == \
+        "play ImHim · settings rehearsal"
+    suite = tmp_path / "quit-suite.yaml"
+    suite.write_text("name: quit sends session_end\nadapter: imhim\nsteps: []\n")
+    assert jobs.describe_argv(["play", wt, "--suite", str(suite)]) == "play imhim · quit sends session_end"
+    assert jobs.describe_argv(["play", "/r/games/sevendawns/godot", "--adapter", "/r/qa/qajev_adapter.gd",
+                               "--name", "Seven Dawns opening"]) == "play Seven Dawns opening"  # its own name
+    assert jobs.describe_argv(["play", "android:com.example.app", "--name", "onboarding"]) == \
+        "play android:com.example.app · onboarding"
 
 
 def test_top_shows_the_browser_holder_queue_progress_and_reports():
@@ -161,7 +190,7 @@ def test_top_details_say_why_a_scenario_failed():
 def test_a_foreground_run_is_a_job_too(capsys):
     code = main(["check", "http://127.0.0.1:9/", "--cdp-url", "http://127.0.0.1:9", "--expect-text", "x", "--quiet"])
     assert code == 3  # nothing listens there
-    (job,) = [j for j in jobs.listing() if j["title"] == "check http://127.0.0.1:9/"]
+    (job,) = [j for j in jobs.listing() if j["title"] == "check 127.0.0.1:9"]
     assert job["state"] == "failed" and job["exit_code"] == 3 and "no Chrome DevTools endpoint" in job["error"]
     meta = json.loads((jobs.JOBS / job["id"] / "job.json").read_text())
     assert meta["foreground"] and meta["pid"] == __import__("os").getpid()

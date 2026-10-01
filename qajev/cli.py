@@ -178,6 +178,12 @@ def build_parser():
                       help='a game state value, e.g. game_over=false or kills=">= 1" (repeatable)')
     play.add_argument("--min-fps", type=float, help="the frame rate must be at least this at the end")
     play.add_argument("--allow-errors", action="store_true", help="engine/script errors do not fail the run")
+    play.add_argument("--expect-closed", action="store_true",
+                      help="the game must quit by itself with exit code 0 (with --allow QUIT, to test a normal quit)")
+    play.add_argument("--allow", action="append", default=[], metavar="LABEL",
+                      help="offer this exact label to Jev although it is hidden by default, e.g. QUIT (repeatable)")
+    play.add_argument("--hide", action="append", default=[], metavar="LABEL",
+                      help="never offer this exact label to Jev (repeatable)")
     play.add_argument("--name", help="the scenario's name (default: the project folder's)")
     play.add_argument("--max-actions", type=int, default=20)
     play.add_argument("--max-seconds", type=float, default=90)
@@ -628,6 +634,8 @@ def cmd_play(args):
         expect["state"] = dict(_state_value(t) for t in args.expect_state)
     if args.min_fps is not None:
         expect["min_fps"] = args.min_fps
+    if args.expect_closed:
+        expect["closed"] = True
     if expect:
         expect["no_errors"] = not args.allow_errors
     if args.goal:
@@ -672,17 +680,17 @@ def cmd_play(args):
             if mobile.is_mobile(args.project):  # an app (or the browser) on a QAJev-owned simulator or emulator
                 game_cm = mobile.MobileApp(args.project, device=args.device or (spec.get("device") if args.suite
                                                                                  else None),
-                                           hide=spec.get("hide") if args.suite else None,
-                                           allow=spec.get("allow") if args.suite else None,
+                                           hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
+                                           allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow],
                                            install=args.install or (spec.get("install") if args.suite else None))
             elif electron.is_electron(args.project):  # a web game in Electron (I'm Him's desktop build)
                 game_cm = electron.ElectronGame(args.project, adapter=adapter, args=game_args, env=game_env,
-                                                hide=spec.get("hide") if args.suite else None,
-                                                allow=spec.get("allow") if args.suite else None)
+                                                hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
+                                                allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow])
             else:
                 game_cm = native.GodotGame(args.project, adapter=adapter, headless=headless, env=game_env,
-                                            hide=spec.get("hide") if args.suite else None,
-                                            allow=spec.get("allow") if args.suite else None)
+                                            hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
+                                            allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow])
             with game_cm as game:
                 browser = {"surface": "native", "engine": getattr(game, "engine", "godot"),
                            "project": str(game.project), "adapter": game.adapter.stem if game.adapter else None,

@@ -51,7 +51,7 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 | `qa_check` | one scenario: a goal and expectations on a URL | Jev decisions |
 | `qa_run_suite` | a suite, from a file or inline YAML | Jev decisions |
 | `qa_project_run` | a project's stored objectives, or one ad-hoc objective | Jev decisions |
-| `qa_play` | test a game (Godot or Electron): menus with Jev, real-time play with the game's pilot | Jev decisions |
+| `qa_play` | test a game (Godot or Electron) or a mobile app: menus with Jev, real-time play with the game's pilot | Jev decisions |
 | `qa_projects` | the projects QAJev knows | free |
 | `qa_reports` | recent project runs | free |
 | `qa_report` | read a run's report (JSON or Markdown) | free |
@@ -72,8 +72,10 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 - `qa_smoke`: `url` (required), `max_pages`, `device`, `check_links`.
 - `qa_project_run`: `project` (required), `suite` (a tag), `names`, `env`, or an ad-hoc `objective` with `url`,
   `expect_text`, `expect_url`.
-- `qa_play`: `project` (the game), `goal`, `adapter`, `suite`, `game_env`, `game_args`, `expect_screen`,
-  `expect_text`, `expect_state`, `min_fps`, `headless`.
+- `qa_play`: `project` (the game, or `ios:...` / `android:...`), `goal`, `adapter`, `suite`, `game_env`,
+  `game_args`, `expect_screen`, `expect_text`, `expect_state`, `min_fps`, `name`, `headless`. Quit and
+  delete-save buttons are hidden from Jev; to test a normal quit pass `allow: ["QUIT"]` and `expect_closed: true`
+  (passes only when the game exits by itself with code 0). `hide` hides more labels.
 - Website tools also take `devices` (default desktop and phone: every website test also runs in a phone view).
   `qa_check`, `qa_run_suite` and `qa_project_run` take `real_devices` (`["ios"]`, `["android"]` or both) to
   also run in Chrome on an Android emulator (iOS Safari cannot read page content yet): opt-in, read-only, and slower
@@ -90,6 +92,8 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   nothing is left behind. Pass `profile` for a signed-in run (the person signs in once with
   `qa_browser(action="login", profile=..., url=...)`).
 - Runs queue one at a time per machine, shared with the CLI and every other agent. `qa_jobs` shows the queue.
+  Each job's title says what it is about: the project or site and the goal for website runs (`check foley /pricing
+  · Find the Pro price`), the game and the test's name for games (`play imhim · quit sends session_end`).
 
 ## What an agent gets back
 

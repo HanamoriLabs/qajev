@@ -92,6 +92,8 @@ and say what they are waiting for. Never start a second copy of a run because th
 - **Mind the cost cap.** Every run has one (default $1). Keep it low for exploratory runs (`cost_cap` /
   `--cost-cap 0.10`).
 - **A `harness` outcome is not a product bug.** Say so plainly if you report it.
+- **A game's QUIT, exit and delete-save buttons are hidden from Jev.** To test a normal quit on purpose, pass
+  `allow: ["QUIT"]` and `expect_closed: true` (`--allow QUIT --expect-closed`).
 
 ### Your project
 

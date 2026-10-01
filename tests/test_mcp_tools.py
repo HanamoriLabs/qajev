@@ -34,7 +34,7 @@ def test_qa_screenshot_never_reads_outside_the_run_folder(tmp_path):
 def test_qa_play_passes_a_suite_and_the_games_settings_to_the_cli(monkeypatch):
     seen = {}
 
-    async def fake_run(args, ctx, background, title):
+    async def fake_run(args, ctx, background, title=None):
         seen.update(args=args, title=title)
         return {"gate": "PASS", "run_dir": "/runs/x", "scenarios": []}
 
@@ -46,6 +46,26 @@ def test_qa_play_passes_a_suite_and_the_games_settings_to_the_cli(monkeypatch):
     assert args[args.index("--suite") + 1] == "/q/menus.yaml"
     assert args[args.index("--game-env") + 1] == "MODE=demo"
     assert "--game-arg=--query=autoplay=1" in args and "--headless" not in args
+
+
+def test_qa_play_can_allow_quit_and_expect_the_game_to_close(monkeypatch):
+    # The same opt-in as a suite's allow: [QUIT] + expect: {closed: true}; the job is titled like a CLI run
+    # (game and test name), not "play desktop" from the folder.
+    from qajev.cli import build_parser
+
+    seen = {}
+
+    async def fake_run(args, ctx, background, title=None):
+        seen.update(args=args, title=title)
+        return {"gate": "PASS", "run_dir": "/runs/x", "scenarios": []}
+
+    monkeypatch.setattr(mcp_server, "_run_report", fake_run)
+    asyncio.run(mcp_server.qa_play("/r/sidescroller/desktop", None, adapter="imhim", goal="Choose QUIT.",
+                                   allow=["QUIT"], hide=["CREDITS"], expect_closed=True, name="quit test"))
+    parsed = build_parser().parse_args(seen["args"])
+    assert parsed.allow == ["QUIT"] and parsed.hide == ["CREDITS"] and parsed.expect_closed
+    assert seen["title"] is None  # jobs.describe_argv names it
+    assert mcp_server.jobs.describe_argv(seen["args"]) == "play imhim · quit test"
 
 
 def test_agents_see_exactly_the_qa_tools():
