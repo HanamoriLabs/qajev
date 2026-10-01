@@ -21,8 +21,10 @@ import time
 import urllib.request
 from pathlib import Path
 
+from websockets.exceptions import ConnectionClosed
+
 from .config import HOME
-from .native import STATE, NativeError, free_port
+from .native import STATE, NativeError, free_port, with_lists
 
 WEB = Path(__file__).parent / "bridges" / "web"
 ADAPTERS = WEB / "adapters"
@@ -91,11 +93,13 @@ class ElectronGame:
 
     engine = "electron"
 
-    def __init__(self, app, *, adapter=None, args=(), headless=False, size=(1280, 800), start_wait=60.0, env=None):
+    def __init__(self, app, *, adapter=None, args=(), headless=False, size=(1280, 800), start_wait=60.0, env=None,
+                 hide=None, allow=None):
         self.project = Path(app).expanduser().resolve()
         if not self.project.exists():
             raise NativeError(f"no app at {self.project}")
         self.adapter = adapter_path(adapter)
+        self.hide, self.allow = list(hide or []), list(allow or [])  # a suite's own labels (native.with_lists)
         # "--game-dir=~/x" from a suite: ~ is the home folder (no shell expands it here)
         self.args = [f"{a.partition('=')[0]}={os.path.expanduser(a.partition('=')[2])}" if "=~" in a else a
                      for a in map(str, args)]
@@ -214,6 +218,8 @@ class ElectronGame:
                 raise NativeError(f"no answer to {method} within {timeout:.0f} s")
         except OSError as e:
             raise NativeError(f"lost the app: {e}") from None
+        except ConnectionClosed:  # the app quit or crashed between two looks
+            raise NativeError("the app closed its window (crashed or quit)") from None
         finally:
             self._pending.pop(ident, None)
         answer = slot[1] or {}
@@ -240,7 +246,7 @@ class ElectronGame:
     def observe(self):
         obs = self.evaluate(OBSERVE) or {}
         obs.setdefault("ok", True)
-        return obs
+        return with_lists(obs, self.hide, self.allow)
 
     def act(self, action):
         if action.get("kind") == "adapter":  # the adapter carries it out in the page (e.g. a game bot's decide())

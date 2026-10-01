@@ -63,3 +63,19 @@ def test_an_electron_game_is_driven_through_its_own_window(monkeypatch):
         assert (profile / "Local State").exists() or any(profile.iterdir())  # the throwaway profile is used
     assert game.proc.poll() is not None and not profile.exists()
     assert not (native.STATE / f"{pid}.json").exists()
+
+
+def test_a_closed_app_is_a_native_error_not_a_crash():
+    # Live: QAJev's fixture quit through its own button and the next look raised websockets' ConnectionClosedError,
+    # which ended the whole run with a traceback instead of the step's result.
+    from websockets.exceptions import ConnectionClosedError
+
+    class Gone:
+        def send(self, _data):
+            raise ConnectionClosedError(None, None)
+
+    game = electron.ElectronGame.__new__(electron.ElectronGame)
+    game.ws, game.proc, game._pending, game._next = Gone(), None, {}, 0
+    game._lock = __import__("threading").Lock()
+    with pytest.raises(electron.NativeError, match="closed"):
+        game.send("Runtime.evaluate")

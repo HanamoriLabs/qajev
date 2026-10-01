@@ -404,3 +404,49 @@ def test_an_idle_step_keeps_the_game_running_untouched_then_checks(monkeypatch):
     r, after = native.run_session(Device(dies_at=30), steps, ledger=_NoLedger(), run_dir=None, shots=False)
     assert r["outcome"] == "harness" and r["findings"][0]["kind"] == "game crashed or closed"
     assert after["outcome"] == "skipped"
+
+
+def test_a_suite_can_allow_quit_in_a_game_and_expect_it_to_close(monkeypatch):
+    # I'M HIM! session_end proof: QUIT is hidden from Jev by default (it ends the test), so a suite that wants the
+    # game closed says so: allow: [QUIT] and expect: {closed: true}. A clean exit passes; a crash still does not.
+    from types import SimpleNamespace
+
+    from qajev import session as session_mod
+
+    def menu(allow=None):
+        return {"screen": "TITLE MENU", "texts": ["NEW GAME QUIT"], "state": {},
+                "actions": [{"id": "dom:0", "label": "NEW GAME", "kind": "click", "x": 1, "y": 1},
+                            {"id": "dom:1", "label": "QUIT", "kind": "click", "x": 1, "y": 2}], **(allow or {})}
+
+    assert [a["label"] for a in native.visible_actions(menu())[0]] == ["NEW GAME"]  # hidden by default
+
+    class Game(native.GodotGame):
+        def __init__(self, code, **lists):
+            native.GodotGame.__init__(self, Path(__file__).parent / "fixtures" / "godot_game", **lists)
+            self.code, self.quit = code, False
+            self.proc = SimpleNamespace(poll=lambda: self.code if self.quit else None, wait=lambda timeout=None: 0)
+
+        def call(self, **request):
+            if request.get("op") == "act":
+                self.quit = request.get("click") == [1, 2]
+                return {"ok": True}
+            if self.quit:
+                raise native.NativeError("the game closed its bridge (crashed or quit)")
+            return menu()
+
+    seen = []
+
+    def choose(state, goal, history):
+        seen.append([a["label"] for a in state["actions"]])
+        return {"choice": "dom:1", "probabilities": {"dom:1": 0.9}, "latency_ms": 5}
+
+    monkeypatch.setattr(session_mod, "load", lambda ledger: SimpleNamespace(model=SimpleNamespace(choose=choose)))
+    steps = [{"name": "quit", "goal": "Choose QUIT. Stop when the game has closed.", "expect": {"closed": True}},
+             {"name": "after", "expect": {}}]
+    clean, after = native.run_session(Game(0, allow=["QUIT"]), steps, ledger=_NoLedger(), run_dir=None, shots=False)
+    assert "QUIT" in seen[0]
+    assert clean["outcome"] == "pass" and any(c["check"] == "the game closed" and c["ok"] for c in clean["checks"])
+    assert after["outcome"] == "skipped" and "closed" in after["reason"]
+    [crash] = native.run_session(Game(139, allow=["QUIT"]), steps[:1], ledger=_NoLedger(), run_dir=None,
+                                 shots=False)
+    assert crash["outcome"] != "pass"

@@ -52,6 +52,26 @@ class NativeError(RuntimeError):
     pass
 
 
+def with_lists(obs, hide=(), allow=()):
+    """A suite's own `hide` and `allow` labels, on top of the adapter's. `allow` lets an exact label past the
+    built-in lists (e.g. QUIT, for a test that closes the game on purpose)."""
+    if hide:
+        obs["hide"] = [*(obs.get("hide") or []), *hide]
+    if allow:
+        obs["allow"] = [*(obs.get("allow") or []), *allow]
+    return obs
+
+
+def closed_cleanly(game, wait=5.0):
+    """The game's process ended by itself with exit code 0 (a quit, not a crash)."""
+    proc = getattr(game, "proc", None)
+    if proc is None:
+        return False
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        proc.wait(timeout=wait)
+    return proc.poll() == 0
+
+
 class NoPilot(NativeError):
     """Real-time play needs the adapter's pilot (a game's own bot, say); not a crash."""
 
@@ -81,11 +101,13 @@ def adapter_path(adapter):
 class GodotGame:
     """A Godot game started by QAJev, with its bridge. Use as a context manager."""
 
-    def __init__(self, project, *, adapter=None, headless=False, size=(1280, 720), start_wait=60.0, env=None):
+    def __init__(self, project, *, adapter=None, headless=False, size=(1280, 720), start_wait=60.0, env=None,
+                 hide=None, allow=None):
         self.project = Path(project).expanduser().resolve()
         if not (self.project / "project.godot").is_file():
             raise NativeError(f"{self.project} is not a Godot project (no project.godot)")
         self.adapter = adapter_path(adapter)
+        self.hide, self.allow = list(hide or []), list(allow or [])
         self.headless, self.size, self.start_wait = headless, size, start_wait
         self.env = dict(env or {})  # extra settings for the game, e.g. SUHO_FORCE_MOBILE=1
         self.proc = self.sock = self.file = None
@@ -163,7 +185,7 @@ class GodotGame:
         return json.loads(line)
 
     def observe(self):
-        return self.call(op="observe")
+        return with_lists(self.call(op="observe"), self.hide, self.allow)
 
     def act(self, action):
         if action.get("kind") == "key" or "key" in action and "x" not in action:
@@ -328,6 +350,8 @@ def native_checks(expect, obs, errors):
     if expect.get("no_errors", True):
         out.append({"check": "no engine or script errors", "ok": not errors,
                     "detail": errors[0] if errors else None})
+    if expect.get("closed"):  # a game that still answers has not closed (play() records a clean exit itself)
+        out.append({"check": "the game closed", "ok": False, "detail": "still running"})
     return out
 
 
@@ -446,16 +470,23 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
         stop, detail = "cost_cap", str(e)
     except NativeError as e:
         stop, detail = "browser_error", str(e)
+        if (expect or {}).get("closed") and closed_cleanly(game):  # the step's own aim: the game quit, exit 0
+            stop, detail, result["closed"] = "reached", None, True
     except (RuntimeError, ValueError) as e:
         stop, detail = ("model_error" if "Model" in str(e) or "TypeSafe" in str(e) else "browser_error"), str(e)
-    if stop != "browser_error":
+    if stop != "browser_error" and not result.get("closed"):
         with contextlib.suppress(NativeError):
             obs = game.observe()
         if shots and run_dir is not None:
             with contextlib.suppress(NativeError):
                 shot = game.shot(Path(run_dir) / "shots" / f"{re.sub(r'[^A-Za-z0-9._-]+', '-', name)}.jpg")
                 result["shot"] = str(shot.relative_to(run_dir)) if shot else None
-    checks = native_checks(expect or {}, obs, game.errors) if stop != "browser_error" else []
+    if result.get("closed"):
+        checks = [{"check": "the game closed", "ok": True, "detail": "exit code 0"},
+                  {"check": "no engine or script errors", "ok": not game.errors,
+                   "detail": game.errors[0] if game.errors else None}]
+    else:
+        checks = native_checks(expect or {}, obs, game.errors) if stop != "browser_error" else []
     outcome, reason = verdict.classify(stop, checks, has_checks=bool(expect), stop_detail=detail)
     result.update(checks=checks, stop=stop, outcome=outcome, reason=reason,
                   end_url=f"game://{name}/{obs.get('screen')}",
@@ -701,6 +732,10 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
             unopened = None
         elif unopened:
             results.append({"name": name, "outcome": "skipped", "reason": f"{unopened} did not open",
+                            "checks": [], "findings": [], "screens": []})
+            continue
+        if any(r.get("closed") for r in results):
+            results.append({"name": name, "outcome": "skipped", "reason": "the game was closed by an earlier step",
                             "checks": [], "findings": [], "screens": []})
             continue
         if results and results[-1].get("stop") == "browser_error" and not _answers(game):

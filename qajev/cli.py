@@ -676,9 +676,13 @@ def cmd_play(args):
                                            allow=spec.get("allow") if args.suite else None,
                                            install=args.install or (spec.get("install") if args.suite else None))
             elif electron.is_electron(args.project):  # a web game in Electron (I'm Him's desktop build)
-                game_cm = electron.ElectronGame(args.project, adapter=adapter, args=game_args, env=game_env)
+                game_cm = electron.ElectronGame(args.project, adapter=adapter, args=game_args, env=game_env,
+                                                hide=spec.get("hide") if args.suite else None,
+                                                allow=spec.get("allow") if args.suite else None)
             else:
-                game_cm = native.GodotGame(args.project, adapter=adapter, headless=headless, env=game_env)
+                game_cm = native.GodotGame(args.project, adapter=adapter, headless=headless, env=game_env,
+                                            hide=spec.get("hide") if args.suite else None,
+                                            allow=spec.get("allow") if args.suite else None)
             with game_cm as game:
                 browser = {"surface": "native", "engine": getattr(game, "engine", "godot"),
                            "project": str(game.project), "adapter": game.adapter.stem if game.adapter else None,

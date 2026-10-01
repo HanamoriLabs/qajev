@@ -15,7 +15,8 @@ QAJev talks to the game itself, not to its pixels.
 - **Verdicts come from the game's state**: which screen is up, what it says, state values (`game_over=false`,
   `kills=">= 20"`), frame rate, memory, and script or engine errors.
 - **Never offered to Jev**: quit, exit to desktop, buy, delete or reset saves or progress, plus anything the game's
-  adapter hides (for example online play).
+  adapter hides (for example online play). A suite can hide more labels (`hide: [...]`), or let an exact label
+  through when the test needs it (`allow: [QUIT]`, see [Quitting on purpose](#quitting-on-purpose)).
 
 ## One check
 
@@ -79,6 +80,22 @@ A play step **fails** on a **soft-lock** (the game stops advancing while nothing
 engine or script errors, a frame rate whose slowest 10% is under `min_fps`, or memory growing more than
 `max_memory_growth_mb`. A game left paused by the step before stops the step as a harness problem, instead of
 "playing" a frozen screen. While a play step runs, [`qajev top`](jobs-and-top.md) shows the live numbers.
+
+### Quitting on purpose
+
+QUIT is hidden from Jev, because quitting ends the session. To test a normal quit (say, that the game sends its
+session-end event), the suite allows the exact label and expects the game to close:
+
+```yaml
+allow: [QUIT]                # exact label, as the game shows it
+steps:
+  - name: quit from the main menu
+    goal: Get past the intro screens and offers to the main menu, then choose QUIT. Stop when the game has closed.
+    expect: {closed: true}
+```
+
+`closed: true` passes only when the game's process exits by itself with code 0; a crash, or a game still running
+at the end of the step, does not pass. Put the quit last: steps after it are skipped.
 
 ## Adapters
 
