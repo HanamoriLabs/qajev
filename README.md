@@ -1,4 +1,14 @@
-# QAJev
+<a href="https://qajev.com">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.svg">
+    <img src="docs/images/logo.svg" alt="QAJev" width="250">
+  </picture>
+</a>
+
+[![Tests](https://github.com/hanamorilabs/qajev/actions/workflows/tests.yml/badge.svg)](https://github.com/hanamorilabs/qajev/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
+![macOS and Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
 **Test your website the way a person uses it.** Say what a visitor wants in plain words; **Jev**, a small, fast
 model, clicks through a real Chrome to do it; QAJev judges the result from the page itself and gives you a clear

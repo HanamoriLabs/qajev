@@ -31,6 +31,9 @@ uv run basedpyright qajev                 # types (0 errors)
 uv run pytest -q                          # offline tests: no browser, no network, no cost
 ```
 
+GitHub Actions runs the same three on every push to `main` and every pull request, on macOS and Linux with
+Python 3.12 and 3.13 (`.github/workflows/tests.yml`).
+
 Tests that start a real (headless, throwaway) Chrome against the bundled demo site, or a Godot or Electron fixture
 game, are opt-in:
 
