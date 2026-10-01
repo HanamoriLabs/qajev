@@ -1,7 +1,13 @@
 # qajev.com
 
-The project's website: one static page (`index.html`, inline CSS and JS) and its images in `assets/`. No build
-step.
+The project's website: one static page (`index.html`, inline CSS and JS), its images in `assets/`, the privacy
+policy (`privacy.html`, served at `/privacy`) and `consent.js`. No build step.
+
+`consent.js` is the shared Hanamori cookie banner and Google Tag Manager loader (container `GTM-PWPQ2CK7`, set on
+its `<script>` tag in both pages). Visitors in the EEA, the UK and Switzerland get a banner and nothing loads until
+they accept; elsewhere Tag Manager loads after the page is idle, and Global Privacy Control keeps ads off. The
+copy here comes from the hanamori-gtm repo: change it there, not here. `privacy.html` must list whatever the
+container loads.
 
 Preview it locally:
 
