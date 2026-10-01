@@ -58,6 +58,28 @@ function a11y(g) {
   return out;
 }
 
+// The dev menu (dev builds only): each section's <select> options as "<section>: <option>" (current one marked) and
+// its buttons as "<section>: <button>", e.g. "Boss: Fight", "Enemies: Kunai thrower", "Enemies: Spawn ahead".
+function devMenuItems() {
+  const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  const out = [];
+  for (const sec of document.querySelectorAll('.devmenu section')) {
+    const h = sec.querySelector('h2');
+    const title = h ? clean(h.textContent) : '';
+    for (const s of sec.querySelectorAll('select')) {
+      for (const o of s.options) {
+        const k = (title ? title + ': ' : '') + clean(o.textContent);
+        out.push({ kind: 'select', el: s, value: o.value, key: k, label: k + (s.value === o.value ? ' (current)' : '') });
+      }
+    }
+    for (const b of sec.querySelectorAll('button')) {
+      const k = (title ? title + ': ' : '') + clean(b.textContent);
+      if (clean(b.textContent)) out.push({ kind: 'button', el: b, key: k, label: k });
+    }
+  }
+  return out;
+}
+
 // Every option of every radio row in the open settings tab, scrolled into view or not (a hidden tab's rows are not
 // visible at all): its row name, its own text, and the label Jev reads ("Vibration: OFF (current)").
 function settingsOptions() {
@@ -87,7 +109,11 @@ window.__qajevAdapter = {
 
     const title = $('.title-screen');
     const titleOn = title && title.classList.contains('on');
-    if (on('#ui > .boot-splash:not(.out)')) {
+    const devMenu = $('.devmenu');
+    if (devMenu && !devMenu.hidden) { // dev build: DEV TOOLS over the title or a run (src/dev/devMenu.ts)
+      screen = 'DEV TOOLS';
+      keys.push(key('close_dev_menu', 'Close the dev menu (Esc)', 'Escape'));
+    } else if (on('#ui > .boot-splash:not(.out)')) {
       screen = 'LOGOS';
       keys.push(key('skip_logos', 'Skip the studio logos', 'Escape'));
     } else if (on('section.ecine.on')) {
@@ -140,6 +166,7 @@ window.__qajevAdapter = {
       screen = 'PLAYING';
       keys.push(key('pause', 'Pause the game', 'Escape'), key('bag', 'Open the bag (I)', 'i'),
         key('character', 'Open the character sheet (C)', 'c'), key('talents', 'Open the talents (T)', 't'));
+      if (g && devMenu) keys.push(key('dev_menu', 'Open the dev menu (`): spawn foes, fight a boss', 'Backquote'));
     }
 
     // Controls a QA run must not use: Twitch sign-in, and anything that uploads.
@@ -166,8 +193,15 @@ window.__qajevAdapter = {
           : { id, label: o.label.slice(0, 120), kind: 'adapter', op: 'set_option', match: o.key });
       }
     }
-    let actions = [...keys, ...options, ...base.actions.filter((a) => !deny.test(a.label) && !(dup && dup.test(a.label))
+    if (screen === 'DEV TOOLS') {
+      for (const it of devMenuItems()) {
+        options.push({ id: 'dev:' + options.length + ':' + it.key.slice(0, 40), label: it.label.slice(0, 120),
+          kind: 'adapter', op: 'dev_item', match: it.key });
+      }
+    }
+    let actions = screen === 'DEV TOOLS' ? [...keys, ...options] : [...keys, ...options, ...base.actions.filter((a) => !deny.test(a.label) && !(dup && dup.test(a.label))
       && !optionTexts.has(a.label))];
+    if (screen === 'DEV TOOLS') actions = actions.filter((a) => !deny.test(a.label));
 
     // The game's bot (dev build, ?autoplay) waits on every decision a player makes (level-up cards, dialogue
     // choices, the bag, talents, stalls, the game-over card...) and lists its options: those are Jev's to pick.
@@ -225,7 +259,7 @@ window.__qajevAdapter = {
       'GAME OVER': '.overlay.gameover.on', 'LEVEL UP': '.levelup.on', 'QTE': '.qte.on', 'HERO CV': '.hero-cv.on',
       'STALL': '.stall.on', 'STALL VERDICT': '.stall.on', 'TALK': '.talk.on', 'SETTINGS': '.settings-screen.on',
       'CONTROLS': '.controls-screen.on', 'BAG': '.inv.on', 'CASE FILE': '.inv.on', 'PAUSED': '.overlay.paused.on',
-      'TITLE': '.title-screen', 'TITLE MENU': '.title-screen', 'DIFFICULTY': '.title-screen',
+      'DEV TOOLS': '.devmenu', 'TITLE': '.title-screen', 'TITLE MENU': '.title-screen', 'DIFFICULTY': '.title-screen',
     };
     const own = roots[screen] ? text(roots[screen]) : '';
     const texts = [];
@@ -241,6 +275,16 @@ window.__qajevAdapter = {
   act(action) {
     const ap = window.__autoplay;
     if (action.op === 'decide' && ap) return ap.decide(action.index);
+    if (action.op === 'dev_item') { // pick a dev menu option, or press one of its buttons
+      const it = devMenuItems().find((x) => x.key === action.match);
+      if (!it) return { ok: false, error: 'that dev menu item is no longer there' };
+      it.el.scrollIntoView({ block: 'center' });
+      if (it.kind === 'select') {
+        it.el.value = it.value;
+        it.el.dispatchEvent(new Event('change', { bubbles: true }));
+      } else it.el.click();
+      return { ok: true };
+    }
     if (action.op === 'set_option') { // a settings row scrolled out of the list: bring it in, then click it
       const o = settingsOptions().find((x) => x.key === action.match);
       if (!o) return { ok: false, error: 'that setting is no longer on the screen' };

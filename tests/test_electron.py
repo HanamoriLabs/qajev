@@ -79,3 +79,12 @@ def test_a_closed_app_is_a_native_error_not_a_crash():
     game._lock = __import__("threading").Lock()
     with pytest.raises(electron.NativeError, match="closed"):
         game.send("Runtime.evaluate")
+
+
+def test_punctuation_keys_carry_their_code():
+    # I'M HIM! opens its dev menu on e.code === "Backquote" and switches settings tabs on BracketLeft/BracketRight;
+    # a one-character key used to go out with an empty code, so the game ignored it.
+    assert electron.key_event("`") == {"key": "`", "code": "Backquote", "windowsVirtualKeyCode": 192, "text": "`"}
+    assert electron.key_event("Backquote")["code"] == "Backquote" and electron.key_event("Backquote")["key"] == "`"
+    assert electron.key_event("[")["code"] == "BracketLeft" and electron.key_event("]")["code"] == "BracketRight"
+    assert electron.key_event("a")["code"] == "KeyA" and electron.key_event("5")["code"] == "Digit5"

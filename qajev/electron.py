@@ -74,8 +74,19 @@ def command_for(app):
     return [str(electron), str(app)]
 
 
+# Punctuation keys: their DOM code and Windows virtual key (games read e.code, e.g. "Backquote" for a dev menu).
+PUNCT = {"`": ("Backquote", 192), "[": ("BracketLeft", 219), "]": ("BracketRight", 221), "-": ("Minus", 189),
+         "=": ("Equal", 187), ";": ("Semicolon", 186), "'": ("Quote", 222), ",": ("Comma", 188),
+         ".": ("Period", 190), "/": ("Slash", 191), "\\": ("Backslash", 220)}
+PUNCT_BY_CODE = {code: ch for ch, (code, _vk) in PUNCT.items()}
+
+
 def key_event(key):
-    """Chromium key event fields for a key name: "Escape", "Enter", "i", "ArrowLeft"."""
+    """Chromium key event fields for a key name: "Escape", "Enter", "i", "ArrowLeft", "`" or "Backquote"."""
+    key = PUNCT_BY_CODE.get(key) or key
+    if key in PUNCT:
+        code, vk = PUNCT[key]
+        return {"key": key, "code": code, "windowsVirtualKeyCode": vk, "text": key}
     if len(key) == 1:
         upper = key.upper()
         code = f"Key{upper}" if upper.isalpha() else f"Digit{key}" if key.isdigit() else ""

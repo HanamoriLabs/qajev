@@ -22,6 +22,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - I'M HIM! adapter: accessibility state for SETTINGS › ACCESSIBILITY (captions, edge markers and spoken menus
   counted across a session, with the last texts; the page's accessibility classes; saved settings as
   `setting_*`; contrast and game speed in a dev build).
+- I'M HIM! adapter, dev builds: "Open the dev menu (`)" during a run, and the menu's dropdown options and buttons
+  as actions ("Enemies: Kunai thrower", "Boss: Fight"); its progress wipe stays hidden.
+- Electron: punctuation keys carry their DOM code ("`" is Backquote, "[" BracketLeft...); they went out with an
+  empty code, so a game that reads `e.code` ignored them.
 - I'M HIM! adapter: settings rows below the fold of a scrolling tab are offered too; picking one scrolls it into
   view and clicks it (they were never offered, so Jev answered BLOCKED).
 - I'M HIM! adapter: settings options are offered by row ("Vibration: OFF", "(current)" on the selected one; only
