@@ -12,6 +12,7 @@
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#2430c9">
 <link rel="canonical" href="https://qajev.com/">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="QAJev setup and usage for AI agents">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -111,6 +112,8 @@ section[id] { scroll-margin-top: 76px; }
 .install code::-webkit-scrollbar { display: none; }
 .install .dollar { color: var(--muted-dark); user-select: none; }
 .cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.agent-note { margin: 2px 0 0; font: 400 14px/1.45 var(--mono); color: var(--pale); }
+.agent-note a { color: #fff; }
 
 /* the route map */
 .route { margin: 56px 0 0; padding: clamp(16px, 3vw, 36px); border-radius: clamp(22px, 3vw, 32px); background: var(--blue-2); }
@@ -378,6 +381,7 @@ h2 { margin-top: 14px; font-weight: 800; font-size: clamp(36px, 4.6vw, 64px); li
           <a class="btn btn-ghost" href="https://github.com/hanamorilabs/qajev/tree/HEAD/docs">Read the docs</a>
           <a class="btn btn-ghost" href="https://github.com/hanamorilabs/qajev"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg> View on GitHub</a>
         </div>
+        <p class="agent-note">AI agent? Setup and usage in plain text: <a href="/llms.txt">qajev.com/llms.txt</a></p>
       </div>
     </div>
 
@@ -593,7 +597,7 @@ args = [<span class="s">"mcp"</span>]</pre></div>
           </ul>
         </div>
         <ul class="points">
-          <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12H5.2L4 17.5z"/><path d="M8 8h8M8 12h5"/></svg></span><div><h3>A ready-made agent prompt</h3><p>Paste <a href="https://github.com/hanamorilabs/qajev/blob/HEAD/AGENT_PROMPT.md">AGENT_PROMPT.md</a> into your agent's instructions. It tells the agent which tool to use, how to write a good check and how to report the result.</p></div></li>
+          <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12H5.2L4 17.5z"/><path d="M8 8h8M8 12h5"/></svg></span><div><h3>A ready-made agent prompt</h3><p>Paste <a href="https://github.com/hanamorilabs/qajev/blob/HEAD/AGENT_PROMPT.md">AGENT_PROMPT.md</a> into your agent's instructions. It tells the agent which tool to use, how to write a good check and how to report the result. Or just tell your agent to read <a href="/llms.txt">qajev.com/llms.txt</a>: it covers installing, connecting and using QAJev.</p></div></li>
           <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><h3>Follow or stop long runs</h3><p>Long runs return a job id at once. Any agent, or you, can see progress, what Jev is doing right now and the money spent, and stop it cleanly.</p></div></li>
           <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h12"/></svg></span><div><h3>One queue per machine</h3><p>Many agents can share a laptop. Browser runs take turns and say what they're waiting for, so nobody starts a second copy by accident.</p></div></li>
           <li class="reveal"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/></svg></span><div><h3>Runs in the background</h3><p>Agent runs use QAJev's own invisible Chrome with a fresh profile. Nothing pops up on your screen and nothing is left behind.</p></div></li>
@@ -740,6 +744,7 @@ qajev play android:com.example.app</div>
         <ul>
           <li><a href="https://github.com/hanamorilabs/qajev/blob/HEAD/docs/cli.md">CLI reference</a></li>
           <li><a href="https://github.com/hanamorilabs/qajev/blob/HEAD/docs/mcp.md">MCP server</a></li>
+          <li><a href="/llms.txt">For AI agents (llms.txt)</a></li>
           <li><a href="https://github.com/hanamorilabs/qajev/blob/HEAD/docs/mobile.md">Mobile</a></li>
           <li><a href="https://github.com/hanamorilabs/qajev/blob/HEAD/docs/games.md">Games</a></li>
         </ul>

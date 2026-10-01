@@ -80,6 +80,9 @@ Every run writes `report.html` (open it in a browser), `report.md` and `report.j
 claude mcp add -s user qajev -- qajev mcp       # Claude Code; see docs/mcp.md for Codex, Cursor and others
 ```
 
+Or just tell your agent to read **[qajev.com/llms.txt](https://qajev.com/llms.txt)**: plain-text steps to check
+whether QAJev is installed, install it, connect the MCP server and use it.
+
 Then paste [AGENT_PROMPT.md](AGENT_PROMPT.md) into your agent's instructions. The agent can now crawl, check,
 run your project's objectives, read reports and screenshots, and follow or stop runs:
 

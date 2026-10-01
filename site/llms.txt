@@ -1,0 +1,103 @@
+# QAJev
+
+> QAJev tests websites, mobile apps and games the way a person uses them. You describe what a visitor should be
+> able to do in plain English; Jev, a small and fast model, tries it in a real Chrome (desktop and phone);
+> QAJev then judges the result from the page itself and writes a report. It is a CLI (`qajev`) and an MCP server
+> (`qajev mcp`) for AI coding agents. Open source (MIT), macOS and Linux.
+
+This file is for AI agents. If a person told you to "use QAJev" or "check qajev.com", read on.
+
+## 1. Is it already installed?
+
+- **MCP:** look in your tool list for tools named `qa_smoke`, `qa_check`, `qa_run_suite`, `qa_play`, `qa_doctor`
+  (server name `qajev`; some clients show them as `mcp__qajev__qa_check`). If you have them, skip to step 4.
+- **CLI:** run `qajev doctor`. If it prints a setup report, QAJev is installed; it also says what is missing
+  (a key, Chrome). In Claude Code, `claude mcp list` shows whether the `qajev` server is connected.
+
+## 2. Install (once per machine)
+
+Needs macOS or Linux, Google Chrome or Chromium, and uv (it brings its own Python) or pipx with Python 3.12+.
+
+```bash
+uv tool install git+https://github.com/hanamorilabs/qajev
+# or: pipx install git+https://github.com/hanamorilabs/qajev
+```
+
+Jev needs one API key, kept in `~/.qajev/.env` (ask the person for it; never invent or print keys):
+
+```bash
+mkdir -p ~/.qajev && echo 'OPENROUTER_API_KEY=sk-or-...' >> ~/.qajev/.env
+# or TYPESAFE_API_KEY=... (TypeSafe, Jev's home: https://docs.typesafe.ai)
+```
+
+Then `qajev doctor` checks keys (without showing them), Chrome, a free port and the machine's load.
+
+## 3. Connect the MCP server
+
+Claude Code:
+
+```bash
+claude mcp add -s user qajev -- qajev mcp
+```
+
+Codex (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.qajev]
+command = "qajev"
+args = ["mcp"]
+```
+
+Cursor, Claude Desktop and other clients (their MCP JSON settings):
+
+```json
+{ "mcpServers": { "qajev": { "command": "qajev", "args": ["mcp"] } } }
+```
+
+If the client cannot find `qajev`, use the full path from `which qajev`. New tools appear after the session
+restarts or the server reconnects (`/mcp` in Claude Code). Without MCP, run the same things with the `qajev` CLI
+and `--json`.
+
+## 4. Use it
+
+| You want to know | MCP tool | CLI | Cost |
+|---|---|---|---|
+| Is anything obviously broken? (errors, broken links, missing titles) | `qa_smoke` | `qajev smoke URL` | free |
+| Can a visitor do one thing? | `qa_check` | `qajev check URL --goal "..." --expect-text "..."` | about $0.001-0.01 |
+| Do several things work, in order? | `qa_run_suite` | `qajev run suite.yaml` | a few cents |
+| Does a project still meet its stored objectives? | `qa_project_run` | `qajev run --project NAME` | a few cents |
+| Does a mobile app or a game work? | `qa_play` | `qajev play ios:BUNDLE_ID` / `android:PACKAGE` / `path/to/game` | a few cents |
+| What did a run find? | `qa_report`, `qa_screenshot` | `qajev report RUN_DIR` | free |
+| What is running, and can I stop it? | `qa_jobs`, `qa_job`, `qa_stop` | `qajev jobs`, `qajev stop ID` | free |
+| Is the setup right? | `qa_doctor` | `qajev doctor` | free |
+
+How to write a check:
+
+1. Start with a free smoke crawl; fix what it finds first.
+2. One intention per check, ending with "Stop when ...". Good: "Find what the Pro plan costs per month. Stop when
+   that price is visible." Bad: "Test the pricing page."
+3. Always give expectations (`expect_text`, `absent_text`, `expect_url`, `expect_js`). Jev saying "done" is only
+   a hint; the verdict comes from the checks.
+4. Give every value Jev must type, and start from a URL close to the target.
+
+Outcomes: `pass`; `fail` (the product is wrong); `stuck` (Jev found no way forward, often a usability problem:
+look at the screenshot); `harness` (QAJev's own problem: says nothing about the product, never report it as a
+bug); `unverified` (no expectations given); `skipped`. The run's gate is PASS, FAIL or INCOMPLETE. Tell the person
+the gate, each non-pass outcome with its reason, the findings, the cost and the `report_html` path.
+
+Long runs: pass `background: true` (CLI `--background`), then follow with `qa_job` and stop with `qa_stop`. Runs
+take turns, one at a time per machine; never start a second copy of a queued run.
+
+Rules: never type passwords, one-time codes or payment details (for a signed-in test, the person signs in once
+with `qa_browser(action="login", profile=NAME, url=LOGIN_URL)`). Production is read-only; tests that change data
+run only against localhost. Dangerous buttons are hidden from Jev on purpose; do not work around that. Keep the
+cost cap low for exploratory runs (`cost_cap: 0.10`).
+
+## More
+
+- [Full agent prompt, to paste into CLAUDE.md or AGENTS.md](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/AGENT_PROMPT.md)
+- [MCP server: every tool and parameter](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/mcp.md)
+- [Getting started](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/getting-started.md)
+- [Writing tests](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/writing-tests.md)
+- [Mobile apps](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/mobile.md) and [games](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/games.md)
+- [Source code](https://github.com/hanamorilabs/qajev)
