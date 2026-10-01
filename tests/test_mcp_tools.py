@@ -45,7 +45,9 @@ def test_qa_play_passes_a_suite_and_the_games_settings_to_the_cli(monkeypatch):
     assert args[:2] == ["play", "/games/ImHim.app"]
     assert args[args.index("--suite") + 1] == "/q/menus.yaml"
     assert args[args.index("--game-env") + 1] == "MODE=demo"
-    assert "--game-arg=--query=autoplay=1" in args and "--headless" not in args
+    assert "--game-arg=--query=autoplay=1" in args and "--headless" not in args and "--no-shots" not in args
+    asyncio.run(mcp_server.qa_play("/games/ImHim.app", None, shots=False))
+    assert "--no-shots" in seen["args"]  # shots are on unless asked off (Electron takes them even headless)
 
 
 def test_qa_play_can_allow_quit_and_expect_the_game_to_close(monkeypatch):

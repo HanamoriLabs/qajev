@@ -1,7 +1,63 @@
 // QAJev adapter for I'M HIM! (its Electron desktop build). Which screen is up
 // (from the game's own DOM overlays), the keys a player uses there, and the run's state: from the HUD in any
-// build, and from window.__game plus the dev watchdog (window.__watch) in a dev-mode build. Read-only.
+// build, and from window.__game plus the dev watchdog (window.__watch) in a dev-mode build. Read-only, except that
+// speechSynthesis.speak is wrapped to count what the game reads aloud (it still speaks).
 // Selectors and state paths: the game's src/ui/*.ts and src/game/Game.ts (surveyed 2026-09-30, main ec1d349+).
+// SETTINGS › ACCESSIBILITY (a11y-plus, 42e6697): what is switched on, and what the transient aids showed since the
+// session started. Captions (src/ui/captions.ts) and edge markers last a few seconds, so they are counted across
+// looks; spoken menus (src/ui/narration.ts) are counted by wrapping speechSynthesis.speak, which still speaks.
+const A11Y_CLASSES = ['high-contrast', 'font-readable', 'font-dyslexic', 'cue-shapes', 'reduce-motion', 'text-large',
+  'text-xl'];
+const A11Y_SETTINGS = ['assist', 'gameSpeed', 'qteTime', 'highContrast', 'captions', 'font', 'narration', 'textSize',
+  'colourVision', 'reducedMotion'];
+function a11y(g) {
+  const acc = window.__qajevA11y || (window.__qajevA11y = {
+    captionsSeen: 0, captionsLast: [], shown: new Set(), edgesSeen: 0, edgeLast: '', edgeText: ['', ''],
+    spoken: 0, spokenLast: [], wrapped: false,
+  });
+  const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  // a caption line counts once when it appears (the stack is redrawn as lines fade, so not by element)
+  const now = new Set([...document.querySelectorAll('.captions .cap-line')].map((e) => clean(e.innerText)).filter(Boolean));
+  for (const t of now) {
+    if (acc.shown.has(t)) continue;
+    acc.captionsSeen += 1;
+    acc.captionsLast = [...acc.captionsLast, t].slice(-3);
+  }
+  acc.shown = now;
+  ['left', 'right'].forEach((side, i) => {
+    const e = document.querySelector('.cap-edge.' + side);
+    const t = e && e.classList.contains('on') ? clean(e.textContent) : '';
+    if (t && t !== acc.edgeText[i]) { acc.edgesSeen += 1; acc.edgeLast = t; }
+    acc.edgeText[i] = t;
+  });
+  const synth = window.speechSynthesis;
+  if (synth && !acc.wrapped) {
+    const speak = synth.speak.bind(synth);
+    synth.speak = (u) => {
+      acc.spoken += 1;
+      acc.spokenLast = [...acc.spokenLast, clean(u && u.text)].slice(-3);
+      return speak(u);
+    };
+    acc.wrapped = true;
+  }
+  // Only what happened: every state line is also text Jev reads, and a long screen tipped it into DONE before.
+  const out = {};
+  if (acc.captionsSeen) Object.assign(out, { captions_seen: acc.captionsSeen, captions_last: acc.captionsLast });
+  if (acc.edgesSeen) Object.assign(out, { edges_seen: acc.edgesSeen, edge_last: acc.edgeLast });
+  if (acc.spoken) Object.assign(out, { spoken_count: acc.spoken, spoken_last: acc.spokenLast });
+  const classes = A11Y_CLASSES.filter((c) => document.documentElement.classList.contains(c));
+  if (classes.length) out.a11y_classes = classes;
+  try { // the game's saved settings (src/core/Settings.ts SETTINGS_KEY), any build
+    const s = JSON.parse(localStorage.getItem('shinobi.settings.v1') || '{}');
+    for (const k of A11Y_SETTINGS) if (k in s) out['setting_' + k] = s[k];
+  } catch (err) { out.settings_error = String(err); }
+  if (g && g.engine) { // dev build: what the engine applies
+    if (g.engine.post && typeof g.engine.post.contrast === 'number') out.contrast = g.engine.post.contrast;
+    if (typeof g.engine.speedScale === 'number') out.speed = g.engine.speedScale;
+  }
+  return out;
+}
+
 window.__qajevAdapter = {
   observe(base) {
     const $ = (sel) => document.querySelector(sel);
@@ -136,6 +192,7 @@ window.__qajevAdapter = {
         });
       } catch (err) { state.state_error = String(err); }
     }
+    Object.assign(state, a11y(g));
     if (ap) state.autoplay = ap.state;
     if (ap && ap.waitingFor) state.waiting_for = ap.waitingFor;
     // The game's clock is its tick: a soft-lock is a clock that stops while nothing waits for the player.

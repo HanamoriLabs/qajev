@@ -110,7 +110,7 @@ optionally pilots it. Three real ones ship with QAJev as examples:
 |---|---|---|
 | `qajev/bridges/godot/adapters/suho.gd` | a Godot horde-survival game | describe a menu the game draws itself; level-up decisions; pilot with touch input |
 | `qajev/bridges/godot/adapters/hypervolley.gd` | a Godot racket game | read match state; pilot with the game's own autopilot; hide online screens |
-| `qajev/bridges/web/adapters/imhim.js` | an Electron brawler | screens from DOM overlays; keys; label settings options by their row; hand every decision the game's bot waits on to Jev |
+| `qajev/bridges/web/adapters/imhim.js` | an Electron brawler | screens from DOM overlays; keys; label settings options by their row; count short-lived aids across looks (captions, edge markers, menus read aloud) and report saved settings; hand every decision the game's bot waits on to Jev |
 
 Two lessons from these adapters:
 

@@ -187,7 +187,8 @@ def build_parser():
     play.add_argument("--name", help="the scenario's name (default: the project folder's)")
     play.add_argument("--max-actions", type=int, default=20)
     play.add_argument("--max-seconds", type=float, default=90)
-    play.add_argument("--headless", action="store_true", help="no window, no rendering: fastest, no screenshots")
+    play.add_argument("--headless", action="store_true",
+                      help="Godot: no window, fastest, no screenshots (Electron apps always open a window)")
     play.add_argument("--no-shots", action="store_true", help="skip the end screenshot")
     play.add_argument("--out", type=Path, default=Path(os.environ.get("QAJEV_OUT", "qajev-runs")))
     play.add_argument("--env-file")
@@ -698,7 +699,9 @@ def cmd_play(args):
                            "managed": True, "pid": game.proc.pid if game.proc else None}
                 emit({"event": "run", "suite": f"play {name}", "run_dir": str(run_dir), "browser": browser,
                       "scenarios": len(session_steps) if session_steps else 1})
-                shots = not (args.no_shots or headless)
+                # Only a headless Godot game renders nothing to capture; Electron always has a real window
+                # (its --headless only meant "no shots", so MCP's default headless runs had none).
+                shots = not args.no_shots and not (headless and browser["engine"] == "godot")
                 if session_steps:
                     results = native.run_session(game, session_steps, ledger=ledger, run_dir=run_dir, shots=shots,
                                                  emit=emit)

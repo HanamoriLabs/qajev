@@ -17,6 +17,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - Game suites (Godot and Electron) take `hide` and `allow` labels, as mobile suites do, and `expect: {closed:
   true}` passes when the game quits by itself with exit code 0: a test can press QUIT on purpose
   (`allow: [QUIT]`). Fixed: an Electron app that closed mid-step ended the whole run with a traceback.
+- Electron games take their end-of-step screenshots also when run `--headless` (the MCP default); `--headless`
+  only changes Godot. `qa_play` gains `shots`.
+- I'M HIM! adapter: accessibility state for SETTINGS › ACCESSIBILITY (captions, edge markers and spoken menus
+  counted across a session, with the last texts; the page's accessibility classes; saved settings as
+  `setting_*`; contrast and game speed in a dev build).
 - I'M HIM! adapter: settings options are offered by row ("Vibration: OFF", "(current)" on the selected one; only
   the first "ON"/"OFF" was offered before), the open settings tab is in the state, and the title and first-launch
   offer actions say they lead to the main menu (Jev answered BLOCKED on them before).

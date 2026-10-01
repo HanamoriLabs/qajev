@@ -165,7 +165,7 @@ qajev play path/to/game --suite session.yaml
 | `--game-arg ARG` | a switch for an Electron app, e.g. `--game-arg=--fullscreen` (repeatable) |
 | `--device NAME` | mobile: the iOS simulator to clone, or the Android virtual device to boot |
 | `--install FILE` | mobile: an `.apk` or simulator `.app` to install on the throwaway device first |
-| `--headless` | no window: fastest, no screenshots (Godot) |
+| `--headless` | Godot: no window, fastest, no screenshots. Electron apps always open a window and keep their screenshots |
 | `--name` | the test's name, shown with the game's in `qajev jobs` and `qajev top` |
 | `--max-actions`, `--max-seconds`, `--no-shots`, `--out`, `--cost-cap`, `--load-high`, `--load-ok`, `--load-wait`, `--json`, `--events`, `--quiet`, `--background` | as above |
 

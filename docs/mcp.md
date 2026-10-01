@@ -73,7 +73,8 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 - `qa_project_run`: `project` (required), `suite` (a tag), `names`, `env`, or an ad-hoc `objective` with `url`,
   `expect_text`, `expect_url`.
 - `qa_play`: `project` (the game, or `ios:...` / `android:...`), `goal`, `adapter`, `suite`, `game_env`,
-  `game_args`, `expect_screen`, `expect_text`, `expect_state`, `min_fps`, `name`, `headless`. Quit and
+  `game_args`, `expect_screen`, `expect_text`, `expect_state`, `min_fps`, `name`, `headless` (Godot only), `shots`
+  (a screenshot at the end of each step, on by default). Quit and
   delete-save buttons are hidden from Jev; to test a normal quit pass `allow: ["QUIT"]` and `expect_closed: true`
   (passes only when the game exits by itself with code 0). `hide` hides more labels.
 - Website tools also take `devices` (default desktop and phone: every website test also runs in a phone view).

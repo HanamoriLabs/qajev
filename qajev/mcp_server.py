@@ -432,6 +432,7 @@ async def qa_play(
     max_actions: int = 20,
     max_seconds: float = 90,
     headless: bool = True,
+    shots: bool = True,
     cost_cap: float | None = None,
     out_dir: str | None = None,
     verbose: bool = False,
@@ -446,7 +447,8 @@ async def qa_play(
     `game_env`: environment settings for the game; `game_args`: switches for an Electron app. expect_state: game
     state values, e.g. {"game_over": false, "kills": ">= 1"}. Quit, exit and delete-save buttons are hidden from Jev;
     to test a normal quit pass allow=["QUIT"] and expect_closed=true (passes only on exit code 0). `name` titles the
-    run in qa_jobs. headless (default, Godot only) is invisible and fastest but has no screenshots."""
+    run in qa_jobs. Each step ends with a screenshot (shots=false skips them); headless (default) only applies to
+    Godot, where it is invisible and fastest but takes no screenshots. Electron apps always open a window."""
     args = ["play", project, "--max-actions", str(max_actions), "--max-seconds", str(max_seconds),
             "--out", out_dir or str(DEFAULT_OUT)]
     for flag, value in (("--goal", goal), ("--adapter", adapter), ("--suite", suite),
@@ -471,6 +473,8 @@ async def qa_play(
             args += [flag, label]
     if headless:
         args.append("--headless")
+    if not shots:
+        args.append("--no-shots")
     if cost_cap is not None:
         args += ["--cost-cap", str(cost_cap)]
     return _trim(await _run_report(args, ctx, background), verbose)  # titled like the CLI: game and test name
