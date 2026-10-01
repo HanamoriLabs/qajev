@@ -22,6 +22,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - I'M HIM! adapter: accessibility state for SETTINGS › ACCESSIBILITY (captions, edge markers and spoken menus
   counted across a session, with the last texts; the page's accessibility classes; saved settings as
   `setting_*`; contrast and game speed in a dev build).
+- I'M HIM! adapter: settings rows below the fold of a scrolling tab are offered too; picking one scrolls it into
+  view and clicks it (they were never offered, so Jev answered BLOCKED).
 - I'M HIM! adapter: settings options are offered by row ("Vibration: OFF", "(current)" on the selected one; only
   the first "ON"/"OFF" was offered before), the open settings tab is in the state, and the title and first-launch
   offer actions say they lead to the main menu (Jev answered BLOCKED on them before).

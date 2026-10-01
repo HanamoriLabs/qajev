@@ -58,6 +58,23 @@ function a11y(g) {
   return out;
 }
 
+// Every option of every radio row in the open settings tab, scrolled into view or not (a hidden tab's rows are not
+// visible at all): its row name, its own text, and the label Jev reads ("Vibration: OFF (current)").
+function settingsOptions() {
+  const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  const out = [];
+  for (const b of document.querySelectorAll('.settings-screen.on [role="radio"]')) {
+    if (!(b.checkVisibility && b.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))) continue;
+    const group = b.closest('[role="radiogroup"]');
+    const name = group && document.getElementById(group.getAttribute('aria-labelledby') || '');
+    const row = name ? clean(name.innerText || name.textContent) : '';
+    const opt = clean(b.innerText || b.textContent);
+    const key = (row ? row + ': ' : '') + opt;
+    out.push({ el: b, row, opt, key, label: key + (b.getAttribute('aria-checked') === 'true' ? ' (current)' : '') });
+  }
+  return out;
+}
+
 window.__qajevAdapter = {
   observe(base) {
     const $ = (sel) => document.querySelector(sel);
@@ -136,19 +153,17 @@ window.__qajevAdapter = {
     const options = [];
     const optionTexts = new Set();
     if (screen === 'SETTINGS') {
-      for (const b of document.querySelectorAll('.settings-screen.on [role="radio"]')) {
-        if (!(b.checkVisibility && b.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))) continue;
-        const r = b.getBoundingClientRect();
+      // Rows below the fold of the tab's scrolling list are offered too (Assist mode, Game speed... on
+      // ACCESSIBILITY): Jev picks them like any option, and act() scrolls one into view and clicks it in the page.
+      for (const o of settingsOptions()) {
+        optionTexts.add(o.opt);
+        const r = o.el.getBoundingClientRect();
         const x = r.x + r.width / 2, y = r.y + r.height / 2;
-        if (r.width <= 2 || r.height <= 2 || r.top >= innerHeight || r.bottom <= 0) continue;
-        if (!b.contains(document.elementFromPoint(x, y))) continue; // covered
-        const group = b.closest('[role="radiogroup"]');
-        const name = group && document.getElementById(group.getAttribute('aria-labelledby') || '');
-        const row = name ? String(name.innerText || '').replace(/\s+/g, ' ').trim() : '';
-        const opt = String(b.innerText || '').replace(/\s+/g, ' ').trim();
-        optionTexts.add(opt);
-        const label = (row ? row + ': ' : '') + opt + (b.getAttribute('aria-checked') === 'true' ? ' (current)' : '');
-        options.push({ id: 'set:' + options.length + ':' + label.slice(0, 40), label: label.slice(0, 120), kind: 'click', x, y });
+        const onScreen = r.width > 2 && r.height > 2 && r.top >= 0 && r.bottom <= innerHeight
+          && o.el.contains(document.elementFromPoint(x, y));
+        const id = 'set:' + options.length + ':' + o.label.slice(0, 40);
+        options.push(onScreen ? { id, label: o.label.slice(0, 120), kind: 'click', x, y }
+          : { id, label: o.label.slice(0, 120), kind: 'adapter', op: 'set_option', match: o.key });
       }
     }
     let actions = [...keys, ...options, ...base.actions.filter((a) => !deny.test(a.label) && !(dup && dup.test(a.label))
@@ -226,6 +241,13 @@ window.__qajevAdapter = {
   act(action) {
     const ap = window.__autoplay;
     if (action.op === 'decide' && ap) return ap.decide(action.index);
+    if (action.op === 'set_option') { // a settings row scrolled out of the list: bring it in, then click it
+      const o = settingsOptions().find((x) => x.key === action.match);
+      if (!o) return { ok: false, error: 'that setting is no longer on the screen' };
+      o.el.scrollIntoView({ block: 'center' });
+      o.el.click();
+      return { ok: true };
+    }
     return { ok: false, error: 'unknown adapter action' };
   },
 
