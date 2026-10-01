@@ -45,7 +45,16 @@ A **suite** plays one game session in steps, in order. Each step is either:
 - an **idle** step (`idle: 90`): nobody touches the game for that many seconds, then the step's checks run. It
   needs no pilot, so it works on a release build, for example to leave the game running while something outside
   watches it (a `--game-arg=--log-net-log=...` network log). If the game crashes or closes meanwhile, the step
-  stops with an S1 finding and the rest of the session is skipped.
+  stops with an S1 finding and the rest of the session is skipped;
+- a **js** step (`js: "<expression>"`, Electron only): runs the expression in the game's page (a promise is
+  awaited) and records its value as `js_result`, plus any page error in the next half second as `page_errors`. An
+  error the script schedules (`setTimeout(() => { throw new Error('probe') }, 0)`) reaches the page uncaught, as a
+  real one would, for proving an error reporter. Later steps then see that error: give them
+  `expect: {no_errors: false}`; or
+- a **crash_renderer** step (`crash_renderer: true`, Electron only): crashes the game's page renderer on purpose
+  (CDP `Page.crash`) so the app's crash reporter writes and sends its report. It passes when the renderer is gone
+  and the app runs on. After it, `idle` steps watch the app's process (there is no page left to read) and other
+  steps are skipped.
 
 ```yaml
 # my-game.yaml;  run: qajev play path/to/my-game --suite my-game.yaml

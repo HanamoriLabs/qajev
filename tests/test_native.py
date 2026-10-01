@@ -450,3 +450,59 @@ def test_a_suite_can_allow_quit_in_a_game_and_expect_it_to_close(monkeypatch):
     [crash] = native.run_session(Game(139, allow=["QUIT"]), steps[:1], ledger=_NoLedger(), run_dir=None,
                                  shots=False)
     assert crash["outcome"] != "pass"
+
+
+def test_js_and_crash_renderer_steps_for_a_crash_report_proof(monkeypatch):
+    # I'M HIM! Sentry proof: a js step throws an uncaught error in the page; crash_renderer kills the page's renderer
+    # (Page.crash) while the app runs on, so an idle step after it watches the process, not the dead page.
+    from types import SimpleNamespace
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr(native.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(native.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s))
+
+    class App:
+        def __init__(self):
+            self.errors, self.ran, self.renderer_gone = [], [], False
+            self.proc = SimpleNamespace(poll=lambda: None)
+
+        def observe(self):
+            if self.renderer_gone:
+                raise native.NativeError("no answer to Runtime.evaluate within 20 s")
+            return {"screen": "TITLE", "texts": ["I'M HIM!"], "actions": [], "state": {}}
+
+        def call(self, **_):
+            return {"ok": True}
+
+        def run_js(self, expression):
+            self.ran.append(expression)
+            if "bad(" in expression:
+                raise native.NativeError("page script failed: ReferenceError: bad is not defined")
+            return 42
+
+        def crash_renderer(self):
+            self.renderer_gone = True
+            return True
+
+        def shot(self, _path):
+            return None
+
+    app = App()
+    steps = [{"name": "probe", "js": "setTimeout(() => { throw new Error('probe') }, 0); 42"},
+             {"name": "broken script", "js": "bad()"},
+             {"name": "crash", "crash_renderer": True},
+             {"name": "let it upload", "idle": 10},
+             {"name": "look again", "expect": {}}]
+    probe, broken, crash, idle, after = native.run_session(app, steps, ledger=_NoLedger(), run_dir=None, shots=False)
+    assert probe["outcome"] == "pass" and probe["js_result"] == 42 and app.ran[0].startswith("setTimeout")
+    assert broken["outcome"] == "fail" and "bad is not defined" in broken["checks"][0]["detail"]
+    assert crash["outcome"] == "pass" and {c["check"] for c in crash["checks"]} == {
+        "the renderer crashed", "the app is still running"}
+    assert idle["outcome"] == "pass" and clock["t"] >= 10  # watched the process, not the dead page
+    assert after["outcome"] == "skipped" and "renderer" in after["reason"]
+
+    class Godot(App):
+        run_js = crash_renderer = None  # a Godot game has no page
+
+    [r] = native.run_session(Godot(), steps[:1], ledger=_NoLedger(), run_dir=None, shots=False)
+    assert r["outcome"] == "harness" and "Electron" in r["reason"]

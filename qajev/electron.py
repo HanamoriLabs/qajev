@@ -119,6 +119,7 @@ class ElectronGame:
         self.proc = self.ws = None
         self.errors, self.log = [], []
         self.user_dir = None
+        self.renderer_gone = False  # set by crash_renderer: the page is dead, the app runs on
         self._pending, self._next, self._lock = {}, 0, threading.Lock()
 
     def __enter__(self):
@@ -286,6 +287,24 @@ class ElectronGame:
             return None
         path.write_bytes(base64.b64decode(data))
         return path
+
+    def run_js(self, expression):
+        """A suite's `js:` step: the expression's value (a promise is awaited). A script error is a NativeError
+        "page script failed: ..."; an error it schedules for later reaches the page as uncaught."""
+        return self.evaluate(expression)
+
+    def crash_renderer(self, wait=10.0):
+        """A suite's `crash_renderer:` step: crash the page's renderer (Page.crash), as a renderer crash would, so the
+        app's crash reporter can write and send its report. -> True when the app's main process is still running."""
+        with contextlib.suppress(NativeError):  # the page dies before it answers
+            self.send("Page.crash", timeout=3.0)
+        until = time.monotonic() + wait
+        while time.monotonic() < until and "the page crashed" not in self.errors and self.ws is not None:
+            time.sleep(0.2)
+        self.renderer_gone = True
+        self.errors = [e for e in self.errors if e != "the page crashed"]  # asked for: not a finding
+        time.sleep(1.0)
+        return self.proc is not None and self.proc.poll() is None
 
     def close(self):
         ws, self.ws = self.ws, None

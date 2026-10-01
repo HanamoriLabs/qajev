@@ -685,14 +685,61 @@ def _stats(timeline):
             **{f"end_{k}": last.get(k) for k in TIMELINE_KEYS if k in last}}
 
 
+def _step_result(name, stop, checks, reason=None, **extra):
+    outcome, why = verdict.classify(stop, checks, has_checks=bool(checks), stop_detail=reason)
+    return {"name": name, "outcome": outcome, "reason": why, "stop": stop, "checks": checks, "findings": [],
+            "screens": [], **extra}
+
+
+def js_step(game, *, name, expression, emit=None):
+    """A suite's `js:` step: run an expression in the game's page (a promise is awaited) and record its value. An
+    error the script schedules (setTimeout(() => { throw ... })) reaches the page as uncaught, like a real one."""
+    run = getattr(game, "run_js", None)
+    if run is None:
+        return _step_result(name, "browser_error", [], "js steps need an Electron app (a page to run the script in)")
+    _step(emit, name, None, f"js {expression[:80]}")
+    errors = getattr(game, "errors", [])
+    before = len(errors)
+    try:
+        value = run(expression)
+    except NativeError as e:
+        if not str(e).startswith("page script failed"):
+            return _step_result(name, "browser_error", [], str(e))
+        return _step_result(name, "reached", [{"check": "the script ran", "ok": False, "detail": str(e)[:300]}])
+    shown = value if isinstance(value, (int, float, bool, type(None))) else str(value)[:500]
+    time.sleep(0.5)  # an error the script scheduled lands now: recorded, so a probe can be seen to have fired
+    return _step_result(name, "reached", [{"check": "the script ran", "ok": True, "detail": None}], js_result=shown,
+                        page_errors=list(getattr(game, "errors", errors)[before:])[:10])
+
+
+def crash_step(game, *, name, emit=None):
+    """A suite's `crash_renderer:` step: crash the game's page renderer on purpose (a crash-report proof). It passes
+    when the renderer is gone and the app's main process runs on."""
+    crash = getattr(game, "crash_renderer", None)
+    if crash is None:
+        return _step_result(name, "browser_error", [], "crash_renderer needs an Electron app (a renderer to crash)")
+    _step(emit, name, None, "crashing the renderer (Page.crash)")
+    alive = crash()
+    gone = bool(getattr(game, "renderer_gone", False))
+    return _step_result(name, "reached", [
+        {"check": "the renderer crashed", "ok": gone, "detail": None if gone else "the page still answers"},
+        {"check": "the app is still running", "ok": alive, "detail": None if alive else "the app exited"}])
+
+
 def idle_for(game, *, name, seconds, emit=None, every=10.0):
     """No input for `seconds` while the game runs on its own (a release build has no bot for a `play` step); it must
-    keep answering. -> None, or the step's harness result when it stopped (crashed or closed)."""
+    keep answering. -> None, or the step's harness result when it stopped (crashed or closed). After a
+    crash_renderer step there is no page to ask: the app's process must stay up instead."""
     started = told = time.monotonic()
+    gone = getattr(game, "renderer_gone", False)
     while (left := seconds - (time.monotonic() - started)) > 0:
         time.sleep(min(1.0, left))
         try:
-            game.observe()
+            if gone:
+                if game.proc.poll() is not None:
+                    raise NativeError(f"the app exited (code {game.proc.poll()})")
+            else:
+                game.observe()
         except NativeError as e:
             waited = time.monotonic() - started
             return {"name": name, "outcome": "harness", "stop": "browser_error", "checks": [], "screens": [],
@@ -738,6 +785,10 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
             results.append({"name": name, "outcome": "skipped", "reason": "the game was closed by an earlier step",
                             "checks": [], "findings": [], "screens": []})
             continue
+        if getattr(game, "renderer_gone", False) and not step.get("idle"):  # only waiting makes sense now
+            results.append({"name": name, "outcome": "skipped", "checks": [], "findings": [], "screens": [],
+                            "reason": "the game's renderer was crashed by an earlier step"})
+            continue
         if results and results[-1].get("stop") == "browser_error" and not _answers(game):
             results.append({"name": name, "outcome": "skipped", "reason": "the game was lost in an earlier step",
                             "checks": [], "findings": [], "screens": []})
@@ -756,7 +807,14 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
                 if callable(emit):
                     emit({"event": "scenario", "result": r})
                 continue
-        if step.get("play"):
+        if step.get("js") is not None:
+            r = js_step(game, name=name, expression=str(step["js"]), emit=emit)
+        elif step.get("crash_renderer"):
+            r = crash_step(game, name=name, emit=emit)
+        elif step.get("idle") and getattr(game, "renderer_gone", False):
+            r = idle_for(game, name=name, seconds=float(step["idle"]), emit=emit) or _step_result(
+                name, "reached", [{"check": "the app kept running", "ok": True, "detail": None}])
+        elif step.get("play"):
             p = step["play"]
             r = play_for(game, name=name, seconds=float(p.get("seconds", 60)), until=p.get("until"),
                          decide=p.get("decide"), expect=step.get("expect"), ledger=ledger, run_dir=run_dir,

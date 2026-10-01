@@ -22,6 +22,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - I'M HIM! adapter: accessibility state for SETTINGS › ACCESSIBILITY (captions, edge markers and spoken menus
   counted across a session, with the last texts; the page's accessibility classes; saved settings as
   `setting_*`; contrast and game speed in a dev build).
+- `js:` and `crash_renderer:` suite steps for Electron games: run a script in the page (its value and any page
+  error it causes are recorded), or crash the renderer on purpose while the app runs on, for error- and
+  crash-reporter proofs.
 - I'M HIM! adapter, dev builds: "Open the dev menu (`)" during a run, and the menu's dropdown options and buttons
   as actions ("Enemies: Kunai thrower", "Boss: Fight"); its progress wipe stays hidden.
 - Electron: punctuation keys carry their DOM code ("`" is Backquote, "[" BracketLeft...); they went out with an
