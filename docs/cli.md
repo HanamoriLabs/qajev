@@ -67,7 +67,7 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 
 | Option | Does |
 |---|---|
-| `--load-high N` | wait before a scenario while the 1-minute load is at or above N (0 = never wait; default 150) |
+| `--load-high N` | wait before a scenario (`smoke` and `play`: before starting) while the 1-minute load is at or above N (0 = never wait; default 150) |
 | `--load-ok N` | resume once the load drops below N (default 100) |
 | `--load-wait SECONDS` | total waiting allowed per run (default 600) |
 
@@ -163,7 +163,7 @@ qajev play path/to/game --suite session.yaml
 | `--device NAME` | mobile: the iOS simulator to clone, or the Android virtual device to boot |
 | `--install FILE` | mobile: an `.apk` or simulator `.app` to install on the throwaway device first |
 | `--headless` | no window: fastest, no screenshots (Godot) |
-| `--name`, `--max-actions`, `--max-seconds`, `--no-shots`, `--out`, `--cost-cap`, `--json`, `--events`, `--quiet`, `--background` | as above |
+| `--name`, `--max-actions`, `--max-seconds`, `--no-shots`, `--out`, `--cost-cap`, `--load-high`, `--load-ok`, `--load-wait`, `--json`, `--events`, `--quiet`, `--background` | as above |
 
 ## `qajev report`
 

@@ -47,6 +47,17 @@ scenarios:
 """
 
 
+def _load_flags(g):
+    env = os.environ.get
+    g.add_argument("--load-high", type=float, default=float(env("QAJEV_LOAD_HIGH", "150")),
+                   help="wait before a scenario (smoke and play: before starting) while the 1-min load average is "
+                        "at or above this (0 = never wait; default $QAJEV_LOAD_HIGH or 150)")
+    g.add_argument("--load-ok", type=float, default=float(env("QAJEV_LOAD_OK", "100")),
+                   help="resume once load falls below this (default $QAJEV_LOAD_OK or 100)")
+    g.add_argument("--load-wait", type=float, default=float(env("QAJEV_LOAD_WAIT", "600")),
+                   help="seconds of waiting allowed per run (default $QAJEV_LOAD_WAIT or 600)")
+
+
 def _common(p):
     g = p.add_argument_group("browser and run")
     g.add_argument("--cdp-url", help="attach to an existing Chrome DevTools endpoint instead of QAJev's own Chrome")
@@ -72,14 +83,7 @@ def _common(p):
     g.add_argument("--motion", choices=["reduce", "full"],
                    help="reduce (default): pages are told the visitor prefers reduced motion, so animation-heavy "
                         "sites stop changing under Jev; full: as a default browser")
-    env = os.environ.get
-    g.add_argument("--load-high", type=float, default=float(env("QAJEV_LOAD_HIGH", "150")),
-                   help="wait before a scenario while the 1-min load average is at or above this (0 = never wait; "
-                        "default $QAJEV_LOAD_HIGH or 150)")
-    g.add_argument("--load-ok", type=float, default=float(env("QAJEV_LOAD_OK", "100")),
-                   help="resume once load falls below this (default $QAJEV_LOAD_OK or 100)")
-    g.add_argument("--load-wait", type=float, default=float(env("QAJEV_LOAD_WAIT", "600")),
-                   help="seconds of waiting allowed per run (default $QAJEV_LOAD_WAIT or 600)")
+    _load_flags(g)
     g.add_argument("--json", action="store_true", help="print the report JSON on stdout")
     g.add_argument("--events", action="store_true", help="stream JSON-lines progress events on stderr")
     g.add_argument("--quiet", "-q", action="store_true", help="no progress output")
@@ -184,6 +188,7 @@ def build_parser():
     play.add_argument("--jev-provider", choices=["auto", "typesafe", "openrouter"])
     play.add_argument("--cost-cap", type=float, default=1.0)
     play.add_argument("--usd-per-call", type=float, default=0.0005)
+    _load_flags(play)
     play.add_argument("--json", action="store_true")
     play.add_argument("--events", action="store_true")
     play.add_argument("--quiet", "-q", action="store_true")
@@ -408,6 +413,19 @@ def _machine_lock(args):
                              job=_job_dir.name if _job_dir else None)
 
 
+def _wait_for_quiet(args):
+    """smoke and play open one browser, emulator or game for the whole run, so they wait for the load gate once,
+    up front (check and run wait before each scenario). Raises Busy when the load stays high for --load-wait."""
+    from .jobs import Busy
+    from .runner import Options, wait_for_quiet
+
+    ok, load = wait_for_quiet(Options(load_high=args.load_high or None, load_ok=args.load_ok,
+                                      load_wait=args.load_wait, emit=_printer(args)))
+    if not ok:
+        raise Busy(f"the machine stayed busy (load1 {load:.0f}, waiting for < {args.load_ok:.0f}) for "
+                   f"{args.load_wait:.0f}s; nothing was started")
+
+
 def cmd_run(args):
     from .chrome import ChromeError
     from .config import load_env
@@ -558,6 +576,7 @@ def cmd_smoke(args):
         if not url:
             return _fail(args, "give a URL or --project", EXIT_CONFIG)
         with _machine_lock(args):
+            _wait_for_quiet(args)
             report = smoke.run(url, opts, max_pages=args.max_pages, device=args.device, devices=args.devices,
                                check_links=args.check_links, delay=args.delay)
         if proj:
@@ -645,6 +664,7 @@ def cmd_play(args):
     run_dir = args.out / f"{time.strftime('%Y%m%d-%H%M%S')}-play-{slug(name)}"
     try:
         with _machine_lock(args):
+            _wait_for_quiet(args)
             reaped = native.reap()
             if reaped:
                 emit({"event": "reaped", "items": reaped})

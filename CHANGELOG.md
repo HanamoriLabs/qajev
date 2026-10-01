@@ -2,6 +2,12 @@
 
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+- `qajev smoke` and `qajev play` now wait for the load gate (`--load-high`, `--load-ok`, `--load-wait`, or the
+  `QAJEV_LOAD_*` variables) before they start, like `check` and `run` do before each scenario. If the machine
+  stays busy they exit with code 4 and start nothing. `play` gains the three flags.
+
 ## 0.1.0: first public release
 
 - **Test websites in plain words.** `qajev check` (one goal with expectations), `qajev run` (a suite of

@@ -240,3 +240,24 @@ def test_the_progress_printer_names_a_native_game(capsys):
     emit({"event": "run", "suite": "play imhim", "run_dir": "/r", "browser": {"surface": "native", "engine":
                                                                                 "electron", "project": "/g/ImHim.app"}})
     assert "(electron game /g/ImHim.app)" in capsys.readouterr().err
+
+
+def test_smoke_and_play_wait_for_the_load_gate_too(monkeypatch, capsys):
+    # Shared machine: smoke and play queued for the browser slot but then opened Chrome, an emulator or a game at
+    # any load; only check and run waited for the load gate.
+    from qajev import native, runner, smoke
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr(runner.os, "getloadavg", lambda: (300.0, 0, 0))
+    monkeypatch.setattr(runner.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(runner.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s))
+
+    def never(*a, **kw):
+        raise AssertionError("started while the machine was busy")
+
+    monkeypatch.setattr(smoke, "run", never)
+    monkeypatch.setattr(native, "reap", never)
+    for argv in (["smoke", "http://127.0.0.1:1/"], ["play", "android:com.example.app"]):
+        assert main([*argv, "--load-wait", "30", "--json"]) == 4
+        error = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["error"]
+        assert "load" in error and "300" in error

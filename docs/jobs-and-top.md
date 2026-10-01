@@ -10,7 +10,7 @@ number of AI agents through MCP. Everyone else waits in a queue, and a queued ru
 ```
 
 This keeps a shared machine usable and stops two tests from fighting over the same browser. Before each
-scenario QAJev also waits while the machine is very busy (see `--load-high` in the [CLI reference](cli.md)).
+scenario (for `smoke` and `play`, before starting) QAJev also waits while the machine is very busy (see `--load-high` in the [CLI reference](cli.md)).
 
 ## Jobs
 
