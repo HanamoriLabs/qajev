@@ -1,0 +1,18 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Fixture game</title></head>
+<body>
+<p id="status">Main menu</p>
+<button id="start">Start</button> <button id="quit">Quit game</button>
+<script>
+  // Start plays; Escape pauses while playing; "b" throws an uncaught error (for the error check).
+  const status = document.getElementById('status');
+  window.game = { mode: 'menu', ticks: 0 };
+  document.getElementById('start').onclick = () => { game.mode = 'playing'; status.textContent = 'Playing'; };
+  document.getElementById('quit').onclick = () => window.close();
+  addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && game.mode === 'playing') { game.mode = 'paused'; status.textContent = 'Paused'; }
+    if (e.code === 'KeyB') setTimeout(() => { throw new Error('fixture boom'); });
+  });
+  setInterval(() => { if (game.mode === 'playing') game.ticks++; }, 50);
+</script>
+</body></html>

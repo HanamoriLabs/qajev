@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 270 64" role="img" aria-label="QAJev logo">
+  <g>
+    <rect x="9" y="25" width="46" height="18" rx="9" transform="rotate(-6 32 32)" fill="#ddf75b"/>
+    <circle cx="30" cy="29" r="14.5" fill="none" stroke="#15140f" stroke-width="9"/>
+    <path d="M40 39 L51 50" fill="none" stroke="#15140f" stroke-width="9" stroke-linecap="round"/>
+  </g>
+  <rect x="150" y="21" width="76" height="24" rx="11" transform="rotate(-4 188 33)" fill="#ddf75b"/>
+  <text x="84" y="45" font-family="'Instrument Serif', Georgia, 'Times New Roman', serif" font-size="42" fill="#15140f"><tspan>QA</tspan><tspan font-style="italic">Jev</tspan></text>
+</svg>

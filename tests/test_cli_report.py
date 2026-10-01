@@ -1,0 +1,242 @@
+import json
+import subprocess
+import sys
+import time
+from types import SimpleNamespace
+
+from qajev import report
+from qajev.cli import build_parser, check_suite, main
+from qajev.config import redact_tree
+from qajev.runner import groups, select
+from qajev.suite import parse
+
+
+def test_check_flags_become_a_one_scenario_suite():
+    args = build_parser().parse_args([
+        "check", "http://localhost:3000/", "-g", "Open pricing. Stop when prices show.", "-t", "Pro", "-t", "Team",
+        "-a", "Error", "-u", "/pricing", "--fetch", "/api/health", "--fetch", "/api/me=401", "--device", "phone",
+    ])
+    s = check_suite(args)
+    (sc,) = s.scenarios
+    assert sc.goal.startswith("Open pricing") and sc.device["mobile"]
+    assert sc.expect["text"] == ["Pro", "Team"] and sc.expect["absent"] == ["Error"] and sc.expect["url"] == "/pricing"
+    assert sc.expect["fetch"] == [{"url": "/api/health", "status": 200}, {"url": "/api/me", "status": 401}]
+
+
+def test_help_is_fast_and_does_not_import_the_browser_stack():
+    code = ("import sys, time; t=time.perf_counter(); import qajev.cli as c; c.build_parser(); "
+            "print(time.perf_counter()-t, 'jev_ultrafast' in sys.modules, 'mcp' in sys.modules, 'yaml' in sys.modules)")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout.split()
+    assert out[1:] == ["False", "False", "False"]  # the contract: no browser stack, MCP or YAML at startup
+    assert float(out[0]) < 3.0  # a gross-regression guard only; measured 0.07 s idle, up to 1.7 s at load 500
+
+
+def test_init_writes_a_template_and_refuses_to_overwrite(tmp_path, capsys):
+    path = tmp_path / "suite.yaml"
+    assert main(["init", str(path)]) == 0
+    assert "base_url" in path.read_text()
+    assert main(["init", str(path)]) == 3
+
+
+def test_bad_suite_exits_3_with_a_json_error(tmp_path, capsys):
+    path = tmp_path / "bad.yaml"
+    path.write_text("scenarios: []\n")
+    assert main(["run", str(path), "--json", "--env-file", str(tmp_path / "missing.env")]) == 3
+    assert "env file not found" in capsys.readouterr().out
+    path.write_text("scenarios:\n  - url: https://example.com/\n    goal: x\n    mode: mutate\n")
+    env = tmp_path / ".env"
+    env.write_text("")
+    assert main(["run", str(path), "--json", "--env-file", str(env)]) == 3
+    assert "loopback" in json.loads(capsys.readouterr().out.strip().splitlines()[-1])["error"]
+
+
+def test_only_pulls_in_dependencies_and_groups_follow_chains():
+    s = parse({"scenarios": [
+        {"name": "a", "url": "http://h/", "goal": "x"},
+        {"name": "b", "goal": "y"},
+        {"name": "c", "url": "http://h/c", "expect": {"text": "c"}},
+        {"name": "d", "url": "http://h/d", "goal": "z", "depends_on": "c"},
+    ]})
+    assert [x.name for x in select(s, ["b"])] == ["a", "b"]
+    assert [[x.name for x in g] for g in groups(s.scenarios)] == [["a", "b"], ["c", "d"]]
+
+
+def result(name, outcome, **extra):
+    return {"name": name, "outcome": outcome, "reason": "why | pipes", "seconds": 1.5, "checks": [], "findings": [],
+            "screens": [], "end_url": "http://h/p?token=secret", **extra}
+
+
+def test_report_gate_counts_and_markdown(tmp_path):
+    results = [
+        result("home", "pass", screens=[{"step": 1, "next_step": "[1] Pricing", "p": 0.9, "runner_up": "[2] Docs",
+                                         "runner_up_p": 0.05}]),
+        result("buy", "fail", findings=[{"severity": "S2", "kind": "page error", "detail": "TypeError",
+                                         "scenario": "buy", "url": "http://h/buy?code=123"}],
+               blocked_writes=[{"method": "POST", "url": "http://h/api/order"}]),
+    ]
+    ledger = {"usd": 0.01, "usd_typesafe_estimated": 0.01, "usd_text": 0.0, "calls": {"typesafe": 20, "text": 1},
+              "tokens": {"typesafe": 0, "text": 30}, "errors": 0, "text_cost_reported": False, "cap_usd": 1.0}
+    data = report.build(SimpleNamespace(name="demo"), results, [ledger], browser={"cdp_url": "http://127.0.0.1:9350"},
+                        started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+    assert data["gate"] == "FAIL" and data["exit_code"] == 1
+    assert data["counts"]["pass"] == 1 and data["counts"]["fail"] == 1
+    assert data["obvious_next_step"] == {"screens": 1, "obvious": 1}
+    report.write(tmp_path, data)
+    md = (tmp_path / "report.md").read_text()
+    assert "**Gate: FAIL**" in md and "why \\| pipes" in md
+    assert "token=secret" not in md and "code=123" not in md  # query strings never reach the Markdown
+    assert "blocked 1 write request" in md
+    assert json.loads((tmp_path / "report.json").read_text())["suite"] == "demo"
+
+
+def test_every_report_also_writes_a_self_contained_html_page(tmp_path):
+    results = [
+        result("<img src=x onerror=alert(1)>", "fail", shot="shots/buy.jpg",
+               findings=[{"severity": "S2", "kind": "page error", "detail": "<b>TypeError</b>", "scenario": "buy",
+                          "url": "http://h/buy?code=123"}],
+               checks=[{"check": "text 'Thanks' on screen", "ok": False, "detail": "not found"}]),
+        result("home", "pass", url="javascript:alert(1)"),
+    ]
+    ledger = {"usd": 0.01, "usd_typesafe_estimated": 0.01, "usd_text": 0.0, "calls": {"typesafe": 2, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
+    data = report.build(SimpleNamespace(name="demo"), results, [ledger], browser={}, started_at=time.time(),
+                        strict=False, interrupted=False, run_dir=tmp_path)
+    report.write(tmp_path, data)
+    page = (tmp_path / "report.html").read_text()
+    assert page.startswith("<!doctype html>") and "Gate: FAIL" in page
+    assert "<script" not in page and "<img src=x" not in page and "<b>TypeError" not in page  # page text is escaped
+    assert "&lt;b&gt;TypeError&lt;/b&gt;" in page and "not found" in page
+    assert "token=secret" not in page and "code=123" not in page  # no query strings, as in the Markdown
+    assert 'href="http://h/p"' in page and 'href="javascript:' not in page  # only http(s) URLs become links
+    assert 'src="shots/buy.jpg"' in page  # screenshots stay relative to the run folder
+    assert "<link" not in page and "http://fonts" not in page  # nothing loaded from elsewhere
+
+
+def test_report_html_rebuilds_the_page_from_a_finished_run(tmp_path, capsys):
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": None}
+    data = report.build(SimpleNamespace(name="old run"), [result("home", "pass")], [ledger], browser={},
+                        started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+    (tmp_path / "report.json").write_text(json.dumps(data))
+    assert main(["report", str(tmp_path), "--html"]) == 0
+    assert capsys.readouterr().out.strip() == str(tmp_path / "report.html")
+    assert "old run" in (tmp_path / "report.html").read_text()
+    (tmp_path / "report.json").write_text(json.dumps({"partial": True, "scenarios": []}))
+    assert main(["report", str(tmp_path), "--html"]) == 3  # a run still in progress has no final report
+
+
+def test_secrets_from_the_environment_are_redacted(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "ts-super-secret-value")
+    out = redact_tree({"a": ["typed ts-super-secret-value here"], "b": 3})
+    assert out == {"a": ["typed [redacted] here"], "b": 3}
+
+
+def test_smoke_obeys_robots_txt_for_public_hosts(monkeypatch):
+    import io
+    import urllib.request
+
+    from qajev import smoke
+
+    robots_txt = b"User-agent: *\nDisallow: /private/\nCrawl-delay: 3\n"
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=10: io.BytesIO(robots_txt))
+    robots = smoke.robots_for("https://public.example/")
+    assert robots.can_fetch(smoke.USER_AGENT, "https://public.example/docs")
+    assert not robots.can_fetch(smoke.USER_AGENT, "https://public.example/private/x")
+    assert robots.crawl_delay(smoke.USER_AGENT) == 3
+    assert smoke.robots_for("http://127.0.0.1:8765/") is None  # loopback: our own fixture, no robots
+
+
+def test_a_pooled_worker_keeps_one_daemon_name(monkeypatch):
+    import pytest
+
+    from qajev import session
+
+    monkeypatch.delenv("BU_NAME", raising=False)
+    monkeypatch.setattr(session, "_jev", None)
+    first = session.configure_env("http://127.0.0.1:9350")
+    monkeypatch.setattr(session, "_jev", object())  # jev (and browser_harness) now imported with that name
+    assert session.configure_env("http://127.0.0.1:9350") == first
+    with pytest.raises(RuntimeError, match="another Chrome"):
+        session.configure_env("http://127.0.0.1:9351")
+
+
+def test_load_wait_is_one_budget_for_the_whole_run(monkeypatch):
+    from qajev import runner
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr(runner.os, "getloadavg", lambda: (300.0, 0, 0))
+    monkeypatch.setattr(runner.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(runner.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s))
+    opts = runner.Options(load_high=60, load_ok=50, load_wait=30)
+    assert runner.wait_for_quiet(opts)[0] is False and opts.load_waited >= 30
+    before = clock["t"]
+    assert runner.wait_for_quiet(opts)[0] is False
+    assert clock["t"] == before, "the second busy scenario must be skipped without waiting again"
+
+
+def test_load_gate_defaults_come_from_the_environment(monkeypatch):
+    monkeypatch.setenv("QAJEV_LOAD_HIGH", "400")
+    monkeypatch.setenv("QAJEV_LOAD_OK", "350")
+    monkeypatch.delenv("QAJEV_LOAD_WAIT", raising=False)  # the caller's value must not leak in
+    args = build_parser().parse_args(["smoke", "http://127.0.0.1:1/"])
+    assert (args.load_high, args.load_ok, args.load_wait) == (400.0, 350.0, 600.0)
+
+
+def test_blocked_after_stale_moves_is_a_harness_stop_not_stuck(monkeypatch):
+    import time as real_time
+    from types import SimpleNamespace
+
+    from qajev import runner
+
+    def run(decisions, history):
+        state = {"status": "blocked", "history": history, "decisions": decisions}
+        session = SimpleNamespace(agent=SimpleNamespace(state=state), observe=lambda: None,
+                                  scroll_further=lambda: True, tick=lambda: state.update(status="blocked"))
+        scenario = SimpleNamespace(budget={"actions": 20, "seconds": 60})
+        return runner.drive(session, scenario, read=lambda: None, page_ok=lambda: False,
+                            started=real_time.monotonic())
+
+    monkeypatch.setattr(runner.time, "sleep", lambda s: None)
+    # five moves decided, none executed: the page changed under every one of them
+    stop, detail = run([{"operation": "SCROLL_DOWN"}] * 5 + [{"operation": "BLOCKED"}] * 3, [])
+    assert stop == "stale" and "5 of Jev's moves went stale" in detail
+    # moves that ran, then a genuine dead end
+    decisions = [{"operation": "SCROLL_DOWN"}, {"operation": "CLICK"}, {"operation": "BLOCKED"}]
+    assert run(decisions, [{"step": 1}, {"step": 2}])[0] == "blocked"
+
+
+def test_each_move_jev_makes_is_told_as_it_happens():
+    import time as real_time
+    from types import SimpleNamespace
+
+    from qajev import runner
+
+    moves = iter([{"step": 1, "action": "See pricing", "kind": "click", "text": None, "probability": 0.93},
+                  {"step": 2, "action": "Email", "kind": "fill", "text": "ana@example.com", "probability": 0.8}])
+    state = {"status": "ready", "history": [], "decisions": []}
+
+    def tick():
+        move = next(moves, None)
+        if move:
+            state["decisions"].append({"operation": "CLICK"})
+            state["history"].append(move)
+        else:
+            state["status"] = "done"
+
+    session = SimpleNamespace(agent=SimpleNamespace(state=state), tick=tick)
+    told = []
+    stop, _ = runner.drive(session, SimpleNamespace(budget={"actions": 20, "seconds": 60}), read=lambda: None,
+                           page_ok=lambda: False, started=real_time.monotonic(),
+                           step=lambda doing, **extra: told.append((doing, extra.get("p"), extra.get("n"))))
+    assert stop == "done"
+    assert told == [("click 'See pricing'", 0.93, 1), ("type 'ana@example.com' into 'Email'", 0.8, 2),
+                    ("said DONE", None, 3)]
+
+
+def test_the_progress_printer_names_a_native_game(capsys):
+    from qajev.cli import _screen_printer
+
+    emit = _screen_printer(SimpleNamespace(events=False, quiet=False))
+    emit({"event": "run", "suite": "play imhim", "run_dir": "/r", "browser": {"surface": "native", "engine":
+                                                                                "electron", "project": "/g/ImHim.app"}})
+    assert "(electron game /g/ImHim.app)" in capsys.readouterr().err

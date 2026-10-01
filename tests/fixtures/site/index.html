@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="QAJev fixture">
+<title>QAJev fixture</title></head>
+<body>
+  <h1>QAJev fixture</h1>
+  <p id="lead">Say what you need.<br> We handle the rest.</p>
+  <div role="progressbar" aria-label="Demo progress" style="width:40px;height:4px;background:#ccc"></div>
+  <nav>
+    <a href="/pricing.html">Pricing</a>
+    <a href="/contact.html">Contact</a>
+    <a href="/feedback.html">Feedback</a>
+    <a href="/broken.html">Broken page</a>
+    <a href="/missing.html">Old page</a>
+    <a href="/download?platform=mac">Download for Mac</a>
+    <a href="https://example.com/elsewhere">Partner site</a>
+  </nav>
+  <section id="danger">
+    <button onclick="window.__pressed=(window.__pressed||[]).concat('signout')">Sign out</button>
+    <button onclick="window.__pressed=(window.__pressed||[]).concat('closeall')">Close all tabs</button>
+    <button aria-label="Delete account" onclick="window.__pressed=(window.__pressed||[]).concat('delete')">🗑</button>
+    <button id="save">Save</button>
+  </section>
+  <form id="search" action="/pricing.html" method="get"><input name="q" aria-label="Search"><button>Search</button></form>
+  <label>Password <input id="pw" type="password"></label>
+  <button id="stats" onclick="fetch('/api/stats',{method:'POST'}).then(()=>stats.textContent='posted').catch(e=>stats.textContent='blocked')">Load stats</button>
+  <button id="mic">Speak</button>
+  <p id="heard"></p>
+  <script>
+    document.getElementById('mic').onclick = () => {
+      const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const r = new R();
+      r.onresult = (e) => { heard.textContent = 'Heard: ' + e.results[0][0].transcript; };
+      r.onerror = (e) => { heard.textContent = 'Mic error: ' + e.error; };
+      r.start();
+    };
+  </script>
+</body>
+</html>

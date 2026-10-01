@@ -1,0 +1,10 @@
+// qajev.com: the static site, served by Cloudflare Workers static assets. Deploy: cd site && wrangler deploy
+{
+  "name": "qajev-site",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": ".", "html_handling": "auto-trailing-slash" },
+  "routes": [
+    { "pattern": "qajev.com", "custom_domain": true },
+    { "pattern": "www.qajev.com", "custom_domain": true }
+  ]
+}

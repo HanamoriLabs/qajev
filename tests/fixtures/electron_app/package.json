@@ -1,0 +1,6 @@
+{
+  "name": "qajev-electron-fixture",
+  "private": true,
+  "main": "main.js",
+  "devDependencies": { "electron": "*" }
+}

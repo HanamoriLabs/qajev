@@ -1,0 +1,10 @@
+; QAJev's own fixture game for the Native bridge tests: plain Godot controls, no adapter needed.
+config_version=5
+
+[application]
+config/name="QAJev fixture game"
+run/main_scene="res://main.tscn"
+
+[display]
+window/size/viewport_width=640
+window/size/viewport_height=360

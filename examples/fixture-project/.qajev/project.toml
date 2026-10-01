@@ -1,0 +1,32 @@
+# The local fixture as a QAJev project: python tests/fixtures/serve.py, then
+#   qajev run --project examples/fixture-project --suite core --headless --ephemeral
+name = "fixture"
+default_env = "local"
+
+[env.local]
+base_url = "http://127.0.0.1:8765"
+mode = "mutate"
+
+[budget]
+cost_cap_usd = 0.10
+actions = 12
+seconds = 120
+
+[[objective]]
+name = "a visitor finds the Pro price"
+goal = "Find out how much the Pro plan costs. Stop when its monthly price is visible."
+expect = { url = "/pricing.html", text = ["$29 per month"] }
+tags = ["core"]
+
+[[objective]]
+name = "a visitor sends feedback"
+url = "/feedback.html"
+goal = """Send feedback as Alan Turing, email alan@example.test, with the message "Lovely site." \
+Stop when a thank-you message is visible."""
+expect = { text = ["Thanks, Alan Turing"], fetch = [{ url = "/api/feedback", status = 200, contains = "alan@example.test" }] }
+tags = ["core"]
+
+[[objective]]
+name = "the old page is gone"
+url = "/missing.html"
+expect = { text = ["File not found"] }

@@ -1,0 +1,46 @@
+# Runs against the local fixture: python tests/fixtures/serve.py  (http://127.0.0.1:8765)
+# qajev run examples/fixture.yaml --ephemeral --headless
+name: Fixture demo
+base_url: http://127.0.0.1:8765
+cost_cap_usd: 0.10
+budget: {actions: 12, seconds: 90}
+
+scenarios:
+  - name: home loads
+    url: /
+    expect:
+      text: ["QAJev fixture"]
+      absent: ["Something went wrong"]
+
+  - name: find the Pro price
+    url: /
+    goal: Find out how much the Pro plan costs. Stop when its monthly price is visible.
+    expect:
+      url: /pricing.html
+      text: ["$29 per month"]
+
+  - name: pricing on a phone
+    url: /
+    device: phone
+    persona: You are on your phone and have never seen this site before.
+    goal: Open the pricing page. Stop when the plan prices are visible.
+    expect:
+      url: /pricing.html
+      js: document.querySelectorAll('[data-plan]').length === 2
+
+  - name: open feedback
+    url: /
+    mode: mutate
+    goal: Open the feedback page. Stop when the feedback form is visible.
+    expect:
+      url: /feedback.html
+
+  - name: send feedback            # no url: same tab, runs only if "open feedback" passed
+    mode: mutate
+    goal: >-
+      Send feedback as Ada Lovelace, email ada@example.test, with the message
+      "The pricing page is clear." Stop when a thank-you message is visible.
+    expect:
+      text: ["Thanks, Ada Lovelace"]
+      fetch:
+        - {url: /api/feedback, status: 200, contains: "ada@example.test"}

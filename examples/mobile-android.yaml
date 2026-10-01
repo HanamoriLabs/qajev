@@ -1,0 +1,20 @@
+# QAJev on an Android emulator: the built-in Settings app, then Chrome on the bundled demo site, in one session (one
+# read-only boot of the virtual device). Start the demo site first: python3 tests/fixtures/serve.py
+#   qajev play android:com.android.settings --suite examples/mobile-android.yaml
+name: android settings and chrome
+device: Pixel_8             # the virtual device (AVD) to boot; default: the first one
+steps:
+  - name: settings opens on its main list
+    expect: {text: ["Network & internet"]}
+  - name: a person finds the Android version
+    goal: Find which Android version this phone runs. Stop when the Android version is visible.
+    expect: {text: ["Android version", "Model"]}  # both: a search for the words alone also shows them
+  - name: the demo site opens in Chrome
+    open: http://127.0.0.1:8765/
+    goal: >-
+      If Chrome shows a welcome or sign-in screen, continue without an account and decline syncing.
+      Stop when a page titled "QAJev fixture" is visible.
+    expect: {text: ["QAJev fixture"]}
+  - name: a visitor finds the Pro price on a phone
+    goal: Find out how much the Pro plan costs. Stop when its monthly price is visible.
+    expect: {text: ["$29 per month"]}

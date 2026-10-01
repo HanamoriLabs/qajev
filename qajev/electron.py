@@ -1,0 +1,291 @@
+"""Native, Electron: QA a desktop game or app that is a web page inside Electron (I'm Him's Steam build).
+
+QAJev starts the app itself, with a throwaway user-data folder (`--profile`, so no save, Steam Cloud folder or
+setting of the player's is touched) and Chromium's DevTools port on 127.0.0.1. It then talks to the app's own
+window over that port, the way the Godot bridge talks to a Godot game: an adapter script in the page
+(bridges/web/adapters/<game>.js) describes the screen as text, labelled actions and the game's state, and input
+goes into that page only (never the machine's mouse or keyboard). Same interface as native.GodotGame, so goal
+steps, real-time play, reports and `qajev top` work unchanged.
+"""
+
+import base64
+import contextlib
+import json
+import os
+import shutil
+import signal
+import subprocess
+import tempfile
+import threading
+import time
+import urllib.request
+from pathlib import Path
+
+from .config import HOME
+from .native import STATE, NativeError, free_port
+
+WEB = Path(__file__).parent / "bridges" / "web"
+ADAPTERS = WEB / "adapters"
+OBSERVE = (WEB / "observe.js").read_text()
+KEYS = {"Escape": 27, "Enter": 13, "Space": 32, "Tab": 9, "Backspace": 8, "ArrowLeft": 37, "ArrowUp": 38,
+        "ArrowRight": 39, "ArrowDown": 40, "Shift": 16}
+
+
+def adapter_path(adapter):
+    if not adapter:
+        return None
+    path = Path(adapter).expanduser()
+    if path.suffix == ".js" and path.is_file():
+        return path.resolve()
+    bundled = ADAPTERS / f"{adapter}.js"
+    if bundled.is_file():
+        return bundled
+    known = sorted(p.stem for p in ADAPTERS.glob("*.js"))
+    raise NativeError(f"no web adapter {adapter!r}: give a .js path or one of {known}")
+
+
+def is_electron(path):
+    """An .app bundle, or an Electron project folder (package.json with an electron dependency)."""
+    path = Path(path).expanduser()
+    if path.suffix == ".app":
+        return True
+    pkg = path / "package.json"
+    if pkg.is_file():
+        with contextlib.suppress(OSError, json.JSONDecodeError):
+            data = json.loads(pkg.read_text())
+            return "electron" in {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+    return False
+
+
+def command_for(app):
+    """How to start the app: a packaged .app's own binary, or `electron <folder>` for a project folder (the folder's
+    own node_modules electron, or $QAJEV_ELECTRON)."""
+    app = Path(app).expanduser().resolve()
+    if app.suffix == ".app":
+        binaries = sorted((app / "Contents" / "MacOS").iterdir())
+        if not binaries:
+            raise NativeError(f"{app} has no binary in Contents/MacOS")
+        return [str(binaries[0])]
+    electron = Path(os.environ.get("QAJEV_ELECTRON") or app / "node_modules" / ".bin" / "electron")
+    if not electron.exists():
+        raise NativeError(f"{app}: no node_modules/.bin/electron (install the project's dependencies first)")
+    return [str(electron), str(app)]
+
+
+def key_event(key):
+    """Chromium key event fields for a key name: "Escape", "Enter", "i", "ArrowLeft"."""
+    if len(key) == 1:
+        upper = key.upper()
+        code = f"Key{upper}" if upper.isalpha() else f"Digit{key}" if key.isdigit() else ""
+        return {"key": key, "code": code, "windowsVirtualKeyCode": ord(upper), "text": key}
+    if key == "Space":
+        return {"key": " ", "code": "Space", "windowsVirtualKeyCode": 32, "text": " "}
+    fields = {"key": key, "code": key, "windowsVirtualKeyCode": KEYS.get(key, 0)}
+    if key == "Enter":
+        fields["text"] = "\r"
+    return fields
+
+
+class ElectronGame:
+    """An Electron app started by QAJev, driven through its own window. Use as a context manager."""
+
+    engine = "electron"
+
+    def __init__(self, app, *, adapter=None, args=(), headless=False, size=(1280, 800), start_wait=60.0, env=None):
+        self.project = Path(app).expanduser().resolve()
+        if not self.project.exists():
+            raise NativeError(f"no app at {self.project}")
+        self.adapter = adapter_path(adapter)
+        # "--game-dir=~/x" from a suite: ~ is the home folder (no shell expands it here)
+        self.args = [f"{a.partition('=')[0]}={os.path.expanduser(a.partition('=')[2])}" if "=~" in a else a
+                     for a in map(str, args)]
+        self.headless, self.size, self.start_wait = headless, size, start_wait
+        self.env = dict(env or {})
+        self.proc = self.ws = None
+        self.errors, self.log = [], []
+        self.user_dir = None
+        self._pending, self._next, self._lock = {}, 0, threading.Lock()
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    # ---- lifecycle ----
+    def start(self):
+        from websockets.sync.client import connect
+
+        started = time.monotonic()
+        self.port = free_port()
+        STATE.mkdir(parents=True, exist_ok=True)
+        (HOME / "tmp").mkdir(parents=True, exist_ok=True)
+        self.user_dir = tempfile.mkdtemp(prefix=f"qajev-native-{os.getpid()}-", dir=HOME / "tmp")
+        cmd = [*command_for(self.project), f"--profile={self.user_dir}", f"--user-data-dir={self.user_dir}",
+               f"--remote-debugging-port={self.port}", "--remote-debugging-address=127.0.0.1", *self.args]
+        self.proc = subprocess.Popen(cmd, env={**os.environ, **self.env}, stdout=subprocess.PIPE,
+                                     stderr=subprocess.STDOUT, text=True, stdin=subprocess.DEVNULL,
+                                     start_new_session=True, preexec_fn=lambda: os.nice(10))
+        threading.Thread(target=self._read_output, daemon=True).start()
+        self.record = {"pid": self.proc.pid, "owner_pid": os.getpid(), "engine": "electron",
+                       "project": str(self.project), "adapter": self.adapter.stem if self.adapter else None,
+                       "port": self.port, "headless": False, "started_at": time.time(), "user_dir": self.user_dir}
+        (STATE / f"{self.proc.pid}.json").write_text(json.dumps(self.record))
+        page = None
+        while time.monotonic() - started < self.start_wait:
+            if self.proc.poll() is not None:
+                self.close()
+                raise NativeError(f"the app exited with {self.proc.returncode} before its window came up: "
+                                  + " | ".join(self.log[-5:]))
+            page = self._page()
+            if page:
+                break
+            time.sleep(0.3)
+        if not page:
+            self.close()
+            raise NativeError(f"no app window on DevTools port {self.port} within {self.start_wait:.0f} s")
+        self.url = page["url"]
+        self.ws = connect(page["webSocketDebuggerUrl"], max_size=64 * 2**20, open_timeout=10)
+        threading.Thread(target=self._read_ws, daemon=True).start()
+        self.send("Runtime.enable")
+        self.send("Page.enable")
+        self.send("Inspector.enable")
+        if self.adapter:
+            source = self.adapter.read_text()
+            self.send("Page.addScriptToEvaluateOnNewDocument", source=source)  # and after any reload
+            self.evaluate(source)
+        self.boot_seconds = round(time.monotonic() - started, 2)
+        return self
+
+    def _page(self):
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json/list", timeout=1) as r:
+                targets = json.loads(r.read())
+        except (OSError, ValueError):
+            return None
+        pages = [t for t in targets if t.get("type") == "page" and not t.get("url", "").startswith("devtools:")]
+        ready = [t for t in pages if t.get("url") not in ("", "about:blank")]
+        return (ready or [None])[0]
+
+    def _read_output(self):
+        if self.proc is None or self.proc.stdout is None:
+            return
+        for line in self.proc.stdout:
+            self.log.append(line.rstrip())
+            del self.log[:-200]
+
+    def _read_ws(self):
+        while self.ws is not None:
+            try:
+                message = json.loads(self.ws.recv())
+            except Exception:  # closed or broken: pending calls fail on their timeout
+                return
+            if "id" in message:
+                slot = self._pending.get(message["id"])
+                if slot:
+                    slot[1] = message
+                    slot[0].set()
+                continue
+            method, params = message.get("method"), message.get("params") or {}
+            if method == "Runtime.exceptionThrown":
+                d = params.get("exceptionDetails") or {}
+                text = (d.get("exception") or {}).get("description") or d.get("text") or "exception"
+                self.errors.append(f"uncaught: {text}"[:300])
+            elif method == "Runtime.consoleAPICalled" and params.get("type") == "error":
+                parts = [str(a.get("value", a.get("description", ""))) for a in params.get("args") or []]
+                self.errors.append(f"console.error: {' '.join(parts)}"[:300])
+            elif method == "Inspector.targetCrashed":
+                self.errors.append("the page crashed")
+
+    def send(self, method, timeout=20.0, **params):
+        if self.ws is None:
+            raise NativeError("the app is not running")
+        with self._lock:
+            self._next += 1
+            ident = self._next
+            slot = [threading.Event(), None]
+            self._pending[ident] = slot
+        try:
+            self.ws.send(json.dumps({"id": ident, "method": method, "params": params}))
+            if not slot[0].wait(timeout):
+                if self.proc is not None and self.proc.poll() is not None:
+                    raise NativeError("the app closed (crashed or quit)")
+                raise NativeError(f"no answer to {method} within {timeout:.0f} s")
+        except OSError as e:
+            raise NativeError(f"lost the app: {e}") from None
+        finally:
+            self._pending.pop(ident, None)
+        answer = slot[1] or {}
+        if "error" in answer:
+            raise NativeError(f"{method}: {answer['error'].get('message')}")
+        return answer.get("result") or {}
+
+    def evaluate(self, expression):
+        r = self.send("Runtime.evaluate", expression=expression, returnByValue=True, awaitPromise=True)
+        if r.get("exceptionDetails"):
+            d = r["exceptionDetails"]
+            raise NativeError(f"page script failed: {(d.get('exception') or {}).get('description') or d.get('text')}")
+        return (r.get("result") or {}).get("value")
+
+    # ---- the GodotGame interface ----
+    def call(self, **request):
+        if request.get("op") == "pilot":
+            on = bool(request.get("on"))
+            got = self.evaluate(f"(() => {{ const a = window.__qajevAdapter; "
+                                f"return !!(a && a.pilot && a.pilot({json.dumps(on)})); }})()")
+            return {"ok": True, "pilot": bool(got)}
+        raise NativeError(f"unknown op {request.get('op')!r}")
+
+    def observe(self):
+        obs = self.evaluate(OBSERVE) or {}
+        obs.setdefault("ok", True)
+        return obs
+
+    def act(self, action):
+        if action.get("kind") == "adapter":  # the adapter carries it out in the page (e.g. a game bot's decide())
+            done = self.evaluate(f"(() => {{ const a = window.__qajevAdapter; "
+                                 f"return a && a.act ? a.act({json.dumps(action)}) : null; }})()")
+            return {"ok": bool(done and done.get("ok"))}
+        if action.get("kind") == "key" or ("key" in action and "x" not in action):
+            fields = key_event(str(action["key"]))
+            self.send("Input.dispatchKeyEvent", type="keyDown", **fields)
+            time.sleep(float(action.get("hold", 0.08)))  # games read held keys per frame
+            fields.pop("text", None)
+            self.send("Input.dispatchKeyEvent", type="keyUp", **fields)
+            return {"ok": True}
+        x, y = float(action["x"]), float(action["y"])
+        self.send("Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y)
+        for kind in ("mousePressed", "mouseReleased"):
+            self.send("Input.dispatchMouseEvent", type=kind, x=x, y=y, button="left", clickCount=1)
+        return {"ok": True}
+
+    def shot(self, path):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            data = self.send("Page.captureScreenshot", format="jpeg", quality=80)["data"]
+        except (NativeError, KeyError):
+            return None
+        path.write_bytes(base64.b64decode(data))
+        return path
+
+    def close(self):
+        ws, self.ws = self.ws, None
+        if ws is not None:
+            with contextlib.suppress(Exception):
+                ws.close()
+        if self.proc is not None and self.proc.poll() is None:
+            # Our own process group only (start_new_session): the app and the helpers it started, nothing else.
+            for sig, wait in ((signal.SIGTERM, 8), (signal.SIGKILL, 5)):
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.killpg(self.proc.pid, sig)
+                try:
+                    self.proc.wait(wait)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+        if self.proc is not None:
+            (STATE / f"{self.proc.pid}.json").unlink(missing_ok=True)
+        if self.user_dir:
+            shutil.rmtree(self.user_dir, ignore_errors=True)

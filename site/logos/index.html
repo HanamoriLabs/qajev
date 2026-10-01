@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QAJev logo options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f3f0e8;
+    --ink: #15140f;
+    --hi: #ddf75b;
+    --pass: #1e7a3c;
+    --dark: #121210;
+    --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --serif: "Instrument Serif", ui-serif, Georgia, serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    padding: 24px 16px 80px;
+  }
+  header { max-width: 1040px; margin: 0 auto 36px; }
+  h1 {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 400;
+    font-size: clamp(32px, 6vw, 52px);
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  header p {
+    margin: 0;
+    font-size: 15px;
+    color: color-mix(in srgb, var(--ink) 65%, var(--paper));
+    max-width: 640px;
+    line-height: 1.5;
+  }
+  .grid {
+    max-width: 1040px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 1px 2px rgba(21,20,15,.04);
+  }
+  .card h2 {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin: 0 0 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card h2 .n {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--hi);
+    color: var(--ink);
+    font-size: 12px;
+  }
+  .rationale {
+    margin: 0 0 18px;
+    font-size: 14.5px;
+    line-height: 1.5;
+    color: color-mix(in srgb, var(--ink) 78%, var(--paper));
+    max-width: 680px;
+  }
+  .panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 640px) {
+    .panels { grid-template-columns: 1fr; }
+  }
+  .panel {
+    border-radius: 12px;
+    padding: 28px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+  }
+  .panel.light { background: var(--paper); border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent); }
+  .panel.dark { background: var(--dark); }
+  .panel svg { width: auto; height: 48px; max-width: 100%; }
+  .sizes {
+    display: flex;
+    align-items: flex-end;
+    gap: 24px;
+    flex-wrap: wrap;
+    padding-top: 4px;
+    border-top: 1px dashed color-mix(in srgb, var(--ink) 16%, transparent);
+  }
+  .size {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .size .swatch {
+    background: var(--paper);
+    border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .size .swatch.dark { background: var(--dark); border-color: transparent; }
+  .size .label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: color-mix(in srgb, var(--ink) 55%, var(--paper));
+  }
+  .s64 { width: 64px; height: 64px; }
+  .s64 svg { width: 64px; height: 64px; }
+  .s32 { width: 40px; height: 40px; }
+  .s32 svg { width: 32px; height: 32px; }
+  .s16 { width: 28px; height: 28px; }
+  .s16 svg { width: 16px; height: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>QAJev logo options</h1>
+  <p>Six distinct directions for the mark and wordmark, shown on paper and on a dark surface, plus the symbol alone at favicon sizes (64 / 32 / 16px).</p>
+</header>
+<div class="grid">
+
+  <section class="card">
+    <h2><span class="n">1</span>Cursor &rarr; check</h2>
+    <p class="rationale">The pointer itself resolves into the verdict: a bold checkmark with a small cursor arrowhead riding its tip, as if the click just landed the pass.</p>
+    <div class="panels">
+      <div class="panel light"><img src="logo-1-lockup.svg" alt="Option 1 lockup on paper" height="48"></div>
+      <div class="panel dark"><img src="logo-1-lockup-dark.svg" alt="Option 1 lockup on dark" height="48"></div>
+    </div>
+    <div class="sizes">
+      <div class="size"><div class="swatch s64"><img src="logo-1-mark.svg" alt="Option 1 mark 64px" width="64" height="64"></div><span class="label">64px</span></div>
+      <div class="size"><div class="swatch s32"><img src="logo-1-mark.svg" alt="Option 1 mark 32px" width="32" height="32"></div><span class="label">32px</span></div>
+      <div class="size"><div class="swatch s16"><img src="logo-1-mark.svg" alt="Option 1 mark 16px" width="16" height="16"></div><span class="label">16px</span></div>
+      <div class="size"><div class="swatch s32 dark"><img src="logo-1-mark-dark.svg" alt="Option 1 dark mark 32px" width="32" height="32"></div><span class="label">32px dark</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">2</span>J hook &rarr; tick</h2>
+    <p class="rationale">QAJev's own initial becomes the gesture: a monoline "J" whose bottom hook flicks up and right instead of curling left, reading at once as a check and a cursor's drag-tail.</p>
+    <div class="panels">
+      <div class="panel light"><img src="logo-2-lockup.svg" alt="Option 2 lockup on paper" height="48"></div>
+      <div class="panel dark"><img src="logo-2-lockup-dark.svg" alt="Option 2 lockup on dark" height="48"></div>
+    </div>
+    <div class="sizes">
+      <div class="size"><div class="swatch s64"><img src="logo-2-mark.svg" alt="Option 2 mark 64px" width="64" height="64"></div><span class="label">64px</span></div>
+      <div class="size"><div class="swatch s32"><img src="logo-2-mark.svg" alt="Option 2 mark 32px" width="32" height="32"></div><span class="label">32px</span></div>
+      <div class="size"><div class="swatch s16"><img src="logo-2-mark.svg" alt="Option 2 mark 16px" width="16" height="16"></div><span class="label">16px</span></div>
+      <div class="size"><div class="swatch s32 dark"><img src="logo-2-mark-dark.svg" alt="Option 2 dark mark 32px" width="32" height="32"></div><span class="label">32px dark</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">3</span>Highlighter swipe</h2>
+    <p class="rationale">A literal highlighter stroke in chartreuse drags behind a serif "Q" and through the italic tail of "Jev" &mdash; the playful, hand-marked greenlight a verdict deserves.</p>
+    <div class="panels">
+      <div class="panel light"><img src="logo-3-lockup.svg" alt="Option 3 lockup on paper" height="48"></div>
+      <div class="panel dark"><img src="logo-3-lockup-dark.svg" alt="Option 3 lockup on dark" height="48"></div>
+    </div>
+    <div class="sizes">
+      <div class="size"><div class="swatch s64"><img src="logo-3-mark.svg" alt="Option 3 mark 64px" width="64" height="64"></div><span class="label">64px</span></div>
+      <div class="size"><div class="swatch s32"><img src="logo-3-mark.svg" alt="Option 3 mark 32px" width="32" height="32"></div><span class="label">32px</span></div>
+      <div class="size"><div class="swatch s16"><img src="logo-3-mark.svg" alt="Option 3 mark 16px" width="16" height="16"></div><span class="label">16px</span></div>
+      <div class="size"><div class="swatch s32 dark"><img src="logo-3-mark-dark.svg" alt="Option 3 dark mark 32px" width="32" height="32"></div><span class="label">32px dark</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">4</span>Pass stamp / seal</h2>
+    <p class="rationale">A verdict should feel official: an ink seal with a dashed chartreuse rim like a stamp's edge, a small verdict-green dot at its crown, and a confident check at its heart.</p>
+    <div class="panels">
+      <div class="panel light"><img src="logo-4-lockup.svg" alt="Option 4 lockup on paper" height="48"></div>
+      <div class="panel dark"><img src="logo-4-lockup-dark.svg" alt="Option 4 lockup on dark" height="48"></div>
+    </div>
+    <div class="sizes">
+      <div class="size"><div class="swatch s64"><img src="logo-4-mark.svg" alt="Option 4 mark 64px" width="64" height="64"></div><span class="label">64px</span></div>
+      <div class="size"><div class="swatch s32"><img src="logo-4-mark.svg" alt="Option 4 mark 32px" width="32" height="32"></div><span class="label">32px</span></div>
+      <div class="size"><div class="swatch s16"><img src="logo-4-mark.svg" alt="Option 4 mark 16px" width="16" height="16"></div><span class="label">16px</span></div>
+      <div class="size"><div class="swatch s32 dark"><img src="logo-4-mark-dark.svg" alt="Option 4 dark mark 32px" width="32" height="32"></div><span class="label">32px dark</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">5</span>Desktop + phone &rarr; Q</h2>
+    <p class="rationale">QAJev proves itself on both screens at once: a monitor frame forms the bowl of a "Q", a tilted phone frame crosses out as its tail, with a chartreuse dot marking the phone's screen.</p>
+    <div class="panels">
+      <div class="panel light"><img src="logo-5-lockup.svg" alt="Option 5 lockup on paper" height="48"></div>
+      <div class="panel dark"><img src="logo-5-lockup-dark.svg" alt="Option 5 lockup on dark" height="48"></div>
+    </div>
+    <div class="sizes">
+      <div class="size"><div class="swatch s64"><img src="logo-5-mark.svg" alt="Option 5 mark 64px" width="64" height="64"></div><span class="label">64px</span></div>
+      <div class="size"><div class="swatch s32"><img src="logo-5-mark.svg" alt="Option 5 mark 32px" width="32" height="32"></div><span class="label">32px</span></div>
+      <div class="size"><div class="swatch s16"><img src="logo-5-mark.svg" alt="Option 5 mark 16px" width="16" height="16"></div><span class="label">16px</span></div>
+      <div class="size"><div class="swatch s32 dark"><img src="logo-5-mark-dark.svg" alt="Option 5 dark mark 32px" width="32" height="32"></div><span class="label">32px dark</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">6</span>Eye / lens + check</h2>
+    <p class="rationale">QAJev doesn't just click, it looks: an inspector's almond-eye outline around a chartreuse iris, with the checkmark sitting as the pupil &mdash; the verdict is what it sees.</p>
+    <div class="panels">
+      <div class="panel light"><img src="logo-6-lockup.svg" alt="Option 6 lockup on paper" height="48"></div>
+      <div class="panel dark"><img src="logo-6-lockup-dark.svg" alt="Option 6 lockup on dark" height="48"></div>
+    </div>
+    <div class="sizes">
+      <div class="size"><div class="swatch s64"><img src="logo-6-mark.svg" alt="Option 6 mark 64px" width="64" height="64"></div><span class="label">64px</span></div>
+      <div class="size"><div class="swatch s32"><img src="logo-6-mark.svg" alt="Option 6 mark 32px" width="32" height="32"></div><span class="label">32px</span></div>
+      <div class="size"><div class="swatch s16"><img src="logo-6-mark.svg" alt="Option 6 mark 16px" width="16" height="16"></div><span class="label">16px</span></div>
+      <div class="size"><div class="swatch s32 dark"><img src="logo-6-mark-dark.svg" alt="Option 6 dark mark 32px" width="32" height="32"></div><span class="label">32px dark</span></div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

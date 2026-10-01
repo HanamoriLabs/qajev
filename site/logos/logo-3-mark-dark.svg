@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="QAJev mark: Q with a highlighter swipe, dark background variant">
+  <rect x="9" y="25" width="46" height="18" rx="9" transform="rotate(-6 32 32)" fill="#ddf75b"/>
+  <circle cx="30" cy="29" r="14.5" fill="none" stroke="#15140f" stroke-width="12"/>
+  <path d="M40 39 L51 50" fill="none" stroke="#15140f" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="30" cy="29" r="14.5" fill="none" stroke="#f3f0e8" stroke-width="8"/>
+  <path d="M40 39 L51 50" fill="none" stroke="#f3f0e8" stroke-width="8" stroke-linecap="round"/>
+</svg>

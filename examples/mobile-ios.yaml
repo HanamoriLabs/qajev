@@ -1,0 +1,17 @@
+# QAJev on the iOS Simulator: the built-in Settings app, then Safari on the bundled demo site, in one session (one
+# boot of a throwaway simulator clone). Start the demo site first: python3 tests/fixtures/serve.py
+#   qajev play ios:com.apple.Preferences --suite examples/mobile-ios.yaml
+name: ios settings and safari
+device: iPhone 17           # the simulator to clone (name or UDID); default: the first iPhone
+steps:
+  - name: settings opens on its main list
+    expect: {text: ["General", "Accessibility"]}
+  - name: a person finds the iOS version
+    goal: Find which iOS version this phone runs. Stop when the iOS version is visible.
+    expect: {text: ["iOS Version", "Model Name"]}  # both: a search for the words alone also shows them
+  - name: the demo site opens in Safari
+    open: http://127.0.0.1:8765/
+    expect: {text: ["QAJev fixture"]}
+  - name: a visitor finds the Pro price on a phone
+    goal: Find out how much the Pro plan costs. Stop when its monthly price is visible.
+    expect: {text: ["$29 per month"]}

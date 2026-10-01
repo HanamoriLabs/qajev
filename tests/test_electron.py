@@ -1,0 +1,65 @@
+import os
+import time
+from pathlib import Path
+
+import pytest
+
+from qajev import electron, native
+
+FIXTURE = Path(__file__).parent / "fixtures" / "electron_app"
+ADAPTER = Path(__file__).parent / "fixtures" / "web_adapters" / "fixture.js"
+
+
+def test_keys_become_chromium_key_events():
+    assert electron.key_event("i") == {"key": "i", "code": "KeyI", "windowsVirtualKeyCode": 73, "text": "i"}
+    assert electron.key_event("Escape") == {"key": "Escape", "code": "Escape", "windowsVirtualKeyCode": 27}
+    assert electron.key_event("Enter")["text"] == "\r" and electron.key_event("Space")["key"] == " "
+    assert electron.key_event("3")["code"] == "Digit3"
+
+
+def test_electron_apps_are_recognised_and_started_with_their_own_binary(tmp_path, monkeypatch):
+    assert electron.is_electron(FIXTURE) and electron.is_electron(tmp_path / "Game.app")
+    assert not electron.is_electron(Path(__file__).parent / "fixtures" / "godot_game")
+    bundle = tmp_path / "Game.app" / "Contents" / "MacOS"
+    bundle.mkdir(parents=True)
+    (bundle / "Game").write_text("")
+    assert electron.command_for(tmp_path / "Game.app") == [str(bundle / "Game")]
+    monkeypatch.setenv("QAJEV_ELECTRON", str(bundle / "Game"))
+    assert electron.command_for(FIXTURE) == [str(bundle / "Game"), str(FIXTURE.resolve())]
+    with pytest.raises(native.NativeError, match="no web adapter"):
+        electron.adapter_path("nope")
+
+
+def test_an_adapter_action_goes_to_the_adapter_in_the_page():
+    game = electron.ElectronGame.__new__(electron.ElectronGame)
+    sent = []
+    game.evaluate = lambda expression: sent.append(expression) or {"ok": True}
+    assert game.act({"id": "decide:3:1", "kind": "adapter", "op": "decide", "index": 1}) == {"ok": True}
+    assert "__qajevAdapter" in sent[0] and '"index": 1' in sent[0]
+
+
+live = pytest.mark.skipif(os.environ.get("QAJEV_LIVE") != "1" or not os.environ.get("QAJEV_ELECTRON"),
+                          reason="set QAJEV_LIVE=1 and QAJEV_ELECTRON=<an Electron binary> (starts Electron)")
+
+
+@live
+def test_an_electron_game_is_driven_through_its_own_window(monkeypatch):
+    with electron.ElectronGame(FIXTURE, adapter=ADAPTER) as game:
+        pid, profile = game.proc.pid, Path(game.user_dir)
+        obs = game.observe()
+        assert obs["screen"] == "MENU" and "Main menu" in obs["texts"][0]
+        labels = {a["label"]: a for a in obs["actions"]}
+        assert {"Start", "Quit game"} <= set(labels)
+        game.act(labels["Start"])
+        time.sleep(0.3)
+        obs = game.observe()
+        assert obs["screen"] == "GAME" and obs["state"]["ticks"] > 0 and obs["fps"] > 0
+        game.act(next(a for a in obs["actions"] if a["id"] == "pause"))  # a key, into the page only
+        time.sleep(0.2)
+        assert game.observe()["screen"] == "PAUSED" and game.errors == []
+        game.act({"kind": "key", "key": "b"})
+        time.sleep(0.3)
+        assert any("fixture boom" in e for e in game.errors)  # uncaught page errors are caught
+        assert (profile / "Local State").exists() or any(profile.iterdir())  # the throwaway profile is used
+    assert game.proc.poll() is not None and not profile.exists()
+    assert not (native.STATE / f"{pid}.json").exists()

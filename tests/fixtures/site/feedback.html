@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Send us feedback">
+<title>Feedback</title></head>
+<body>
+  <h1>Feedback</h1>
+  <form id="feedback">
+    <label>Your name <input name="name" required></label>
+    <label>Your email <input name="email" type="email" required></label>
+    <label>Message <textarea name="message" required></textarea></label>
+    <button type="submit">Send feedback</button>
+  </form>
+  <p id="done" hidden></p>
+  <a href="/">Home</a>
+  <script>
+    document.getElementById('feedback').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      const r = await fetch('/api/feedback', { method: 'POST', headers: {'content-type': 'application/json'},
+                                               body: JSON.stringify(data) });
+      if (r.ok) { e.target.hidden = true; done.hidden = false; done.textContent = 'Thanks, ' + data.name + '! We received your feedback.'; }
+    });
+  </script>
+</body>
+</html>

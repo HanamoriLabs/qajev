@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Plans">
+<title>Pricing</title></head>
+<body>
+  <h1>Pricing</h1>
+  <div data-plan="starter"><h2>Starter</h2><p>$9 per month</p></div>
+  <div data-plan="pro"><h2>Pro</h2><p>$29 per month</p><button>Buy Pro</button></div>
+  <a href="/">Home</a>
+  <p id="deep" style="margin-top:3000px">Deep footer note</p>
+  <div id="late"></div>
+  <script>
+    // Rendered after load, as frameworks do: the guard must catch controls that appear later.
+    setTimeout(() => { late.innerHTML = '<button id="late-signout" onclick="window.__pressed=\'late\'">Sign out</button>'; }, 300);
+  </script>
+</body>
+</html>

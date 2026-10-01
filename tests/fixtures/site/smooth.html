@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Smooth scroll</title>
+<style>body { margin: 0; } section { height: 900px; border-bottom: 1px solid #ccc; }</style></head>
+<body>
+<h1>Smooth scroll, like Lenis</h1>
+<section>One</section><section>Two</section><section>Three</section><section>Four</section>
+<section id="faq">Shipping: US $12.00</section>
+<script>
+  // Like Lenis: the wheel is taken over and the page glides to the target over about a second.
+  let target = 0, raf = null;
+  addEventListener("wheel", (e) => {
+    e.preventDefault();
+    target = Math.max(0, Math.min(document.documentElement.scrollHeight - innerHeight, target + e.deltaY));
+    if (!raf) raf = requestAnimationFrame(function step() {
+      const y = scrollY + (target - scrollY) * 0.08;
+      scrollTo(0, Math.abs(target - y) < 1 ? target : y);
+      raf = Math.abs(target - scrollY) < 1 ? null : requestAnimationFrame(step);
+    });
+  }, { passive: false });
+</script>
+</body></html>

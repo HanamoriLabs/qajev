@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="QAJev mark: cursor becoming a checkmark, dark background variant">
+  <rect x="2" y="2" width="60" height="60" rx="13" fill="none" stroke="#ddf75b" stroke-width="2"/>
+  <path d="M18 33 L27 42 L47 20" fill="none" stroke="#ddf75b" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(46,19) rotate(12)">
+    <path d="M0 0 L0 14 L3.5 11 L6 16.5 L8.5 15.5 L6 10 L11 10 Z" fill="#f3f0e8" stroke="#ddf75b" stroke-width="1.6" stroke-linejoin="round"/>
+  </g>
+</svg>

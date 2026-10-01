@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 64" role="img" aria-label="QAJev logo">
+  <g>
+    <circle cx="32" cy="32" r="29" fill="#15140f"/>
+    <circle cx="32" cy="32" r="23" fill="none" stroke="#ddf75b" stroke-width="3" stroke-dasharray="3.6 4.2"/>
+    <circle cx="32" cy="8" r="3" fill="#1e7a3c"/>
+    <path d="M21 33 L29 41 L44 23" fill="none" stroke="#ddf75b" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="84" y="43" font-family="Geist, 'Helvetica Neue', Arial, sans-serif" font-weight="700" font-size="34" letter-spacing="0.5" fill="#15140f">QAJev</text>
+</svg>

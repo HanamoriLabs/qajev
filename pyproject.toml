@@ -1,0 +1,65 @@
+[project]
+name = "qajev"
+version = "0.1.0"
+description = "Test websites, mobile apps and games the way a person uses them: plain-language goals, verdicts from the page. A CLI and an MCP server for people and AI agents."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "José Airosa" }]
+requires-python = ">=3.12"
+keywords = ["qa", "testing", "e2e", "browser", "chrome", "mcp", "ai-agents", "jev", "godot", "electron"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Software Development :: Testing",
+]
+dependencies = [
+  # Jev, pinned to a commit: QAJev wraps Browser.__init__, browser.cdp, model.post_json and field_text, so an upgrade
+  # needs the live tests re-run. A direct reference so pip, pipx and uv all install it (it is not on PyPI).
+  "jev-ultrafast @ git+https://github.com/browser-use/jev-ultrafast@1231850a0bf1a0c0341fe408ef1668dbbfdfac46",
+  "mcp>=2.2,<3",
+  "pyyaml>=6,<7",
+]
+
+[project.urls]
+Homepage = "https://qajev.com"
+Source = "https://github.com/hanamorilabs/qajev"
+Documentation = "https://github.com/hanamorilabs/qajev/tree/HEAD/docs"
+Issues = "https://github.com/hanamorilabs/qajev/issues"
+Changelog = "https://github.com/hanamorilabs/qajev/blob/HEAD/CHANGELOG.md"
+
+[project.scripts]
+qajev = "qajev.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[dependency-groups]
+dev = ["pytest>=8.4,<9", "ruff>=0.14,<1", "basedpyright>=1.30"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: needs a local Chrome (QAJEV_LIVE=1); no external sites"]
+
+[tool.basedpyright]
+typeCheckingMode = "basic"
+
+[tool.hatch.build.targets.sdist]
+exclude = ["site", "docs/images", "qajev-runs", "reports"]
