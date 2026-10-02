@@ -1,0 +1,42 @@
+# A short demo with all three outcomes, for a screen recording. Runs against the local demo shop:
+#   python3 tests/fixtures/serve.py &                 # http://127.0.0.1:8765
+#   qajev run examples/launch-demo.yaml               # and `qajev top` in a second terminal
+# Read-only, about 30 s once QAJev's Chrome is open, under $0.01. Ends Gate: FAIL with 3 pass, 1 fail, 1 stuck, on purpose.
+name: launch demo
+base_url: http://127.0.0.1:8765
+devices: [desktop]
+cost_cap_usd: 0.05
+budget: {actions: 8, seconds: 60}
+
+scenarios:
+  - name: the home page loads
+    url: /
+    expect:
+      text: ["QAJev fixture"]
+
+  - name: a visitor finds the Pro price
+    url: /
+    goal: Find what the Pro plan costs per month. Stop when that price is visible.
+    expect:
+      url: /pricing.html
+      text: ["$29 per month"]
+
+  - name: the Pro price matches the ad ($25)
+    url: /
+    goal: Find what the Pro plan costs per month. Stop when that price is visible.
+    expect:
+      text: ["$25 per month"]      # the page says $29: Jev gets there and says DONE, the check says no
+
+  - name: pricing on a phone
+    url: /
+    device: phone
+    goal: Open the pricing page. Stop when the plan prices are visible.
+    expect:
+      url: /pricing.html
+      js: document.querySelectorAll('[data-plan]').length === 2
+
+  - name: a visitor reads the note at the bottom
+    url: /locked.html
+    goal: Read the note at the bottom of the page. Stop when it is visible.
+    expect:
+      visible: ["Unreachable note"]  # a preloader left the page unable to scroll: nobody can get there

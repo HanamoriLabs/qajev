@@ -88,6 +88,10 @@ python3 tests/fixtures/serve.py &                 # http://127.0.0.1:8765
 qajev run examples/fixture.yaml --ephemeral --headless
 ```
 
+To watch all three outcomes in about 30 seconds, in a visible Chrome, run `qajev run examples/launch-demo.yaml` with
+[`qajev top`](jobs-and-top.md) open in a second terminal. It ends Gate: FAIL on purpose: 3 pass, 1 fail (Jev finds
+the price and says DONE, but the page does not show the expected one) and 1 stuck (a page that cannot scroll).
+
 ## Next
 
 - [Writing tests](writing-tests.md): goals, expectations, suites of scenarios.
