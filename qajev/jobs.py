@@ -368,6 +368,8 @@ def status(job_id, detail=False):
             final = {"gate": done["gate"], "run_dir": done.get("run_dir")}
         elif exit_code == 0:
             final = {"gate": "INCOMPLETE", "error": "finished without a report"}
+        elif exit_code == 130:  # stopped (qajev stop, Ctrl-C) before its first report: nothing was judged
+            final = {"gate": "INCOMPLETE", "error": "stopped before a report"}
     if exit_code is not None:
         state = "stopped" if meta.get("stop_requested") else "done" if final and "gate" in final else "failed"
     elif running:

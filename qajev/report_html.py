@@ -203,6 +203,14 @@ def _changes(ch):
             f'<span class="muted">(compared with {_e(when)}, {_e(since.get("gate"))})</span></p>{body}</div>')
 
 
+def signed_in(s):
+    """A stored test account's sign-in, in one line (both reports)."""
+    if not s.get("ok"):
+        return f"account {s['account']} failed: {s.get('reason')}"
+    how = "already signed in" if s.get("already") else f"in {s.get('seconds')} s"
+    return f"as {s.get('email') or s['account']} (account {s['account']}), {how}"
+
+
 def render(data):
     c = data["counts"]
     cost = data["cost"]
@@ -272,6 +280,8 @@ def render(data):
     if data.get("motion") in ("reduce", "full"):
         run.append(("Motion", "reduced (pages were told the visitor prefers reduced motion)"
                     if data["motion"] == "reduce" else "full (as-is)"))
+    if data.get("sign_in"):
+        run.append(("Sign-in", _e(signed_in(data["sign_in"]))))
     run += [("Legend", "<br>".join(f"{_pill(o)} {_e(t)}" for o, t in LEGEND.items())),
             ("Files", '<a href="report.md">report.md</a> · <a href="report.json">report.json</a>'),
             ("QAJev", _e(data.get("qajev")))]

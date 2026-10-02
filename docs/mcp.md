@@ -91,7 +91,10 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   `qa_stop(job)`.
 - Runs from MCP use a **headless, throwaway Chrome** by default: nothing appears on the person's screen and
   nothing is left behind. Pass `profile` for a signed-in run (the person signs in once with
-  `qa_browser(action="login", profile=..., url=...)`).
+  `qa_browser(action="login", profile=..., url=...)`), or give the suite or project a stored test account
+  (`account:`, a password *reference* such as `keychain:qajev/shop-tester`): QAJev then signs in by itself before
+  the scenarios, also headless, and the password never reaches the agent or Jev
+  ([Writing tests](writing-tests.md#signed-in-areas)).
 - Runs queue one at a time per machine, shared with the CLI and every other agent. `qa_jobs` shows the queue.
   Each job's title says what it is about: the project or site and the goal for website runs (`check foley /pricing
   · Find the Pro price`), the game and the test's name for games (`play imhim · quit sends session_end`).

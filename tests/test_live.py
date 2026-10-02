@@ -293,6 +293,8 @@ scenarios:
     assert ("POST", "/api/login") in Recorder.requests
     (md,) = (tmp_path / "good").rglob("report.md")
     assert "Sign-in: as tester@example.test (account tester@example.test)" in md.read_text()
+    (page,) = (tmp_path / "good").rglob("report.html")
+    assert "<dt>Sign-in</dt><dd>as tester@example.test (account tester@example.test)" in page.read_text()
     written = [f.read_text(errors="replace") for f in (tmp_path / "good").rglob("*") if f.is_file()]
     assert written and not any("fixture-pass-123" in text for text in written + [p.stdout, p.stderr])
 

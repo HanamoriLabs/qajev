@@ -23,6 +23,13 @@ That is QAJev's side, not your product:
 - *action or time budget spent*: split the goal, or start closer to the target with `url`.
 - *cost cap reached*: raise `--cost-cap`, or narrow the goals.
 
+**"sign-in failed: ..." and every scenario is `harness`**
+The stored test account could not sign in, so nothing was tested. The reason is the site's own message ("Wrong
+email or password") or the password store's: run `qajev secret check REF` to see whether QAJev can read it (a
+1Password reference needs `op` signed in, and may wait for Touch ID; `env:` needs the variable set where QAJev runs).
+If the site's fields are unusual, name them in the account's `login:` (`email_field`, `password_field`, `next`,
+`submit`) and say how to tell it worked (`signed_in`).
+
 **A scenario is `stuck`**
 Jev found no way forward. Open the screenshot: a visitor would often be stuck too (a hidden menu, two buttons
 with the same name, content far below). If the target is far down a long page, start closer to it.

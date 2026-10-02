@@ -248,3 +248,5 @@ def test_a_run_that_reports_through_its_events_is_done_not_failed():
     silent = job(0)
     assert silent["state"] == "done" and silent["gate"] == "INCOMPLETE"  # exit 0 is never "failed"
     assert job(1)["state"] == "failed"
+    early = job(130)  # stopped while it was still starting: nothing judged, nothing failed
+    assert early["gate"] == "INCOMPLETE" and early["error"] == "stopped before a report"

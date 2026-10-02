@@ -43,6 +43,10 @@ the test tool are kept apart.**
 
 `--strict` counts **stuck** as a failure.
 
+A run with a stored test account says who signed in, under **Run** ("Sign-in: as qa+shop@example.com (account
+shop-tester), in 3.1 s"). When the sign-in fails, that line gives the site's reason and every scenario is
+**harness**: nothing was tested.
+
 ## Why a scenario ended as it did
 
 Each scenario explains itself: the reason, each check with what was found instead, where Jev ended up, and what the

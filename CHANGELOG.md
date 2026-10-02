@@ -28,6 +28,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   when the policy stopped a request or script, `CSP violation (report-only)` (S3) for what a report-only policy
   would stop, with the directive and the address, other hosts' tags and pixels included. They never reach the
   console, so they went unreported before.
+- A run stopped (`qajev stop`, Ctrl-C) in its first moments, before its first report, exits with code 130 and
+  shows in `qajev jobs` and `qa_job` as INCOMPLETE ("stopped before a report"). It died with a traceback, and its
+  job had no gate.
+- `examples/launch-demo.yaml`: five website scenarios against the local example site that end in pass, fail and
+  stuck in about 30 seconds, for a screen recording ([Getting started](docs/getting-started.md)).
 - `qajev top`: a Chrome or game that is up shows in green with a `●`, set apart from the grey "none running" and
   "no game running" lines (a running Chrome was the same grey before).
 - `qajev play --allow LABEL --hide LABEL --expect-closed`, and the same on MCP `qa_play` (`allow`, `hide`,

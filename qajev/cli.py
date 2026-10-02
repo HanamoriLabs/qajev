@@ -1069,6 +1069,8 @@ def main(argv=None):
         return 0
     except KeyboardInterrupt:
         code = EXIT_INTERRUPTED
+        if args.command in {"check", "run", "smoke", "play"}:  # stopped before its handler could (still importing)
+            return code
         raise
     finally:
         if _job_dir is not None:
