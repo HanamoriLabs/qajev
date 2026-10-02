@@ -104,11 +104,13 @@ def card():
 
 
 def icons():
-    """apple-touch-icon.png (180) and icon-512.png (the web manifest, search result favicons)."""
+    """apple-touch-icon.png (180) and icon-512.png (the web manifest, search result favicons), and favicon.ico for
+    the browsers and crawlers that ask for /favicon.ico whatever the page links (a 404 otherwise)."""
     for name, size in (("apple-touch-icon.png", 180), ("icon-512.png", 512), ("icon-192.png", 192)):
         square = Image.new("RGB", (size, size), "#15140f")  # opaque: iOS fills transparent corners with black
         square.paste(m := logo(size), (0, 0), m)
         square.save(SITE / name, optimize=True)
+    logo(256).save(SITE / "favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)])
 
 
 if __name__ == "__main__":

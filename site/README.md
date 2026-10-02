@@ -25,7 +25,8 @@ cd site && wrangler deploy
 ```
 
 Search and sharing: `og.png` is the social card (1200×630) used by the Open Graph and Twitter tags in both pages.
-The icons are `apple-touch-icon.png` and `icon-192.png`/`icon-512.png` (for `site.webmanifest`). All of them come
+The icons are `apple-touch-icon.png`, `icon-192.png`/`icon-512.png` (for `site.webmanifest`) and `favicon.ico` (for
+whatever asks for `/favicon.ico` without reading the page). All of them come
 from `uv run --with pillow python scripts/og_card.py`, which draws them in the site's fonts and colours: change the
 card's text there and rerun it. `robots.txt` and `sitemap.xml` list the two pages; add a page to the sitemap when
 you add one. `_headers` sets the security headers and a week's browser cache for images.
