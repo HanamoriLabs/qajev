@@ -114,7 +114,30 @@ Without a suite: `qajev play GAME --goal "... choose QUIT ..." --allow QUIT --ex
 `qa_play(..., allow=["QUIT"], expect_closed=true)`.
 
 `closed: true` passes only when the game's process exits by itself with code 0; a crash, or a game still running
-at the end of the step, does not pass. Put the quit last: steps after it are skipped.
+at the end of the step, does not pass. Steps after a quit are skipped, until a `relaunch` step (below).
+
+### Saves: starting from one, and Continue (Godot)
+
+Every launch gets its own empty throwaway save folder. Two suite keys work with saves inside it:
+
+```yaml
+seed: qa/fixtures/legacy-save    # copied into user:// before the first launch reads it
+steps:
+  - name: an old save still loads
+    goal: Choose Continue. Stop when you are playing.
+    expect: {screen: GAME}
+  - name: the run is saved
+    goal: Save from the pause menu. Stop when it says saved.
+  - name: Continue after a restart
+    relaunch: true               # quit the game and start it again on the same saves
+    goal: Choose Continue. Stop when you are playing.
+    expect: {screen: GAME}
+```
+
+`seed` is a folder inside the game's own `qa/` folder (anything else, symlinks leading out of it included, is
+refused); its files are copied into `user://` once, on the first launch, after QAJev has checked that `user://` is
+the throwaway folder. A `relaunch` step restarts the game on the same throwaway folder, then runs its own goal and
+checks, if it has any; it also brings back a game an earlier step closed.
 
 ## Adapters
 

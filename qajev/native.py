@@ -101,6 +101,20 @@ def adapter_path(adapter):
 SAVE_NOT_ISOLATED = "QAJEV_SAVE_NOT_ISOLATED"
 
 
+def seed_folder(project, seed):
+    """A suite's `seed:` (saves to start from, e.g. a legacy save) as a folder inside the game's own `qa/` folder;
+    anything else is refused, symlinks that lead out of it included. qajev_boot.gd copies its contents into
+    user:// once, on the first launch, after it has checked user:// is the throwaway folder."""
+    qa = (Path(project) / "qa").resolve()
+    folder = (Path(project) / seed).resolve()
+    if not folder.is_relative_to(qa) or not folder.is_dir():
+        raise NativeError(f"seed {seed!r} must be a folder inside the game's qa/ folder ({qa})")
+    for path in folder.rglob("*"):
+        if not path.resolve().is_relative_to(qa):
+            raise NativeError(f"seed {seed!r}: {path.relative_to(folder)} leads outside the game's qa/ folder")
+    return folder
+
+
 def save_isolation(user_dir):
     """The environment that puts a Godot game's user:// (saves, settings) inside `user_dir`. Godot 4 has no
     --user-data-dir: it derives user:// from HOME (macOS: ~/Library/Application Support/..., also with a custom
@@ -116,10 +130,11 @@ class GodotGame:
     """A Godot game started by QAJev, with its bridge. Use as a context manager."""
 
     def __init__(self, project, *, adapter=None, headless=False, size=(1280, 720), start_wait=60.0, env=None,
-                 hide=None, allow=None):
+                 hide=None, allow=None, seed=None):
         self.project = Path(project).expanduser().resolve()
         if not (self.project / "project.godot").is_file():
             raise NativeError(f"{self.project} is not a Godot project (no project.godot)")
+        self.seed = seed_folder(self.project, seed) if seed else None
         self.adapter = adapter_path(adapter)
         self.hide, self.allow = list(hide or []), list(allow or [])
         self.headless, self.size, self.start_wait = headless, size, start_wait
@@ -138,14 +153,19 @@ class GodotGame:
     def start(self):
         self.port = free_port()
         # A throwaway save folder: a test never touches the player's real save. The owner pid is in its name,
-        # so the reaper can find what a dead run left behind.
+        # so the reaper can find what a dead run left behind. A relaunch keeps it: the saves of the first launch
+        # are what the next one continues from; the seed goes in only once, on the first launch.
         STATE.mkdir(parents=True, exist_ok=True)
         (HOME / "tmp").mkdir(parents=True, exist_ok=True)
-        self.user_dir = tempfile.mkdtemp(prefix=f"qajev-native-{os.getpid()}-", dir=HOME / "tmp")
+        first = self.user_dir is None
+        if first:
+            self.user_dir = tempfile.mkdtemp(prefix=f"qajev-native-{os.getpid()}-", dir=HOME / "tmp")
         godot_dir = BRIDGES / "godot"
         env = {**os.environ, **self.env, **save_isolation(self.user_dir), "QAJEV_BRIDGE_PORT": str(self.port),
                "QAJEV_BRIDGE_SCRIPT": str(godot_dir / "qajev_bridge.gd"),
-               "QAJEV_ADAPTER": str(self.adapter or ""), "QAJEV_WINDOW": f"{self.size[0]}x{self.size[1]}"}
+               "QAJEV_ADAPTER": str(self.adapter or ""), "QAJEV_WINDOW": f"{self.size[0]}x{self.size[1]}",
+               "QAJEV_SEED_DIR": str(self.seed) if first and self.seed else ""}
+        self.errors, self.log = [], []
         args = [GODOT, "--path", str(self.project), "--script", str(godot_dir / "qajev_boot.gd")]
         args += ["--headless"] if self.headless else ["--resolution", f"{self.size[0]}x{self.size[1]}"]
         self.proc = subprocess.Popen(args, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -164,6 +184,9 @@ class GodotGame:
                 if refused:
                     raise NativeError("refused to start the game: its save folder would be the player's real one ("
                                       + refused[len(SAVE_NOT_ISOLATED):].strip(" :") + ")")
+                unseeded = next((line for line in self.log if line.startswith("QAJEV_SEED_FAILED")), None)
+                if unseeded:
+                    raise NativeError(f"could not seed the save folder: {unseeded.split(':', 1)[1].strip()}")
                 raise NativeError(f"the game exited with {self.proc.returncode} before its bridge came up: "
                                   + " | ".join(self.log[-5:]))
             try:
@@ -216,7 +239,13 @@ class GodotGame:
         answer = self.call(op="shot", path=str(path.resolve()))
         return path if answer.get("ok") else None
 
-    def close(self):
+    def relaunch(self):
+        """Quit the game and start it again on the same save folder (save, relaunch, Continue)."""
+        self.close(keep_saves=True)
+        self.proc = None
+        return self.start()
+
+    def close(self, keep_saves=False):
         if self.file is not None:
             with contextlib.suppress(Exception):
                 self.file.write(json.dumps({"op": "quit"}) + "\n")
@@ -239,7 +268,7 @@ class GodotGame:
                         os.killpg(self.proc.pid, signal.SIGKILL)
         if self.proc is not None:
             (STATE / f"{self.proc.pid}.json").unlink(missing_ok=True)
-        if self.user_dir:
+        if self.user_dir and not keep_saves:
             shutil.rmtree(self.user_dir, ignore_errors=True)
 
 
@@ -808,16 +837,53 @@ def _answers(game):
         return False
 
 
+def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit):
+    """A `relaunch:` step: quit the game and start it again on the same save folder (save, relaunch, Continue);
+    then the step's goal and checks, if it has any."""
+    if callable(emit):
+        emit({"event": "start", "scenario": name})
+    spent = ledger.spent()
+    again = getattr(game, "relaunch", None)
+    if again is None:
+        return _step_result(name, "browser_error", [], "relaunch needs a Godot game")
+    _step(emit, name, ledger, "relaunching on the same saves")
+    try:
+        again()
+    except NativeError as e:
+        return _step_result(name, "browser_error", [], f"the game did not start again: {e}")
+    started = {"check": "the game started again on the same saves", "ok": True, "detail": None}
+    if step.get("goal") or step.get("expect"):
+        with contextlib.suppress(NativeError):
+            game.call(op="pilot", on=False)
+        r = play(game, name=name, goal=step.get("goal"), expect=step.get("expect") or {},
+                 budget={"actions": 20, "seconds": 90, **(step.get("budget") or {})}, ledger=ledger,
+                 run_dir=run_dir, shots=shots, emit=emit)
+        r["checks"] = [started, *r.get("checks", [])]
+    else:
+        r = _step_result(name, "reached", [started])
+    r["cost_usd"] = round(ledger.spent() - spent, 5)
+    return r
+
+
 def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
     """Several steps in one game session, in order: `goal` steps (Jev on the UI) and `play` steps (real-time
     play). A step that loses the game ends the session; the rest are skipped."""
     results = []
     unopened = None  # an app or page that would not open: the steps that use it are skipped until the next open
+    fresh = 0  # where the current launch's steps begin: a relaunch revives a game an earlier step closed or lost
     for i, step in enumerate(steps):
         name = step.get("name") or f"step {i + 1}"
         if step.get("skip"):
             r = {"name": name, "outcome": "skipped", "reason": step["skip"], "checks": [], "findings": [],
                  "screens": []}
+            results.append(r)
+            if callable(emit):
+                emit({"event": "scenario", "result": r})
+            continue
+        if step.get("relaunch"):
+            r = relaunch_step(game, step, name=name, ledger=ledger, run_dir=run_dir, shots=shots, emit=emit)
+            if r.get("stop") != "browser_error":
+                fresh = len(results)
             results.append(r)
             if callable(emit):
                 emit({"event": "scenario", "result": r})
@@ -828,7 +894,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
             results.append({"name": name, "outcome": "skipped", "reason": f"{unopened} did not open",
                             "checks": [], "findings": [], "screens": []})
             continue
-        if any(r.get("closed") for r in results):
+        if any(r.get("closed") for r in results[fresh:]):
             results.append({"name": name, "outcome": "skipped", "reason": "the game was closed by an earlier step",
                             "checks": [], "findings": [], "screens": []})
             continue
@@ -836,7 +902,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
             results.append({"name": name, "outcome": "skipped", "checks": [], "findings": [], "screens": [],
                             "reason": "the game's renderer was crashed by an earlier step"})
             continue
-        if results and results[-1].get("stop") == "browser_error" and not _answers(game):
+        if results[fresh:] and results[-1].get("stop") == "browser_error" and not _answers(game):
             results.append({"name": name, "outcome": "skipped", "reason": "the game was lost in an earlier step",
                             "checks": [], "findings": [], "screens": []})
             continue

@@ -692,6 +692,13 @@ def cmd_play(args):
         game_args += [str(a) for a in spec.get("args") or []]
         adapter = adapter or spec.get("adapter")
         headless = headless or bool(spec.get("headless"))
+        if spec.get("seed") and (mobile.is_mobile(args.project) or electron.is_electron(args.project)):
+            return _fail(args, f"{args.suite}: seed is for Godot games (saves copied into user://)", EXIT_CONFIG)
+        if spec.get("seed"):
+            try:
+                native.seed_folder(Path(args.project).expanduser(), spec["seed"])
+            except native.NativeError as e:
+                return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
     game_env.update(dict(item.split("=", 1) for item in args.game_env if "=" in item))
     game_args += args.game_arg
     name = args.name or (spec.get("name") if args.suite else None) or (
@@ -721,7 +728,8 @@ def cmd_play(args):
             else:
                 game_cm = native.GodotGame(args.project, adapter=adapter, headless=headless, env=game_env,
                                             hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
-                                            allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow])
+                                            allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow],
+                                            seed=spec.get("seed") if args.suite else None)
             with game_cm as game:
                 browser = {"surface": "native", "engine": getattr(game, "engine", "godot"),
                            "project": str(game.project), "adapter": game.adapter.stem if game.adapter else None,

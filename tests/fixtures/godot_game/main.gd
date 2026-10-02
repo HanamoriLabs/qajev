@@ -1,6 +1,7 @@
 extends Control
-# A menu with Start and Quit game; Start shows "Playing", Escape then shows "Paused". A button on a CanvasLayer
-# scaled 2x (as games scale modals for phones) shows "Scaled clicked": it must be clicked where it is drawn.
+# A menu with Start and Quit game ("Welcome back" when user:// already holds its settings); Start shows "Playing"
+# and saves the settings, Escape then shows "Paused". A button on a CanvasLayer scaled 2x (as games scale modals for
+# phones) shows "Scaled clicked": it must be clicked where it is drawn.
 
 var mode := "menu"
 var status: Label
@@ -8,6 +9,8 @@ var status: Label
 func _ready() -> void:
 	status = Label.new()
 	status.text = "Main menu"
+	if FileAccess.file_exists("user://settings.cfg"): # a save from an earlier launch, or a seeded one
+		status.text = "Welcome back"
 	status.position = Vector2(20, 20)
 	add_child(status)
 	_button("Start", Vector2(20, 80), _on_start)
