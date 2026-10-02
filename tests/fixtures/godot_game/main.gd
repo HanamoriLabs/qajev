@@ -28,6 +28,9 @@ func _button(label: String, at: Vector2, action: Callable, parent: Node = self) 
 func _on_start() -> void:
 	mode = "playing"
 	status.text = "Playing"
+	var settings := ConfigFile.new() # saved as games save settings: it must land in QAJev's throwaway folder
+	settings.set_value("run", "started", Time.get_unix_time_from_system())
+	settings.save("user://settings.cfg")
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and mode == "playing":

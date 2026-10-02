@@ -98,6 +98,20 @@ def adapter_path(adapter):
     raise NativeError(f"no adapter {adapter!r}: give a .gd path or one of {known}")
 
 
+SAVE_NOT_ISOLATED = "QAJEV_SAVE_NOT_ISOLATED"
+
+
+def save_isolation(user_dir):
+    """The environment that puts a Godot game's user:// (saves, settings) inside `user_dir`. Godot 4 has no
+    --user-data-dir: it derives user:// from HOME (macOS: ~/Library/Application Support/..., also with a custom
+    user dir; Linux: XDG_DATA_HOME, else ~/.local/share). qajev_boot.gd checks the result before the game runs.
+    QAJEV_USER_DIR names the folder for a game that keeps files elsewhere."""
+    home = str(Path(user_dir) / "home")
+    Path(home).mkdir(parents=True, exist_ok=True)
+    return {"HOME": home, "XDG_DATA_HOME": f"{home}/.local/share", "XDG_CONFIG_HOME": f"{home}/.config",
+            "XDG_CACHE_HOME": f"{home}/.cache", "QAJEV_USER_DIR": str(user_dir)}
+
+
 class GodotGame:
     """A Godot game started by QAJev, with its bridge. Use as a context manager."""
 
@@ -129,11 +143,10 @@ class GodotGame:
         (HOME / "tmp").mkdir(parents=True, exist_ok=True)
         self.user_dir = tempfile.mkdtemp(prefix=f"qajev-native-{os.getpid()}-", dir=HOME / "tmp")
         godot_dir = BRIDGES / "godot"
-        env = {**os.environ, **self.env, "QAJEV_BRIDGE_PORT": str(self.port),
+        env = {**os.environ, **self.env, **save_isolation(self.user_dir), "QAJEV_BRIDGE_PORT": str(self.port),
                "QAJEV_BRIDGE_SCRIPT": str(godot_dir / "qajev_bridge.gd"),
                "QAJEV_ADAPTER": str(self.adapter or ""), "QAJEV_WINDOW": f"{self.size[0]}x{self.size[1]}"}
-        args = [GODOT, "--path", str(self.project), "--user-data-dir", self.user_dir,
-                "--script", str(godot_dir / "qajev_boot.gd")]
+        args = [GODOT, "--path", str(self.project), "--script", str(godot_dir / "qajev_boot.gd")]
         args += ["--headless"] if self.headless else ["--resolution", f"{self.size[0]}x{self.size[1]}"]
         self.proc = subprocess.Popen(args, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                      stdin=subprocess.DEVNULL, start_new_session=True,
@@ -146,6 +159,11 @@ class GodotGame:
         deadline = time.monotonic() + self.start_wait
         while time.monotonic() < deadline:
             if self.proc.poll() is not None:
+                time.sleep(0.2)  # its last lines
+                refused = next((line for line in self.log if line.startswith(SAVE_NOT_ISOLATED)), None)
+                if refused:
+                    raise NativeError("refused to start the game: its save folder would be the player's real one ("
+                                      + refused[len(SAVE_NOT_ISOLATED):].strip(" :") + ")")
                 raise NativeError(f"the game exited with {self.proc.returncode} before its bridge came up: "
                                   + " | ".join(self.log[-5:]))
             try:

@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -276,6 +277,43 @@ def test_the_bridge_drives_a_godot_game_without_touching_real_input():
         assert time.perf_counter() - started < 3 and game.errors == []
     assert game.proc.poll() is not None, "the game must be stopped"
     assert not (native.STATE / f"{pid}.json").exists() and not Path(game.user_dir).exists()
+
+
+def test_a_godot_games_saves_are_sent_to_the_throwaway_folder(tmp_path):
+    # Godot 4 has no --user-data-dir (the flag QAJev passed was ignored): user:// follows HOME.
+    env = native.save_isolation(tmp_path)
+    assert env["HOME"] == str(tmp_path / "home") and Path(env["HOME"]).is_dir()
+    assert env["QAJEV_USER_DIR"] == str(tmp_path)
+    assert all(env[k].startswith(env["HOME"]) for k in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"))
+
+
+@live
+def test_a_godot_game_saves_into_the_throwaway_folder_never_the_players_own(tmp_path, monkeypatch):
+    # Seven Dawns: two runs changed the player's real settings and checkpoint files.
+    real = Path.home() / "Library/Application Support/Godot/app_userdata/QAJev fixture game"
+    if sys.platform != "darwin":
+        real = Path.home() / ".local/share/godot/app_userdata/QAJev fixture game"
+
+    def listing():  # every file (logs and shader caches included) with its time
+        return {str(p): p.stat().st_mtime for p in real.rglob("*") if p.is_file()} if real.exists() else {}
+
+    before = listing()
+    with native.GodotGame(FIXTURE, headless=True) as game:
+        start = next(a for a in game.observe()["actions"] if a["label"] == "Start")
+        game.act(start)
+        deadline = time.monotonic() + 3
+        saved = []
+        while not saved and time.monotonic() < deadline:
+            saved = list(Path(game.user_dir).rglob("settings.cfg"))
+            time.sleep(0.1)
+        assert saved, "the game's save must land in QAJev's throwaway folder"
+    assert listing() == before, "the player's own user:// folder changed"
+
+    # Fail closed: when user:// is not inside the throwaway folder, the game does not run at all.
+    elsewhere = native.save_isolation(tmp_path / "elsewhere")  # user:// lands here, not in the run's folder
+    monkeypatch.setattr(native, "save_isolation", lambda user_dir: {**elsewhere, "QAJEV_USER_DIR": str(user_dir)})
+    with pytest.raises(native.NativeError, match="refused to start the game"):
+        native.GodotGame(FIXTURE, headless=True).start()
 
 
 @live
