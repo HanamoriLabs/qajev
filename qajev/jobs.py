@@ -320,6 +320,12 @@ def events_since(job_id, seen):
     return events[seen:], len(events)
 
 
+def decisions(job_id, limit=500):
+    """The model's decisions in a job so far, oldest first: what it chose, how sure, the runner-up (qajev top `d`)."""
+    events, _noise = _events(JOBS / job_id)
+    return [e for e in events if e.get("event") == "decision"][-limit:]
+
+
 def result(job_id):
     """The run's final report JSON (or {"error": ...}), or None while it runs."""
     folder = JOBS / job_id

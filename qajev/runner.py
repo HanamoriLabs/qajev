@@ -180,8 +180,15 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                     _emit(opts, "step", scenario=scenario.name, doing=doing, at=time.time(),
                           spent_usd=round(session.ledger.spent(), 5), **extra)
 
+                def decided(d):  # each decision as it is made: what it chose, how sure, the runner-up
+                    s = verdict.screens([d])[0]
+                    _emit(opts, "decision", scenario=scenario.name, at=time.time(),
+                          screen=observed.get("title") or observed.get("url"), chose=s["next_step"],
+                          operation=s["operation"], p=s["p"], runner_up=s["runner_up"],
+                          runner_up_p=s["runner_up_p"], options=s["options"], ms=s["ms"])
+
                 with vision.seeing(session.screen_image if scenario.vision else None):
-                    stop, detail = drive(session, scenario, read, page_ok, started, step)
+                    stop, detail = drive(session, scenario, read, page_ok, started, step, decided)
             else:
                 stop = "checked"
     except HookFailed as e:
@@ -317,12 +324,13 @@ def _did(h):
     return f"{h.get('kind') or 'act'} {action!r}"
 
 
-def drive(session, scenario, read, page_ok, started, step=None):
-    """Jev's loop with QAJev's judgment around it. Returns (stop, detail). step(doing, **extra) hears each move."""
+def drive(session, scenario, read, page_ok, started, step=None, decided=None):
+    """Jev's loop with QAJev's judgment around it. Returns (stop, detail). step(doing, **extra) hears each move;
+    decided(decision) hears each of the model's decisions as it is made, stale ones too (qajev top's decisions view)."""
     agent = session.agent
     state = agent.state
     step = step or (lambda doing, **extra: None)
-    told = 0
+    told = heard = 0
     deadline = started + scenario.budget["seconds"]
     reasks = escapes = model_failures = stale_base = 0
     assists = session.assists = []
@@ -372,6 +380,10 @@ def drive(session, scenario, read, page_ok, started, step=None):
             for h in state["history"][told:]:
                 step(_did(h), p=h.get("probability"), n=h.get("step"))
             told = len(state["history"])
+            if decided:
+                for d in state["decisions"][heard:]:
+                    decided(d)
+                heard = len(state["decisions"])
         except CostCapReached:
             raise
         except (RuntimeError, ValueError) as e:

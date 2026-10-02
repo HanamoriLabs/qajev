@@ -14,7 +14,9 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 REFRESH_S = 1.0
-KEYS = "q quit · ↑↓/jk select · enter details · o open report · s stop job · r refresh"
+KEYS = "q quit · ↑↓/jk select · enter details · d decisions · o open report · s stop job · r refresh"
+DECISION_KEYS = "d/esc back · ↑↓ scroll · q quit"
+SIGNALS = {"DONE", "BLOCKED", "done", "blocked"}
 BAR = 12
 
 
@@ -373,6 +375,64 @@ def plain(snap, width=120):
     return "\n".join(text for text, _ in render(snap, width=width, selected=-1))
 
 
+def _p(value):
+    return f"{value:.2f}" if isinstance(value, (int, float)) else "  - "
+
+
+def _sure(d):
+    """A decision's colour: DONE/BLOCKED stand out; otherwise how sure the model was."""
+    if str(d.get("chose")) in SIGNALS:
+        return "harness"
+    p = d.get("p")
+    if not isinstance(p, (int, float)):
+        return "dim"
+    return "pass" if p >= 0.8 else "stuck" if p >= 0.5 else "fail"
+
+
+def render_decisions(job, decisions, *, width=120, scroll=0):
+    """One job's decisions as they are made, newest first -> [(text, style)]. job: jobs.status() of it."""
+    lines = []
+    add = lines.append
+    who = job.get("decider") or "Jev"
+    add((f"Decisions · {job.get('title', job.get('id'))} · {who} · {job.get('state')} · "
+         f"{time.strftime('%H:%M:%S')}"[:width], "head"))
+    ps = sorted(d["p"] for d in decisions
+                if isinstance(d.get("p"), (int, float)) and str(d.get("chose")) not in SIGNALS)
+    signals = {s: sum(1 for d in decisions if str(d.get("chose")).upper() == s) for s in ("BLOCKED", "DONE")}
+    summary = [f"{len(decisions)} decision(s)"]
+    if ps:
+        summary += [f"median p {ps[len(ps) // 2]:.2f}", f"{sum(1 for p in ps if p < 0.6)} under 0.6"]
+    summary += [f"{n} {s}" for s, n in signals.items() if n]
+    ms = sorted(d["ms"] for d in decisions if isinstance(d.get("ms"), (int, float)))
+    if ms:
+        summary.append(f"median {ms[len(ms) // 2]:.0f} ms")
+    add((" · ".join(summary)[:width], "dim"))
+    add((DECISION_KEYS, "dim"))
+    add(("", None))
+    flex = max(width - 63, 16)  # time 8, scenario 18, screen 14, two p's 5, ms 6, and 8 spaces between columns
+    chose_w, runner_w = flex * 3 // 5, flex - flex * 3 // 5
+    head = (f"{'time':<8} {'scenario':<18} {'screen':<14} {'chose':<{chose_w}} {'p':>5} {'runner-up':<{runner_w}} "
+            f"{'p':>5} {'ms':>6}")
+    add((head[:width], "head"))
+    if not decisions:
+        add(("  no decisions yet (a run from before decision logging shows none)", "dim"))
+        return lines
+    for d in list(reversed(decisions))[scroll:]:
+        when = time.strftime("%H:%M:%S", time.localtime(d["at"])) if isinstance(d.get("at"), (int, float)) else ""
+        row = (f"{when:<8} {_clip(d.get('scenario'), 18):<18} {_clip(d.get('screen'), 14):<14} "
+               f"{_clip(d.get('chose'), chose_w):<{chose_w}} {_p(d.get('p')):>5} "
+               f"{_clip(d.get('runner_up') or '', runner_w):<{runner_w}} {_p(d.get('runner_up_p')):>5} "
+               f"{d['ms'] if isinstance(d.get('ms'), (int, float)) else '':>6}")
+        add((row[:width], _sure(d)))
+    return lines
+
+
+def plain_decisions(job_id, width=120):
+    from . import jobs
+
+    return "\n".join(text for text, _ in render_decisions(jobs.status(job_id), jobs.decisions(job_id), width=width))
+
+
 # ---- the terminal UI ----
 
 
@@ -383,7 +443,8 @@ def _open(path):
     return f"no report yet at {path}"
 
 
-def run_ui():
+def run_ui(watch=None):
+    """The live dashboard; watch: a job id to open straight on its decisions view."""
     import curses
 
     def loop(screen):
@@ -407,15 +468,21 @@ def run_ui():
             styles[name] = curses.color_pair(n) | (curses.A_BOLD if name in ("head", "fail", "live") else 0)
         screen.timeout(int(REFRESH_S * 1000))
         selected, detail, message, confirm, top = 0, None, None, None, 0
+        watching, scroll = watch, 0  # the job whose decisions fill the screen (d), and how far down they are
         snap = snapshot()
         while True:
             height, width = screen.getmaxyx()
-            lines = render(snap, width=width - 1, selected=selected, detail=detail, message=message)
-            cursor = next((n for n, (_, s) in enumerate(lines) if s == "sel"), 0)
-            if cursor < top + 3:
-                top = max(cursor - 3, 0)
-            elif cursor >= top + height - 1:
-                top = cursor - height + 2
+            if watching:
+                lines = render_decisions(jobs.status(watching), jobs.decisions(watching), width=width - 1,
+                                         scroll=scroll)
+                top = 0
+            else:
+                lines = render(snap, width=width - 1, selected=selected, detail=detail, message=message)
+                cursor = next((n for n, (_, s) in enumerate(lines) if s == "sel"), 0)
+                if cursor < top + 3:
+                    top = max(cursor - 3, 0)
+                elif cursor >= top + height - 1:
+                    top = cursor - height + 2
             screen.erase()
             for y, (text, style) in enumerate(lines[top : top + height]):
                 try:
@@ -426,6 +493,21 @@ def run_ui():
             key = screen.getch()
             rows = selectable(snap)
             pick = rows[selected] if 0 <= selected < len(rows) else None
+            if watching:
+                if key == ord("q"):
+                    return
+                if key in (ord("d"), 27, curses.KEY_LEFT, curses.KEY_BACKSPACE, 127):
+                    watching, scroll = None, 0
+                elif key in (curses.KEY_DOWN, ord("j")):
+                    scroll += 1
+                elif key in (curses.KEY_UP, ord("k")):
+                    scroll = max(scroll - 1, 0)
+                elif key in (curses.KEY_NPAGE, ord(" ")):
+                    scroll += 10
+                elif key == curses.KEY_PPAGE:
+                    scroll = max(scroll - 10, 0)
+                snap = snapshot()
+                continue
             if confirm:
                 if key in (ord("y"), ord("Y")):
                     st = jobs.stop(confirm)
@@ -459,6 +541,11 @@ def run_ui():
                     message = f"stop job {confirm} ({pick[1]['title']})? y/n"
                 else:
                     message = f"job {pick[1]['id']} is {pick[1]['state']}"
+            elif key == ord("d") and pick:
+                if pick[0] == "job":
+                    watching, scroll, message = pick[1]["id"], 0, None
+                else:
+                    message = "decisions are shown for jobs: select a job (the rows above the reports)"
             elif key == ord("r"):
                 message = None
             snap = snapshot()

@@ -19,6 +19,10 @@ emit(event="run", suite="demo", run_dir="/tmp/demo-run", scenarios=2,
 emit(event="start", scenario="home")
 emit(event="scenario", result={"name": "home", "outcome": "pass", "reason": "ok"})
 emit(event="start", scenario="pricing")
+emit(event="decision", scenario="pricing", at=time.time() - 1, screen="Home", chose="BLOCKED", p=0.51,
+     runner_up="CLICK", runner_up_p=0.4, options=5, ms=600)
+emit(event="decision", scenario="pricing", at=time.time(), screen="Home", chose="See pricing", p=0.93,
+     runner_up="Contact us", runner_up_p=0.05, options=4, ms=280)
 emit(event="step", scenario="pricing", n=4, doing="click 'See pricing'", p=0.93, spent_usd=0.0035, at=time.time())
 time.sleep(float(sys.argv[1]))
 emit(event="scenario", result={"name": "pricing", "outcome": "fail", "reason": "no price"})
@@ -68,6 +72,27 @@ def test_a_job_reports_progress_while_running_and_its_gate_when_done():
     assert done["gate"] == "FAIL" and done["exit_code"] == 0 and done["progress"]["done"] == 2
     assert done["report"]["gate"] == "FAIL"
     assert [j["id"] for j in jobs.listing()][0] == job["id"]
+
+
+def test_a_jobs_decisions_are_shown_live_newest_first_with_how_sure_and_the_runner_up():
+    # José, 3 Oct: "a way to see in real time the decisions that Jev or Clef are taking" (qajev top, d).
+    from qajev import top
+
+    job = jobs.start(["check", "https://b.example"], command=fake(1.5, "Clef"))
+    seen = wait_for(lambda: len(jobs.decisions(job["id"])) == 2 and jobs.decisions(job["id"]))
+    assert [d["chose"] for d in seen] == ["BLOCKED", "See pricing"]  # oldest first, as made
+    lines = top.render_decisions(jobs.status(job["id"]), seen, width=140)
+    assert lines[0][0].startswith("Decisions · check b.example · Clef · running")
+    assert "2 decision(s) · median p 0.93 · 0 under 0.6 · 1 BLOCKED · median 600 ms" in lines[1][0]
+    rows = [(text, style) for text, style in lines if text.startswith(time.strftime("%H:"))]
+    assert "See pricing" in rows[0][0] and "Contact us" in rows[0][0] and rows[0][1] == "pass"  # newest first
+    assert all(text.rstrip().endswith(ms) for (text, _), ms in zip(rows, ("280", "600")))  # nothing cut off
+    assert all(len(text) <= 140 for text, _ in lines)
+    assert "BLOCKED" in rows[1][0] and rows[1][1] == "harness"
+    assert "See pricing" not in top.render_decisions(jobs.status(job["id"]), seen, width=140, scroll=1)[5][0]
+    assert main(["top", "--decisions", job["id"], "--once"]) == 0
+    assert main(["top", "--decisions", "no-such-job", "--once"]) == 3
+    wait_for(lambda: jobs.status(job["id"])["state"] == "done")
 
 
 def test_stopping_a_job_lets_the_run_finish_its_cleanup():

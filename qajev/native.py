@@ -455,6 +455,21 @@ def _step(emit, name, ledger, doing, **extra):
               "spent_usd": round(ledger.spent(), 5) if ledger is not None else None, **extra})
 
 
+def _decided(emit, name, decision, actions, screen):
+    """Each decision as it is made, for qajev top's decisions view: what it chose (by label), how sure, the
+    runner-up, how many options it had and how long the model took."""
+    if not callable(emit):
+        return
+    labels = {a["id"]: a["label"] for a in actions}
+    probs = decision.get("probabilities") or {}
+    chose = decision.get("choice")
+    runner = next(((k, p) for k, p in sorted(probs.items(), key=lambda kv: kv[1] or 0, reverse=True) if k != chose),
+                  (None, None))
+    emit({"event": "decision", "scenario": name, "at": time.time(), "screen": screen,
+          "chose": labels.get(chose, chose), "p": probs.get(chose), "runner_up": labels.get(runner[0], runner[0]),
+          "runner_up_p": runner[1], "options": len(actions), "ms": decision.get("latency_ms")})
+
+
 def _playing(t, obs):
     state = obs.get("state") or {}
     parts = [f"{k.replace('_', ' ')} {round(state[k]) if isinstance(state[k], float) else state[k]}"
@@ -500,6 +515,7 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
                 state = jev_state(obs, where)
                 decision = jev.model.choose(state, goal, history)
                 decisions.append(decision)
+                _decided(emit, name, decision, visible_actions(obs)[0], obs.get("screen"))
                 choice = decision["choice"]
                 p = (decision.get("probabilities") or {}).get(choice)
                 if choice == "DONE":
@@ -674,6 +690,7 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
                 if jev is not None:
                     decision = jev.model.choose(jev_state(obs, where), decide, history)
                     decisions.append(decision)
+                    _decided(emit, name, decision, allowed, obs.get("screen"))
                     answer = decision["choice"]
                     pick = next((a for a in allowed if a["id"] == answer), None)
                     why = decision.get("probabilities", {}).get(answer)

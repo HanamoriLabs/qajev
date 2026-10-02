@@ -151,9 +151,10 @@ def test_screens_report_the_runner_up_label_from_the_request():
             "1": {"element": "[1] Overview"}, "2": {"element": "[2] Pricing"}, "3": {"element": "[3] Docs"}}}}},
     }
     done = {"operation": "DONE", "target": None, "operation_probabilities": {"DONE": 0.95, "WAIT": 0.05}}
-    s1, s2 = V.screens([decision, done])
+    s1, s2 = V.screens([{**decision, "latency_ms": 280}, done])
     assert (s1["next_step"], s1["p"], s1["runner_up"], s1["runner_up_p"]) == ("[2] Pricing", 0.6, "[1] Overview", 0.3)
     assert (s2["next_step"], s2["p"], s2["runner_up"]) == ("DONE", 0.95, "WAIT")
+    assert (s1["options"], s1["ms"], s2["options"], s2["ms"]) == (3, 280, 2, None)  # qajev top's decisions view
 
 
 def test_ignore_case_is_named_in_the_check():

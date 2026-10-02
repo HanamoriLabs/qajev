@@ -69,6 +69,7 @@ From the top:
 |---|---|
 | `↑` `↓` or `j` `k` | select a job or report |
 | `enter` | open or close its details |
+| `d` | the selected job's decisions, live (`d` or `esc` goes back) |
 | `o` | open the selected run's report.html in your browser |
 | `s` | stop the selected job (asks y/n first) |
 | `r` | refresh now |
@@ -78,3 +79,22 @@ From the top:
 findings (repeats grouped), where Jev ended up, what the page said, time, cost and the screenshot.
 
 ![qajev top, a run's details](images/top-details.png)
+
+### Decisions, as they are made
+
+`d` on a job fills the screen with every decision the model has made in it so far, newest first, refreshed every
+second while the job runs (Jev, Clef-flash or Clef, as the header says):
+
+```
+time     scenario           screen         chose                          p runner-up             p     ms
+01:40:54 check              Choose a page  [2] button                  0.94 [1] button         0.06   1449
+```
+
+Each row is one decision: the screen it was made on, what the model chose, how sure it was (p), the option it
+liked next best and how long the answer took. A row is green when the model was sure (p 0.8 or more), yellow
+between 0.5 and 0.8, red under 0.5, and magenta for DONE or BLOCKED. The line above the table sums the job up:
+the median p, how many decisions were under 0.6, how many BLOCKED or DONE, and the median answer time. This is
+where a model that hesitates shows: many yellow rows, or BLOCKED where the way forward was plain.
+
+The same without the dashboard, or for an agent: `qajev top --decisions JOB --once` prints the table, and
+`--json` prints the decisions as data.
