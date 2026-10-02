@@ -80,6 +80,11 @@
     if (e.target && e.target !== window) push(state.errors, { kind: 'resource', detail: String(where(e.target)) });
     else push(state.errors, { kind: 'exception', detail: String(e.message || e.error) });
   }, true);
+  // CSP violations never reach console.error, and the requests they stop are often third-party (tags, pixels)
+  addEventListener('securitypolicyviolation', (e) => {
+    push(state.errors, { kind: 'csp', disposition: e.disposition, directive: e.effectiveDirective,
+                         detail: String(e.blockedURI || e.sourceFile || '') });
+  }, true);
   addEventListener('unhandledrejection', (e) => {
     push(state.errors, { kind: 'rejection', detail: String(e.reason && (e.reason.stack || e.reason.message) || e.reason) });
   });

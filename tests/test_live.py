@@ -40,6 +40,11 @@ class Recorder(http.server.SimpleHTTPRequestHandler):
             return True
         return False
 
+    def end_headers(self):
+        if self.path == "/csp.html":  # report-only can only come from a header, not a <meta>
+            self.send_header("Content-Security-Policy-Report-Only", "img-src 'self'")
+        super().end_headers()
+
     def do_GET(self):
         Recorder.requests.append(("GET", self.path))
         if not self._download_redirect():
@@ -193,6 +198,21 @@ def test_errors_are_collected_as_findings(session, site):
     found = verdict.findings_from_probe(probe, scenario="b", url=site, first_party_hosts={site.split("//")[1]})
     kinds = {f["kind"] for f in found}
     assert "page error" in kinds and ({"failed to load", "HTTP 404"} & kinds)
+
+
+def test_csp_blocks_and_report_only_violations_are_findings(session, site):
+    # Live: a smoke of 9 sites could not say whether a tag manager's pixels hit a CSP; violations never reach
+    # console.error, and the request failures they cause are third-party, so nothing was recorded.
+    from qajev import verdict
+
+    session.arm("readonly")
+    session.navigate(site + "/csp.html")
+    time.sleep(0.5)
+    probe = session.probe({})["probe"]
+    found = verdict.findings_from_probe(probe, scenario="c", url=site, first_party_hosts={site.split("//")[1]})
+    got = {(f["severity"], f["kind"], f["detail"]) for f in found}
+    assert ("S2", "blocked by CSP", "connect-src: http://127.0.0.2:9/collect") in got
+    assert ("S3", "CSP violation (report-only)", "img-src: http://127.0.0.2:9/pixel.gif") in got
 
 
 def test_smoke_crawls_and_lints_the_fixture(site, browser, tmp_path):

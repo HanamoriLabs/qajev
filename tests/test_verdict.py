@@ -95,6 +95,19 @@ def test_findings_skip_third_party_noise_and_our_own_write_blocks():
     assert kinds == [("S2", "page error"), ("S2", "HTTP 500"), ("S3", "failed to load"), ("S3", "console error")]
 
 
+def test_csp_violations_are_findings_even_for_third_party_hosts():
+    probe = {"errors": [
+        {"kind": "csp", "disposition": "enforce", "directive": "script-src-elem",
+         "detail": "https://analytics.tiktok.com/i18n/pixel/events.js"},
+        {"kind": "csp", "disposition": "report", "directive": "connect-src", "detail": "https://t.co/1/i/adsct"},
+    ]}
+    found = V.findings_from_probe(probe, scenario="s", url="https://h/", first_party_hosts={"h"})
+    assert [(f["severity"], f["kind"], f["detail"]) for f in found] == [
+        ("S2", "blocked by CSP", "script-src-elem: https://analytics.tiktok.com/i18n/pixel/events.js"),
+        ("S3", "CSP violation (report-only)", "connect-src: https://t.co/1/i/adsct"),
+    ]
+
+
 def test_a_blank_spell_is_one_finding_with_its_longest_duration():
     assert V.blank_finding(9_999, scenario="s", url="u") == []
     (f,) = V.blank_finding(15_037, scenario="s", url="u")

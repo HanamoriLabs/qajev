@@ -126,6 +126,12 @@ def findings_from_probe(probe, *, scenario, url, first_party_hosts):
             out.append(_finding("S3", "failed to load", detail, scenario, url))
         elif kind == "console":
             out.append(_finding("S3", "console error", detail, scenario, url))
+        elif kind == "csp":  # third-party too: a blocked tag or pixel is the site's own policy at work
+            what = f"{err.get('directive')}: {detail}"
+            if err.get("disposition") == "report":
+                out.append(_finding("S3", "CSP violation (report-only)", what, scenario, url))
+            else:
+                out.append(_finding("S2", "blocked by CSP", what, scenario, url))
     return out
 
 

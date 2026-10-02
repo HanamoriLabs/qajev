@@ -316,7 +316,8 @@ async def qa_smoke(
     motion: str | None = None,
 ) -> dict:
     """Crawl same-origin pages from `url` with NO model calls and lint each one: HTTP status, script
-    errors, failed requests, broken images, unlabeled fields, unnamed buttons, overflow, SEO basics.
+    errors, failed requests, CSP blocks and report-only violations, broken images, unlabeled fields,
+    unnamed buttons, overflow, SEO basics.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop)."""
     args = ["smoke", url, "--max-pages", str(max_pages), *(["--device", device] if device else []),
             "--out", out_dir or str(DEFAULT_OUT),

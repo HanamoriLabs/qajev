@@ -74,7 +74,7 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 ## `qajev smoke`
 
 Crawl the pages of a site (same host only) with **no model calls**, and lint each one: HTTP status, script errors,
-broken images, a blank page, missing title or description, accessibility basics, layout shifts and more.
+Content Security Policy blocks and report-only violations, broken images, a blank page, missing title or description, accessibility basics, layout shifts and more.
 
 ```bash
 qajev smoke http://localhost:3000 --max-pages 30 --check-links

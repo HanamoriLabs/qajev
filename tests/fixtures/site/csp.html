@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="CSP">
+<meta http-equiv="Content-Security-Policy" content="connect-src 'self'">
+<title>CSP</title></head>
+<body>
+  <h1>Content Security Policy</h1>
+  <p>Its policy blocks a request to another host, and a report-only header (sent by the test server) flags an
+    image from another host, on purpose.</p>
+  <img src="http://127.0.0.2:9/pixel.gif" alt="">
+  <script>fetch('http://127.0.0.2:9/collect').catch(() => {});</script>
+  <a href="/">Home</a>
+</body>
+</html>
