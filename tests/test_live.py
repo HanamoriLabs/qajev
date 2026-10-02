@@ -412,6 +412,32 @@ def test_imhim_names_the_outfits_screen_over_the_title_and_offers_its_way_out(se
     assert obs["texts"][-1].startswith("OUTFITS")
 
 
+def test_imhim_talk_says_where_the_conversation_is_and_offers_one_way_out(session, site):
+    # 2 Oct: Clef-flash quit long talks after 3-4 Continues and Clef hesitated on a talk after a death. The adapter now
+    # numbers the lines, says the talk ends by itself, and names what Continue does on a line still typing.
+    from qajev import electron
+
+    session.navigate(site + "/imhim-talk.html")
+    adapter = (Path(electron.__file__).parent / "bridges/web/adapters/imhim.js").read_text()
+    session.evaluate(adapter)
+
+    def look():
+        obs = session.evaluate(electron.OBSERVE)
+        return obs, [a["label"] for a in obs["actions"]]
+
+    obs, labels = look()
+    assert obs["screen"] == "TALK" and obs["state"]["talk_line"] == 1
+    assert labels == ["Continue: finish this line (Enter)", "Close the conversation (Esc)"]  # no second ✕ close
+    assert obs["texts"][0].startswith("Conversation, line 1: Continue shows the next line; it closes by itself")
+    assert "still typing" in obs["texts"][0]
+    session.evaluate("nextLine('Kagemaru: The court will hear the evidence.')")  # finishes typing: same line
+    obs, labels = look()
+    assert obs["state"]["talk_line"] == 1 and labels[0] == "Continue: the next line (Enter)"
+    session.evaluate("nextLine('Kagemaru: The court will hear the evidence.')")  # the next line
+    obs, _ = look()
+    assert obs["state"]["talk_line"] == 2 and obs["texts"][0].startswith("Conversation, line 2:")
+
+
 def test_text_checks_read_visible_text_and_ignore_case_is_opt_in(session, site):
     session.arm("readonly")
     session.navigate(site + "/")

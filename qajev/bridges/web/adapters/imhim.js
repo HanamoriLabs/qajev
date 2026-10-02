@@ -97,6 +97,14 @@ function settingsOptions() {
   return out;
 }
 
+// Which line of the open conversation is on show: counted as its whole text (.talk-sr) changes, from 1 when a talk
+// opens. A line repeated word for word counts once; that only makes the number lower, never wrong about progress.
+function noteTalkLine(line) {
+  const t = window.__qajevTalk || (window.__qajevTalk = { last: null, n: 0 });
+  if (line !== t.last) { t.last = line; t.n += 1; }
+  return t.n;
+}
+
 window.__qajevAdapter = {
   observe(base) {
     const $ = (sel) => document.querySelector(sel);
@@ -105,7 +113,7 @@ window.__qajevAdapter = {
     const key = (id, label, k) => ({ id, label, kind: 'key', key: k });
     const g = window.__game;
     const keys = [];
-    let screen = 'LOADING', decision = false;
+    let screen = 'LOADING', decision = false, talkLine = 0, talkHint = '';
 
     const title = $('.title-screen');
     const titleOn = title && title.classList.contains('on');
@@ -140,9 +148,22 @@ window.__qajevAdapter = {
       if (screen === 'STALL VERDICT') keys.push(key('close_stall', 'Leave the stall', 'Enter'));
     } else if (on('.talk.on')) {
       screen = 'TALK';
-      if (!on('.talk.on .talk-choice')) keys.push(key('talk_next', 'Continue the conversation', 'Enter'));
-      else decision = true;
-      keys.push(key('talk_close', 'Close the conversation', 'Escape'));
+      // Where the conversation is, and that it ends by itself: pressing Continue many times read to a decision
+      // model as going nowhere (BLOCKED after 3-4 presses in the Hearing; a talk after a death read as a dead end).
+      // Tested on the real models, 2 Oct: Clef 0.55 -> 0.93 on the after-death talk, Jev no longer stuck there.
+      // Enter on a line still typing only finishes it (src/ui/DialogueScreen.ts next()), so the label says so.
+      const typing = on('.talk.on .talk-box.typing');
+      talkLine = noteTalkLine(text('.talk.on .talk-sr'));
+      if (!on('.talk.on .talk-choice')) {
+        keys.push(key('talk_next', typing ? 'Continue: finish this line (Enter)' : 'Continue: the next line (Enter)',
+          'Enter'));
+        talkHint = `Conversation, line ${talkLine}: Continue shows the next line; it closes by itself after the last one.`
+          + (typing ? ' This line is still typing: Continue shows all of it.' : '');
+      } else {
+        decision = true;
+        talkHint = `Conversation, line ${talkLine}: pick one of the replies.`;
+      }
+      keys.push(key('talk_close', 'Close the conversation (Esc)', 'Escape'));
     } else if (on('.settings-screen.on')) {
       screen = 'SETTINGS'; // "Esc when done" (its own hint); also its DONE button
       keys.push(key('close_settings', 'Close the settings (Esc)', 'Escape'));
@@ -207,8 +228,11 @@ window.__qajevAdapter = {
           kind: 'adapter', op: 'dev_item', match: it.key });
       }
     }
+    if (screen !== 'TALK') window.__qajevTalk = null; // the next conversation counts its lines from 1
+    // The talk box's ✕ (aria-label "Close conversation") does what talk_close does: one way out reads clearer.
+    const sameAsKey = screen === 'TALK' ? /^close conversation$/i : null;
     let actions = screen === 'DEV TOOLS' ? [...keys, ...options] : [...keys, ...options, ...base.actions.filter((a) => !deny.test(a.label) && !(dup && dup.test(a.label))
-      && !optionTexts.has(a.label))];
+      && !(sameAsKey && sameAsKey.test(a.label)) && !optionTexts.has(a.label))];
     if (screen === 'DEV TOOLS') actions = actions.filter((a) => !deny.test(a.label));
 
     // The game's bot (dev build, ?autoplay) waits on every decision a player makes (level-up cards, dialogue
@@ -224,6 +248,7 @@ window.__qajevAdapter = {
     }
 
     const state = { screen };
+    if (talkLine) state.talk_line = talkLine;
     const tab = $('.inv.on [id^="inv-tab-"].on, .inv.on [id^="inv-tab-"][aria-selected="true"]');
     if (tab) state.bag_tab = tab.id.replace('inv-tab-', '');
     const setTab = $('.settings-screen.on [id^="set-tab-"][aria-selected="true"]');
@@ -275,6 +300,7 @@ window.__qajevAdapter = {
     if (screen === 'LEVEL UP') texts.push('Level up! Pick one card.');
     if (ap && ap.waitingFor) texts.push('The game waits for your choice (' + ap.waitingFor + '). Pick one option.');
     if (screen === 'PLAYING') texts.push('Playing a run. ' + [lvl, kills, timer].filter(Boolean).join(' · '));
+    if (talkHint) texts.push(talkHint);
     // Kept short: a long screen (1,400 characters of key bindings) tipped Jev into DONE; 600 kept it on task.
     texts.push((own || base.texts[0] || '').slice(0, 600));
     return { screen, decision, actions, state, problems, texts, replaceActions: true };
