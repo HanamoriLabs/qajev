@@ -52,9 +52,17 @@ def load_env(explicit=None):
     return loaded
 
 
+_REMEMBERED: set[str] = set()  # values read from a vault this process (vault.resolve): redacted like env secrets
+
+
+def remember_secret(value):
+    if value and len(value) >= 4:
+        _REMEMBERED.add(value)
+
+
 def secret_values():
     return sorted(
-        {v for k, v in os.environ.items() if SECRET_NAME.search(k) and v and len(v) >= 8},
+        {v for k, v in os.environ.items() if SECRET_NAME.search(k) and v and len(v) >= 8} | _REMEMBERED,
         key=len,
         reverse=True,
     )

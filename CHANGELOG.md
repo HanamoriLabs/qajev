@@ -12,6 +12,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - Job titles in `qajev jobs`, `qajev top` and `qa_jobs` say what a run is about: the project or site and the goal
   for website runs, the game and the test's name for games (not `play desktop`), for older jobs too. `qajev top`
   widens the title on a wide terminal.
+- Stored test accounts: a suite's `account:` (or a project's `[accounts.NAME]` named by `account = "NAME"`) gives an
+  email and a password *reference*: `keychain:SERVICE/ACCOUNT` (macOS Keychain; the secret service on Linux),
+  `op://VAULT/ITEM/FIELD` (1Password's `op`) or `env:NAME`. Before the scenarios, QAJev itself signs in, in its own
+  unguarded tab, then runs the scenarios guarded and signed in. Jev never sees the password; it is read only at
+  sign-in, typed only into a password field on an `https` (or localhost) page of an allowed host, and redacted from
+  everything QAJev writes. A failed sign-in stops the run (`harness`, with the page's reason). The report says who
+  signed in. `qajev secret set|check REF` stores a Keychain password at the Keychain's own prompt, or checks that a
+  reference can be read (never printing it). Projects' older `email_env` / `password_env` still work.
 - Real-time play: a decision still closing after Jev's pick (same screen, same offers, within 2.5 s) is not asked
   again. Jev answered DONE there, which matched no offer, so the first offer was clicked a second time and
   "decision not made by Jev" filed. When Jev does answer DONE or BLOCKED at a decision, the finding and the step

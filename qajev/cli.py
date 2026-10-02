@@ -208,6 +208,11 @@ def build_parser():
     browser.add_argument("--url", help="for login: the page to sign in on")
     browser.add_argument("--json", action="store_true")
 
+    secret = sub.add_parser("secret", help="store or check a test account's password reference (never prints it)")
+    secret.add_argument("action", choices=["set", "check"],
+                        help="set: save a keychain: password (its store prompts for it); check: can QAJev read it")
+    secret.add_argument("ref", help="keychain:SERVICE/ACCOUNT, op://VAULT/ITEM/FIELD or env:NAME")
+
     doctor = sub.add_parser("doctor", help="check keys, Chrome, ports and load (never prints secrets)")
     doctor.add_argument("--env-file")
     doctor.add_argument("--offline", action="store_true", help="skip the free OpenRouter key validity check")
@@ -332,6 +337,13 @@ def _screen_printer(args):
                   f" {r.get('reason', '')}", file=sys.stderr, flush=True)
         elif kind == "reaped":
             print(f"  cleaned up after a dead run: {', '.join(event['items'])}", file=sys.stderr, flush=True)
+        elif kind == "signin" and "ok" in event:
+            said = (f"signed in as {event.get('email') or event['account']}"
+                    + (" (already)" if event.get("already") else f" ({event.get('seconds')}s)")
+                    if event["ok"] else f"sign-in failed: {event.get('reason')}")
+            print(f"  {'✓' if event['ok'] else '!'} {said}", file=sys.stderr, flush=True)
+        elif kind == "signin":
+            print(f"  ▸ signing in: {event['account']}", file=sys.stderr, flush=True)
     return _safe(emit)
 
 
@@ -770,6 +782,21 @@ def cmd_browser(args):
     return 0
 
 
+def cmd_secret(args):
+    from . import vault
+
+    try:
+        if args.action == "set":
+            vault.store(args.ref)
+            print(f"saved {args.ref}")
+        value = vault.resolve(args.ref)
+    except vault.VaultError as e:
+        print(f"qajev: {e}", file=sys.stderr)
+        return 2
+    print(f"ok: {args.ref} can be read ({len(value)} characters)")
+    return 0
+
+
 def cmd_doctor(args):
     from . import chrome, providers
     from .config import DEFAULTS, env_files, load_env
@@ -1028,6 +1055,7 @@ def main(argv=None):
 
             _job_dir = jobs.register(args.argv)
     handlers = {"check": cmd_run, "run": cmd_run, "smoke": cmd_smoke, "browser": cmd_browser, "doctor": cmd_doctor,
+                "secret": cmd_secret,
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
                 "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
                 "top": cmd_top, "nightly": cmd_nightly,

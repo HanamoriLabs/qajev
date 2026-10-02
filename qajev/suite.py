@@ -56,8 +56,12 @@ SCENARIO_KEYS = {
 }
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
-    "scenarios", "settle", "motion", "devices", "real_devices",
+    "scenarios", "settle", "motion", "devices", "real_devices", "account",
 }
+# A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
+ACCOUNT_KEYS = {"name", "email", "password", "login"}
+LOGIN_KEYS = {"url", "email_field", "password_field", "next", "submit", "signed_in"}
+SIGNED_IN_KEYS = {"url_not", "text", "js"}
 # reduce: the tab tells pages the visitor prefers reduced motion (CSS media query and matchMedia), so sites that
 # honour it stop scroll-scrubbing, carousels and counters that otherwise keep changing under Jev. full: as-is.
 MOTIONS = ("reduce", "full")
@@ -108,6 +112,7 @@ class Suite:
     path: Path | None = None
     motion: str = "reduce"
     real_devices: list = field(default_factory=list)  # also run in a real device browser: "ios", "android"
+    account: dict | None = None  # signed in once before the scenarios; its password is a vault reference
 
     @property
     def mutates(self):
@@ -187,6 +192,33 @@ def page_checks(expect):
 
 def has_checks(expect):
     return page_checks(expect) or bool(expect.get("fetch") or expect.get("command"))
+
+
+def _account(raw, base):
+    from . import vault
+
+    if not isinstance(raw, dict):
+        raise SuiteError("account must be a mapping: email, password, login")
+    _unknown("account", raw, ACCOUNT_KEYS)
+    if not isinstance(raw.get("email"), str) or not raw["email"].strip():
+        raise SuiteError("account.email is required (the test account's sign-in name, or an env:/keychain:/op:// "
+                         "reference to it)")
+    try:
+        vault.parse(raw.get("password"))
+    except vault.VaultError as e:
+        raise SuiteError(f"account.password: {e}") from None
+    login = raw.get("login")
+    if not isinstance(login, dict) or not login.get("url"):
+        raise SuiteError("account.login.url is required (the sign-in page)")
+    _unknown("account.login", login, LOGIN_KEYS)
+    _unknown("account.login.signed_in", login.get("signed_in") or {}, SIGNED_IN_KEYS)
+    url = urljoin(base, login["url"]) if base else login["url"]
+    scheme = urlsplit(url).scheme
+    if scheme != "https" and not (scheme == "http" and is_loopback(url)):
+        raise SuiteError("account.login.url must be https (http only on localhost): a password never travels "
+                         "unencrypted")
+    return {"name": str(raw.get("name") or raw["email"]), "email": raw["email"], "password": raw["password"],
+            "login": {**login, "url": url}}
 
 
 def parse(data, path=None, devices=None):
@@ -280,6 +312,9 @@ def parse(data, path=None, devices=None):
     if base:
         hosts.add(host_of(base))
     hosts |= set(_list(data.get("hosts"), "hosts"))
+    account = _account(data["account"], base) if data.get("account") else None
+    if account:
+        hosts.add(host_of(account["login"]["url"]))
     suite = Suite(
         name=str(data.get("name") or (path.stem if path else "qajev")),
         base_url=base,
@@ -290,6 +325,7 @@ def parse(data, path=None, devices=None):
         path=path,
         motion=motion,
         real_devices=_real_devices(data.get("real_devices") or os.environ.get("QAJEV_REAL_DEVICES")),
+        account=account,
     )
     check_safety(suite)
     return suite

@@ -142,6 +142,13 @@ def _changes_md(ch):
     return out
 
 
+def _signed_in(s):
+    if not s.get("ok"):
+        return f"- Sign-in: account {s['account']} failed: {s.get('reason')}"
+    how = "already signed in" if s.get("already") else f"in {s.get('seconds')} s"
+    return f"- Sign-in: as {s.get('email') or s['account']} (account {s['account']}), {how}"
+
+
 def markdown(data):
     c = data["counts"]
     cost = data["cost"]
@@ -240,6 +247,7 @@ def markdown(data):
         f"${cost['usd_text']:.4f}" + ("" if cost["text_cost_reported"] else " (provider did not report cost)"),
         *([f"- Models: Jev {data['models']['jev']}; text {data['models']['text']}"] if data.get("models") else []),
         *([f"- Motion: {MOTION[data['motion']]}"] if data.get("motion") in MOTION else []),
+        *([_signed_in(data["sign_in"])] if data.get("sign_in") else []),
         f"- QAJev {data['qajev']}",
         "",
     ]

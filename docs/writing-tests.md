@@ -171,13 +171,52 @@ guard:
 
 ## Signed-in areas
 
-QAJev never signs in for you and never types passwords. Sign in once yourself in QAJev's own browser profile;
-the profile remembers it:
+Two ways in. Jev never types a password in either.
+
+**A stored test account.** The suite names a test account; its password stays in your password store and the file
+only says where:
+
+```yaml
+account:
+  email: qa+shop@example.com          # or a reference, like the password
+  password: keychain:qajev/shop-tester # or op://QA/Shop tester/password (1Password), or env:SHOP_TESTER_PASS
+  login: {url: /login}
+scenarios:
+  - name: the order history lists past orders
+    url: /account/orders
+    expect: {text: ["Order #"]}
+```
+
+Before the first scenario, QAJev itself opens the sign-in page in its own tab, types the email, reads the password
+from the store and types it into the password field, submits, and checks it got in. Then the scenarios run as usual,
+guarded and already signed in. The password is never in Jev's prompt, a report, a screenshot or a log (whatever is
+read from a store is redacted from everything QAJev writes), and Jev still cannot type into password fields. If the
+site does not let the account in, the run stops with the reason (`harness: sign-in failed: Wrong email or password`)
+instead of leaving Jev at a sign-in page.
+
+| `password:` | Where the password lives | Set it up |
+|---|---|---|
+| `keychain:SERVICE/ACCOUNT` | the macOS Keychain (on Linux, the secret service via `secret-tool`) | `qajev secret set keychain:qajev/shop-tester` (the Keychain prompts for it) |
+| `op://VAULT/ITEM/FIELD` | 1Password, read with its `op` command-line tool (Touch ID) | make the item in 1Password; install `op` and turn on its app integration |
+| `env:NAME` | an environment variable, e.g. a CI secret | set it in CI or your `.env` |
+
+`qajev secret check REF` says whether QAJev can read it (the length, never the value). Use a test account made
+for this, never a real person's.
+
+The sign-in page must be `https` (plain `http` only on localhost) and its host one the suite allows; the password
+only goes into a password field. `login` also takes `email_field`, `password_field` and `submit` (CSS selectors,
+when the defaults do not find them), `next` (the button between the email and password steps of a two-step
+sign-in), and `signed_in` to say how success looks (`{url_not: /login}`, `{text: ["Your orders"]}` or `{js: ...}`;
+by default: away from the sign-in page with no password field showing).
+
+**Or sign in once yourself** in QAJev's own browser profile; the profile remembers it:
 
 ```bash
 qajev browser login --profile shop --url https://shop.example/login   # a window opens: sign in, then close it
 qajev run account.yaml --profile shop
 ```
+
+This is the way for sign-ins QAJev cannot do by itself: one-time codes, passkeys, "Sign in with Google".
 
 ## Games
 

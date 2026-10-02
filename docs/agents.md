@@ -62,4 +62,6 @@ QAJev enforces these, whatever the agent asks:
 - no spending past the cost cap.
 
 Signing in is the person's job: `qa_browser(action="login")` opens a window for them, once, and the profile
-remembers it. See [Safety](safety.md).
+remembers it. Or the suite or project names a stored test account (`account:` with a `keychain:`, `op://` or
+`env:` password reference) and QAJev signs in by itself before the scenarios. An agent never handles the password:
+it never asks for one, never puts one in a suite, and passes only the reference. See [Safety](safety.md).

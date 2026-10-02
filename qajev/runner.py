@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import chrome, providers, verdict
-from .config import redact_tree, secret_values
+from .config import redact, redact_tree, secret_values
 from .ledger import CostCapReached, Ledger
 from .suite import has_checks
 from .suite import page_checks as has_page_checks
@@ -464,6 +464,27 @@ def real_device_run(suite, scenarios, platform, opts, cap, run_dir, emit):
     return results, ledger.summary()
 
 
+def sign_in_first(suite, *, opts, cdp_url, headless, motion):
+    """The suite's account signed in once, in its own unguarded tab, before any scenario. -> what happened."""
+    from . import session as session_mod
+    from . import signin, vault
+
+    _emit(opts, "signin", account=suite.account["name"])
+    session = None
+    try:
+        session_mod.configure_env(cdp_url)
+        session = session_mod.Session(Ledger(0.0), headless=headless, hosts=suite.hosts, guard_opts=suite.guard,
+                                      motion=motion)
+        done = signin.sign_in(session, suite.account)
+    except (signin.SignInFailed, vault.VaultError, RuntimeError, TimeoutError, OSError) as e:
+        done = {"account": suite.account["name"], "ok": False, "reason": redact(str(e))[:300]}
+    finally:
+        if session is not None:
+            session.close()
+    _emit(opts, "signin", **done)
+    return done
+
+
 def run(suite, opts):
     from . import report
 
@@ -513,8 +534,22 @@ def run(suite, opts):
             user_emit(event)
 
     opts.emit = emit
+    signed = None
     try:
-        if opts.jobs > 1 and len(chains) > 1:
+        if suite.account:
+            signed = sign_in_first(suite, opts=opts, cdp_url=cdp_url, headless=suite_meta["headless"], motion=motion)
+            if opts.jobs > 1 and len(chains) > 1:  # the workers start their own daemons; this one is done
+                from . import session as session_mod
+
+                session_mod.stop_daemon()
+        if signed and not signed["ok"]:  # Jev must not meet a sign-in page it cannot pass: stop with the reason
+            for s in scenarios:
+                r = _finish({"name": s.name, "url": s.url, "goal": s.goal, "mode": s.mode, "checks": [],
+                             "findings": [], "screens": [], "stop": "sign_in"},
+                            "harness", f"sign-in failed: {signed['reason']}", time.monotonic())
+                results_by_name[s.name] = r
+                emit({"event": "scenario", "result": r})
+        elif opts.jobs > 1 and len(chains) > 1:
             import multiprocessing
             from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -565,6 +600,8 @@ def run(suite, opts):
                          interrupted=interrupted, run_dir=run_dir)
     built["models"] = models
     built["motion"] = motion
+    if signed:
+        built["sign_in"] = signed
     built = redact_tree(built, secret_values())
     report.write(run_dir, built)
     _emit(opts, "done", gate=built["gate"], run_dir=str(run_dir))

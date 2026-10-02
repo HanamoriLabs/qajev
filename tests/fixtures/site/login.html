@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Sign in">
+<title>Sign in</title></head>
+<body>
+  <h1>Sign in</h1>
+  <input type="text" aria-label="Search the docs" placeholder="Search">
+  <form id="signin">
+    <label>Email <input type="email" name="email" autocomplete="username"></label>
+    <label>Password <input type="password" name="password" autocomplete="current-password"></label>
+    <button type="submit">Sign in</button>
+  </form>
+  <p id="error" role="alert"></p>
+  <script>
+    // A test account for QAJev's own tests: posts like a real form, then a session cookie opens /account.html.
+    signin.onsubmit = async (e) => {
+      e.preventDefault();
+      const body = JSON.stringify({ email: signin.email.value });
+      await fetch('/api/login', { method: 'POST', body }).catch(() => {});
+      if (signin.email.value === 'tester@example.test' && signin.password.value === 'fixture-pass-123') {
+        document.cookie = 'qajev_fixture_session=tester; path=/';
+        location.href = '/account.html';
+      } else {
+        error.textContent = 'Wrong email or password';
+      }
+    };
+  </script>
+</body>
+</html>

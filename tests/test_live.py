@@ -253,6 +253,50 @@ def test_smoke_crawls_and_lints_the_fixture(site, browser, tmp_path):
     assert tabs() <= tabs_before, "the run must close its own tabs"
 
 
+def test_a_stored_test_account_signs_in_before_the_scenarios_and_its_password_goes_nowhere(site, browser, tmp_path):
+    # The sign-in form posts (the read-only guard would block it), so QAJev signs in itself, unguarded, in its own
+    # tab; the scenarios then run guarded and signed in. The password is read from the vault reference only.
+    import subprocess
+    import sys
+
+    suite = tmp_path / "account.yaml"
+    suite.write_text(f"""
+name: account
+base_url: {site}
+devices: [desktop]
+account:
+  email: tester@example.test
+  password: env:QAJEV_FIXTURE_PASS
+  login: {{url: /login.html}}
+scenarios:
+  - name: the account page knows who is signed in
+    url: /account.html
+    expect: {{text: ["Signed in as tester@example.test"]}}
+""")
+
+    def run(password, out):
+        env = {**os.environ, "QAJEV_FIXTURE_PASS": password}
+        p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--cdp-url", browser["cdp_url"],
+                            "--out", str(out), "--json", "--quiet", "--load-high", "0"],
+                           capture_output=True, text=True, timeout=180, env=env)
+        return json.loads(p.stdout), p
+
+    wrong, _ = run("not-the-password", tmp_path / "wrong")
+    (scenario,) = wrong["scenarios"]
+    assert scenario["outcome"] == "harness" and "Wrong email or password" in scenario["reason"]
+    assert wrong["sign_in"]["ok"] is False  # Jev never met a sign-in page it could not pass
+
+    good, p = run("fixture-pass-123", tmp_path / "good")
+    (scenario,) = good["scenarios"]
+    assert good["sign_in"]["ok"] and good["sign_in"]["email"] == "tester@example.test", good["sign_in"]
+    assert scenario["outcome"] == "pass", scenario
+    assert ("POST", "/api/login") in Recorder.requests
+    (md,) = (tmp_path / "good").rglob("report.md")
+    assert "Sign-in: as tester@example.test (account tester@example.test)" in md.read_text()
+    written = [f.read_text(errors="replace") for f in (tmp_path / "good").rglob("*") if f.is_file()]
+    assert written and not any("fixture-pass-123" in text for text in written + [p.stdout, p.stderr])
+
+
 @pytest.mark.skipif(os.environ.get("QAJEV_LIVE_JEV") != "1", reason="set QAJEV_LIVE_JEV=1 (paid TypeSafe calls)")
 def test_jev_reaches_pricing_end_to_end(site, browser, tmp_path):
     import subprocess

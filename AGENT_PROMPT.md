@@ -80,9 +80,12 @@ and say what they are waiting for. Never start a second copy of a run because th
 
 ### Rules
 
-- **Never type passwords, one-time codes or payment details.** QAJev disables those fields anyway. If a test needs
-  a signed-in account, ask the person to sign in once: `qa_browser(action="login", profile=NAME, url=LOGIN_URL)` /
-  `qajev browser login --profile NAME --url LOGIN_URL`, then run with that `profile`.
+- **Never type, ask for or write down passwords, one-time codes or payment details.** QAJev disables those fields
+  anyway. If a test needs a signed-in account, either ask the person to sign in once:
+  `qa_browser(action="login", profile=NAME, url=LOGIN_URL)` / `qajev browser login --profile NAME --url LOGIN_URL`,
+  then run with that `profile`; or, if they keep a test account in the Keychain, 1Password or an environment
+  variable, put an `account:` block in the suite with its reference (`password: keychain:qajev/shop-tester`) and
+  QAJev signs in by itself. Only ever the reference, never the value.
 - **Production is read-only.** QAJev blocks writes (form posts, deletes) on any site that is not your own
   machine. Tests that change data (`mode: mutate`) only run against `localhost` / `127.0.0.1`.
 - **Dangerous buttons are hidden from Jev** (sign out, delete, pay, billing, "close all"...). Do not try to work

@@ -44,8 +44,10 @@ skipped. Gate: PASS, FAIL or INCOMPLETE.
 
 Safety built in: read-only by default (writes are blocked in the page), dangerous controls (sign out,
 delete, billing, pay, revoke, close all...) are hidden from Jev, passwords/payment fields are disabled,
-the microphone is stubbed, mutate mode is loopback-only. Sign-in is the person's job:
-qa_browser(action="login", url=...) opens QAJev's own Chrome for them. Never ask for passwords.
+the microphone is stubbed, mutate mode is loopback-only. Sign-in: qa_browser(action="login", url=...) opens
+QAJev's own Chrome for the person, or a suite/project names a stored test account (account: with a keychain:,
+op:// or env: password reference) and QAJev signs in itself before the scenarios. Never ask for, type or write
+down a password: only ever the reference.
 """
 
 server = MCPServer(name="qajev", version=__version__, instructions=INSTRUCTIONS)

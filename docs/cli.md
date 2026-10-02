@@ -238,6 +238,21 @@ qajev browser stop --profile shop
 qajev browser reap                                                   # clean up after runs that died
 ```
 
+## `qajev secret`
+
+A stored test account's password, by reference (see [Signed-in areas](writing-tests.md#signed-in-areas)). It never
+prints the value.
+
+```bash
+qajev secret set keychain:qajev/shop-tester       # the Keychain prompts for the password and saves it
+qajev secret check keychain:qajev/shop-tester     # ok: ... can be read (14 characters)
+qajev secret check "op://QA/Shop tester/password" # 1Password, via its `op` tool (Touch ID)
+qajev secret check env:SHOP_TESTER_PASS
+```
+
+`set` stores `keychain:` references only (on Linux in the secret service, with `secret-tool`); 1Password items are
+made in 1Password. Exit code 2 when the reference cannot be read, with the store's reason.
+
 ## `qajev doctor`
 
 Checks your keys (present and valid, never printed), Chrome, a free port and the machine's load. `--offline`

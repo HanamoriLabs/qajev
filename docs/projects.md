@@ -38,9 +38,11 @@ base_url = "http://localhost:3000"
 mode = "mutate"
 
 [accounts.tester]                # references only, never passwords
-email_env = "SHOP_TEST_EMAIL"    # the name of an environment variable
+email = "qa+shop@example.com"
+password = "keychain:qajev/shop-tester"   # or "op://QA/Shop tester/password", or "env:SHOP_TESTER_PASS"
+login = { url = "/login" }       # QAJev signs in with it before the objectives (see Writing tests)
 seed = "scripts/seed-test-user.sh"
-profile = "shop-local"           # a QAJev browser profile you signed in to once
+profile = "shop-local"           # or: a QAJev browser profile you signed in to once
 
 [budget]
 cost_cap_usd = 0.50
@@ -69,6 +71,11 @@ tags = ["core"]
 ```
 
 Objectives use the same goals and expectations as any scenario (see [Writing tests](writing-tests.md)).
+
+To run an environment's objectives signed in, name the account: `account = "tester"` under `[env.prod]` (or at
+the top of the file, for every environment). QAJev signs in with it once before the objectives; the password is
+read from its reference at that moment and never written anywhere. The older `email_env` / `password_env` keys
+still work, as `env:` references.
 
 ## Running it
 

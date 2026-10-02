@@ -28,16 +28,19 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import vault
 from .config import HOME
 
 CONFIG_NAME = Path(".qajev") / "project.toml"
-PROJECT_KEYS = {"name", "repo", "default_env", "env", "accounts", "budget", "guard", "persona", "device", "objective",
-                "known", "motion", "devices", "real_devices"}
+PROJECT_KEYS = {"name", "repo", "default_env", "env", "accounts", "account", "budget", "guard", "persona", "device",
+                "objective", "known", "motion", "devices", "real_devices"}
 KNOWN_KEYS = {"kind", "url", "note"}
-ENV_KEYS = {"base_url", "hosts", "mode", "device", "devices", "real_devices", "persona", "smoke_start", "motion"}
+ENV_KEYS = {"base_url", "hosts", "mode", "device", "devices", "real_devices", "persona", "smoke_start", "motion",
+            "account"}
 OBJECTIVE_KEYS = {"name", "env", "url", "goal", "expect", "tags", "before", "after", "budget", "device", "persona",
                   "mode", "settle", "depends_on", "speech"}
-ACCOUNT_KEYS = {"email_env", "password_env", "seed", "profile", "note"}
+# email and password are vault references (vault.py) or, for email, the plain address; never a password value.
+ACCOUNT_KEYS = {"email", "password", "login", "email_env", "password_env", "seed", "profile", "note"}
 
 
 class ProjectError(ValueError):
@@ -83,6 +86,7 @@ class Project:
     motion: str | None = None
     devices: list | None = None  # every objective runs on each (default desktop and phone)
     real_devices: list | None = None  # opt-in: also in a real device browser (ios, android)
+    account: str | None = None  # the account every env signs in with, unless the env names its own
 
     @property
     def reports_dir(self):
@@ -132,10 +136,23 @@ def load(ref):
             raise ProjectError(f"{path}: env.{name}: unknown key(s) {sorted(set(env) - ENV_KEYS)}")
         if not env.get("base_url"):
             raise ProjectError(f"{path}: env.{name} needs base_url")
-    for name, account in (data.get("accounts") or {}).items():
-        # Accounts are references (env var names, seed scripts, signed-in profiles), never secrets in the file.
+    accounts = data.get("accounts") or {}
+    for name, account in accounts.items():
+        # Accounts are references (vault references, env var names, seed scripts, signed-in profiles), never
+        # secrets in the file.
         if set(account) - ACCOUNT_KEYS:
             raise ProjectError(f"{path}: accounts.{name}: only {sorted(ACCOUNT_KEYS)} (names, never values)")
+        if "password" in account:
+            try:
+                vault.parse(account["password"])
+            except vault.VaultError as e:
+                raise ProjectError(f"{path}: accounts.{name}.password: {e} (names, never values)") from None
+        if "login" in account and not (isinstance(account["login"], dict) and account["login"].get("url")):
+            raise ProjectError(f'{path}: accounts.{name}: write login = {{ url = "/login" }} (the sign-in page)')
+    for where, chosen in [("account", data.get("account"))] + [(f"env.{n}.account", e.get("account"))
+                                                                for n, e in envs.items()]:
+        if chosen and chosen not in accounts:
+            raise ProjectError(f"{path}: {where}: no account {chosen!r}; have {sorted(accounts)}")
     objectives = data.get("objective") or []
     for i, obj in enumerate(objectives):
         if set(obj) - OBJECTIVE_KEYS:
@@ -154,7 +171,7 @@ def load(ref):
         default_env=default_env, envs=envs, accounts=data.get("accounts") or {}, budget=data.get("budget") or {},
         guard=data.get("guard") or {}, persona=data.get("persona"), device=data.get("device"),
         devices=data.get("devices"), real_devices=data.get("real_devices"), objectives=objectives,
-        known=known, motion=data.get("motion"),
+        known=known, motion=data.get("motion"), account=data.get("account"),
     )
 
 
@@ -200,7 +217,21 @@ def suite_data(project, *, env=None, tags=(), names=(), objective=None, url=None
         value = target.get(key) or getattr(project, key, None)
         if value:
             data[key] = value
+    account = target.get("account") or project.account
+    if account:
+        data["account"] = sign_in_account(project, account)
     return data
+
+
+def sign_in_account(project, name):
+    """A project account as a suite's account block (the older email_env/password_env become env: references)."""
+    acct = project.accounts[name]
+    email = acct.get("email") or (f"env:{acct['email_env']}" if acct.get("email_env") else None)
+    password = acct.get("password") or (f"env:{acct['password_env']}" if acct.get("password_env") else None)
+    if not (email and password and acct.get("login")):
+        raise ProjectError(f"{project.name}: accounts.{name} needs email, password and login = {{ url = ... }} to "
+                           "sign in")
+    return {"name": name, "email": email, "password": password, "login": dict(acct["login"])}
 
 
 def run_dir_parent(project):

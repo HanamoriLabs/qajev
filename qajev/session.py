@@ -419,6 +419,14 @@ class Session:
             raise HookFailed((found or {}).get("error") or f"cannot locate {selector!r}")
         return found
 
+    def type_into(self, found, text):
+        """Click a field located by find() and replace its value with `text`, as typed input."""
+        self.trusted_click(found["x"], found["y"])
+        mod = 4 if os.uname().sysname == "Darwin" else 2
+        self.call("Input.dispatchKeyEvent", type="keyDown", key="a", code="KeyA", modifiers=mod, commands=["selectAll"])
+        self.call("Input.dispatchKeyEvent", type="keyUp", key="a", code="KeyA", modifiers=mod)
+        self.call("Input.insertText", text=text)
+
     def run_hook(self, hook, current_url):
         kind, value = next(iter(hook.items()))
         if kind == "js":
@@ -433,12 +441,7 @@ class Session:
                 found = self.find(selector)
                 if found["secret"] and not is_loopback(current_url):
                     raise HookFailed(f"refused: {selector!r} is a secret field on a non-loopback host")
-                self.trusted_click(found["x"], found["y"])
-                mod = 4 if os.uname().sysname == "Darwin" else 2
-                self.call("Input.dispatchKeyEvent", type="keyDown", key="a", code="KeyA", modifiers=mod,
-                          commands=["selectAll"])
-                self.call("Input.dispatchKeyEvent", type="keyUp", key="a", code="KeyA", modifiers=mod)
-                self.call("Input.insertText", text=os.path.expandvars(str(text)))
+                self.type_into(found, os.path.expandvars(str(text)))
         elif kind == "navigate":
             from urllib.parse import urljoin
 
