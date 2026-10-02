@@ -56,6 +56,9 @@ From the top:
   `click 'See pricing' (p 0.93) · step 4 · 1s ago`, or during a game `playing 42s: kills 120 · level 3 · 60 fps`.
 - **Chrome**: the browsers QAJev has open (and whether they are headless).
 - **Native**: games QAJev is running.
+
+  A browser or game that is up shows in green with a `●`; "none running" and "no game running" stay grey, and a
+  browser that has gone away shows in red.
 - **Recent reports**: the latest runs of all projects, with the gate, cost, outcomes and a `Δ` when something
   changed since the previous run.
 

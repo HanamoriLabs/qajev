@@ -228,7 +228,8 @@ def selectable(snap):
 
 
 def render(snap, *, width=120, selected=0, detail=None, message=None):
-    """-> [(text, style)] lines; style is one of head, dim, sel, pass, fail, stuck, harness, running, queued."""
+    """-> [(text, style)] lines; style is one of head, dim, sel, pass, fail, stuck, harness, running, queued, live
+    (a Chrome or game that is up right now)."""
     lines = []
     add = lines.append
     h = snap["holder"]
@@ -303,9 +304,9 @@ def render(snap, *, width=120, selected=0, detail=None, message=None):
         age = _ago(b["age_s"]) if b.get("age_s") is not None else "?"
         add(
             (
-                f"  {b['name'][:40]:<40} port {b['port']}  {mode:<8} {b['tabs'] if b['tabs'] is not None else '?'} "
-                f"tab(s)  pid {b['pid']}  up {age}"[:width],
-                "dim" if b.get("alive") else "fail",
+                f"  {'●' if b.get('alive') else ' '} {b['name'][:40]:<40} port {b['port']}  {mode:<8} "
+                f"{b['tabs'] if b['tabs'] is not None else '?'} tab(s)  pid {b['pid']}  up {age}"[:width],
+                "live" if b.get("alive") else "fail",
             )
         )
 
@@ -316,8 +317,8 @@ def render(snap, *, width=120, selected=0, detail=None, message=None):
     for g in snap.get("native") or []:
         mode = "headless" if g["headless"] else "windowed"
         age = _ago(g["age_s"]) if g.get("age_s") is not None else "?"
-        add((f"  {g['name'][:24]:<24} {g['engine'] or '?':<8} adapter {g['adapter'] or '-':<10} {mode:<9} "
-             f"port {g['port']}  pid {g['pid']}  up {age}"[:width], "running"))
+        add((f"  ● {g['name'][:24]:<24} {g['engine'] or '?':<8} adapter {g['adapter'] or '-':<10} {mode:<9} "
+             f"port {g['port']}  pid {g['pid']}  up {age}"[:width], "live"))
 
     add(("", None))
     add(("Recent reports " + "─" * (width - 16), "head"))
@@ -398,11 +399,12 @@ def run_ui():
             "harness": curses.COLOR_MAGENTA,
             "running": curses.COLOR_CYAN,
             "head": curses.COLOR_CYAN,
+            "live": curses.COLOR_GREEN,
         }
         styles = {None: curses.A_NORMAL, "dim": curses.A_DIM, "sel": curses.A_REVERSE}
         for n, (name, color) in enumerate(palette.items(), start=1):
             curses.init_pair(n, color, -1)
-            styles[name] = curses.color_pair(n) | (curses.A_BOLD if name in ("head", "fail") else 0)
+            styles[name] = curses.color_pair(n) | (curses.A_BOLD if name in ("head", "fail", "live") else 0)
         screen.timeout(int(REFRESH_S * 1000))
         selected, detail, message, confirm, top = 0, None, None, None, 0
         snap = snapshot()

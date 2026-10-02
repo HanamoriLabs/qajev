@@ -12,6 +12,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - Job titles in `qajev jobs`, `qajev top` and `qa_jobs` say what a run is about: the project or site and the goal
   for website runs, the game and the test's name for games (not `play desktop`), for older jobs too. `qajev top`
   widens the title on a wide terminal.
+- `qajev top`: a Chrome or game that is up shows in green with a `●`, set apart from the grey "none running" and
+  "no game running" lines (a running Chrome was the same grey before).
 - `qajev play --allow LABEL --hide LABEL --expect-closed`, and the same on MCP `qa_play` (`allow`, `hide`,
   `expect_closed`).
 - Game suites (Godot and Electron) take `hide` and `allow` labels, as mobile suites do, and `expect: {closed:

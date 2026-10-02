@@ -156,6 +156,28 @@ def test_top_shows_the_browser_holder_queue_progress_and_reports():
     assert "browser: free" in after and "stopped" in after
 
 
+def test_top_sets_a_live_chrome_or_game_apart_from_the_empty_placeholders():
+    # Live, a running Chrome was the same dim grey as "no game running" beside it: it read as nothing running.
+    from qajev import top
+
+    snap = {"holder": None, "jobs": [], "recent": [], "load": 1.0, "at": time.time(),
+            "today": {"runs": 0, "gates": {"PASS": 0, "FAIL": 0, "INCOMPLETE": 0}, "cost_usd": 0}}
+    idle = dict(top.render({**snap, "browsers": [], "native": []}))
+    assert idle["  none running"] == "dim" and idle["  no game running (qajev play)"] == "dim"
+    busy = top.render({**snap, "browsers": [
+        {"name": "default.ephemeral-18362", "port": 9350, "headless": True, "tabs": 3, "pid": 28454, "age_s": 15,
+         "alive": True},
+        {"name": "old", "port": 9351, "headless": False, "tabs": None, "pid": 1, "age_s": None, "alive": False},
+    ], "native": [{"name": "imhim", "engine": "electron", "adapter": "imhim", "pid": 7, "port": 9400,
+                   "headless": True, "age_s": 30}]})
+    chrome = next((t, s) for t, s in busy if "default.ephemeral-18362" in t)
+    game = next((t, s) for t, s in busy if "imhim" in t and "electron" in t)
+    dead = next((t, s) for t, s in busy if "old" in t and "9351" in t)
+    for text, style in (chrome, game):
+        assert style == "live" and text.startswith("  ● ")  # colour, and a mark for terminals without it
+    assert dead[1] == "fail" and "●" not in dead[0]
+
+
 def test_a_finished_jobs_duration_stops_growing():
     job = jobs.start(["check", "https://a.example"], command=fake(0.2))
     first = wait_for(lambda: (s := jobs.status(job["id"]))["state"] == "done" and s)["seconds"]
