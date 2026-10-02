@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: Godot games under `qajev play` saved into the player's real `user://` folder (settings, checkpoints, logs).
+  Godot 4 has no `--user-data-dir`, so the flag QAJev passed was ignored. The game now runs with `HOME` (and the XDG
+  folders) inside QAJev's throwaway folder, which is where Godot puts `user://`, also for a custom user dir; the boot
+  script checks it before the game's first scene and refuses to start the game otherwise. `QAJEV_USER_DIR` names
+  the throwaway folder, for a game that keeps files elsewhere.
+
 - Fixed: a `wait_for` hook, or an account's `signed_in: {js: ...}`, whose JavaScript returned a Promise held while
   the Promise was still pending (`!!promise` is true), so `Promise.resolve(false)` or a rejection let a run go on.
   Every JavaScript condition and `js` expectation is now judged by what it settles to; a throw, a rejection or no
