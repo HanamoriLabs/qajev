@@ -109,6 +109,18 @@ def load(ledger):
     return _jev
 
 
+JS_WAIT_MS = 5000
+
+
+def awaited(expression, timeout_ms=JS_WAIT_MS):
+    """JS that judges `expression` by what it settles to: a Promise is awaited (never truthy just for being pending),
+    and a throw, a rejection or no answer within `timeout_ms` becomes {error}. -> {value} | {error}, as JS source."""
+    return (f"(async () => {{ try {{ const v = await Promise.race([(async () => ({expression}))(), "
+            f"new Promise((_, no) => setTimeout(() => no(new Error('no answer within {timeout_ms} ms')), "
+            f"{timeout_ms}))]); return {{ value: v === undefined ? null : v }}; }} "
+            "catch (e) { return { error: String(e && e.message || e) }; } })()")
+
+
 PROBE_JS = Template("""(async () => {
   const q = window.__qajev;
   const probe = q ? q.probe() : null;
@@ -134,8 +146,8 @@ PROBE_JS = Template("""(async () => {
   };
   let js = null;
   if (spec.js) {
-    try { js = await (async () => ($js))(); js = js === true || js === false ? js : !!js; }
-    catch (e) { js = 'error: ' + (e && e.message || e); }
+    const r = await $js;
+    js = 'error' in r ? 'error: ' + r.error : (r.value === true || r.value === false ? r.value : !!r.value);
   }
   let status = null;
   try { status = performance.getEntriesByType('navigation')[0].responseStatus || null; } catch (e) {}
@@ -218,6 +230,11 @@ class Session:
             detail = r["exceptionDetails"].get("exception", {}).get("description") or r["exceptionDetails"].get("text")
             raise RuntimeError(f"page script failed: {detail}")
         return r.get("result", {}).get("value")
+
+    def js_holds(self, expression):
+        """A condition's settled value is truthy (a throw, a rejection or no answer counts as not holding)."""
+        r = self.evaluate(awaited(expression)) or {}
+        return "error" not in r and bool(r.get("value"))
 
     def minimize(self):
         if self.headless:
@@ -312,7 +329,7 @@ class Session:
     def probe(self, expect):
         spec = {"text": expect.get("text", []), "absent": expect.get("absent", []), "js": bool(expect.get("js")),
                 "ci": bool(expect.get("ignore_case")), "visible": expect.get("visible", [])}
-        expression = PROBE_JS.substitute(spec=json.dumps(spec), js=expect.get("js") or "null")
+        expression = PROBE_JS.substitute(spec=json.dumps(spec), js=awaited(expect.get("js") or "null"))
         return self.evaluate(expression) or {}
 
     def check_host(self, url):
@@ -453,7 +470,7 @@ class Session:
         elif kind == "wait_for":
             spec = value if isinstance(value, dict) else {"js": value}
             deadline = time.monotonic() + float(spec.get("timeout", 15))
-            while not self.evaluate(f"(async () => !!({spec['js']}))()"):
+            while not self.js_holds(spec["js"]):
                 if time.monotonic() > deadline:
                     raise HookFailed(f"wait_for {spec['js']!r} timed out")
                 time.sleep(0.25)

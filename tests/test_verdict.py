@@ -1,3 +1,7 @@
+import json
+import shutil
+import subprocess
+
 import pytest
 
 from qajev import verdict as V
@@ -23,6 +27,25 @@ def test_page_checks_name_what_failed():
 def test_js_must_be_exactly_true():
     assert not V.all_ok(V.page_checks({"js": "x"}, {"js": "error: boom"}))
     assert not V.all_ok(V.page_checks({"js": "x"}, {"js": False}))
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs node to run the page-side JavaScript")
+def test_a_js_condition_is_judged_by_what_its_promise_settles_to():
+    # SideGame1: `!!(promise)` was true while the promise was pending, so a wait_for (and a sign-in's signed_in.js)
+    # held on a broken page. The page-side source is run as the browser would run it.
+    from qajev.session import awaited
+
+    def settle(js, timeout_ms=300):
+        script = f"({awaited(js, timeout_ms)}).then((r) => console.log(JSON.stringify(r)))"
+        return json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30).stdout)
+
+    assert settle("Promise.resolve(false)") == {"value": False}
+    assert settle("Promise.resolve(true)") == {"value": True}
+    assert settle("(() => { throw new Error('cooldownLeft of an invalid jutsu') })()") == {
+        "error": "cooldownLeft of an invalid jutsu"}
+    assert settle("Promise.reject(new Error('nope'))") == {"error": "nope"}
+    assert settle("new Promise(() => {})") == {"error": "no answer within 300 ms"}
+    assert settle("undefined") == {"value": None}
 
 
 def test_url_regex():

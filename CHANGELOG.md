@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: a `wait_for` hook, or an account's `signed_in: {js: ...}`, whose JavaScript returned a Promise held while
+  the Promise was still pending (`!!promise` is true), so `Promise.resolve(false)` or a rejection let a run go on.
+  Every JavaScript condition and `js` expectation is now judged by what it settles to; a throw, a rejection or no
+  answer within 5 s is not met (an expectation that never answered hung the page check before).
+
 - Runs that meet a sign-in page say so. A scenario that ends on a sign-in page it did not start on is `harness`,
   "needs sign-in: ...", not a product failure. The report, `report.json` and MCP results carry `needs_sign_in`: the
   pages, and a `next_step` telling an agent to ask the person for access (sign in once, or `qajev account add`),

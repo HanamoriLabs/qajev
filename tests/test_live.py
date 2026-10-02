@@ -143,6 +143,32 @@ def test_an_email_link_and_a_store_badge_read_as_visitors_see_them(session, site
     assert "hello@example.test" not in labels and "App Store" not in labels, labels  # still nothing to press
 
 
+def test_a_js_expectation_is_judged_by_what_its_promise_settles_to(session, site):
+    # SideGame1: a promise was truthy while still pending, so a check passed on a broken page. A promise is judged
+    # by its value; a throw, a rejection or no answer in time is a failed check, never a pass.
+    from qajev import verdict
+    from qajev.session import HookFailed
+
+    session.arm("readonly")
+    session.navigate(site + "/")
+
+    def judged(js):
+        (check,) = verdict.page_checks({"js": js}, session.probe({"js": js}))
+        return check
+
+    assert judged("Promise.resolve(true)")["ok"] is True
+    assert judged("Promise.resolve(false)")["ok"] is False
+    thrown = judged("(() => { throw new Error('cooldownLeft of an invalid jutsu') })()")
+    assert thrown["ok"] is False and "cooldownLeft" in thrown["detail"], thrown
+    assert judged("Promise.reject(new Error('nope'))")["ok"] is False
+    late = judged("new Promise(() => {})")
+    assert late["ok"] is False and "no answer" in late["detail"], late
+    for pending in ("Promise.resolve(false)", "Promise.reject(new Error('nope'))"):
+        with pytest.raises(HookFailed, match="timed out"):
+            session.run_hook({"wait_for": {"js": pending, "timeout": 1}}, site + "/")
+    session.run_hook({"wait_for": {"js": "Promise.resolve(1)", "timeout": 1}}, site + "/")
+
+
 def test_guard_holds_on_a_page_reached_by_a_click_and_on_late_controls(session, site):
     session.arm("readonly")
     session.navigate(site + "/")
