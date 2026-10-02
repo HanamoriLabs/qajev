@@ -68,7 +68,7 @@ def _signed_in(session, login, state):
         return False
     if spec.get("js"):
         try:
-            return bool(session.evaluate(f"(async () => !!({spec['js']}))()"))
+            return session.js_holds(spec["js"])
         except RuntimeError:
             return False
     if not spec:  # by default: away from the sign-in page, and no password field asking again
