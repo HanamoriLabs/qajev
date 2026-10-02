@@ -47,6 +47,10 @@ A run with a stored test account says who signed in, under **Run** ("Sign-in: as
 shop-tester), in 3.1 s"). When the sign-in fails, that line gives the site's reason and every scenario is
 **harness**: nothing was tested.
 
+A scenario that ended on a sign-in page it did not start on is **harness** too ("needs sign-in: ..."), and the
+report says at the top which pages asked to sign in and how to set up access
+([Signed-in areas](writing-tests.md#signed-in-areas)).
+
 ## Why a scenario ended as it did
 
 Each scenario explains itself: the reason, each check with what was found instead, where Jev ended up, and what the

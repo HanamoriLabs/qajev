@@ -17,7 +17,9 @@ the model behaving well: the rules are enforced in the page and in QAJev itself.
   the report. `mode: mutate` is allowed **only** on `localhost` / `127.0.0.1`, with no override.
 - **Press dangerous buttons.** Sign out, close all, delete account or data, revoke keys, billing, upgrade or
   downgrade, pay, buy, checkout, subscribe, start a trial, leave or transfer, "danger zone" and more are hidden
-  from Jev before it sees the page. Links to other sites are hidden too.
+  from Jev before it sees the page. Links to other sites (store badges, social links) stay on the page as
+  visitors see them, in screenshots and for your checks, but they are inert: Jev is not offered them and a click
+  on them does nothing.
 - **Download files.** Every download is refused; the smoke crawl checks download links with a lightweight `HEAD`
   request instead of fetching the file.
 - **Listen.** The microphone and camera are denied; speech recognition is replaced by a fake that hears nothing

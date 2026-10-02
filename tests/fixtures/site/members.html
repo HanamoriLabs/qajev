@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Members">
+<title>Members</title>
+<script>
+  // Signed-out visitors are sent to the sign-in page, as most apps do.
+  if (!/qajev_fixture_session=tester/.test(document.cookie)) location.replace('/login.html?next=/members.html');
+</script></head>
+<body>
+  <h1>Members only</h1>
+</body>
+</html>

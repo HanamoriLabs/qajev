@@ -162,27 +162,34 @@
     if (allow && allow.test(text)) return null;
     if (deny && deny.test(text)) return 'danger: ' + text.slice(0, 60);
     if (readOnly && mutating && mutating.test(accessibleName(el))) return 'read-only: ' + text.slice(0, 60);
-    if (offsite(el)) return 'off-site link';
+    if (offsite(el)) return OFFSITE;
     return null;
   };
+  // An off-site link (a store badge, a social link) stays on the page as a visitor sees it, for the screenshots and
+  // the checks; inert keeps it out of Jev's actions and its clicks. Risky controls are taken off the page.
+  const OFFSITE = 'off-site link';
   const hide = (el, why) => {
-    if (el.dataset.qajevGuard) return;
+    if (el.dataset.qajevGuard === why) return;
+    if (el.dataset.qajevGuard) restore(el);  // its reason changed (a label rewritten): judge it afresh
     el.dataset.qajevGuard = why;
+    el.inert = true;
+    state.hidden++;
+    if (why === OFFSITE) return;
     el.dataset.qajevDisplay = el.style.getPropertyValue('display');
     el.style.setProperty('display', 'none', 'important');
     el.setAttribute('aria-hidden', 'true');
-    el.inert = true;
-    state.hidden++;
   };
-  const restore = (el) => {
+  function restore(el) {
     if (!el.dataset.qajevGuard || el.dataset.qajevGuard === 'field') return;
-    el.style.removeProperty('display');
-    if (el.dataset.qajevDisplay) el.style.setProperty('display', el.dataset.qajevDisplay);
-    el.removeAttribute('aria-hidden');
+    if (el.dataset.qajevGuard !== OFFSITE) {
+      el.style.removeProperty('display');
+      if (el.dataset.qajevDisplay) el.style.setProperty('display', el.dataset.qajevDisplay);
+      el.removeAttribute('aria-hidden');
+    }
     el.inert = false;
     delete el.dataset.qajevGuard; delete el.dataset.qajevDisplay;
     state.hidden--;
-  };
+  }
   const judge = (el) => {
     if (el.matches(FIELD)) {
       // Secrets are the person's job. Disabled, not removed, so forms keep rendering.
@@ -244,8 +251,19 @@
       blank_ms: state.busySince === null ? 0 : Math.round(performance.now() - state.busySince),
       lcp: state.lcp, cls: Math.round(state.cls * 1000) / 1000,
     };
+    if (signInWall()) out.sign_in = true;
     return out;
   };
+  // A page asking the visitor to sign in: a password field on screen, or a sign-in address with an email field
+  // (the first step of a two-step sign-in). What a run that is not signed in meets instead of the page it wanted.
+  const SIGNIN_PATH = /(^|[\/_.-])(log-?in|sign-?in|auth|sso|session|identifier)([\/_.-]|$)/i;
+  const IDENTITY = 'input[type=email],input[autocomplete=username],input[autocomplete=email],input[name*=email i],' +
+    'input[name*=user i],input[name*=login i]';
+  const shown = (e) => (e.checkVisibility ? e.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) : true);
+  function signInWall() {
+    if ([...document.querySelectorAll('input[type=password]')].some(shown)) return true;
+    return SIGNIN_PATH.test(location.pathname) && [...document.querySelectorAll(IDENTITY)].some(shown);
+  }
   state.reconfigure = (next) => { configure(next); guardDoc(); };
   Object.defineProperty(window, '__qajev', { value: state, configurable: false, writable: false, enumerable: false });
 })();

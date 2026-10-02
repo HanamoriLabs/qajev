@@ -232,6 +232,11 @@ def render(data):
         f'<div class="gate {_e(data["gate"])}">Gate: {_e(data["gate"])}{interrupted}</div>',
         f'<div class="counts">{counts}</div><div class="muted">{_e(summary)}</div>',
     ]
+    wall = data.get("needs_sign_in")
+    if wall:
+        out.append(f'<div class="card"><p><strong>Needs sign-in:</strong> {len(wall["pages"])} page(s) asked to '
+                   f'sign in ({", ".join(_link(u) for u in wall["pages"][:3])}).</p><p>{_e(wall["next_step"])}</p>'
+                   "</div>")
 
     rows = [[f'<a href="#s{i}">{_e(r["name"])}</a>', _pill(r["outcome"]), _e(r.get("reason")),
              _link(r.get("end_url") or r.get("url"))] for i, r in enumerate(data["scenarios"])]

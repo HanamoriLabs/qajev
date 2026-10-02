@@ -13,6 +13,7 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | [`jobs`](#qajev-jobs), [`stop`](#qajev-stop), [`top`](#qajev-top) | follow, stop and watch runs |
 | [`nightly`](#qajev-nightly) | every project, every night, notified only on change |
 | [`browser`](#qajev-browser) | QAJev's own Chrome, and signing in |
+| [`account`](#qajev-account), [`secret`](#qajev-secret) | a stored test account QAJev signs in with |
 | [`doctor`](#qajev-doctor) | check the setup |
 | [`init`](#qajev-init) | write a starter suite |
 | [`mcp`](#qajev-mcp) | run the MCP server for AI agents |
@@ -237,6 +238,29 @@ qajev browser start --profile shop                                   # start one
 qajev browser stop --profile shop
 qajev browser reap                                                   # clean up after runs that died
 ```
+
+## `qajev account`
+
+Sets up a stored test account in one step (see [Signed-in areas](writing-tests.md#signed-in-areas)). Run it
+yourself, in a terminal: the Keychain asks you for the password, so neither QAJev nor an agent ever sees it. In Claude
+Code, type it after a `!`.
+
+```bash
+qajev account add shop-tester --email qa+shop@example.com --login-url /login --project shop --default
+qajev account add shop-tester --email qa+shop@example.com --login-url https://shop.example/login   # for a suite
+qajev account check shop-tester --project shop
+```
+
+`add` saves the password (by default as `keychain:qajev/NAME`; `--password op://...` or `--password env:NAME` uses one
+that already lives there; `--replace` saves a new Keychain password over the old), then writes the account:
+
+- with `--project`, as `[accounts.NAME]` in the project file, references only (`--default`: every env signs in with
+  it; otherwise name it with `account = "NAME"` in an env);
+- without, it prints the `account:` block to paste into a suite.
+
+Then QAJev signs in once with it, in a throwaway Chrome (`--visible` to watch, `--no-check` to skip), and says
+`ok: signed in as ...` or the site's reason. `check` does that sign-in alone. Exit code 2 when the sign-in fails, 3
+for a mistake in the options or the project.
 
 ## `qajev secret`
 

@@ -111,9 +111,16 @@ def test_guard_hides_danger_before_jev_sees_the_first_page(session, site):
     state = session.require_guard()
     assert state["deaf"] is True and state["mode"] == "readonly"
     for selector in ("#danger button:nth-of-type(1)", "#danger button:nth-of-type(2)",
-                     "#danger button:nth-of-type(3)", "#save", 'a[href^="https://example.com"]'):
+                     "#danger button:nth-of-type(3)", "#save"):
         assert hidden(session, selector), selector
     assert not hidden(session, 'a[href="/pricing.html"]')
+    # An off-site link (a store badge) stays on the page as visitors see it, but nothing can press it: a click at
+    # its place lands on the page around it.
+    partner = 'a[href^="https://example.com"]'
+    assert not hidden(session, partner)
+    assert session.evaluate(f"(() => {{ const a = document.querySelector({json.dumps(partner)}); const r = "
+                            "a.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, "
+                            "r.y + r.height / 2); return a.inert && !(hit && a.contains(hit)); })()") is True
     assert session.evaluate("document.getElementById('pw').disabled") is True
     # Jev's own element table must not offer them either.
     session.observe()
@@ -121,6 +128,19 @@ def test_guard_hides_danger_before_jev_sees_the_first_page(session, site):
     for word in ("Sign out", "Close all", "Delete account", "Partner site", "Save"):
         assert word not in labels, labels
     assert "Pricing" in labels
+
+
+def test_an_email_link_and_a_store_badge_read_as_visitors_see_them(session, site):
+    # Issue #1: a Cloudflare-obfuscated address became a mailto: link once decoded, and the guard took it off the
+    # page as off-site, so expectations on the address failed; store badges vanished from screenshots the same way.
+    session.arm("readonly")
+    session.navigate(site + "/email.html")
+    session.require_guard()
+    seen = session.probe({"visible": ["hello@example.test", "App Store"]})
+    assert seen["visible"] == [True, True], seen
+    session.observe()
+    labels = " | ".join(a["label"] for a in session.agent.state["page"]["actions"])
+    assert "hello@example.test" not in labels and "App Store" not in labels, labels  # still nothing to press
 
 
 def test_guard_holds_on_a_page_reached_by_a_click_and_on_late_controls(session, site):
@@ -442,3 +462,65 @@ def test_downloads_are_refused_and_nothing_is_saved(session, site):
     after = {p.name for p in downloads.glob("app*")} if downloads.exists() else set()
     assert after == before, f"a download was saved: {after - before}"
     assert error and "ABORTED" in error  # Chrome refused the download instead of saving it
+
+
+def _qajev(*args, env=None, timeout=180):
+    import subprocess
+    import sys
+
+    return subprocess.run([sys.executable, "-m", "qajev", *args], capture_output=True, text=True, timeout=timeout,
+                          env={**os.environ, **(env or {})})
+
+
+def test_a_run_sent_to_a_sign_in_page_says_it_needs_sign_in_and_what_to_do(site, browser, session, tmp_path):
+    session.call("Network.clearBrowserCookies")  # signed out: an earlier test signed this browser in
+    suite = tmp_path / "members.yaml"
+    suite.write_text(f"""
+name: members
+base_url: {site}
+devices: [desktop]
+scenarios:
+  - name: members see the members page
+    url: /members.html
+    expect: {{text: ["Members only"]}}
+  - name: the sign-in page greets returning visitors
+    url: /login.html
+    expect: {{text: ["Welcome back"]}}
+""")
+    p = _qajev("run", str(suite), "--cdp-url", browser["cdp_url"], "--out", str(tmp_path), "--json", "--quiet",
+               "--load-high", "0")
+    report = json.loads(p.stdout)
+    members, greeting = report["scenarios"]
+    # Not a product failure: the run could not get past the door. Said so, with what the person can do about it.
+    assert members["outcome"] == "harness" and members["reason"].startswith("needs sign-in"), members
+    assert members["needs_sign_in"]["url"].endswith("/login.html?next=/members.html")
+    assert greeting["outcome"] == "fail"  # a scenario that sets out to test the sign-in page itself is judged as usual
+    wall = report["needs_sign_in"]
+    assert wall["pages"] == [members["needs_sign_in"]["url"]]
+    assert "qajev account add" in wall["next_step"] and "never ask for" in wall["next_step"]
+    (md,) = tmp_path.rglob("report.md")
+    assert "**Needs sign-in:** 1 page(s)" in md.read_text()
+
+    crawl = _qajev("smoke", site + "/members.html", "--cdp-url", browser["cdp_url"], "--out", str(tmp_path / "s"),
+                   "--json", "--quiet", "--load-high", "0", "--max-pages", "1", "--devices", "desktop", "--no-shots")
+    smoke = json.loads(crawl.stdout)
+    assert smoke["smoke"]["behind_sign_in"] == [site + "/members.html"], smoke["smoke"]
+    assert "behind sign-in" in smoke["scenarios"][0]["reason"]
+
+
+def test_account_add_saves_the_account_by_reference_and_proves_the_sign_in(site, browser, tmp_path):
+    proj = tmp_path / "fixture.toml"
+    proj.write_text(f'name = "fixture"\ndefault_env = "local"\n\n[env.local]\nbase_url = "{site}"\n\n'
+                    '[[objective]]\nname = "account"\nurl = "/account.html"\n'
+                    'expect = { text = ["Signed in as tester@example.test"] }\n')
+    add = _qajev("account", "add", "tester", "--email", "tester@example.test", "--login-url", "/login.html",
+                 "--password", "env:QAJEV_FIXTURE_PASS", "--project", str(proj), "--default", "--cdp-url",
+                 browser["cdp_url"], env={"QAJEV_FIXTURE_PASS": "fixture-pass-123"})
+    assert add.returncode == 0, add.stderr
+    assert "ok: signed in as tester@example.test" in add.stdout
+    text = proj.read_text()
+    assert "[accounts.tester]" in text and "env:QAJEV_FIXTURE_PASS" in text and 'account = "tester"' in text
+    assert "fixture-pass-123" not in text + add.stdout + add.stderr
+    wrong = _qajev("account", "check", "tester", "--project", str(proj), "--cdp-url", browser["cdp_url"],
+                   env={"QAJEV_FIXTURE_PASS": "not-the-password"})
+    assert wrong.returncode == 2 and "Wrong email or password" in wrong.stderr, wrong.stderr

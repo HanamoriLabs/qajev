@@ -426,11 +426,29 @@ class MobileApp:
                     self.url = urlunsplit(parts._replace(netloc=f"127.0.0.1:{port}"))
                 self._adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", self.url, self.app)
             else:
-                self._adb("shell", "monkey", "-p", self.app, "-c", "android.intent.category.LAUNCHER", "1")
+                self._launch_android()
         time.sleep(2.0)
         if self.url:
             self._browser_intro()
             self._page_or_explain()
+
+    def _launch_android(self, wait=15.0):
+        """Start the app's launcher activity and wait for it. Judged by the app's process, not by an exit code:
+        `monkey` launches it but exits 251 on Android 15 images (after a harmless SYS_KEYS warning)."""
+        resolved = self._adb("shell", "cmd", "package", "resolve-activity", "--brief", "-c",
+                             "android.intent.category.LAUNCHER", self.app, check=False)
+        component = next((line.strip() for line in reversed(resolved.splitlines())
+                          if line.strip().startswith(self.app + "/")), None)
+        if component:
+            said = self._adb("shell", "am", "start", "-W", "-n", component, check=False, timeout=120)
+        else:  # an older image without resolve-activity
+            said = self._adb("shell", "monkey", "-p", self.app, "-c", "android.intent.category.LAUNCHER", "1",
+                             check=False)
+        deadline = time.monotonic() + wait
+        while not self._adb("shell", "pidof", self.app, check=False).strip():
+            if time.monotonic() > deadline:
+                raise NativeError(f"{self.app} did not start: {said.strip()[-300:] or 'no output'}")
+            time.sleep(0.5)
 
     # A browser's own first-run screens, passed the one safe way: never an account, never sync.
     INTRO = re.compile(r"welcome to chrome|\bsync\b|make chrome your own|chrome notifications|default browser", re.I)

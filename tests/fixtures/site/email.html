@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Email us">
+<title>Email us</title></head>
+<body>
+  <h1>Email us</h1>
+  <!-- As Cloudflare's Email Obfuscation serves it: the address only appears once its decoder has run. -->
+  <p>Write to <a href="/cdn-cgi/l/email-protection#422a272e2e2d02273a232f322e276c36273136"><span class="__cf_email__"
+    data-cfemail="422a272e2e2d02273a232f322e276c36273136">[email&#160;protected]</span></a></p>
+  <a href="https://apps.apple.com/app/id1" id="store"><img alt="Download on the App Store" width="120" height="40"
+    src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='40'/%3E"> App Store</a>
+  <script>
+    // What Cloudflare's email-decode.min.js does: the link becomes mailto:, the placeholder the address.
+    (() => {
+      const decode = (hex) => { const key = parseInt(hex.slice(0, 2), 16); let out = '';
+        for (let i = 2; i < hex.length; i += 2) out += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ key);
+        return out; };
+      for (const a of document.querySelectorAll('a[href*="/cdn-cgi/l/email-protection#"]'))
+        a.href = 'mailto:' + decode(a.href.split('#')[1]);
+      for (const e of document.querySelectorAll('[data-cfemail]'))
+        e.replaceWith(document.createTextNode(decode(e.dataset.cfemail)));
+    })();
+  </script>
+</body>
+</html>

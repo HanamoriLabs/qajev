@@ -30,6 +30,12 @@ email or password") or the password store's: run `qajev secret check REF` to see
 If the site's fields are unusual, name them in the account's `login:` (`email_field`, `password_field`, `next`,
 `submit`) and say how to tell it worked (`signed_in`).
 
+**"needs sign-in: ..."**
+The run met a sign-in page, so what is behind it was not tested. Give QAJev a way in: sign in once with
+`qajev browser login --profile NAME --url LOGIN_URL` and run with `--profile NAME`, or set up a test account with
+`qajev account add` ([Signed-in areas](writing-tests.md#signed-in-areas)). With a profile, sign in to it again: its
+session expired. If that page should be public, that is the bug.
+
 **A scenario is `stuck`**
 Jev found no way forward. Open the screenshot: a visitor would often be stuck too (a hidden menu, two buttons
 with the same name, content far below). If the target is far down a long page, start closer to it.

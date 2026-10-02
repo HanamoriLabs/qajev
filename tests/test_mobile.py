@@ -234,6 +234,38 @@ def test_taps_and_swipes_go_to_idb_as_whole_points(monkeypatch):
     assert sent[0][-2:] == ["201", "825"] and all(s.lstrip("-").isdigit() for s in sent[1][-4:])
 
 
+def test_an_android_app_counts_as_started_when_its_process_runs_whatever_the_launcher_exits(monkeypatch):
+    # Issue #1: on an Android 15 image monkey launched the app but exited 251, and QAJev called the launch failed.
+    def device(resolve, running=True):
+        sent = []
+
+        def run(args, check=True, **kw):
+            sent.append(args[3:])
+            if args[3:5] == ["shell", "monkey"] and check:
+                raise native.NativeError("monkey: ** SYS_KEYS has no physical keys bu")
+            if args[3:5] == ["shell", "cmd"]:
+                return resolve
+            if args[3:5] == ["shell", "pidof"]:
+                return "4242\n" if running else ""
+            return "Status: ok\n"
+
+        monkeypatch.setattr(mobile, "_run", run)
+        monkeypatch.setattr(mobile.time, "sleep", lambda s: None)
+        app = mobile.MobileApp.__new__(mobile.MobileApp)
+        app.platform, app.serial, app.app = "android", "emulator-5580", "com.hanamorilabs.idoughmath"
+        return app, sent
+
+    app, sent = device("priority=0 preferredOrder=0\ncom.hanamorilabs.idoughmath/.MainActivity\n")
+    app._launch_android()
+    assert ["shell", "am", "start", "-W", "-n", "com.hanamorilabs.idoughmath/.MainActivity"] in sent
+    app, sent = device("No activity found\n")  # no resolve-activity: monkey, whose exit code no longer decides
+    app._launch_android()
+    assert sent[1][:2] == ["shell", "monkey"] and sent[-1][:2] == ["shell", "pidof"]
+    app, _ = device("No activity found\n", running=False)
+    with pytest.raises(native.NativeError, match="did not start"):
+        app._launch_android(wait=0)
+
+
 def test_an_app_file_is_installed_on_the_throwaway_device_before_it_opens(monkeypatch, tmp_path):
     apk = tmp_path / "foley.apk"
     apk.write_bytes(b"PK")

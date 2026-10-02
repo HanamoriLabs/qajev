@@ -75,7 +75,9 @@ Objectives use the same goals and expectations as any scenario (see [Writing tes
 To run an environment's objectives signed in, name the account: `account = "tester"` under `[env.prod]` (or at
 the top of the file, for every environment). QAJev signs in with it once before the objectives; the password is
 read from its reference at that moment and never written anywhere. The older `email_env` / `password_env` keys
-still work, as `env:` references.
+still work, as `env:` references. `qajev account add tester --email ... --login-url /login --project NAME --default`
+writes the `[accounts.tester]` table and the top-level `account` for you, after saving the password at the
+Keychain's prompt, and signs in once to prove it ([`qajev account`](cli.md#qajev-account)).
 
 ## Running it
 

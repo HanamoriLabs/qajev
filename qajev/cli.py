@@ -213,6 +213,24 @@ def build_parser():
                         help="set: save a keychain: password (its store prompts for it); check: can QAJev read it")
     secret.add_argument("ref", help="keychain:SERVICE/ACCOUNT, op://VAULT/ITEM/FIELD or env:NAME")
 
+    account = sub.add_parser("account", help="set up a stored test account: QAJev signs in with it, Jev never sees "
+                             "the password (run it yourself: the Keychain asks you for it)")
+    account.add_argument("action", choices=["add", "check"],
+                         help="add: save the password, write the account, sign in once to prove it; check: sign in")
+    account.add_argument("name", help="the account's name (letters, digits, - and _), e.g. shop-tester")
+    account.add_argument("--email", help="add: the test account's email or user name")
+    account.add_argument("--login-url", help="add: the sign-in page (https; with --project it may be a path)")
+    account.add_argument("--password", metavar="REF",
+                         help="where the password lives: keychain:qajev/NAME (the default, saved at the Keychain's "
+                              "prompt), op://VAULT/ITEM/FIELD or env:NAME")
+    account.add_argument("--project", help="write it into this project (add), or read it from there (check)")
+    account.add_argument("--env", help="with --project: the env whose site to sign in to (default: its default)")
+    account.add_argument("--default", action="store_true", help="add with --project: every env signs in with it")
+    account.add_argument("--replace", action="store_true", help="add: save a new Keychain password over the old")
+    account.add_argument("--no-check", action="store_true", help="add: do not sign in to prove it")
+    account.add_argument("--visible", action="store_true", help="sign in in a visible window (default: headless)")
+    account.add_argument("--cdp-url", help="sign in in this already running Chrome instead of a throwaway one")
+
     doctor = sub.add_parser("doctor", help="check keys, Chrome, ports and load (never prints secrets)")
     doctor.add_argument("--env-file")
     doctor.add_argument("--offline", action="store_true", help="skip the free OpenRouter key validity check")
@@ -797,6 +815,63 @@ def cmd_secret(args):
     return 0
 
 
+def cmd_account(args):
+    from urllib.parse import urlsplit
+
+    from . import account as account_mod
+    from . import project as project_mod
+    from . import vault
+    from .chrome import ChromeError
+    from .jobs import Busy
+
+    name = args.name
+    try:
+        if not account_mod.NAME.match(name):
+            raise account_mod.AccountError("the name takes letters, digits, - and _ (e.g. shop-tester)")
+        proj = project_mod.load(args.project) if args.project else None
+        if args.action == "add":
+            if not (args.email and args.login_url):
+                raise account_mod.AccountError("add needs --email and --login-url")
+            ref = args.password or account_mod.default_ref(name)
+            raw = account_mod.block(name, args.email, ref, args.login_url)
+            how = account_mod.save_password(ref, replace=args.replace)
+            print({"saved": f"password saved in the Keychain as {ref}",
+                   "kept": f"{ref} already holds a password: kept (--replace to change it)",
+                   "found": f"{ref} can be read"}[how])
+            if proj:
+                proj = account_mod.add_to_project(proj.config_path, name, args.email, ref, args.login_url,
+                                                  default=args.default)
+                print(f"added [accounts.{name}] to {proj.config_path} (references only)"
+                      + ("" if proj.account == name else f'; use it with account = "{name}" in an env'))
+            else:  # JSON strings are valid YAML: the block pastes as is
+                print(f"for a suite file:\n\naccount:\n  name: {json.dumps(name)}\n  email: {json.dumps(args.email)}\n"
+                      f"  password: {json.dumps(ref)}\n  login: {{url: {json.dumps(args.login_url)}}}\n")
+            if args.no_check:
+                return 0
+            account, hosts = (account_mod.project_account(proj, name, args.env) if proj else
+                              (raw, {urlsplit(args.login_url).netloc}))
+        else:
+            if not proj:
+                raise account_mod.AccountError("check needs --project (a suite's account is checked by its run)")
+            account, hosts = account_mod.project_account(proj, name, args.env)
+        print(f"signing in as {name} at {account['login']['url']} ...")
+        args.events, args.quiet, args.json = False, False, False  # the queue's own messages, said plainly
+        with _machine_lock(args):
+            done = account_mod.try_sign_in(account, hosts, headless=not args.visible, cdp_url=args.cdp_url)
+    except (account_mod.AccountError, project_mod.ProjectError, vault.VaultError) as e:
+        print(f"qajev: {e}", file=sys.stderr)
+        return EXIT_CONFIG
+    except (ChromeError, Busy) as e:
+        print(f"qajev: {e}", file=sys.stderr)
+        return EXIT_BROWSER
+    if not done["ok"]:
+        print(f"sign-in failed: {done['reason']}", file=sys.stderr)
+        return 2
+    print(f"ok: signed in as {done.get('email') or name}"
+          + (" (already signed in)" if done.get("already") else f" in {done.get('seconds')} s"))
+    return 0
+
+
 def cmd_doctor(args):
     from . import chrome, providers
     from .config import DEFAULTS, env_files, load_env
@@ -1055,7 +1130,7 @@ def main(argv=None):
 
             _job_dir = jobs.register(args.argv)
     handlers = {"check": cmd_run, "run": cmd_run, "smoke": cmd_smoke, "browser": cmd_browser, "doctor": cmd_doctor,
-                "secret": cmd_secret,
+                "secret": cmd_secret, "account": cmd_account,
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
                 "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
                 "top": cmd_top, "nightly": cmd_nightly,

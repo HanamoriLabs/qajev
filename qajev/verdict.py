@@ -95,6 +95,56 @@ def classify(stop, checks, *, has_checks, stop_detail=None) -> tuple[str, str]:
     return "harness", f"{_stop_text(stop, stop_detail)}; unmet: {why}"
 
 
+def sign_in_wall(start_url, observed, *, account=None, profile=None):
+    """The page a scenario ended on asks to sign in, and it is not the page the scenario set out to test (a scenario
+    that starts on /login tests the sign-in page itself). -> {"url", "reason", "account"?, "profile"?} or None.
+    Says nothing about the product: the run could not get past the door. If that page should be public, it is a bug."""
+    probe = (observed or {}).get("probe") or {}
+    end = (observed or {}).get("url")
+    if not probe.get("sign_in") or not end:
+        return None
+    if start_url and urlsplit(start_url).path.rstrip("/") == urlsplit(end).path.rstrip("/"):
+        return None
+    where = urlsplit(end)
+    page = f"{where.netloc}{where.path}"
+    if account:
+        why = f"signed in as account {account}, but that account cannot see this page"
+    elif profile:
+        why = f"profile {profile}'s sign-in did not hold (sign in to it again)"
+    else:
+        why = "not signed in"
+    out = {"url": end, "reason": f"needs sign-in: the run ended on a sign-in page ({page}); {why}"}
+    if account:
+        out["account"] = account
+    if profile:
+        out["profile"] = profile
+    return out
+
+
+def sign_in_next_step(walls):
+    """What an agent (or a person) does about scenarios or pages that met a sign-in page. -> the report's
+    `needs_sign_in`: the pages, and the next step in words, the password never part of it."""
+    pages = sorted({w["url"] for w in walls})
+    login = pages[0]
+    held = sorted({w["account"] for w in walls if w.get("account")})
+    profiles = sorted({w["profile"] for w in walls if w.get("profile")})
+    if held:
+        step = (f"The run signed in as account {', '.join(held)}, and still met a sign-in page: ask the person "
+                "whether that account should see these pages, or which account should.")
+    elif profiles:
+        step = (f"Profile {', '.join(profiles)} is no longer signed in there: ask the person to sign in to it again "
+                f"(qa_browser action=login, profile={profiles[0]}, url={login}; CLI: qajev browser login --profile "
+                f"{profiles[0]} --url {login}).")
+    else:
+        step = ("Ask the person how QAJev should get in, and never ask for, type or write down the password. Either "
+                f"they sign in once in QAJev's own browser (qa_browser action=login, profile=NAME, url={login}; CLI: "
+                f"qajev browser login --profile NAME --url {login}) and runs use profile NAME; or they keep a test "
+                "account and run, in their own terminal (in Claude Code, after a !): qajev account add NAME --email "
+                f"EMAIL --login-url {login} [--project PROJECT]. The Keychain asks them for the password, QAJev "
+                "proves the sign-in, and the suite's account: block (or the project's account) does the rest.")
+    return {"pages": pages, "next_step": step}
+
+
 def _stop_text(stop, detail) -> str:
     text = {
         "budget_actions": "action budget spent", "budget_seconds": "time budget spent",

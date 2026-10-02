@@ -4,6 +4,19 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Runs that meet a sign-in page say so. A scenario that ends on a sign-in page it did not start on is `harness`,
+  "needs sign-in: ...", not a product failure. The report, `report.json` and MCP results carry `needs_sign_in`: the
+  pages, and a `next_step` telling an agent to ask the person for access (sign in once, or `qajev account add`),
+  never for the password. The smoke crawl lists the pages it found behind a sign-in (`behind_sign_in`).
+- `qajev account add NAME --email ... --login-url ... [--project P --default]`: a stored test account in one step.
+  The Keychain asks for the password, the account is written into the project (references only) or printed for a
+  suite, and QAJev signs in once to prove it. `qajev account check NAME --project P` signs in alone.
+- Links to other sites (store badges, social links, `mailto:` addresses) stay on the page, in screenshots and for
+  checks, and are inert instead of hidden: Jev is still not offered them and a click on them does nothing. Hiding
+  them made a Cloudflare-protected email address read as empty once decoded, and store badges vanish (#1).
+- `qajev play android:PACKAGE` starts the app's launcher activity with `am start -W` and judges the launch by the
+  app's process. `monkey` exits 251 on Android 15 images even when it launched the app, and the run stopped (#1).
+
 - `qajev smoke` and `qajev play` now wait for the load gate (`--load-high`, `--load-ok`, `--load-wait`, or the
   `QAJEV_LOAD_*` variables) before they start, like `check` and `run` do before each scenario. If the machine
   stays busy they exit with code 4 and start nothing. `play` gains the three flags.

@@ -55,7 +55,9 @@ def build(suite, results, ledgers, *, browser, started_at, strict, interrupted, 
     findings = verdict.dedupe([f for r in results for f in r.get("findings", [])])
     gate = "INCOMPLETE" if interrupted else verdict.gate(outcomes, strict=strict)
     screens = [s for r in results for s in r.get("screens", []) if s.get("p") is not None]
+    walls = [r["needs_sign_in"] for r in results if r.get("needs_sign_in")]
     return {
+        **({"needs_sign_in": verdict.sign_in_next_step(walls)} if walls else {}),
         "qajev": __version__,
         "suite": suite.name,
         "gate": gate,
@@ -142,6 +144,13 @@ def _changes_md(ch):
     return out
 
 
+def _needs_sign_in_md(wall):
+    if not wall:
+        return []
+    pages = ", ".join(_where(u) for u in wall["pages"][:3])
+    return [f"**Needs sign-in:** {len(wall['pages'])} page(s) asked to sign in ({pages}). {wall['next_step']}", ""]
+
+
 def markdown(data):
     c = data["counts"]
     cost = data["cost"]
@@ -159,6 +168,7 @@ def markdown(data):
         "(check by hand: often a UX finding). **harness** = the tool ran out of budget, went stale or errored; "
         "it says nothing about the product. **unverified** = no expectations were given.",
         "",
+        *_needs_sign_in_md(data.get("needs_sign_in")),
         "## Scenarios",
         "",
         "| Scenario | Outcome | Why | Actions | Seconds | Ended at | Shot |",

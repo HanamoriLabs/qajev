@@ -203,6 +203,14 @@ instead of leaving Jev at a sign-in page.
 `qajev secret check REF` says whether QAJev can read it (the length, never the value). Use a test account made
 for this, never a real person's.
 
+The quickest way is one command, which saves the password at the Keychain's prompt, writes the account (into a
+project with `--project`, or prints the block above for a suite) and signs in once to prove it
+([`qajev account`](cli.md#qajev-account)):
+
+```bash
+qajev account add shop-tester --email qa+shop@example.com --login-url https://shop.example/login
+```
+
 The sign-in page must be `https` (plain `http` only on localhost) and its host one the suite allows; the password
 only goes into a password field. `login` also takes `email_field`, `password_field` and `submit` (CSS selectors,
 when the defaults do not find them), `next` (the button between the email and password steps of a two-step
@@ -217,6 +225,12 @@ qajev run account.yaml --profile shop
 ```
 
 This is the way for sign-ins QAJev cannot do by itself: one-time codes, passkeys, "Sign in with Google".
+
+**When a run meets a sign-in page anyway** (a page that sends signed-out visitors to `/login`, a profile whose
+sign-in expired), the scenario ends `harness` with "needs sign-in: ...", not as a product failure, and the report
+says which pages asked and what to do (`needs_sign_in` in `report.json`, with a `next_step` an agent can follow). A
+scenario that starts on the sign-in page itself is judged as usual. The smoke crawl lists the pages it found behind a
+sign-in.
 
 ## Games
 

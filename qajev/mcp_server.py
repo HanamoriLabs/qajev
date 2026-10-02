@@ -48,6 +48,11 @@ the microphone is stubbed, mutate mode is loopback-only. Sign-in: qa_browser(act
 QAJev's own Chrome for the person, or a suite/project names a stored test account (account: with a keychain:,
 op:// or env: password reference) and QAJev signs in itself before the scenarios. Never ask for, type or write
 down a password: only ever the reference.
+
+Needs sign-in: when a result has `needs_sign_in`, runs met a sign-in page (those scenarios are harness, not product
+failures). Do not report it as a bug. Ask the person how QAJev should get in, following its `next_step`: they sign
+in once (qa_browser login), or they run `qajev account add NAME --email ... --login-url ...` in their own terminal
+(the Keychain asks them for the password; in Claude Code they type it after a !). Then run again.
 """
 
 server = MCPServer(name="qajev", version=__version__, instructions=INSTRUCTIONS)
@@ -167,7 +172,7 @@ def _trim(report, verbose):
     if verbose or "scenarios" not in report:
         return report
     keep = ("name", "outcome", "reason", "stop", "seconds", "cost_usd", "end_url", "checks", "findings", "shot",
-            "jev", "blocked_writes", "page_says")
+            "jev", "blocked_writes", "page_says", "needs_sign_in")
     out = {k: v for k, v in report.items() if k != "scenarios"}
     out["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [], {})} for r in report["scenarios"]]
     for r in out["scenarios"]:
@@ -530,7 +535,7 @@ async def qa_job(job: str, verbose: bool = False) -> dict:
     if st.get("report"):
         st["report"] = _trim(st["report"], verbose)
     if not verbose:
-        keep = ("name", "outcome", "reason", "seconds", "findings", "shot")
+        keep = ("name", "outcome", "reason", "seconds", "findings", "shot", "needs_sign_in")
         st["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [])} for r in st["scenarios"]]
     return st
 

@@ -44,6 +44,7 @@ class Options:
     motion: str | None = None  # overrides the suite's motion (reduce | full)
     emit: object = None
     load_waited: float = 0.0  # seconds already spent waiting; load_wait is a budget for the whole run
+    account: str | None = None  # the stored test account this run signed in with
 
 
 def _emit(opts, event, **data):
@@ -248,6 +249,11 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     result["findings"] = verdict.dedupe(findings)
     result["stop"] = stop
     outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail)
+    wall = verdict.sign_in_wall(scenario.url, observed, account=opts.account,
+                                profile=None if opts.ephemeral or opts.profile == "default" else opts.profile)
+    if outcome not in {"pass", "skipped"} and wall:
+        result["needs_sign_in"] = wall
+        return _finish(result, "harness", wall["reason"], started)
     assists = getattr(session, "assists", []) if scenario.goal else []
     if assists:
         result["assists"] = assists
@@ -538,6 +544,7 @@ def run(suite, opts):
     try:
         if suite.account:
             signed = sign_in_first(suite, opts=opts, cdp_url=cdp_url, headless=suite_meta["headless"], motion=motion)
+            opts.account = suite.account["name"] if signed["ok"] else None
             if opts.jobs > 1 and len(chains) > 1:  # the workers start their own daemons; this one is done
                 from . import session as session_mod
 

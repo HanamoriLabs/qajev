@@ -183,6 +183,10 @@ def _examine(session, result, page, dev, *, settle, host, opts, run_dir):
     ok = verdict.all_ok(result["checks"])
     result.update(outcome="pass" if ok else "fail",
                   reason="loaded" if ok else "; ".join(c["check"] for c in result["checks"] if not c["ok"]))
+    wall = verdict.sign_in_wall(result["url"], {"probe": probe, "url": facts.get("url")})
+    if wall:  # it sent the crawl to a sign-in page: what is behind it was not checked
+        result["needs_sign_in"] = wall
+        result["reason"] += f"; behind sign-in (sent to {wall['url']}), not checked"
     if opts.shots:
         shot = session.screenshot(run_dir / "shots" / f"{slug(page)}.jpg")
         result["shot"] = str(shot.relative_to(run_dir)) if shot else None
@@ -333,6 +337,9 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     built["smoke"] = {"start_url": start_url, "pages": len(results), "discovered_links": len(discovered),
                       "max_pages": max_pages, "delay_s": delay, "robots_txt": robots is not None,
                       "robots_disallowed": sorted(disallowed)[:50]}
+    behind = sorted({r["url"] for r in results if r.get("needs_sign_in")})
+    if behind:
+        built["smoke"]["behind_sign_in"] = behind[:50]
     built = redact_tree(built, secret_values())
     report.write(run_dir, built)
     emit("done", gate=built["gate"], run_dir=str(run_dir))
