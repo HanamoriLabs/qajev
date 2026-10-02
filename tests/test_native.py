@@ -310,8 +310,14 @@ def test_a_godot_game_saves_into_the_throwaway_folder_never_the_players_own(tmp_
     assert listing() == before, "the player's own user:// folder changed"
 
     # Fail closed: when user:// is not inside the throwaway folder, the game does not run at all.
-    elsewhere = native.save_isolation(tmp_path / "elsewhere")  # user:// lands here, not in the run's folder
+    real_isolation = native.save_isolation
+    elsewhere = real_isolation(tmp_path / "elsewhere")  # user:// lands here, not in the run's folder
     monkeypatch.setattr(native, "save_isolation", lambda user_dir: {**elsewhere, "QAJEV_USER_DIR": str(user_dir)})
+    with pytest.raises(native.NativeError, match="refused to start the game"):
+        native.GodotGame(FIXTURE, headless=True).start()
+    # A near miss: a sibling folder whose name merely starts with the run's ("...-ab" vs "...-abc") is not inside it.
+    monkeypatch.setattr(native, "save_isolation", lambda user_dir: {
+        **real_isolation(str(user_dir) + "c"), "QAJEV_USER_DIR": str(user_dir)})
     with pytest.raises(native.NativeError, match="refused to start the game"):
         native.GodotGame(FIXTURE, headless=True).start()
 

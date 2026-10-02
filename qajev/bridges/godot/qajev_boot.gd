@@ -8,9 +8,10 @@ extends SceneTree
 
 func _init() -> void:
 	# Fail closed: the game never runs against the player's real saves.
-	var want := OS.get_environment("QAJEV_USER_DIR")
+	var want := OS.get_environment("QAJEV_USER_DIR").trim_suffix("/")
 	var have := OS.get_user_data_dir()
-	if want == "" or not have.begins_with(want):
+	# Inside the folder itself: ".../qajev-native-12-ab" must not accept ".../qajev-native-12-abc/...".
+	if want == "" or not (have == want or have.begins_with(want + "/")):
 		print("QAJEV_SAVE_NOT_ISOLATED: user:// is ", have)
 		quit(3)
 		return
