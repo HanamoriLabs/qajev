@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>I'M HIM! talk (shape only)</title></head>
+<body>
+  <!-- The shape of I'M HIM!'s conversation box (src/ui/DialogueScreen.ts): .talk.on, a .talk-box that has .typing
+       while a line types, .talk-sr holding the whole line, and a ✕ button labelled "Close conversation". -->
+  <div id="ui">
+    <div class="talk on">
+      <div class="talk-box interactive typing" role="dialog" aria-modal="true" aria-label="Conversation with Kagemaru">
+        <div class="talk-mid">
+          <div class="talk-name">Kagemaru</div>
+          <p class="talk-text" aria-hidden="true">The case: Headband</p>
+          <p class="talk-sr" aria-live="polite">Kagemaru: The case: Headband Guy versus the question of who he is.</p>
+          <div class="talk-choices"></div>
+        </div>
+        <button type="button" class="talk-close" aria-label="Close conversation">✕</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    // What the game does on Continue: a line still typing is finished; a finished one gives way to the next.
+    window.nextLine = (text) => {
+      const box = document.querySelector('.talk-box');
+      if (box.classList.contains('typing')) { box.classList.remove('typing'); return; }
+      document.querySelector('.talk-sr').textContent = text;
+      document.querySelector('.talk-text').textContent = text.split(': ')[1];
+    };
+  </script>
+</body>
+</html>

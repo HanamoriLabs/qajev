@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- The bundled I'M HIM! adapter: OUTFITS and CREDITS are named screens (with OUTFITS open over the title it read as
+  TITLE MENU, so a step closing it passed while it was still open). A conversation says which line is on show and that
+  it closes by itself after the last one, Continue says whether it finishes a typing line or shows the next, and the
+  box's ✕ is no longer offered beside the Escape key. Decision models stopped giving up partway through long talks
+  and on a talk that comes up after a death.
+
 - Images, with Clef: `looks` expectations (`--expect-looks`, MCP `expect_looks`) are plain statements Clef judges
   from the final screenshot, each passing at a probability of 0.5 or more, with that probability in the report. They
   catch what text checks cannot: a button cut off by its box, a price drawn on a canvas, a label that is an image.
