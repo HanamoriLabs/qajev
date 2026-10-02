@@ -52,7 +52,8 @@ From the top:
 - **The header**: who has the browser and for how long, how many runs are queued, the machine's load, and today's
   runs and spend (plus what running jobs have spent so far).
 - **Jobs**: each run with its state, a progress bar, scenarios done out of the total, time, cost so far and the
-  scenario in flight. Under a running job, a **`Jev ▸`** line shows what Jev is doing right now, for example
+  scenario in flight. Under a running job, a line shows what the decision model is doing right now, named for the
+  model deciding (**`Jev ▸`**, or **`Clef-flash ▸`** / **`Clef ▸`** when the run uses Clef), for example
   `click 'See pricing' (p 0.93) · step 4 · 1s ago`, or during a game `playing 42s: kills 120 · level 3 · 60 fps`.
 - **Chrome**: the browsers QAJev has open (and whether they are headless).
 - **Native**: games QAJev is running.

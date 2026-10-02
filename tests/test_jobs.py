@@ -14,7 +14,8 @@ emit = lambda **e: print(json.dumps(e), file=sys.stderr, flush=True)
 def stop(*_):
     print(json.dumps({"gate": "INCOMPLETE", "interrupted": True, "scenarios": []})); sys.exit(130)
 signal.signal(signal.SIGTERM, stop)
-emit(event="run", suite="demo", run_dir="/tmp/demo-run", scenarios=2)
+emit(event="run", suite="demo", run_dir="/tmp/demo-run", scenarios=2,
+     **({"decider": sys.argv[2]} if len(sys.argv) > 2 else {}))
 emit(event="start", scenario="home")
 emit(event="scenario", result={"name": "home", "outcome": "pass", "reason": "ok"})
 emit(event="start", scenario="pricing")
@@ -25,8 +26,8 @@ print(json.dumps({"gate": "FAIL", "run_dir": "/tmp/demo-run", "scenarios": []}))
 """
 
 
-def fake(seconds):
-    return [sys.executable, "-c", FAKE_RUN, str(seconds)]
+def fake(seconds, decider=None):
+    return [sys.executable, "-c", FAKE_RUN, str(seconds), *([decider] if decider else [])]
 
 
 def wait_for(predicate, timeout=10):
@@ -154,6 +155,18 @@ def test_top_shows_the_browser_holder_queue_progress_and_reports():
     jobs.stop(running["id"], wait=10)
     after = top.plain(top.snapshot())
     assert "browser: free" in after and "stopped" in after
+
+
+def test_top_names_the_model_making_the_decisions():
+    # Jev or Clef: with a choice of decision models, the live line says which one is deciding.
+    from qajev import top
+
+    running = jobs.start(["run", "--project", "shop"], command=fake(60, decider="Clef-flash"))
+    wait_for(lambda: jobs.status(running["id"])["progress"]["done"] == 1)
+    assert jobs.status(running["id"])["decider"] == "Clef-flash"
+    text = top.plain(top.snapshot())
+    assert "Clef-flash ▸ click 'See pricing' (p 0.93) · step 4" in text and "Jev ▸" not in text
+    jobs.stop(running["id"], wait=10)
 
 
 def test_top_sets_a_live_chrome_or_game_apart_from_the_empty_placeholders():

@@ -16,11 +16,22 @@ shell variable overrides a file).
 | `OPENROUTER_API_KEY` | Jev's decisions through OpenRouter, and the text helper | none |
 | `TEXT_MODEL_API_KEY` | the text helper (what Jev types into fields): any OpenAI-compatible key | the OpenRouter key |
 | `TEXT_MODEL_BASE_URL`, `TEXT_MODEL`, `TEXT_MODEL_REASONING` | the text helper's service, model and reasoning level | OpenRouter, `inception/mercury-2.5`, `none` |
-| `QAJEV_JEV_PROVIDER` | `auto`, `typesafe` or `openrouter` | `auto`: TypeSafe if its key is set, else OpenRouter |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | the decisions by Cloudflare's Clef instead of Jev (Workers AI; a token with Workers AI read access) | none |
+| `QAJEV_JEV_PROVIDER` | `auto`, `typesafe`, `openrouter` or `cloudflare` | `auto`: TypeSafe if its key is set, else OpenRouter; Clef only when set to `cloudflare` |
 | `TYPESAFE_MODEL` | Jev's model on TypeSafe | `jev-latest` |
 | `QAJEV_OPENROUTER_JEV_MODEL` | Jev's model on OpenRouter | `~typesafe/jev-latest` |
+| `QAJEV_CLEF_MODEL` | Clef's model on Cloudflare: `clef-flash` or `clef` | `clef-flash` |
 
-**One OpenRouter key runs everything.** The report says which route each run used. `qajev doctor` shows which
+**One OpenRouter key runs everything.** The report says which route each run used.
+
+**Jev or Clef.** The decision model can be TypeSafe's Jev or Cloudflare's open Clef models, which answer the same
+questions in the same form. To use Clef, set the two Cloudflare variables and `QAJEV_JEV_PROVIDER=cloudflare` (or pass
+`--jev-provider cloudflare`); `QAJEV_CLEF_MODEL=clef` picks the larger model. `auto` never picks Clef: Cloudflare
+credentials are often set for other tools, and QAJev only sends pages to Workers AI when you choose it. QAJev bridges the two differences
+between the APIs itself: Clef refuses a choice with a single option (QAJev answers it: it is certain) and wraps its
+answer differently. The report, `qajev doctor` and `qajev top` name the model deciding (Jev, Clef or Clef-flash), and
+Clef's decisions are priced from its own token counts. In reports, "Jev" stays the name of the tester's role, whichever
+model plays it. The text helper is unchanged: forms still need its key. `qajev doctor` shows which
 keys are present and whether they work; it never prints their values.
 
 ## Where things are kept

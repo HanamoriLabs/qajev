@@ -281,7 +281,7 @@ def render(snap, *, width=120, selected=0, detail=None, message=None):
             p_txt = f" (p {now['p']:.2f})" if isinstance(now.get("p"), (int, float)) else ""
             step = f" · step {now['n']}" if now.get("n") else ""
             ago = f" · {_ago(snap['at'] - now['at'])} ago" if isinstance(now.get("at"), (int, float)) else ""
-            add((f"      Jev ▸ {now['doing']}{p_txt}{step}{ago}"[:width], "running"))
+            add((f"      {j.get('decider') or 'Jev'} ▸ {now['doing']}{p_txt}{step}{ago}"[:width], "running"))
         if detail == ("job", j["id"]):
             from . import jobs
 

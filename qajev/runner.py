@@ -498,8 +498,9 @@ def run(suite, opts):
     try:
         models = providers.describe(providers.resolve())
         if any(s.goal for s in scenarios) and models["jev"] == "none":
-            raise ConfigError("goals need TYPESAFE_API_KEY or an OpenRouter key (OPENROUTER_API_KEY); "
-                              "see `qajev doctor`")
+            raise ConfigError("goals need TYPESAFE_API_KEY or an OpenRouter key (OPENROUTER_API_KEY) for Jev, or "
+                              "QAJEV_JEV_PROVIDER=cloudflare with CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN for "
+                              "Clef; see `qajev doctor`")
     except providers.ProviderError as e:
         raise ConfigError(str(e)) from None
     if any(s.uses_commands for s in scenarios) and not opts.allow_commands:
@@ -522,7 +523,8 @@ def run(suite, opts):
         cdp_url = owned["cdp_url"]
         browser = {"cdp_url": cdp_url, "managed": True, "profile": owned["profile"], "headless": owned["headless"],
                    "port": owned["port"]}
-    _emit(opts, "run", suite=suite.name, run_dir=str(run_dir), browser=browser, scenarios=len(scenarios))
+    _emit(opts, "run", suite=suite.name, run_dir=str(run_dir), browser=browser, scenarios=len(scenarios),
+          decider=models.get("decider"))
 
     cap = opts.cost_cap_usd if opts.cost_cap_usd is not None else suite.cost_cap_usd
     motion = opts.motion or getattr(suite, "motion", "reduce")

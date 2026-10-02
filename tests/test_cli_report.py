@@ -261,3 +261,13 @@ def test_smoke_and_play_wait_for_the_load_gate_too(monkeypatch, capsys):
         assert main([*argv, "--load-wait", "30", "--json"]) == 4
         error = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["error"]
         assert "load" in error and "300" in error
+
+
+def test_the_report_prices_the_decisions_by_the_model_that_made_them():
+    from qajev import report_html
+
+    jev = {"cost": {"usd_typesafe_estimated": 0.0035}, "models": {"decider": "Jev"}}
+    clef = {"cost": {"usd_typesafe_estimated": 0.0004}, "models": {"decider": "Clef-flash"}}
+    assert report_html.decisions_cost(jev) == "TypeSafe $0.0035 (estimated per call)"
+    assert report_html.decisions_cost({"cost": jev["cost"]}) == "TypeSafe $0.0035 (estimated per call)"  # older run
+    assert report_html.decisions_cost(clef) == "Clef-flash $0.0004"  # Clef's own token count, not an estimate

@@ -36,7 +36,7 @@ args = ["mcp"]
 
 If the client cannot find `qajev`, use its full path (`which qajev`). The server reads the same keys as the CLI
 (`~/.qajev/.env`). To pin the Jev route for MCP runs, add an environment variable in the client's settings, e.g.
-`QAJEV_JEV_PROVIDER=openrouter`.
+`QAJEV_JEV_PROVIDER=openrouter` (or `cloudflare` for Clef).
 
 After upgrading QAJev, restart the agent's session (or reconnect the server, `/mcp` in Claude Code) to pick up new
 tools.

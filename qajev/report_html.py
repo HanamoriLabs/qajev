@@ -203,6 +203,15 @@ def _changes(ch):
             f'<span class="muted">(compared with {_e(when)}, {_e(since.get("gate"))})</span></p>{body}</div>')
 
 
+def decisions_cost(data):
+    """What the decisions cost: Jev on TypeSafe is a flat estimate per call; Clef's is its own token count."""
+    usd = data["cost"]["usd_typesafe_estimated"]
+    decider = (data.get("models") or {}).get("decider") or "Jev"
+    if decider == "Jev":
+        return f"TypeSafe ${usd:.4f} (estimated per call)"
+    return f"{decider} ${usd:.4f}"
+
+
 def signed_in(s):
     """A stored test account's sign-in, in one line (both reports)."""
     if not s.get("ok"):
@@ -277,11 +286,12 @@ def render(data):
                          f"{', headless' if browser.get('headless') else ', windowed'})"))
            if browser.get("surface") == "native" else
            ("Browser", _e(f"{browser.get('cdp_url')} ({owner}{', headless' if browser.get('headless') else ''})")),
-           ("Cost", _e(f"TypeSafe ${cost['usd_typesafe_estimated']:.4f} (estimated per call), text model "
+           ("Cost", _e(f"{decisions_cost(data)}, text model "
                        f"${cost['usd_text']:.4f}" + ("" if cost["text_cost_reported"]
                                                      else " (provider did not report cost)")))]
     if data.get("models"):
-        run.append(("Models", _e(f"Jev {data['models']['jev']}; text {data['models']['text']}")))
+        run.append(("Models", _e(f"{data['models'].get('decider') or 'Jev'} {data['models']['jev']}; "
+                                 f"text {data['models']['text']}")))
     if data.get("motion") in ("reduce", "full"):
         run.append(("Motion", "reduced (pages were told the visitor prefers reduced motion)"
                     if data["motion"] == "reduce" else "full (as-is)"))

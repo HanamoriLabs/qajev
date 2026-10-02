@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Clef as the decision model: `QAJEV_JEV_PROVIDER=cloudflare` (or `--jev-provider cloudflare`) with
+  `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` sends the decisions to Cloudflare's open Clef models on Workers AI
+  instead of Jev (`QAJEV_CLEF_MODEL`: `clef-flash`, the default, or `clef`). QAJev answers a one-option choice itself
+  (Clef refuses it) and unwraps Workers AI's envelope; Clef's decisions are priced from its token counts. Reports,
+  `qajev doctor` and `qajev top` name the model deciding: Jev, Clef or Clef-flash. Clef is used only when chosen:
+  `auto` never sends pages to Workers AI on Cloudflare credentials set for other tools.
+
 - Godot game suites: `seed: qa/...` copies saves from a folder in the game's own `qa/` folder into the throwaway
   `user://` before the first launch (legacy-save fixtures), and a `relaunch: true` step restarts the game on the same
   saves (save, relaunch, Continue), also after a step that quit it.

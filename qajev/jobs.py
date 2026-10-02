@@ -385,6 +385,8 @@ def status(job_id, detail=False):
                      "outcomes": {o: sum(1 for r in finished if r.get("outcome") == o)
                                   for o in {r.get("outcome") for r in finished}}},
     }
+    if run.get("decider"):  # the model making the decisions: Jev, Clef or Clef-flash
+        out["decider"] = run["decider"]
     if current and state == "running":
         out["current"] = current
         step = next((e for e in reversed(events) if e.get("event") == "step"), None)

@@ -6,8 +6,9 @@ Start with `qajev doctor`: it checks keys, Chrome, ports and load, and says what
 Set `QAJEV_CHROME` to your Chrome or Chromium binary, e.g.
 `export QAJEV_CHROME=/usr/bin/chromium`.
 
-**"goals need TYPESAFE_API_KEY or an OpenRouter key"**
-Add one key to `~/.qajev/.env` ([Getting started](getting-started.md)). `qajev smoke` needs no key.
+**"goals need TYPESAFE_API_KEY or an OpenRouter key ... or QAJEV_JEV_PROVIDER=cloudflare ..."**
+Add one key to `~/.qajev/.env` ([Getting started](getting-started.md)). `qajev smoke` needs no key. Cloudflare
+credentials alone are not used: Clef needs `QAJEV_JEV_PROVIDER=cloudflare` too.
 
 **A key in the file is ignored**
 A variable set in your shell wins over the file. `qajev doctor` says when that happens; `unset` the old one.
