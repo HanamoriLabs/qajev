@@ -4,6 +4,17 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Images, with Clef: `looks` expectations (`--expect-looks`, MCP `expect_looks`) are plain statements Clef judges
+  from the final screenshot, each passing at a probability of 0.5 or more, with that probability in the report. They
+  catch what text checks cannot: a button cut off by its box, a price drawn on a canvas, a label that is an image.
+  `vision: true` (`--vision`, MCP `vision`) sends the screenshot with every decision, so Clef can choose a button whose
+  label is only pixels. Both work for websites and for games with a window (`qajev play`); a run that asks for them
+  without Clef, or a headless Godot game, is refused before it starts, saying what to set.
+- Reports count and list the decisions under the name of the model that made them (`6 Clef decisions`,
+  `Clef's next step`).
+- A Clef call that loses its connection or gets a 5xx from Workers AI is asked once more (nothing was done in the page
+  yet); a 4xx is not repeated.
+
 - Clef as the decision model: `QAJEV_JEV_PROVIDER=cloudflare` (or `--jev-provider cloudflare`) with
   `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` sends the decisions to Cloudflare's open Clef models on Workers AI
   instead of Jev (`QAJEV_CLEF_MODEL`: `clef-flash`, the default, or `clef`). QAJev answers a one-option choice itself

@@ -352,6 +352,11 @@ class Session:
         path.write_bytes(base64.b64decode(data))
         return path
 
+    def screen_image(self):
+        """The viewport as a JPEG data URL, for Clef (vision.py): what a visitor sees right now."""
+        data = self.call("Page.captureScreenshot", format="jpeg", quality=70)["data"]
+        return f"data:image/jpeg;base64,{data}"
+
     def fetch(self, probe):
         method = probe.get("method", "GET").upper()
         expression = f"""(async () => {{

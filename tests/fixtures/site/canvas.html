@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Plans">
+<title>Choose a page</title></head>
+<body>
+  <h1>Choose a page</h1>
+  <p>Two buttons below. Their words are drawn, not written: only a look at the screen tells them apart.</p>
+  <button id="first" style="padding:0;border:2px solid #333"><canvas width="200" height="56"></canvas></button>
+  <button id="second" style="padding:0;border:2px solid #333"><canvas width="200" height="56"></canvas></button>
+  <p><canvas id="price" width="420" height="64"></canvas></p>
+  <script>
+    // The labels exist only as pixels; the wrong one comes first, so a guess goes to the contact page.
+    const draw = (canvas, text, size) => {
+      const c = canvas.getContext('2d');
+      c.fillStyle = '#fff'; c.fillRect(0, 0, canvas.width, canvas.height);
+      c.fillStyle = '#111'; c.font = `bold ${size}px sans-serif`; c.textBaseline = 'middle';
+      c.fillText(text, 14, canvas.height / 2);
+    };
+    draw(document.querySelector('#first canvas'), 'Contact us', 26);
+    draw(document.querySelector('#second canvas'), 'See pricing', 26);
+    draw(document.getElementById('price'), 'Pro plan: $29 per month', 32);
+    first.onclick = () => { location.href = '/contact.html'; };
+    second.onclick = () => { location.href = '/pricing.html'; };
+  </script>
+</body>
+</html>

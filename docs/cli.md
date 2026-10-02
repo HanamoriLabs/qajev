@@ -109,6 +109,8 @@ qajev check https://shop.example \
 | `--expect-url`, `-u` / `--expect-url-regex` | the final address contains this / matches this |
 | `--expect-js`, `-j` | a JavaScript expression that must be true |
 | `--fetch URL[=STATUS]` | a request from the page that must answer STATUS (default 200) |
+| `--expect-looks STATEMENT` | Clef, looking at the final screenshot, must judge this true (repeatable; needs Clef) |
+| `--vision` | Clef sees the screenshot with every decision (needs Clef) |
 | `--mode readonly\|mutate` | `mutate` lets Jev change data: localhost only |
 | `--device NAME` | `desktop`, `tall`, `phone`, `tablet` or `WIDTHxHEIGHT` |
 | `--persona TEXT` | who Jev is, e.g. "You are on your phone and new to this site" |
@@ -158,6 +160,8 @@ qajev play path/to/game --suite session.yaml
 | `--expect-text TEXT` | the game must show this (repeatable) |
 | `--expect-state KEY=VALUE` | a game state value, e.g. `game_over=false` or `kills=">= 1"` (repeatable) |
 | `--min-fps N` | the frame rate must be at least this |
+| `--expect-looks STATEMENT` | Clef, looking at the game's final screenshot, must judge this true (repeatable; needs Clef and a window) |
+| `--vision` | Clef sees the game's screen with every decision (needs Clef and a window) |
 | `--allow-errors` | engine or script errors do not fail the run |
 | `--expect-closed` | the game must quit by itself with exit code 0 (to test a normal quit) |
 | `--allow LABEL` | offer this exact label to Jev although it is hidden by default, e.g. `QUIT` (repeatable) |

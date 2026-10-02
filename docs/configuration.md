@@ -30,9 +30,16 @@ questions in the same form. To use Clef, set the two Cloudflare variables and `Q
 credentials are often set for other tools, and QAJev only sends pages to Workers AI when you choose it. QAJev bridges the two differences
 between the APIs itself: Clef refuses a choice with a single option (QAJev answers it: it is certain) and wraps its
 answer differently. The report, `qajev doctor` and `qajev top` name the model deciding (Jev, Clef or Clef-flash), and
-Clef's decisions are priced from its own token counts. In reports, "Jev" stays the name of the tester's role, whichever
-model plays it. The text helper is unchanged: forms still need its key. `qajev doctor` shows which
-keys are present and whether they work; it never prints their values.
+Clef's decisions are priced from its own token counts. The report counts and lists the decisions under that name;
+elsewhere "Jev" stays the name of the tester's role, whichever model plays it. The text helper is unchanged: forms
+still need its key. `qajev doctor` shows which keys are present and whether they work; it never prints their values.
+
+**Clef reads images.** Only Clef can use screenshots: `looks` expectations (statements judged from the final
+screenshot) and `vision` (Clef sees the screen with every decision). See
+[What only a look at the screen tells](writing-tests.md#what-only-a-look-at-the-screen-tells-clef). With Jev, a run
+that asks for either is refused before it starts. Screenshots go to Workers AI with the decisions, so choose Clef only
+for sites and games you may send there. In our tests on QAJev's demo pages, both Clef models chose drawn buttons
+correctly with vision and judged every looks statement right; Clef-flash is cheaper and was as accurate there.
 
 ## Where things are kept
 

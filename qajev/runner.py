@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import chrome, providers, verdict
+from . import chrome, providers, verdict, vision
 from .config import redact, redact_tree, secret_values
 from .ledger import CostCapReached, Ledger
 from .suite import has_checks
@@ -180,7 +180,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                     _emit(opts, "step", scenario=scenario.name, doing=doing, at=time.time(),
                           spent_usd=round(session.ledger.spent(), 5), **extra)
 
-                stop, detail = drive(session, scenario, read, page_ok, started, step)
+                with vision.seeing(session.screen_image if scenario.vision else None):
+                    stop, detail = drive(session, scenario, read, page_ok, started, step)
             else:
                 stop = "checked"
     except HookFailed as e:
@@ -213,6 +214,13 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                     session.assists.append(assist)
                     read()
             checks = verdict.page_checks(scenario.expect, observed)
+            if scenario.expect.get("looks") and stop not in verdict.HARNESS_STOPS:
+                image = session.screen_image()
+                try:
+                    checks += vision.look(session.jev.model.post_json, image, scenario.expect["looks"],
+                                          {"page": {"url": observed.get("url"), "title": observed.get("title")}})
+                except (RuntimeError, ValueError) as e:  # Clef failed, not the browser
+                    stop, detail = "model_error", f"while judging looks: {e}"
             if stop not in verdict.HARNESS_STOPS:
                 for hook in scenario.after:
                     session.run_hook(hook, observed.get("url") or scenario.url)
@@ -503,6 +511,11 @@ def run(suite, opts):
                               "Clef; see `qajev doctor`")
     except providers.ProviderError as e:
         raise ConfigError(str(e)) from None
+    sees = [s for s in scenarios if s.vision or s.expect.get("looks")]
+    if sees:
+        refused = vision.require_clef("vision" if any(s.vision for s in sees) else "looks")
+        if refused:
+            raise ConfigError(f"{refused} ({sees[0].name!r} asks for it)")
     if any(s.uses_commands for s in scenarios) and not opts.allow_commands:
         raise ConfigError("this suite runs shell commands; pass --allow-commands if you trust it")
 

@@ -49,6 +49,10 @@ QAJev's own Chrome for the person, or a suite/project names a stored test accoun
 op:// or env: password reference) and QAJev signs in itself before the scenarios. Never ask for, type or write
 down a password: only ever the reference.
 
+Images: with Clef as the decision model (QAJEV_JEV_PROVIDER=cloudflare), `expect_looks` judges plain statements
+from the final screenshot (layout, a canvas, a cut-off button: what text checks cannot see), and `vision` sends the
+screenshot with every decision. Jev reads text only; asking for either without Clef is refused.
+
 Needs sign-in: when a result has `needs_sign_in`, runs met a sign-in page (those scenarios are harness, not product
 failures). Do not report it as a bug. Ask the person how QAJev should get in, following its `next_step`: they sign
 in once (qa_browser login), or they run `qajev account add NAME --email ... --login-url ...` in their own terminal
@@ -200,6 +204,8 @@ async def qa_check(
     absent_text: list[str] | None = None,
     expect_url: str | None = None,
     expect_js: str | None = None,
+    expect_looks: list[str] | None = None,
+    vision: bool = False,
     fetch: list[str] | None = None,
     mode: str = "readonly",
     device: str | None = None,
@@ -224,6 +230,8 @@ async def qa_check(
     goal: plain words, e.g. "Open the pricing page. Stop when plan prices are visible."
     expect_text / absent_text: case-sensitive substrings the page must / must not show.
     expect_url: substring of the final URL. expect_js: JS expression that must be truthy.
+    expect_looks: statements judged from the final screenshot ("the Sign up button is not cut off"); vision: the
+    screenshot goes with every decision. Both need Clef as the decision model (Jev reads text only).
     fetch: in-page GET checks, "URL" or "URL=STATUS". mode: readonly (default) or mutate (loopback only).
     device: desktop | tall | phone | tablet | WIDTHxHEIGHT pins one; otherwise `devices` (default desktop and
     phone). real_devices: also in ios Safari / android Chrome on a throwaway simulator (read-only, slower).
@@ -244,6 +252,10 @@ async def qa_check(
         args += ["--expect-url", expect_url]
     if expect_js:
         args += ["--expect-js", expect_js]
+    for statement in expect_looks or []:
+        args += ["--expect-looks", statement]
+    if vision:
+        args.append("--vision")
     for probe in fetch or []:
         args += ["--fetch", probe]
     if persona:
@@ -434,6 +446,8 @@ async def qa_play(
     min_fps: float | None = None,
     allow_errors: bool = False,
     expect_closed: bool = False,
+    expect_looks: list[str] | None = None,
+    vision: bool = False,
     allow: list[str] | None = None,
     hide: list[str] | None = None,
     name: str | None = None,
@@ -456,7 +470,9 @@ async def qa_play(
     state values, e.g. {"game_over": false, "kills": ">= 1"}. Quit, exit and delete-save buttons are hidden from Jev;
     to test a normal quit pass allow=["QUIT"] and expect_closed=true (passes only on exit code 0). `name` titles the
     run in qa_jobs. Each step ends with a screenshot (shots=false skips them); headless (default) only applies to
-    Godot, where it is invisible and fastest but takes no screenshots. Electron apps always open a window."""
+    Godot, where it is invisible and fastest but takes no screenshots. Electron apps always open a window.
+    expect_looks: statements judged from the game's screenshot at the end; vision: the screenshot goes with every
+    decision. Both need Clef as the decision model and a picture, so they run the game windowed."""
     args = ["play", project, "--max-actions", str(max_actions), "--max-seconds", str(max_seconds),
             "--out", out_dir or str(DEFAULT_OUT)]
     for flag, value in (("--goal", goal), ("--adapter", adapter), ("--suite", suite),
@@ -479,7 +495,11 @@ async def qa_play(
     for flag, labels in (("--allow", allow), ("--hide", hide)):
         for label in labels or []:
             args += [flag, label]
-    if headless:
+    for statement in expect_looks or []:
+        args += ["--expect-looks", statement]
+    if vision:
+        args.append("--vision")
+    if headless and not (vision or expect_looks):  # a headless Godot game draws nothing to look at
         args.append("--headless")
     if not shots:
         args.append("--no-shots")

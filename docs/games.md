@@ -97,6 +97,28 @@ screen), QAJev takes the first offer to keep the game going and files an S3 "dec
 that must be Jev's own route, set `strict_decisions: true` on the play step: the first such decision then fails the
 step there, nothing clicked, with the screen and Jev's answer in the reason.
 
+### Looking at the screen (Clef)
+
+With Clef as the decision model (it reads images; see [Configuration](configuration.md#keys)), a step can use the
+game's screenshot:
+
+- `vision: true` on a step, on the suite, or `--vision`: Clef sees the game's screen with every decision (goal
+  steps, and a play step's `decide`), not only the adapter's labels. Useful when a choice is only in the picture:
+  card art, icons, a map.
+- `looks` in a step's `expect` (or `--expect-looks "..."`, repeatable): statements judged by Clef from the screenshot
+  at the end of the step, each passing at a probability of 0.5 or more.
+
+```yaml
+steps:
+  - name: the level-up cards can be read
+    play: {seconds: 60, decide: Pick the upgrade that best helps you survive.}
+    vision: true
+    expect: {min_fps: 30, looks: ["The health bar is visible in the top left and is not covered by a menu"]}
+```
+
+Both need the game's window: QAJev refuses them with `--headless` (MCP: `headless=false`), since a headless Godot
+game draws nothing to look at. They also refuse to start without Clef.
+
 ### Quitting on purpose
 
 QUIT is hidden from Jev, because quitting ends the session. To test a normal quit (say, that the game sends its

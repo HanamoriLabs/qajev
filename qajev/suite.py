@@ -49,14 +49,14 @@ def wanted_devices(explicit=None):
         _device(name, "devices")
     return names or list(DEFAULT_DEVICES)
 HOOK_KINDS = {"js", "fill", "click", "navigate", "wait_for", "key", "sleep", "command"}
-EXPECT_KEYS = {"url", "url_regex", "text", "absent", "visible", "js", "fetch", "command", "ignore_case"}
+EXPECT_KEYS = {"url", "url_regex", "text", "absent", "visible", "js", "fetch", "command", "ignore_case", "looks"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
-    "persona", "speech",
+    "persona", "speech", "vision",
 }
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
-    "scenarios", "settle", "motion", "devices", "real_devices", "account",
+    "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision",
 }
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login"}
@@ -88,6 +88,7 @@ class Scenario:
     device: dict
     persona: str | None
     speech: str | None
+    vision: bool = False  # Clef sees the screenshot with every decision (vision.py)
 
     @property
     def task(self):
@@ -167,6 +168,7 @@ def _expect(value, where):
     out["text"] = _list(value.get("text"), f"{where}.text")
     out["absent"] = _list(value.get("absent"), f"{where}.absent")
     out["visible"] = _list(value.get("visible"), f"{where}.visible")
+    out["looks"] = [str(s) for s in _list(value.get("looks"), f"{where}.looks")]  # judged from the screenshot
     if "url_regex" in out:
         try:
             re.compile(out["url_regex"])
@@ -191,7 +193,8 @@ def page_checks(expect):
 
 
 def has_checks(expect):
-    return page_checks(expect) or bool(expect.get("fetch") or expect.get("command"))
+    # looks is not a page check: it costs a model call, so it is judged once, at the end, not while Jev moves.
+    return page_checks(expect) or bool(expect.get("fetch") or expect.get("command") or expect.get("looks"))
 
 
 def _account(raw, base):
@@ -295,6 +298,7 @@ def parse(data, path=None, devices=None):
             device=_device(item.get("device", data.get("device") or wanted[0]), where),
             persona=item.get("persona", data.get("persona")),
             speech=item.get("speech", data.get("speech")),
+            vision=bool(item.get("vision", data.get("vision", False))),
         ))
 
     copies = []

@@ -38,7 +38,7 @@ KNOWN_KEYS = {"kind", "url", "note"}
 ENV_KEYS = {"base_url", "hosts", "mode", "device", "devices", "real_devices", "persona", "smoke_start", "motion",
             "account"}
 OBJECTIVE_KEYS = {"name", "env", "url", "goal", "expect", "tags", "before", "after", "budget", "device", "persona",
-                  "mode", "settle", "depends_on", "speech"}
+                  "mode", "settle", "depends_on", "speech", "vision"}
 # email and password are vault references (vault.py) or, for email, the plain address; never a password value.
 ACCOUNT_KEYS = {"email", "password", "login", "email_env", "password_env", "seed", "profile", "note"}
 
