@@ -120,6 +120,41 @@ def test_a_decision_still_closing_after_jevs_pick_is_not_picked_again(monkeypatc
     assert not [f for f in r["findings"] if f["kind"] == "decision not made by Jev"]
 
 
+def test_a_game_problem_fails_the_step_it_happened_in_not_every_step_after(tmp_path):
+    # I'M HIM! plan 30, 3 Oct: the watchdog raised one blocker at t=420 s; the adapter lists the last 20 blockers on
+    # every look, and every later play step failed "the game reported no problems" quoting that same blocker.
+    old = {"kind": "no_stage_progress", "detail": "no new stage for 240 s", "t": 420.0}
+    new = {"kind": "soft_lock", "detail": "no progress", "t": 900.0}
+
+    class Watched(FakeGame):
+        listed = []
+
+        def observe(self):
+            obs = super().observe()
+            obs["state"]["game_over"] = False
+            obs["problems"] = list(self.listed)
+            return obs
+
+    game = Watched()
+    steps = [{"name": f"boss {n}", "play": {"seconds": 0.05}} for n in (1, 2, 3)]
+    listed_per_step = iter([[old], [old], [old, new]])
+    real_play_for = native.play_for
+
+    def play_for(game, **kw):
+        Watched.listed = next(listed_per_step)
+        return real_play_for(game, sample=0.01, **kw)
+
+    native.play_for, saved = play_for, native.play_for
+    try:
+        results = native.run_session(game, steps, ledger=_NoLedger(), run_dir=tmp_path, shots=False)
+    finally:
+        native.play_for = saved
+    seen = [[c["ok"] for c in r["checks"] if c["check"].startswith("the game reported")] for r in results]
+    assert seen == [[False], [], [False]]  # the blocker fails boss 1 only; boss 3 fails on its own new soft-lock
+    assert "soft_lock" in results[2]["checks"][-1]["detail"] or any(
+        "soft_lock" in f["kind"] for f in results[2]["findings"])
+
+
 def test_each_game_decision_is_logged_as_made_with_labels_and_the_runner_up(monkeypatch, tmp_path):
     # qajev top's decisions view (d): what the model chose by the label on screen, how sure, and the runner-up.
     from types import SimpleNamespace
