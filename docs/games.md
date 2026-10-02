@@ -92,6 +92,11 @@ engine or script errors, a frame rate whose slowest 10% is under `min_fps`, or m
 `max_memory_growth_mb`. A game left paused by the step before stops the step as a harness problem, instead of
 "playing" a frozen screen. While a play step runs, [`qajev top`](jobs-and-top.md) shows the live numbers.
 
+When Jev does not make a decision (it was not asked, answered DONE or BLOCKED, or picked something not on
+screen), QAJev takes the first offer to keep the game going and files an S3 "decision not made by Jev". For a run
+that must be Jev's own route, set `strict_decisions: true` on the play step: the first such decision then fails the
+step there, nothing clicked, with the screen and Jev's answer in the reason.
+
 ### Quitting on purpose
 
 QUIT is hidden from Jev, because quitting ends the session. To test a normal quit (say, that the game sends its

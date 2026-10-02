@@ -4,6 +4,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- `play: {strict_decisions: true}`: a play step fails at the first decision Jev did not make, instead of taking the
+  first offer and going on (an S3 finding), so a route run is evidence only when Jev made every choice.
+
 - Fixed: Godot games under `qajev play` saved into the player's real `user://` folder (settings, checkpoints, logs).
   Godot 4 has no `--user-data-dir`, so the flag QAJev passed was ignored. The game now runs with `HOME` (and the XDG
   folders) inside QAJev's throwaway folder, which is where Godot puts `user://`, also for a custom user dir; the boot
