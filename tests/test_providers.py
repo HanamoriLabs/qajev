@@ -68,10 +68,13 @@ CF = {"CLOUDFLARE_ACCOUNT_ID": "acct123", "CLOUDFLARE_API_TOKEN": "cf-token-valu
 
 
 def test_clef_on_cloudflare_is_a_choice_and_auto_still_prefers_jev():
-    r = P.resolve(CF)
+    # Cloudflare credentials are often set for wrangler and other tools: auto never sends pages to Workers AI.
+    assert P.resolve(CF)["jev"] is None and P.resolve(CF)["decider"] is None
+    CF_CHOSEN = {**CF, "QAJEV_JEV_PROVIDER": "cloudflare"}
+    r = P.resolve(CF_CHOSEN)
     assert (r["jev"], r["jev_model"], r["decider"]) == ("cloudflare", "clef-flash", "Clef-flash")
     assert r["jev_url"] == "https://api.cloudflare.com/client/v4/accounts/acct123/ai/run/@cf/cloudflare/clef-flash"
-    assert P.resolve({**CF, "QAJEV_CLEF_MODEL": "clef"})["decider"] == "Clef"
+    assert P.resolve({**CF_CHOSEN, "QAJEV_CLEF_MODEL": "clef"})["decider"] == "Clef"
     assert P.resolve({**CF, "TYPESAFE_API_KEY": "ts"})["decider"] == "Jev"  # an existing setup does not change
     assert P.resolve({**CF, "TYPESAFE_API_KEY": "ts", "QAJEV_JEV_PROVIDER": "cloudflare"})["jev"] == "cloudflare"
     described = P.describe(r)
@@ -79,12 +82,12 @@ def test_clef_on_cloudflare_is_a_choice_and_auto_still_prefers_jev():
     with pytest.raises(P.ProviderError, match="CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN"):
         P.resolve({"QAJEV_JEV_PROVIDER": "cloudflare", "CLOUDFLARE_API_TOKEN": "t"})
     with pytest.raises(P.ProviderError, match="QAJEV_CLEF_MODEL"):
-        P.resolve({**CF, "QAJEV_CLEF_MODEL": "clef-mega"})
+        P.resolve({**CF_CHOSEN, "QAJEV_CLEF_MODEL": "clef-mega"})
 
 
 def test_clef_route_bridges_one_option_questions_the_envelope_and_the_cost():
     # Clef rejects a choice with a single option ("Dictionary should have at least 2 items"); Jev accepts it.
-    env = dict(CF)
+    env = {**CF, "QAJEV_JEV_PROVIDER": "cloudflare"}
     resolved = P.apply(env)
     sent = []
 

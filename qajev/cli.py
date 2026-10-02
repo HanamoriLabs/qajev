@@ -75,8 +75,8 @@ def _common(p):
                    help="where run folders go (default ./qajev-runs)")
     g.add_argument("--env-file", help="file with TYPESAFE_API_KEY etc. (default ./.env, then ~/.qajev/.env)")
     g.add_argument("--jev-provider", choices=["auto", "typesafe", "openrouter", "cloudflare"],
-                   help="who makes the decisions (default auto: TypeSafe key if set, else OpenRouter key, else "
-                        "Cloudflare: Clef or Clef-flash, see QAJEV_CLEF_MODEL)")
+                   help="who makes the decisions (default auto: TypeSafe key if set, else OpenRouter key; "
+                        "cloudflare: Clef or Clef-flash, only when chosen, see QAJEV_CLEF_MODEL)")
     g.add_argument("--cost-cap", type=float, help="hard cap in USD for the whole run (default: suite, else 1.00)")
     g.add_argument("--usd-per-call", type=float, default=0.0005, help="estimated TypeSafe cost per decision")
     g.add_argument("--strict", action="store_true", help="count stuck scenarios as failures")
@@ -673,9 +673,9 @@ def cmd_play(args):
     if args.goal:
         try:
             if providers.describe(providers.resolve())["jev"] == "none":
-                return _fail(args, "a goal needs a decision model: TYPESAFE_API_KEY or an OpenRouter key (Jev), or "
-                             "CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN (Clef); see `qajev doctor`",
-                             EXIT_CONFIG)
+                return _fail(args, "a goal needs a decision model: TYPESAFE_API_KEY or an OpenRouter key (Jev), "
+                             "or QAJEV_JEV_PROVIDER=cloudflare with CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN "
+                             "(Clef); see `qajev doctor`", EXIT_CONFIG)
         except providers.ProviderError as e:
             return _fail(args, str(e), EXIT_CONFIG)
     session_steps, game_env, adapter, headless = None, {}, args.adapter, args.headless
@@ -904,8 +904,8 @@ def cmd_doctor(args):
         resolved = providers.resolve()
         models = providers.describe(resolved)
         add("jev route", bool(resolved["jev"]), f"{models['decider']}: {models['jev']}" if resolved["jev"] else
-            "none: set TYPESAFE_API_KEY or OPENROUTER_API_KEY (Jev), or CLOUDFLARE_ACCOUNT_ID and "
-            "CLOUDFLARE_API_TOKEN (Clef)")
+            "none: set TYPESAFE_API_KEY or OPENROUTER_API_KEY (Jev), or for Clef QAJEV_JEV_PROVIDER=cloudflare "
+            "with CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN")
         add("text helper", True, models["text"] if resolved["text"] else
             "none: goals that type into fields need TEXT_MODEL_API_KEY or OPENROUTER_API_KEY")
         used = {resolved["jev_key_name"] if resolved["jev"] == "openrouter" else None,

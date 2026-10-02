@@ -4,7 +4,8 @@ The decision model (Jev's role) is served three ways with the same request body:
   TypeSafe    POST https://api.typesafe.ai/v1/systemone   TYPESAFE_API_KEY, model jev-latest
   OpenRouter  POST https://openrouter.ai/api/v1/systemone  OPENROUTER_API_KEY, model ~typesafe/jev-latest
   Cloudflare  POST .../accounts/ID/ai/run/@cf/cloudflare/MODEL  CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN,
-              model clef-flash (default) or clef (QAJEV_CLEF_MODEL): Cloudflare's open decision models
+              model clef-flash (default) or clef (QAJEV_CLEF_MODEL): Cloudflare's open decision models,
+              only with QAJEV_JEV_PROVIDER=cloudflare (never chosen by auto)
 The text helper (values Jev types) is any OpenAI-compatible chat endpoint; an OpenRouter key covers it too.
 """
 
@@ -48,7 +49,9 @@ def resolve(env=None):
     elif wanted in {"auto", "openrouter"} and or_key:
         out.update(jev="openrouter", jev_key_name=or_name, jev_url=OPENROUTER_SYSTEMONE,
                    jev_model=env.get("QAJEV_OPENROUTER_JEV_MODEL", OPENROUTER_JEV_MODEL))
-    elif wanted in {"auto", "cloudflare"} and env.get("CLOUDFLARE_API_TOKEN") and env.get("CLOUDFLARE_ACCOUNT_ID"):
+    elif wanted == "cloudflare" and env.get("CLOUDFLARE_API_TOKEN") and env.get("CLOUDFLARE_ACCOUNT_ID"):
+        # Only when chosen: Cloudflare credentials are often set for wrangler and other tools, with broad scopes;
+        # auto must never send page state to Workers AI, or spend, on a token not meant for QAJev.
         model = env.get("QAJEV_CLEF_MODEL", "clef-flash")
         if model not in CLEF_MODELS:
             raise ProviderError(f"QAJEV_CLEF_MODEL must be one of {sorted(CLEF_MODELS)}")
