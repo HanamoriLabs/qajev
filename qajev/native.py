@@ -617,14 +617,15 @@ PICK_SETTLE_S = 2.5
 
 def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledger=None, run_dir=None, shots=True,
              sample=0.5, stall_after=6.0, emit=None, every=2.0, overlay_limit=90.0, pilot_wait=30.0,
-             pilot_poll=0.5, strict_decisions=False, vision=False):
+             pilot_poll=0.5, strict_decisions=False, vision=False, seen=None):
     """Play in real time for up to `seconds` (or `until` the game state matches): the adapter's pilot steers each
     frame; Jev makes every decision the game stops for (`decide` is its goal there); every `sample` seconds QAJev
     records fps, frame time, memory and the game state, and flags a soft-lock (the game stops advancing while
     nothing is waiting for the player), a crash and engine errors. A decision Jev does not make is taken with the
     first offer to keep the game going; with `strict_decisions` it instead ends the step as a fail, nothing
     clicked, so a route run is evidence only when Jev made every choice. vision: Clef sees the screen with each
-    decision."""
+    decision. seen: the game's problems already reported in this session (run_session shares one set), so a problem
+    fails the step it happened in, not every step after it."""
     from . import session as session_mod
     from . import vision as vision_mod
 
@@ -639,7 +640,8 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
     last_tick, still_since, paused_since, overlay_since, told = None, None, None, None, None
     picked = None  # (the decision's screen and offers, when): the last decision QAJev acted on
     fell_back = None  # strict_decisions: the decision Jev did not make, in words
-    reported = set()
+    reported = set()  # the problems this step reports
+    seen = set() if seen is None else seen
     seeing = vision_mod.seeing((lambda: game_image(game)) if vision and decide else None)
     seeing.__enter__()
     try:
@@ -660,9 +662,13 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
             if told is None or t - told >= every:  # a pulse for qajev top: the pilot's play, live
                 told = t
                 _step(emit, name, ledger, _playing(t, obs), pulse=True)
-            for problem in obs.get("problems") or []:  # what the game's own watchdog says, once each
-                key = (problem.get("kind"), problem.get("detail"))
-                if key not in reported:
+            # What the game's own watchdog says, once each. An adapter lists its recent problems on every look
+            # (I'M HIM!: the last 20), so one from an earlier step comes back here: it was reported then. Its time
+            # is part of what it is, so the same kind happening again later is a new problem.
+            for problem in obs.get("problems") or []:
+                key = (problem.get("kind"), problem.get("detail"), problem.get("t"))
+                if key not in seen:
+                    seen.add(key)
                     reported.add(key)
                     when = f" (game t={problem['t']:.0f}s)" if isinstance(problem.get("t"), (int, float)) else ""
                     findings.append({"severity": "S2", "kind": f"game reported: {problem.get('kind')}",
@@ -944,6 +950,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
     results = []
     unopened = None  # an app or page that would not open: the steps that use it are skipped until the next open
     fresh = 0  # where the current launch's steps begin: a relaunch revives a game an earlier step closed or lost
+    problems = set()  # the game's problems already reported this launch (play_for's `seen`)
     for i, step in enumerate(steps):
         name = step.get("name") or f"step {i + 1}"
         if step.get("skip"):
@@ -958,6 +965,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
                               vision=vision)
             if r.get("stop") != "browser_error":
                 fresh = len(results)
+                problems = set()  # a new process: its watchdog starts again, and so do its problems
             results.append(r)
             if callable(emit):
                 emit({"event": "scenario", "result": r})
@@ -1006,7 +1014,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
             r = play_for(game, name=name, seconds=float(p.get("seconds", 60)), until=p.get("until"),
                          decide=p.get("decide"), expect=step.get("expect"), ledger=ledger, run_dir=run_dir,
                          shots=shots, emit=emit, strict_decisions=bool(p.get("strict_decisions")),
-                         vision=bool(step.get("vision", vision)))
+                         vision=bool(step.get("vision", vision)), seen=problems)
         else:
             with contextlib.suppress(NativeError):  # Jev has the controls: a game's bot would undo its moves
                 game.call(op="pilot", on=False)

@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: in a game session, one problem the game's own watchdog reported failed every later play step, not only the
+  step it happened in (an adapter lists its recent problems on every look, and each step counted them again). Each
+  problem is now reported once per launch, in the step where it first appears; the same kind happening again later
+  (a new time) still counts, and a relaunch starts the count again.
+
 - `qajev top`: `d` on a job shows its decisions live, newest first: the screen, what the model chose, how sure it
   was, the runner-up and how long it took, coloured by certainty, with the job's median p, low-confidence count,
   BLOCKED/DONE and median answer time above. `qajev top --decisions JOB` opens it directly (`--once` / `--json`
