@@ -155,6 +155,14 @@ window.__qajevAdapter = {
     } else if (on('.overlay.paused.on')) {
       screen = 'PAUSED';
       keys.push(key('resume', 'Resume the game (Esc)', 'Escape'));
+    } else if (on('.outfits-screen.on')) {
+      // Opened from the title, which stays .on underneath (inert): without this branch it read as TITLE MENU, and a
+      // step that "closed" it passed on a screen check while it was still open (I'M HIM! QA, 2 Oct, cb9661c).
+      screen = 'OUTFITS';
+      keys.push(key('close_outfits', 'Close the outfits screen (Esc)', 'Escape'));
+    } else if (on('.credits-screen.on')) {
+      screen = 'CREDITS';
+      keys.push(key('close_credits', 'Close the credits (Esc)', 'Escape'));
     } else if (titleOn) {
       const stage = title.dataset.stage || (title.classList.contains('quick') ? 'quick' : '');
       screen = { press: 'TITLE', menu: 'TITLE MENU', difficulty: 'DIFFICULTY', quick: 'TITLE' }[stage] || 'TITLE';
@@ -259,6 +267,7 @@ window.__qajevAdapter = {
       'GAME OVER': '.overlay.gameover.on', 'LEVEL UP': '.levelup.on', 'QTE': '.qte.on', 'HERO CV': '.hero-cv.on',
       'STALL': '.stall.on', 'STALL VERDICT': '.stall.on', 'TALK': '.talk.on', 'SETTINGS': '.settings-screen.on',
       'CONTROLS': '.controls-screen.on', 'BAG': '.inv.on', 'CASE FILE': '.inv.on', 'PAUSED': '.overlay.paused.on',
+      'OUTFITS': '.outfits-screen.on', 'CREDITS': '.credits-screen.on',
       'DEV TOOLS': '.devmenu', 'TITLE': '.title-screen', 'TITLE MENU': '.title-screen', 'DIFFICULTY': '.title-screen',
     };
     const own = roots[screen] ? text(roots[screen]) : '';
