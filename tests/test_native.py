@@ -347,6 +347,72 @@ def test_a_godot_game_saves_into_the_throwaway_folder_never_the_players_own(tmp_
         native.GodotGame(FIXTURE, headless=True).start()
 
 
+def test_a_seed_comes_only_from_the_games_own_qa_folder(tmp_path):
+    assert native.seed_folder(FIXTURE, "qa/legacy-save") == (FIXTURE / "qa/legacy-save").resolve()
+    for outside in (".", "qa/../", "../site", "qa/missing"):
+        with pytest.raises(native.NativeError, match="inside the game's qa/ folder"):
+            native.seed_folder(FIXTURE, outside)
+    game = tmp_path / "game"
+    (game / "qa/sneaky").mkdir(parents=True)
+    (tmp_path / "private.cfg").write_text("the player's own")
+    (game / "qa/sneaky/settings.cfg").symlink_to(tmp_path / "private.cfg")
+    with pytest.raises(native.NativeError, match="leads outside"):
+        native.seed_folder(game, "qa/sneaky")
+
+
+def test_a_relaunch_revives_a_game_an_earlier_step_closed():
+    class Closing(FakeGame):
+        relaunched = 0
+
+        def relaunch(self):
+            self.relaunched += 1
+
+    game = Closing()
+    steps = [{"name": "quit", "js": "1"}, {"name": "after quit"}, {"name": "again", "relaunch": True},
+             {"name": "continue", "expect": {}}]
+    original = native.js_step
+    native.js_step = lambda *a, **k: {"name": "quit", "outcome": "pass", "closed": True, "checks": []}
+    try:
+        results = native.run_session(game, steps, ledger=_NoLedger(), run_dir=None, shots=False)
+    finally:
+        native.js_step = original
+    outcomes = [(r["name"], r["outcome"]) for r in results]
+    assert outcomes[1] == ("after quit", "skipped") and outcomes[2] == ("again", "pass")
+    assert game.relaunched == 1 and outcomes[3][1] != "skipped"  # the relaunched game is played again
+    r = native.relaunch_step(FakeGame(), {}, name="again", ledger=_NoLedger(), run_dir=None, shots=False, emit=None)
+    assert r["outcome"] == "harness" and "relaunch needs a Godot game" in r["reason"]
+
+
+@live
+def test_a_seeded_save_is_there_at_launch_and_a_save_survives_a_relaunch():
+    # Seven Dawns: save -> relaunch -> Continue, and legacy-save fixtures, all inside the throwaway folder.
+    with native.GodotGame(FIXTURE, headless=True, seed="qa/legacy-save") as game:
+        assert "Welcome back" in game.observe()["texts"]  # the seed was copied in before the game read it
+    with native.GodotGame(FIXTURE, headless=True) as game:
+        assert "Main menu" in game.observe()["texts"]
+        game.act(next(a for a in game.observe()["actions"] if a["label"] == "Start"))  # saves settings.cfg
+        folder = game.user_dir
+        deadline = time.monotonic() + 3
+        while not list(Path(folder).rglob("settings.cfg")) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        game.relaunch()
+        assert game.user_dir == folder and "Welcome back" in game.observe()["texts"]
+    assert not Path(folder).exists()  # the throwaway folder still goes at the end
+
+
+@live
+def test_a_seed_that_cannot_be_copied_keeps_the_game_from_starting(tmp_path):
+    game = tmp_path / "game"
+    shutil.copytree(FIXTURE, game, ignore=shutil.ignore_patterns(".godot"))
+    locked = game / "qa/legacy-save/settings.cfg"
+    locked.chmod(0)  # unreadable: the copy fails
+    try:
+        with pytest.raises(native.NativeError, match="could not seed the save folder"):
+            native.GodotGame(game, headless=True, seed="qa/legacy-save").start()
+    finally:
+        locked.chmod(0o644)
+
+
 @live
 def test_a_button_on_a_scaled_layer_is_clicked_where_it_is_drawn():
     with native.GodotGame(FIXTURE, headless=True) as game:
