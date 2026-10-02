@@ -90,6 +90,53 @@ def test_real_time_play_reports_what_it_is_doing_as_it_goes():
     assert "picked Laser (common, LEARN): a beam (first offer: Jev was not asked)" in doing  # the decision
 
 
+def test_a_decision_still_closing_after_jevs_pick_is_not_picked_again(monkeypatch):
+    # I'M HIM! HIRE: the CV stayed up ~1 s after Jev's pick. QAJev asked again, Jev said DONE (it had just hired),
+    # DONE matched no offer, so QAJev clicked the first offer a second time and filed "decision not made by Jev".
+    from types import SimpleNamespace
+
+    from qajev import session as session_mod
+
+    class Hire(FakeGame):
+        def observe(self):
+            obs = super().observe()
+            if 3 <= self.looks <= 5:  # the same decision, still on screen for three looks
+                obs.update(screen="HIRE", decision=True, actions=[{"id": "hire", "label": "HIRE! (Gulpum)"}])
+            return obs
+
+    answers = iter([{"choice": "hire", "probabilities": {"hire": 1.0}},
+                    {"choice": "DONE", "probabilities": {"DONE": 1.0}}])
+    asked = []
+
+    def choose(state, goal, history):
+        asked.append(state["title"])
+        return {**next(answers), "latency_ms": 5}
+
+    monkeypatch.setattr(session_mod, "load", lambda ledger: SimpleNamespace(model=SimpleNamespace(choose=choose)))
+    game = Hire()
+    r = native.play_for(game, name="hire", seconds=30, sample=0.01, decide="Hire the recruit.", ledger=_NoLedger())
+    assert game.acted == ["hire"] and asked == ["HIRE"]  # one pick, one ask: no second click on a closing screen
+    assert not [f for f in r["findings"] if f["kind"] == "decision not made by Jev"]
+
+
+def test_a_decision_jev_answers_done_says_so_and_does_not_borrow_its_probability(monkeypatch):
+    from types import SimpleNamespace
+
+    from qajev import session as session_mod
+
+    monkeypatch.setattr(session_mod, "load", lambda ledger: SimpleNamespace(model=SimpleNamespace(
+        choose=lambda state, goal, history: {"choice": "DONE", "probabilities": {"DONE": 0.9}, "latency_ms": 5})))
+    events = []
+    r = native.play_for(FakeGame(), name="pick", seconds=30, sample=0.01, decide="Pick a card.", ledger=_NoLedger(),
+                        emit=events.append, every=0)
+    [f] = [f for f in r["findings"] if f["kind"] == "decision not made by Jev"]
+    assert "Jev answered DONE" in f["detail"]
+    assert "picked Laser (common, LEARN): a beam (first offer: Jev answered DONE)" in [
+        e["doing"] for e in events if e["event"] == "step"]
+    [pick] = [h for h in r["history"] if h["action"].startswith("Laser")]
+    assert pick["probability"] is None  # 0.9 was DONE's, not the card's
+
+
 def test_real_time_play_on_a_paused_game_stops_and_says_so():
     class Paused(FakeGame):
         def observe(self):

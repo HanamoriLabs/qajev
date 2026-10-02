@@ -12,6 +12,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - Job titles in `qajev jobs`, `qajev top` and `qa_jobs` say what a run is about: the project or site and the goal
   for website runs, the game and the test's name for games (not `play desktop`), for older jobs too. `qajev top`
   widens the title on a wide terminal.
+- Real-time play: a decision still closing after Jev's pick (same screen, same offers, within 2.5 s) is not asked
+  again. Jev answered DONE there, which matched no offer, so the first offer was clicked a second time and
+  "decision not made by Jev" filed. When Jev does answer DONE or BLOCKED at a decision, the finding and the step
+  say so, and the history no longer shows that answer's probability as the offer's.
 - Content Security Policy violations are findings in every website run (smoke included): `blocked by CSP` (S2)
   when the policy stopped a request or script, `CSP violation (report-only)` (S3) for what a report-only policy
   would stop, with the directive and the address, other hosts' tags and pixels included. They never reach the

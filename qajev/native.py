@@ -505,6 +505,9 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
 # ---- real-time play: the pilot steers, Jev decides, QAJev watches ----
 
 TIMELINE_KEYS = ("score", "kills", "level", "core_hp", "enemies", "weapons")
+# After a pick, the same decision (same screen, same offers) may stay up while the game closes it; within this
+# window it is not a new decision. Two real decisions in a row with identical offers wait this long at most.
+PICK_SETTLE_S = 2.5
 
 
 def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledger=None, run_dir=None, shots=True,
@@ -525,6 +528,7 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
     stop, detail, obs = None, None, {}
     jev = session_mod.load(ledger) if decide else None
     last_tick, still_since, paused_since, overlay_since, told = None, None, None, None, None
+    picked = None  # (the decision's screen and offers, when): the last decision QAJev acted on
     reported = set()
     try:
         until_pilot = time.monotonic() + pilot_wait  # a game still loading has not mounted its bot yet
@@ -563,21 +567,35 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
                 break
             if obs.get("decision"):
                 allowed, _hidden = visible_actions(obs)
-                pick, why = None, None
+                offer = (obs.get("screen"), tuple((a.get("id"), a.get("label")) for a in allowed))
+                if picked and picked[0] == offer and time.monotonic() - picked[1] < PICK_SETTLE_S:
+                    # The decision just picked is still closing (I'M HIM!'s HIRE CV stays ~1 s): asking again got
+                    # DONE from Jev, which matched no offer, so the first offer was clicked a second time.
+                    last_tick, still_since = None, None
+                    time.sleep(0.15)
+                    continue
+                pick, why, answer = None, None, None
                 if jev is not None:
                     decision = jev.model.choose(jev_state(obs, where), decide, history)
                     decisions.append(decision)
-                    pick = next((a for a in allowed if a["id"] == decision["choice"]), None)
-                    why = decision.get("probabilities", {}).get(decision["choice"])
+                    answer = decision["choice"]
+                    pick = next((a for a in allowed if a["id"] == answer), None)
+                    why = decision.get("probabilities", {}).get(answer)
                 note = ""
                 if pick is None:  # Jev did not pick (or was not asked): the first offer keeps the run going
-                    note = (" (first offer: Jev was not asked)" if jev is None
-                            else " (first offer: Jev's pick was not on screen)")
-                    pick = allowed[0] if allowed else None
+                    if jev is None:
+                        note = " (first offer: Jev was not asked)"
+                    elif answer in ("DONE", "BLOCKED"):
+                        note = f" (first offer: Jev answered {answer})"
+                    else:
+                        note = " (first offer: Jev's pick was not on screen)"
+                    pick, why = (allowed[0] if allowed else None), None  # a probability for the offer Jev did not pick
                     findings.append({"severity": "S3", "kind": "decision not made by Jev",
-                                     "detail": f"at {obs.get('screen')} t={t:.0f}s the first offer was taken",
+                                     "detail": f"at {obs.get('screen')} t={t:.0f}s the first offer was taken"
+                                               + (f": Jev answered {answer}" if answer in ("DONE", "BLOCKED") else ""),
                                      "scenario": name, "url": None})
                 if pick is not None:
+                    picked = (offer, time.monotonic())
                     _step(emit, name, ledger, f"picked {pick['label']}{note}", p=why if not note else None,
                           n=len(history) + 1)
                     game.act(pick)
