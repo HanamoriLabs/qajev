@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>I'M HIM! outfits (shape only)</title></head>
+<body>
+  <!-- The shape of I'M HIM!'s title with OUTFITS open over it (src/ui/OutfitsScreen.ts, coverBehind.ts): the title
+       stays .on, made inert and hidden; the outfits overlay is a sibling with its own BACK · ESC button. -->
+  <div id="ui">
+    <div class="title-screen on" data-stage="menu" inert aria-hidden="true" style="visibility:hidden">
+      <button>NEW GAME</button><button>CASE FILE</button><button>OUTFITS</button>
+    </div>
+    <div class="overlay outfits-screen on" role="dialog" aria-modal="true" aria-label="Outfits">
+      <h2>OUTFITS</h2><p class="of-tally">1 of 33 found</p>
+      <button class="of-cell" aria-label="Classic Jumpsuit, worn">Classic Jumpsuit</button>
+      <button class="btn btn-small of-back">BACK · ESC</button>
+    </div>
+  </div>
+</body>
+</html>

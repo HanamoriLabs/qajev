@@ -397,6 +397,21 @@ def test_clef_reads_the_screen_to_pick_a_drawn_button_and_to_catch_a_cut_off_one
         ("page shows 'Sign up now'", True), ("looks", False)]
 
 
+def test_imhim_names_the_outfits_screen_over_the_title_and_offers_its_way_out(session, site):
+    # I'M HIM! QA, 2 Oct: OUTFITS open over the (inert) title read as TITLE MENU, so "back from outfits" passed on a
+    # screen check while the wardrobe was still open, and every later menu step started inside it.
+    from qajev import electron
+
+    session.navigate(site + "/imhim-outfits.html")
+    session.evaluate((Path(electron.__file__).parent / "bridges/web/adapters/imhim.js").read_text())
+    obs = session.evaluate(electron.OBSERVE)
+    labels = [a["label"] for a in obs["actions"]]
+    assert obs["screen"] == "OUTFITS" and obs["state"]["screen"] == "OUTFITS"
+    assert "Close the outfits screen (Esc)" in labels and "BACK · ESC" in labels
+    assert not {"NEW GAME", "CASE FILE"} & set(labels)  # the title underneath is not offered
+    assert obs["texts"][-1].startswith("OUTFITS")
+
+
 def test_text_checks_read_visible_text_and_ignore_case_is_opt_in(session, site):
     session.arm("readonly")
     session.navigate(site + "/")
