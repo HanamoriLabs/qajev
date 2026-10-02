@@ -226,6 +226,8 @@ def screens(decisions):
             "runner_up": name(runner[0]) if runner[0] else None,
             "runner_up_p": round(runner[1], 3) if runner[1] is not None else None,
             "confidence": d.get("confidence"),
+            "options": len(criteria) or len(d.get("operation_probabilities") or {}) or None,
+            "ms": d.get("latency_ms"),
         })
     return out
 

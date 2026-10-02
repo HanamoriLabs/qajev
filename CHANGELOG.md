@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- `qajev top`: `d` on a job shows its decisions live, newest first: the screen, what the model chose, how sure it
+  was, the runner-up and how long it took, coloured by certainty, with the job's median p, low-confidence count,
+  BLOCKED/DONE and median answer time above. `qajev top --decisions JOB` opens it directly (`--once` / `--json`
+  print it). Runs now log each decision as a `decision` event (websites and games, stale decisions too).
 - The bundled I'M HIM! adapter: OUTFITS and CREDITS are named screens (with OUTFITS open over the title it read as
   TITLE MENU, so a step closing it passed while it was still open). A conversation says which line is on show and that
   it closes by itself after the last one, Continue says whether it finishes a typing line or shows the next, and the

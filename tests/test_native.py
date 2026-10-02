@@ -120,6 +120,39 @@ def test_a_decision_still_closing_after_jevs_pick_is_not_picked_again(monkeypatc
     assert not [f for f in r["findings"] if f["kind"] == "decision not made by Jev"]
 
 
+def test_each_game_decision_is_logged_as_made_with_labels_and_the_runner_up(monkeypatch, tmp_path):
+    # qajev top's decisions view (d): what the model chose by the label on screen, how sure, and the runner-up.
+    from types import SimpleNamespace
+
+    from qajev import session as session_mod
+
+    class Menu(FakeGame):
+        def __init__(self):
+            super().__init__()
+            self.screen = "MENU"
+
+        def observe(self):
+            return {"screen": self.screen, "texts": [], "state": {}, "fps": 60,
+                    "actions": [{"id": "play", "label": "PLAY", "kind": "click", "x": 1, "y": 1},
+                                {"id": "opts", "label": "OPTIONS", "kind": "click", "x": 1, "y": 2}]}
+
+        def act(self, action):
+            self.screen = "GAME" if action["id"] == "play" else self.screen
+
+    monkeypatch.setattr(session_mod, "load", lambda ledger: SimpleNamespace(model=SimpleNamespace(
+        choose=lambda state, goal, history: {"choice": "play", "latency_ms": 41,
+                                             "probabilities": {"play": 0.9, "opts": 0.08, "DONE": 0.02}})))
+    events = []
+    r = native.play(Menu(), name="start", goal="Start a game. Stop when playing.", expect={"screen": "GAME"},
+                    budget={"actions": 3, "seconds": 10}, ledger=_NoLedger(), run_dir=tmp_path, shots=False,
+                    settle=0, emit=events.append)
+    assert r["outcome"] == "pass"
+    [d] = [e for e in events if e["event"] == "decision"]
+    assert {k: d[k] for k in ("scenario", "screen", "chose", "p", "runner_up", "runner_up_p", "options", "ms")} == {
+        "scenario": "start", "screen": "MENU", "chose": "PLAY", "p": 0.9, "runner_up": "OPTIONS",
+        "runner_up_p": 0.08, "options": 2, "ms": 41}
+
+
 def test_a_decision_jev_answers_done_says_so_and_does_not_borrow_its_probability(monkeypatch):
     from types import SimpleNamespace
 

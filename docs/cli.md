@@ -214,7 +214,9 @@ The run closes its browser, keeps the scenarios that finished and writes its rep
 
 ## `qajev top`
 
-The live dashboard. `--once` prints one snapshot; `--json` prints it as data. See [Jobs and top](jobs-and-top.md).
+The live dashboard. `--once` prints one snapshot; `--json` prints it as data. `--decisions JOB` opens one job's
+decisions as they are made (what the model chose, how sure, the runner-up; `d` in the dashboard), or prints them
+with `--once` / `--json`. See [Jobs and top](jobs-and-top.md).
 
 ## `qajev nightly`
 

@@ -285,6 +285,9 @@ def build_parser():
     top = sub.add_parser("top", help="live dashboard: the browser, queued and running jobs, Chromes, recent reports")
     top.add_argument("--once", action="store_true", help="print one snapshot as text and exit")
     top.add_argument("--json", action="store_true", help="print one snapshot as JSON and exit")
+    top.add_argument("--decisions", metavar="JOB",
+                     help="a job's decisions as they are made: what the model chose, how sure, the runner-up "
+                          "(the `d` view; with --once or --json, print them and exit)")
 
     init = sub.add_parser("init", help="write a starter suite file")
     init.add_argument("path", type=Path, nargs="?", default=Path("qajev.yaml"))
@@ -1095,8 +1098,20 @@ def cmd_nightly(args):
 
 
 def cmd_top(args):
-    from . import top
+    from . import jobs, top
 
+    if args.decisions:
+        try:
+            jobs.status(args.decisions)
+        except jobs.NoSuchJob:
+            return _fail(args, f"no job {args.decisions!r} (qajev jobs lists them)", EXIT_CONFIG)
+        if args.json:
+            print(json.dumps(jobs.decisions(args.decisions), indent=2, default=str))
+            return 0
+        if args.once or not sys.stdout.isatty():
+            print(top.plain_decisions(args.decisions, width=shutil.get_terminal_size((120, 40)).columns))
+            return 0
+        return top.run_ui(watch=args.decisions)
     if args.json:
         print(json.dumps(top.snapshot(), indent=2, default=str))
         return 0
