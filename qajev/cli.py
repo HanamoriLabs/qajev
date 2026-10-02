@@ -74,8 +74,9 @@ def _common(p):
     g.add_argument("--out", type=Path, default=Path(os.environ.get("QAJEV_OUT", "qajev-runs")),
                    help="where run folders go (default ./qajev-runs)")
     g.add_argument("--env-file", help="file with TYPESAFE_API_KEY etc. (default ./.env, then ~/.qajev/.env)")
-    g.add_argument("--jev-provider", choices=["auto", "typesafe", "openrouter"],
-                   help="where Jev's decisions go (default auto: TypeSafe key if set, else OpenRouter key)")
+    g.add_argument("--jev-provider", choices=["auto", "typesafe", "openrouter", "cloudflare"],
+                   help="who makes the decisions (default auto: TypeSafe key if set, else OpenRouter key, else "
+                        "Cloudflare: Clef or Clef-flash, see QAJEV_CLEF_MODEL)")
     g.add_argument("--cost-cap", type=float, help="hard cap in USD for the whole run (default: suite, else 1.00)")
     g.add_argument("--usd-per-call", type=float, default=0.0005, help="estimated TypeSafe cost per decision")
     g.add_argument("--strict", action="store_true", help="count stuck scenarios as failures")
@@ -192,7 +193,7 @@ def build_parser():
     play.add_argument("--no-shots", action="store_true", help="skip the end screenshot")
     play.add_argument("--out", type=Path, default=Path(os.environ.get("QAJEV_OUT", "qajev-runs")))
     play.add_argument("--env-file")
-    play.add_argument("--jev-provider", choices=["auto", "typesafe", "openrouter"])
+    play.add_argument("--jev-provider", choices=["auto", "typesafe", "openrouter", "cloudflare"])
     play.add_argument("--cost-cap", type=float, default=1.0)
     play.add_argument("--usd-per-call", type=float, default=0.0005)
     _load_flags(play)
@@ -672,7 +673,8 @@ def cmd_play(args):
     if args.goal:
         try:
             if providers.describe(providers.resolve())["jev"] == "none":
-                return _fail(args, "a goal needs TYPESAFE_API_KEY or an OpenRouter key; see `qajev doctor`",
+                return _fail(args, "a goal needs a decision model: TYPESAFE_API_KEY or an OpenRouter key (Jev), or "
+                             "CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN (Clef); see `qajev doctor`",
                              EXIT_CONFIG)
         except providers.ProviderError as e:
             return _fail(args, str(e), EXIT_CONFIG)
@@ -736,7 +738,8 @@ def cmd_play(args):
                            "headless": headless, "env": game_env, "args": game_args,
                            "managed": True, "pid": game.proc.pid if game.proc else None}
                 emit({"event": "run", "suite": f"play {name}", "run_dir": str(run_dir), "browser": browser,
-                      "scenarios": len(session_steps) if session_steps else 1})
+                      "scenarios": len(session_steps) if session_steps else 1,
+                      "decider": providers.describe(providers.resolve()).get("decider")})
                 # Only a headless Godot game renders nothing to capture; Electron always has a real window
                 # (its --headless only meant "no shots", so MCP's default headless runs had none).
                 shots = not args.no_shots and not (headless and browser["engine"] == "godot")
@@ -895,13 +898,14 @@ def cmd_doctor(args):
 
     add("env files", bool(loaded), ", ".join(loaded) or
         f"none found; looked in {', '.join(str(p) for p in env_files(args.env_file))}")
-    for key in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "TEXT_MODEL_API_KEY"):
+    for key in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "CLOUDFLARE_API_TOKEN", "TEXT_MODEL_API_KEY"):
         add(key, True, "set" if os.environ.get(key) else "not set")
     try:
         resolved = providers.resolve()
         models = providers.describe(resolved)
-        add("jev route", bool(resolved["jev"]), models["jev"] if resolved["jev"] else
-            "none: set TYPESAFE_API_KEY or OPENROUTER_API_KEY")
+        add("jev route", bool(resolved["jev"]), f"{models['decider']}: {models['jev']}" if resolved["jev"] else
+            "none: set TYPESAFE_API_KEY or OPENROUTER_API_KEY (Jev), or CLOUDFLARE_ACCOUNT_ID and "
+            "CLOUDFLARE_API_TOKEN (Clef)")
         add("text helper", True, models["text"] if resolved["text"] else
             "none: goals that type into fields need TEXT_MODEL_API_KEY or OPENROUTER_API_KEY")
         used = {resolved["jev_key_name"] if resolved["jev"] == "openrouter" else None,

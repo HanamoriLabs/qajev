@@ -6,7 +6,7 @@ Start with `qajev doctor`: it checks keys, Chrome, ports and load, and says what
 Set `QAJEV_CHROME` to your Chrome or Chromium binary, e.g.
 `export QAJEV_CHROME=/usr/bin/chromium`.
 
-**"goals need TYPESAFE_API_KEY or an OpenRouter key"**
+**"goals need TYPESAFE_API_KEY or an OpenRouter key ... or CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN"**
 Add one key to `~/.qajev/.env` ([Getting started](getting-started.md)). `qajev smoke` needs no key.
 
 **A key in the file is ignored**

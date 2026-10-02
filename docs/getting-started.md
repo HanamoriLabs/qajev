@@ -42,6 +42,7 @@ echo 'OPENROUTER_API_KEY=sk-or-...' >> ~/.qajev/.env
 ```
 
 An OpenRouter key runs everything, including the small helper model that writes what Jev types into text fields.
+Cloudflare's open Clef models can make the decisions instead of Jev: see [Configuration](configuration.md#keys).
 With a TypeSafe key, set `TEXT_MODEL_API_KEY` too if your tests fill in forms (any OpenAI-compatible key works;
 see [Configuration](configuration.md)).
 

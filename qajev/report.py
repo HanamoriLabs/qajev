@@ -246,9 +246,10 @@ def markdown(data):
         "## Run",
         "",
         where,
-        f"- Cost: TypeSafe ${cost['usd_typesafe_estimated']:.4f} (estimated per call), text model "
+        f"- Cost: {report_html.decisions_cost(data)}, text model "
         f"${cost['usd_text']:.4f}" + ("" if cost["text_cost_reported"] else " (provider did not report cost)"),
-        *([f"- Models: Jev {data['models']['jev']}; text {data['models']['text']}"] if data.get("models") else []),
+        *([f"- Models: {data['models'].get('decider') or 'Jev'} {data['models']['jev']}; text {data['models']['text']}"]
+          if data.get("models") else []),
         *([f"- Motion: {MOTION[data['motion']]}"] if data.get("motion") in MOTION else []),
         *([f"- Sign-in: {report_html.signed_in(data['sign_in'])}"] if data.get("sign_in") else []),
         f"- QAJev {data['qajev']}",

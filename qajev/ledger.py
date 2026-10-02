@@ -42,7 +42,8 @@ class Ledger:
     def after(self, url, result):
         kind = self.provider(url)
         usage = (result or {}).get("usage") or {}
-        tokens = usage.get("total_tokens") or (usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0))
+        tokens = usage.get("total_tokens") or (usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)) or (
+            usage.get("input_tokens", 0) + usage.get("output_tokens", 0))  # TypeSafe and Clef's own names
         cost = None
         for key in ("cost", "cost_usd", "total_cost", "usd"):
             if isinstance(usage.get(key), (int, float)):

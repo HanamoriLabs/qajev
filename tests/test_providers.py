@@ -62,3 +62,49 @@ def test_the_routing_placeholder_never_masks_a_real_key_from_an_env_file(tmp_pat
     load_env(str(env_file))
     assert os.environ["TYPESAFE_API_KEY"] == "fake-value-for-test"
     assert P.resolve()["jev"] == "typesafe"
+
+
+CF = {"CLOUDFLARE_ACCOUNT_ID": "acct123", "CLOUDFLARE_API_TOKEN": "cf-token-value"}
+
+
+def test_clef_on_cloudflare_is_a_choice_and_auto_still_prefers_jev():
+    r = P.resolve(CF)
+    assert (r["jev"], r["jev_model"], r["decider"]) == ("cloudflare", "clef-flash", "Clef-flash")
+    assert r["jev_url"] == "https://api.cloudflare.com/client/v4/accounts/acct123/ai/run/@cf/cloudflare/clef-flash"
+    assert P.resolve({**CF, "QAJEV_CLEF_MODEL": "clef"})["decider"] == "Clef"
+    assert P.resolve({**CF, "TYPESAFE_API_KEY": "ts"})["decider"] == "Jev"  # an existing setup does not change
+    assert P.resolve({**CF, "TYPESAFE_API_KEY": "ts", "QAJEV_JEV_PROVIDER": "cloudflare"})["jev"] == "cloudflare"
+    described = P.describe(r)
+    assert described["decider"] == "Clef-flash" and "cf-token-value" not in str(described)
+    with pytest.raises(P.ProviderError, match="CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN"):
+        P.resolve({"QAJEV_JEV_PROVIDER": "cloudflare", "CLOUDFLARE_API_TOKEN": "t"})
+    with pytest.raises(P.ProviderError, match="QAJEV_CLEF_MODEL"):
+        P.resolve({**CF, "QAJEV_CLEF_MODEL": "clef-mega"})
+
+
+def test_clef_route_bridges_one_option_questions_the_envelope_and_the_cost():
+    # Clef rejects a choice with a single option ("Dictionary should have at least 2 items"); Jev accepts it.
+    env = dict(CF)
+    resolved = P.apply(env)
+    sent = []
+
+    def workers_ai(url, key, body):
+        sent.append((url, key, body))
+        return {"success": True, "result": {"model": "clef-flash", "usage": {"input_tokens": 1_000_000},
+                                            "answers": {"operation": {"type": "choice", "choice": "CLICK",
+                                                                      "probabilities": {"CLICK": 0.9, "DONE": 0.1},
+                                                                      "confidence": 0.8}}}}
+
+    post = P.route(workers_ai, resolved, env)
+    out = post(P.TYPESAFE_URL, env["TYPESAFE_API_KEY"], {"model": "jev-latest", "state": {}, "questions": {
+        "operation": {"type": "choice", "criteria": {"CLICK": "click", "DONE": "done"}},
+        "type_text_target": {"type": "choice", "criteria": {"1": {"element": "[1] Email"}}}}})
+    (url, key, body), = sent
+    assert url == resolved["jev_url"] and key == "cf-token-value" and body["model"] == "clef-flash"
+    assert list(body["questions"]) == ["operation"]  # the one-option question never reaches Clef
+    assert out["answers"]["type_text_target"] == {"type": "choice", "choice": "1", "probabilities": {"1": 1.0},
+                                                  "confidence": 1.0}
+    assert out["answers"]["operation"]["choice"] == "CLICK"
+    assert out["usage"]["cost_usd"] == 0.09  # a million input tokens at Clef-flash's $0.09
+    post("https://openrouter.ai/api/v1/chat/completions", "or", {"model": "text"})
+    assert sent[-1][0].endswith("/chat/completions")  # the text helper is untouched
