@@ -163,6 +163,37 @@ def test_strict_decisions_fails_the_step_at_the_first_choice_jev_did_not_make(mo
     assert all(c["ok"] for c in r["checks"])
 
 
+def test_a_game_step_with_vision_shows_clef_the_screen_and_judges_its_looks(monkeypatch):
+    from types import SimpleNamespace
+
+    from qajev import providers
+    from qajev import session as session_mod
+
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+
+    class Windowed(FakeGame):
+        def shot(self, path):
+            path.write_bytes(png)
+            return path
+
+    seen = []
+
+    def choose(state, goal, history):  # the decision is sent while the picture hook is on
+        seen.append(providers.SEE() if providers.SEE else None)
+        return {"choice": "DONE", "probabilities": {"DONE": 0.9}, "latency_ms": 5}
+
+    def post_json(url, key, body):
+        assert body["images"][0].startswith("data:image/png;base64,")
+        return {"answers": {"look_0": {"type": "noul", "noul": 0.9}}}
+
+    monkeypatch.setattr(session_mod, "load", lambda ledger: SimpleNamespace(
+        model=SimpleNamespace(choose=choose, post_json=post_json)))
+    r = native.play(Windowed(), name="menu", goal="Open the menu.", expect={"looks": ["the menu is open"]},
+                    budget={"actions": 5, "seconds": 10}, ledger=_NoLedger(), vision=True)
+    assert seen and seen[0].startswith("data:image/png;base64,") and providers.SEE is None
+    assert {"check": "looks: the menu is open", "ok": True, "detail": "p 0.90"} in r["checks"]
+
+
 def test_real_time_play_on_a_paused_game_stops_and_says_so():
     class Paused(FakeGame):
         def observe(self):

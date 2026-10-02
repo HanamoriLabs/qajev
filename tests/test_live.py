@@ -2,6 +2,7 @@
 
 QAJEV_LIVE=1      guard, deafness, read-only, smoke: no model calls.
 QAJEV_LIVE_JEV=1  plus one end-to-end Jev check (a few paid TypeSafe decisions, about $0.01).
+QAJEV_LIVE_CLEF=1 plus two Clef checks with screenshots (Workers AI, under $0.01; needs the Cloudflare variables).
 """
 
 import http.server
@@ -364,6 +365,36 @@ def test_jev_reaches_pricing_end_to_end(site, browser, tmp_path):
     assert report["cost"]["calls"]["typesafe"] >= 1 and report["cost"]["usd"] <= 0.05
     assert report["models"]["jev"].startswith(("typesafe", "openrouter"))
     assert out.returncode == 0
+
+
+@pytest.mark.skipif(os.environ.get("QAJEV_LIVE_CLEF") != "1",
+                    reason="set QAJEV_LIVE_CLEF=1 with CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN (paid)")
+def test_clef_reads_the_screen_to_pick_a_drawn_button_and_to_catch_a_cut_off_one(site, browser, tmp_path):
+    import subprocess
+    import sys
+
+    def check(page, *args):
+        out = subprocess.run(
+            [sys.executable, "-m", "qajev", "check", site + page, "--cdp-url", browser["cdp_url"], "--out",
+             str(tmp_path / page.strip("/")), "--max-actions", "4", "--cost-cap", "0.05", "--json", "--quiet",
+             "--load-high", "0", "--env-file", ENV_FILE, *args],
+            capture_output=True, text=True, timeout=240, env={**os.environ, "QAJEV_JEV_PROVIDER": "cloudflare"},
+        )
+        return out.returncode, json.loads(out.stdout)
+
+    # The two buttons' labels are pixels on a canvas, the wrong one first: only the screenshot tells them apart.
+    code, report = check("/canvas.html", "--vision", "--expect-url", "/pricing.html",
+                         "--goal", "Open the pricing page. Stop when the page heading says Pricing.")
+    (drawn,) = report["scenarios"]
+    assert drawn["outcome"] == "pass" and code == 0, drawn
+    assert report["models"]["decider"].startswith("Clef") and report["cost"]["usd"] <= 0.05
+    # The words are in the page (a text check passes) but cut off on screen: the looks check fails the run.
+    code, report = check("/clipped.html", "--expect-text", "Sign up now", "--expect-looks",
+                         "The 'Sign up now' button is fully visible and its words are readable, not cut off")
+    (clipped,) = report["scenarios"]
+    assert clipped["outcome"] == "fail" and code == 1, clipped
+    assert [(c["check"].split(":")[0], c["ok"]) for c in clipped["checks"]] == [
+        ("page shows 'Sign up now'", True), ("looks", False)]
 
 
 def test_text_checks_read_visible_text_and_ignore_case_is_opt_in(session, site):

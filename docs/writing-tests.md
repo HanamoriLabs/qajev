@@ -30,9 +30,42 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | `js` | `--expect-js`, `-j` | this JavaScript expression is true in the page (a Promise counts by what it resolves to, within 5 s; a throw, a rejection or no answer fails the check) |
 | `fetch` | `--fetch URL[=STATUS]` | a request made from the page answers with that status (default 200) |
 | `command` | suite only | a shell command prints the expected output (needs `--allow-commands`) |
+| `looks` | `--expect-looks` | Clef, looking at the final screenshot, judges this statement true (needs Clef: see below) |
 
 Text is compared the way a person reads it: line breaks and runs of spaces count as one space. Use
 `ignore_case: true` for labels styled in capitals.
+
+## What only a look at the screen tells (Clef)
+
+Every check above reads the page. Some bugs only show in the picture: a button cut off by a box too small for it,
+text the same colour as its background, a price drawn on a canvas, a label that is an image. With Clef as the decision
+model (Cloudflare's open models, which read images: see [Configuration](configuration.md#keys)), two things use the
+screenshot:
+
+- **`looks`**: statements about what the screen shows, each judged by Clef from the final screenshot. A statement
+  passes when Clef gives it a probability of 0.5 or more; the report shows that probability next to each one.
+- **`vision: true`** (`--vision`): Clef sees the screen with every decision, not only the page's text. Use it when the
+  way forward is only in the picture: drawn or image-only buttons, canvas apps, icons without labels.
+
+```yaml
+scenarios:
+  - name: the sign-up button can be read
+    url: /join
+    expect:
+      visible: ["Sign up now"]          # the words are on screen...
+      looks: ["The 'Sign up now' button is fully visible and its words are readable, not cut off"]  # ...and legible
+  - name: pricing from a drawn menu
+    url: /plans
+    vision: true                        # the menu buttons are pictures
+    goal: Open the pricing page. Stop when the page heading says Pricing.
+    expect: {url: /pricing}
+```
+
+Write a `looks` statement the way you would brief a person looking at a screenshot: one plain fact, and specific
+(`The Pro plan costs $29 per month`, not `the prices look right`). A looks check is one Clef call per run of the
+scenario (all its statements together), on top of its decisions. `vision` goes on a scenario or on the whole suite,
+and makes every decision larger: a screenshot is about 1,000 extra input tokens, about $0.0001 with Clef-flash and
+$0.00024 with Clef. Both need Clef: with Jev, which reads text only, QAJev refuses the run and says what to set.
 
 ## Desktop and phone
 

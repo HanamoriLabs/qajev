@@ -271,3 +271,4 @@ def test_the_report_prices_the_decisions_by_the_model_that_made_them():
     assert report_html.decisions_cost(jev) == "TypeSafe $0.0035 (estimated per call)"
     assert report_html.decisions_cost({"cost": jev["cost"]}) == "TypeSafe $0.0035 (estimated per call)"  # older run
     assert report_html.decisions_cost(clef) == "Clef-flash $0.0004"  # Clef's own token count, not an estimate
+    assert [report_html.decider(d) for d in (jev, clef, {"cost": jev["cost"]})] == ["Jev", "Clef-flash", "Jev"]

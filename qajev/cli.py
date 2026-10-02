@@ -111,6 +111,11 @@ def build_parser():
     check.add_argument("--expect-url", "-u", help="final URL must contain this")
     check.add_argument("--expect-url-regex", help="final URL must match this regex")
     check.add_argument("--expect-js", "-j", help="JS expression that must be truthy (may use await)")
+    check.add_argument("--expect-looks", action="append", default=[], metavar="STATEMENT",
+                       help="judged from the final screenshot, e.g. 'the Sign up button is not cut off' (repeatable; "
+                            "needs Clef)")
+    check.add_argument("--vision", action="store_true",
+                       help="Clef sees the screenshot with every decision (needs Clef)")
     check.add_argument("--fetch", action="append", default=[], metavar="URL[=STATUS]",
                        help="in-page GET that must answer STATUS (default 200); repeatable")
     check.add_argument("--mode", choices=["readonly", "mutate"], default="readonly")
@@ -179,6 +184,10 @@ def build_parser():
                       help='a game state value, e.g. game_over=false or kills=">= 1" (repeatable)')
     play.add_argument("--min-fps", type=float, help="the frame rate must be at least this at the end")
     play.add_argument("--allow-errors", action="store_true", help="engine/script errors do not fail the run")
+    play.add_argument("--expect-looks", action="append", default=[], metavar="STATEMENT",
+                      help="judged from the game's screenshot at the end (repeatable; needs Clef and a window)")
+    play.add_argument("--vision", action="store_true",
+                      help="Clef sees the game's screenshot with every decision (needs Clef and a window)")
     play.add_argument("--expect-closed", action="store_true",
                       help="the game must quit by itself with exit code 0 (with --allow QUIT, to test a normal quit)")
     play.add_argument("--allow", action="append", default=[], metavar="LABEL",
@@ -421,6 +430,8 @@ def check_suite(args):
         expect["url_regex"] = args.expect_url_regex
     if args.expect_js:
         expect["js"] = args.expect_js
+    if args.expect_looks:
+        expect["looks"] = args.expect_looks
     if args.fetch:
         probes = []
         for item in args.fetch:
@@ -435,6 +446,8 @@ def check_suite(args):
         scenario["persona"] = args.persona
     if args.speech:
         scenario["speech"] = args.speech
+    if args.vision:
+        scenario["vision"] = True
     if not args.device:
         del scenario["device"]
     data = {"name": f"check {args.url}", "scenarios": [scenario], "hosts": args.host}
@@ -668,6 +681,8 @@ def cmd_play(args):
         expect["min_fps"] = args.min_fps
     if args.expect_closed:
         expect["closed"] = True
+    if args.expect_looks:
+        expect["looks"] = args.expect_looks
     if expect:
         expect["no_errors"] = not args.allow_errors
     if args.goal:
@@ -678,7 +693,7 @@ def cmd_play(args):
                              "(Clef); see `qajev doctor`", EXIT_CONFIG)
         except providers.ProviderError as e:
             return _fail(args, str(e), EXIT_CONFIG)
-    session_steps, game_env, adapter, headless = None, {}, args.adapter, args.headless
+    session_steps, game_env, adapter, headless, sees = None, {}, args.adapter, args.headless, args.vision
     game_args = []
     if args.suite:
         import yaml
@@ -694,6 +709,7 @@ def cmd_play(args):
         game_args += [str(a) for a in spec.get("args") or []]
         adapter = adapter or spec.get("adapter")
         headless = headless or bool(spec.get("headless"))
+        sees = sees or bool(spec.get("vision"))
         if spec.get("seed") and (mobile.is_mobile(args.project) or electron.is_electron(args.project)):
             return _fail(args, f"{args.suite}: seed is for Godot games (saves copied into user://)", EXIT_CONFIG)
         if spec.get("seed"):
@@ -701,6 +717,18 @@ def cmd_play(args):
                 native.seed_folder(Path(args.project).expanduser(), spec["seed"])
             except native.NativeError as e:
                 return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
+    looking = sees or bool(expect.get("looks")) or any(
+        s.get("vision") or (s.get("expect") or {}).get("looks") for s in session_steps or [])
+    if looking:
+        from . import vision
+
+        refused = vision.require_clef("vision" if sees or any(s.get("vision") for s in session_steps or [])
+                                      else "looks")
+        if refused:
+            return _fail(args, refused, EXIT_CONFIG)
+        if headless and not (mobile.is_mobile(args.project) or electron.is_electron(args.project)):
+            return _fail(args, "vision and looks need the game's window, and a headless Godot game draws none: "
+                               "run it without --headless (MCP: headless=false)", EXIT_CONFIG)
     game_env.update(dict(item.split("=", 1) for item in args.game_env if "=" in item))
     game_args += args.game_arg
     name = args.name or (spec.get("name") if args.suite else None) or (
@@ -745,12 +773,12 @@ def cmd_play(args):
                 shots = not args.no_shots and not (headless and browser["engine"] == "godot")
                 if session_steps:
                     results = native.run_session(game, session_steps, ledger=ledger, run_dir=run_dir, shots=shots,
-                                                 emit=emit)
+                                                 emit=emit, vision=sees)
                 else:
                     emit({"event": "start", "scenario": name})
                     result = native.play(game, name=name, goal=args.goal, expect=expect,
                                          budget={"actions": args.max_actions, "seconds": args.max_seconds},
-                                         ledger=ledger, run_dir=run_dir, shots=shots, emit=emit)
+                                         ledger=ledger, run_dir=run_dir, shots=shots, emit=emit, vision=sees)
                     result["cost_usd"] = round(ledger.spent(), 5)
                     emit({"event": "scenario", "result": result})
                     results = [result]

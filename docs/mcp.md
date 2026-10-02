@@ -67,14 +67,16 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 
 - `qa_check`: `url` (required), `goal`, `expect_text`, `absent_text`, `expect_url`, `expect_js`, `fetch`, `mode`
   (`readonly` or `mutate`), `device`, `persona`, `max_actions`, `max_seconds`, `cost_cap`, `profile`, `headless`,
-  `background`.
+  `background`, and with Clef `expect_looks` (statements judged from the final screenshot) and `vision` (Clef sees
+  the screen with every decision).
 - `qa_run_suite`: `suite_path` or `suite_yaml`, `only`, `jobs`, `cost_cap`, `profile`, `background`.
 - `qa_smoke`: `url` (required), `max_pages`, `device`, `check_links`.
 - `qa_project_run`: `project` (required), `suite` (a tag), `names`, `env`, or an ad-hoc `objective` with `url`,
   `expect_text`, `expect_url`.
 - `qa_play`: `project` (the game, or `ios:...` / `android:...`), `goal`, `adapter`, `suite`, `game_env`,
   `game_args`, `expect_screen`, `expect_text`, `expect_state`, `min_fps`, `name`, `headless` (Godot only), `shots`
-  (a screenshot at the end of each step, on by default). Quit and
+  (a screenshot at the end of each step, on by default), and with Clef `expect_looks` and `vision` (these open the
+  game's window: they need it to look). Quit and
   delete-save buttons are hidden from Jev; to test a normal quit pass `allow: ["QUIT"]` and `expect_closed: true`
   (passes only when the game exits by itself with code 0). `hide` hides more labels.
 - Website tools also take `devices` (default desktop and phone: every website test also runs in a phone view).

@@ -78,7 +78,9 @@ How to write a check:
 2. One intention per check, ending with "Stop when ...". Good: "Find what the Pro plan costs per month. Stop when
    that price is visible." Bad: "Test the pricing page."
 3. Always give expectations (`expect_text`, `absent_text`, `expect_url`, `expect_js`). Jev saying "done" is only
-   a hint; the verdict comes from the checks.
+   a hint; the verdict comes from the checks. With Clef as the decision model (it reads images),
+   `expect_looks` judges plain statements from the final screenshot (a cut-off button, a canvas, an image label),
+   and `vision: true` shows Clef the screen at every decision. Jev reads text only: without Clef both are refused.
 4. Give every value Jev must type, and start from a URL close to the target.
 
 Outcomes: `pass`; `fail` (the product is wrong); `stuck` (Jev found no way forward, often a usability problem:

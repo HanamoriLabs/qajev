@@ -20,6 +20,7 @@ OPENROUTER_JEV_MODEL = "~typesafe/jev-latest"
 CLOUDFLARE_RUN = "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/cloudflare/{model}"
 CLEF_MODELS = {"clef-flash": 0.09, "clef": 0.24}  # USD per million input tokens (Workers AI, 2026-10); output free
 PROVIDERS = ("auto", "typesafe", "openrouter", "cloudflare")
+SEE = None  # vision.seeing(): a callable giving the current screenshot (a data URL) for each Clef decision
 
 
 class ProviderError(RuntimeError):
@@ -121,8 +122,18 @@ def _clef(post_json, resolved, env):
                 asked[qid] = question
         out = {"model": model, "answers": {}, "usage": {}}
         if asked:
-            got = post_json(resolved["jev_url"], env[resolved["jev_key_name"]], {**body, "model": model,
-                                                                                 "questions": asked})
+            send = {**body, "model": model, "questions": asked}
+            if SEE is not None and "images" not in send:  # vision: what the screen looks like, with the decision
+                image = SEE()
+                if image:
+                    send["images"] = [image]
+            try:
+                got = post_json(resolved["jev_url"], env[resolved["jev_key_name"]], send)
+            except RuntimeError as e:  # a dropped connection or a 5xx: nothing ran, so ask once more
+                # (a 4xx is the request's own fault and would only fail again)
+                if "HTTP 4" in str(e):
+                    raise
+                got = post_json(resolved["jev_url"], env[resolved["jev_key_name"]], send)
             out = (got or {}).get("result", got) or out
         out.setdefault("answers", {}).update(sure)
         usage = out.setdefault("usage", {}) or {}

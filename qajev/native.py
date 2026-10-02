@@ -415,6 +415,35 @@ def compare(have, want):
     return have == want
 
 
+def game_image(game):
+    """The game's screen as a data URL, for Clef (vision.py). A headless Godot game draws nothing to show."""
+    from . import vision
+
+    fd, name = tempfile.mkstemp(suffix=".png", prefix="qajev-look-")
+    os.close(fd)
+    try:
+        shot = game.shot(Path(name))
+        if not shot:
+            raise vision.VisionError("no picture of the game: it runs headless (vision and looks need its window)")
+        raw = Path(shot).read_bytes()
+    except NativeError as e:
+        raise vision.VisionError(f"no picture of the game: {e}") from None
+    finally:
+        for leftover in {Path(name), Path(name).with_suffix(".png")}:
+            leftover.unlink(missing_ok=True)
+    return vision.data_url(raw)
+
+
+def looks_checks(game, statements, ledger, obs):
+    """`expect: {looks: [...]}` on a game or app screen: each statement judged by Clef from its screenshot."""
+    from . import session as session_mod
+    from . import vision
+
+    jev = session_mod.load(ledger)
+    return vision.look(jev.model.post_json, game_image(game), statements,
+                       {"game": game_name(game), "screen": obs.get("screen")})
+
+
 def _fingerprint(obs):
     return obs.get("screen"), json.dumps(obs.get("state"), sort_keys=True, default=str)
 
@@ -437,9 +466,11 @@ def _playing(t, obs):
 
 
 def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, settle=0.4, emit=None, wait=10.0,
-         poll=0.5):
-    """One scenario on a running game: Jev pursues `goal` (if any), then the checks judge the game's state."""
+         poll=0.5, vision=False):
+    """One scenario on a running game: Jev pursues `goal` (if any), then the checks judge the game's state.
+    vision: Clef sees the game's screenshot with every decision."""
     from . import session as session_mod
+    from . import vision as vision_mod
 
     os.environ.setdefault("BU_NAME", f"qajev-native-{os.getpid()}")  # the jev modules read it at import
     started = time.monotonic()
@@ -448,12 +479,16 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
     decisions, history, stop, detail = [], [], None, None
     where = game_name(game)
     obs = game.observe()
+    # looks are judged once, at the end (a model call each): never a reason to stop early
+    early = {k: v for k, v in (expect or {}).items() if k != "looks"}
+    seeing = vision_mod.seeing((lambda: game_image(game)) if vision else None)
+    seeing.__enter__()
     try:
         if goal:
             jev = session_mod.load(ledger)
             reasks = 0
             while True:
-                if expect and verdict.all_ok(native_checks(expect, obs, game.errors)):
+                if early and verdict.all_ok(native_checks(early, obs, game.errors)):
                     stop = "reached"
                     break
                 if len(history) >= budget["actions"]:
@@ -509,7 +544,7 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
             # A check-only step may land on a screen still loading (a page opening in the device's browser): give
             # the expectations a few seconds, as a web run does.
             until = time.monotonic() + wait
-            while expect and not verdict.all_ok(native_checks(expect, obs, game.errors)) and time.monotonic() < until:
+            while early and not verdict.all_ok(native_checks(early, obs, game.errors)) and time.monotonic() < until:
                 time.sleep(poll)
                 obs = game.observe()
             stop = "checked"
@@ -521,6 +556,8 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
             stop, detail, result["closed"] = "reached", None, True
     except (RuntimeError, ValueError) as e:
         stop, detail = ("model_error" if "Model" in str(e) or "TypeSafe" in str(e) else "browser_error"), str(e)
+    finally:
+        seeing.__exit__(None, None, None)
     if stop != "browser_error" and not result.get("closed"):
         with contextlib.suppress(NativeError):
             obs = game.observe()
@@ -534,6 +571,11 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
                    "detail": game.errors[0] if game.errors else None}]
     else:
         checks = native_checks(expect or {}, obs, game.errors) if stop != "browser_error" else []
+        if (expect or {}).get("looks") and stop not in verdict.HARNESS_STOPS:
+            try:
+                checks += looks_checks(game, expect["looks"], ledger, obs)
+            except (RuntimeError, ValueError) as e:  # no picture, or Clef unreachable: QAJev's side, no verdict
+                stop, detail = "model_error", f"could not judge looks: {e}"
     outcome, reason = verdict.classify(stop, checks, has_checks=bool(expect), stop_detail=detail)
     result.update(checks=checks, stop=stop, outcome=outcome, reason=reason,
                   end_url=f"game://{name}/{obs.get('screen')}",
@@ -559,14 +601,16 @@ PICK_SETTLE_S = 2.5
 
 def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledger=None, run_dir=None, shots=True,
              sample=0.5, stall_after=6.0, emit=None, every=2.0, overlay_limit=90.0, pilot_wait=30.0,
-             pilot_poll=0.5, strict_decisions=False):
+             pilot_poll=0.5, strict_decisions=False, vision=False):
     """Play in real time for up to `seconds` (or `until` the game state matches): the adapter's pilot steers each
     frame; Jev makes every decision the game stops for (`decide` is its goal there); every `sample` seconds QAJev
     records fps, frame time, memory and the game state, and flags a soft-lock (the game stops advancing while
     nothing is waiting for the player), a crash and engine errors. A decision Jev does not make is taken with the
     first offer to keep the game going; with `strict_decisions` it instead ends the step as a fail, nothing
-    clicked, so a route run is evidence only when Jev made every choice."""
+    clicked, so a route run is evidence only when Jev made every choice. vision: Clef sees the screen with each
+    decision."""
     from . import session as session_mod
+    from . import vision as vision_mod
 
     os.environ.setdefault("BU_NAME", f"qajev-native-{os.getpid()}")
     started = time.monotonic()
@@ -580,6 +624,8 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
     picked = None  # (the decision's screen and offers, when): the last decision QAJev acted on
     fell_back = None  # strict_decisions: the decision Jev did not make, in words
     reported = set()
+    seeing = vision_mod.seeing((lambda: game_image(game)) if vision and decide else None)
+    seeing.__enter__()
     try:
         until_pilot = time.monotonic() + pilot_wait  # a game still loading has not mounted its bot yet
         while not game.call(op="pilot", on=True).get("pilot"):
@@ -698,6 +744,10 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
         stop, detail = "browser_error", str(e)
         findings.append({"severity": "S1", "kind": "game crashed or closed", "detail": str(e)[:200],
                          "scenario": name, "url": None})
+    except (RuntimeError, ValueError) as e:  # the decision model (or vision's picture): QAJev's side
+        stop, detail = "model_error", str(e)
+    finally:
+        seeing.__exit__(None, None, None)
     with contextlib.suppress(NativeError):
         game.call(op="pilot", on=False)
         obs = game.observe()
@@ -727,6 +777,12 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
         checks.append({"check": "Jev made every decision (strict_decisions)", "ok": fell_back is None,
                        "detail": f"a decision Jev did not make, {fell_back}; the step stopped there"
                        if fell_back else None})
+    looks = (expect or {}).get("looks")
+    if looks and stop not in {"browser_error", "model_error"} and not held:
+        try:
+            checks += looks_checks(game, looks, ledger, obs)
+        except (RuntimeError, ValueError) as e:  # no picture, or Clef unreachable: QAJev's side, no verdict
+            stop, detail = "model_error", f"could not judge looks: {e}"
     run_stop = "checked" if locked else {"played": "checked", "game_over": "checked", "strict": "checked",
                                          "reached": "reached"}.get(stop, stop)
     outcome, reason = verdict.classify(run_stop, [] if held else checks, has_checks=bool(checks) and not held,
@@ -837,7 +893,7 @@ def _answers(game):
         return False
 
 
-def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit):
+def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit, vision=False):
     """A `relaunch:` step: quit the game and start it again on the same save folder (save, relaunch, Continue);
     then the step's goal and checks, if it has any."""
     if callable(emit):
@@ -857,7 +913,7 @@ def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit):
             game.call(op="pilot", on=False)
         r = play(game, name=name, goal=step.get("goal"), expect=step.get("expect") or {},
                  budget={"actions": 20, "seconds": 90, **(step.get("budget") or {})}, ledger=ledger,
-                 run_dir=run_dir, shots=shots, emit=emit)
+                 run_dir=run_dir, shots=shots, emit=emit, vision=bool(step.get("vision", vision)))
         r["checks"] = [started, *r.get("checks", [])]
     else:
         r = _step_result(name, "reached", [started])
@@ -865,7 +921,7 @@ def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit):
     return r
 
 
-def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
+def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=False):
     """Several steps in one game session, in order: `goal` steps (Jev on the UI) and `play` steps (real-time
     play). A step that loses the game ends the session; the rest are skipped."""
     results = []
@@ -881,7 +937,8 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
                 emit({"event": "scenario", "result": r})
             continue
         if step.get("relaunch"):
-            r = relaunch_step(game, step, name=name, ledger=ledger, run_dir=run_dir, shots=shots, emit=emit)
+            r = relaunch_step(game, step, name=name, ledger=ledger, run_dir=run_dir, shots=shots, emit=emit,
+                              vision=vision)
             if r.get("stop") != "browser_error":
                 fresh = len(results)
             results.append(r)
@@ -931,7 +988,8 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
             p = step["play"]
             r = play_for(game, name=name, seconds=float(p.get("seconds", 60)), until=p.get("until"),
                          decide=p.get("decide"), expect=step.get("expect"), ledger=ledger, run_dir=run_dir,
-                         shots=shots, emit=emit, strict_decisions=bool(p.get("strict_decisions")))
+                         shots=shots, emit=emit, strict_decisions=bool(p.get("strict_decisions")),
+                         vision=bool(step.get("vision", vision)))
         else:
             with contextlib.suppress(NativeError):  # Jev has the controls: a game's bot would undo its moves
                 game.call(op="pilot", on=False)
@@ -939,7 +997,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
             # idle: the game runs untouched for that long first (then the step's goal, if any, and its checks)
             r = (step.get("idle") and idle_for(game, name=name, seconds=float(step["idle"]), emit=emit)) or play(
                 game, name=name, goal=step.get("goal"), expect=step.get("expect") or {}, budget=budget,
-                ledger=ledger, run_dir=run_dir, shots=shots, emit=emit)
+                ledger=ledger, run_dir=run_dir, shots=shots, emit=emit, vision=bool(step.get("vision", vision)))
         r["cost_usd"] = round(ledger.spent() - spent, 5)
         results.append(r)
         if callable(emit):

@@ -40,7 +40,10 @@ With MCP, call the `qa_*` tools. Without MCP, run the `qajev` command with `--js
    - `expect_text` / `--expect-text`: words the page must show;
    - `absent_text` / `--absent`: words it must not show (e.g. `Something went wrong`);
    - `expect_url` / `--expect-url`: where the visitor should end up;
-   - `expect_js` / `--expect-js`: a JavaScript condition, for anything precise (counts, states).
+   - `expect_js` / `--expect-js`: a JavaScript condition, for anything precise (counts, states);
+   - `expect_looks` / `--expect-looks`: a plain statement judged from the final screenshot, for what only shows in
+     the picture (a cut-off button, a canvas, an image label). Only with Clef as the decision model
+     (`QAJEV_JEV_PROVIDER=cloudflare`); `vision` / `--vision` also shows Clef the screen at every decision.
    Make them specific: a word that also appears elsewhere on the page proves nothing.
 4. **Give every value Jev must type**, and make it differ from the field's placeholder.
 5. **Use a start `url` close to the target.** Jev does not scroll far on its own.

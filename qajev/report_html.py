@@ -94,7 +94,7 @@ def _table(head, rows):
     return f'<div class="scroll"><table><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>'
 
 
-def _scenario(i, r):
+def _scenario(i, r, who="Jev"):
     jev = r.get("jev") or {}
     parts = [f'<section class="card" id="s{i}"><h3>{_pill(r["outcome"])} {_e(r["name"])}</h3>',
              f'<p>{_e(r.get("reason"))}</p>']
@@ -152,8 +152,8 @@ def _scenario(i, r):
     if screens:
         rows = [[_e(s.get("step")), _e(s.get("next_step")), _e(s.get("p")), _e(s.get("runner_up")),
                  _e(s.get("runner_up_p")), "yes" if (s.get("p") or 0) >= OBVIOUS else "unclear"] for s in screens]
-        parts.append("<details><summary>Jev's view of each screen</summary>"
-                     + _table(["Step", "Jev's next step", "p", "Runner-up", "p", "One obvious next step?"], rows)
+        parts.append(f"<details><summary>{who}'s view of each screen</summary>"
+                     + _table(["Step", f"{who}'s next step", "p", "Runner-up", "p", "One obvious next step?"], rows)
                      + "</details>")
     st = r.get("stats")
     if st:
@@ -203,13 +203,17 @@ def _changes(ch):
             f'<span class="muted">(compared with {_e(when)}, {_e(since.get("gate"))})</span></p>{body}</div>')
 
 
+def decider(data):
+    """The decision model that ran: Jev, Clef or Clef-flash (older reports have no name: they were Jev)."""
+    return (data.get("models") or {}).get("decider") or "Jev"
+
+
 def decisions_cost(data):
     """What the decisions cost: Jev on TypeSafe is a flat estimate per call; Clef's is its own token count."""
     usd = data["cost"]["usd_typesafe_estimated"]
-    decider = (data.get("models") or {}).get("decider") or "Jev"
-    if decider == "Jev":
+    if decider(data) == "Jev":
         return f"TypeSafe ${usd:.4f} (estimated per call)"
-    return f"{decider} ${usd:.4f}"
+    return f"{decider(data)} ${usd:.4f}"
 
 
 def signed_in(s):
@@ -227,7 +231,7 @@ def render(data):
     interrupted = " (interrupted)" if data.get("interrupted") else ""
     counts = "".join(f'<span class="pill {o}">{c.get(o, 0)} {o}</span>' for o in OUTCOME_ORDER if c.get(o))
     summary = (f"{data['seconds']:.0f} s · ${cost['usd']:.4f} of ${cost['cap_usd'] or 0:.2f} cap · "
-               f"{cost['calls']['typesafe']} Jev decisions, {cost['calls']['text']} text calls")
+               f"{cost['calls']['typesafe']} {decider(data)} decisions, {cost['calls']['text']} text calls")
     project = data.get("project") or {}
     sub = [f"{project['name']} · {project['env']}"] if project else []
     if data.get("started_at"):
@@ -278,7 +282,7 @@ def render(data):
         out.append("</div>")
 
     out.append("<h2>Per scenario</h2>")
-    out += [_scenario(i, r) for i, r in enumerate(data["scenarios"])]
+    out += [_scenario(i, r, decider(data)) for i, r in enumerate(data["scenarios"])]
 
     browser = data.get("browser") or {}
     owner = f"QAJev-managed profile {browser.get('profile')}" if browser.get("managed") else "attached"

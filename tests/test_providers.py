@@ -111,3 +111,33 @@ def test_clef_route_bridges_one_option_questions_the_envelope_and_the_cost():
     assert out["usage"]["cost_usd"] == 0.09  # a million input tokens at Clef-flash's $0.09
     post("https://openrouter.ai/api/v1/chat/completions", "or", {"model": "text"})
     assert sent[-1][0].endswith("/chat/completions")  # the text helper is untouched
+
+
+def test_clef_route_tries_once_more_after_a_dropped_connection_but_not_after_a_bad_request():
+    # Seen live: one Clef call in 36 lost its connection mid-run. Nothing was done in the page, so asking again is safe.
+    env = {**CF, "QAJEV_JEV_PROVIDER": "cloudflare"}
+    resolved = P.apply(env)
+    failures, calls = [], []
+
+    def workers_ai(_url, _key, body):
+        calls.append(body)
+        if failures:
+            raise RuntimeError(failures.pop(0))
+        return {"result": {"answers": {"operation": {"type": "choice", "choice": "DONE"}}, "usage": {}}}
+
+    post = P.route(workers_ai, resolved, env)
+    decision = {"model": "jev-latest", "state": {}, "questions": {
+        "operation": {"type": "choice", "criteria": {"CLICK": "click", "DONE": "done"}}}}
+    for transient in ("Model connection failed; no action executed.",
+                      "Model provider returned HTTP 502; no action executed."):
+        failures[:] = [transient]
+        calls.clear()
+        assert post(P.TYPESAFE_URL, "k", decision)["answers"]["operation"]["choice"] == "DONE" and len(calls) == 2
+    failures[:] = ["Model connection failed; no action executed."] * 2
+    with pytest.raises(RuntimeError, match="connection failed"):
+        post(P.TYPESAFE_URL, "k", decision)
+    failures[:] = ["Model provider returned HTTP 400; no action executed."]
+    calls.clear()
+    with pytest.raises(RuntimeError, match="HTTP 400"):
+        post(P.TYPESAFE_URL, "k", decision)
+    assert len(calls) == 1  # a request Clef refuses would be refused again

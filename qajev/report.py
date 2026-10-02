@@ -162,7 +162,7 @@ def markdown(data):
         f"{c['pass']} pass · {c['fail']} fail · {c['stuck']} stuck · {c['harness']} harness · "
         f"{c['unverified']} unverified · {c['skipped']} skipped · {data['seconds']:.0f} s · "
         f"${cost['usd']:.4f} of ${cost['cap_usd'] or 0:.2f} cap "
-        f"({cost['calls']['typesafe']} Jev decisions, {cost['calls']['text']} text calls)",
+        f"({cost['calls']['typesafe']} {report_html.decider(data)} decisions, {cost['calls']['text']} text calls)",
         "",
         "Legend: **fail** = the product is wrong (page or side effect). **stuck** = Jev found no way forward "
         "(check by hand: often a UX finding). **harness** = the tool ran out of budget, went stale or errored; "
@@ -229,7 +229,8 @@ def markdown(data):
         lines += _play_md(r)
         screens = r.get("screens") or []
         if screens:
-            lines += ["", "| Step | Jev's next step | p | Runner-up | p | One obvious next step? |",
+            lines += ["", f"| Step | {report_html.decider(data)}'s next step | p | Runner-up | p "
+                          "| One obvious next step? |",
                       "|---|---|---|---|---|---|"]
             for s in screens:
                 obvious = "yes" if (s.get("p") or 0) >= OBVIOUS else "unclear"
