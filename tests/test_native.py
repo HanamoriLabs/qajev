@@ -138,6 +138,31 @@ def test_a_decision_jev_answers_done_says_so_and_does_not_borrow_its_probability
     assert pick["probability"] is None  # 0.9 was DONE's, not the card's
 
 
+def test_strict_decisions_fails_the_step_at_the_first_choice_jev_did_not_make(monkeypatch):
+    # Seven Dawns: a route run is branch evidence only when Jev made every choice; the first-offer fallback (an S3
+    # finding, the run going on) would quietly change the route.
+    from types import SimpleNamespace
+
+    from qajev import session as session_mod
+
+    def jev(choice):
+        monkeypatch.setattr(session_mod, "load", lambda ledger: SimpleNamespace(model=SimpleNamespace(
+            choose=lambda state, goal, history: {"choice": choice, "probabilities": {choice: 0.9}, "latency_ms": 5})))
+
+    jev("DONE")
+    game = FakeGame()
+    r = native.play_for(game, name="route", seconds=30, sample=0.01, decide="Pick a card.", ledger=_NoLedger(),
+                        strict_decisions=True)
+    assert game.acted == [] and r["outcome"] == "fail" and r["stop"] == "strict", r["reason"]
+    [check] = [c for c in r["checks"] if c["check"].startswith("Jev made every decision")]
+    assert not check["ok"] and "at LEVEL UP" in check["detail"] and "Jev answered DONE" in check["detail"]
+    jev("card_0")  # Jev's own pick: the strict step plays on and passes
+    r = native.play_for(FakeGame(), name="route", seconds=30, sample=0.01, decide="Pick a card.",
+                        ledger=_NoLedger(), strict_decisions=True)
+    assert r["outcome"] == "pass" and r["stop"] == "game_over", r["reason"]
+    assert all(c["ok"] for c in r["checks"])
+
+
 def test_real_time_play_on_a_paused_game_stops_and_says_so():
     class Paused(FakeGame):
         def observe(self):

@@ -530,11 +530,13 @@ PICK_SETTLE_S = 2.5
 
 def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledger=None, run_dir=None, shots=True,
              sample=0.5, stall_after=6.0, emit=None, every=2.0, overlay_limit=90.0, pilot_wait=30.0,
-             pilot_poll=0.5):
+             pilot_poll=0.5, strict_decisions=False):
     """Play in real time for up to `seconds` (or `until` the game state matches): the adapter's pilot steers each
     frame; Jev makes every decision the game stops for (`decide` is its goal there); every `sample` seconds QAJev
     records fps, frame time, memory and the game state, and flags a soft-lock (the game stops advancing while
-    nothing is waiting for the player), a crash and engine errors."""
+    nothing is waiting for the player), a crash and engine errors. A decision Jev does not make is taken with the
+    first offer to keep the game going; with `strict_decisions` it instead ends the step as a fail, nothing
+    clicked, so a route run is evidence only when Jev made every choice."""
     from . import session as session_mod
 
     os.environ.setdefault("BU_NAME", f"qajev-native-{os.getpid()}")
@@ -547,6 +549,7 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
     jev = session_mod.load(ledger) if decide else None
     last_tick, still_since, paused_since, overlay_since, told = None, None, None, None, None
     picked = None  # (the decision's screen and offers, when): the last decision QAJev acted on
+    fell_back = None  # strict_decisions: the decision Jev did not make, in words
     reported = set()
     try:
         until_pilot = time.monotonic() + pilot_wait  # a game still loading has not mounted its bot yet
@@ -608,6 +611,10 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
                     else:
                         note = " (first offer: Jev's pick was not on screen)"
                     pick, why = (allowed[0] if allowed else None), None  # a probability for the offer Jev did not pick
+                    if strict_decisions:  # the route would no longer be Jev's: stop before taking any offer
+                        fell_back = f"at {obs.get('screen')} t={t:.0f}s{note.replace('first offer: ', '')}"
+                        stop = "strict"
+                        break
                     findings.append({"severity": "S3", "kind": "decision not made by Jev",
                                      "detail": f"at {obs.get('screen')} t={t:.0f}s the first offer was taken"
                                                + (f": Jev answered {answer}" if answer in ("DONE", "BLOCKED") else ""),
@@ -687,7 +694,11 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
         first = next(f for f in findings if f["kind"].startswith("game reported"))
         checks.append({"check": "the game reported no problems (its own checks)", "ok": False,
                        "detail": f"{len(reported)} problem(s), first: {first['detail']}"})
-    run_stop = "checked" if locked else {"played": "checked", "game_over": "checked",
+    if strict_decisions:
+        checks.append({"check": "Jev made every decision (strict_decisions)", "ok": fell_back is None,
+                       "detail": f"a decision Jev did not make, {fell_back}; the step stopped there"
+                       if fell_back else None})
+    run_stop = "checked" if locked else {"played": "checked", "game_over": "checked", "strict": "checked",
                                          "reached": "reached"}.get(stop, stop)
     outcome, reason = verdict.classify(run_stop, [] if held else checks, has_checks=bool(checks) and not held,
                                        stop_detail=detail)
@@ -854,7 +865,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None):
             p = step["play"]
             r = play_for(game, name=name, seconds=float(p.get("seconds", 60)), until=p.get("until"),
                          decide=p.get("decide"), expect=step.get("expect"), ledger=ledger, run_dir=run_dir,
-                         shots=shots, emit=emit)
+                         shots=shots, emit=emit, strict_decisions=bool(p.get("strict_decisions")))
         else:
             with contextlib.suppress(NativeError):  # Jev has the controls: a game's bot would undo its moves
                 game.call(op="pilot", on=False)
