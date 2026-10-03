@@ -88,3 +88,36 @@ def test_punctuation_keys_carry_their_code():
     assert electron.key_event("Backquote")["code"] == "Backquote" and electron.key_event("Backquote")["key"] == "`"
     assert electron.key_event("[")["code"] == "BracketLeft" and electron.key_event("]")["code"] == "BracketRight"
     assert electron.key_event("a")["code"] == "KeyA" and electron.key_event("5")["code"] == "Digit5"
+
+
+PS_BEFORE = """  100     1   0:05.00 /Applications/Game.app/Contents/MacOS/Game
+  101   100   0:01.00 /Applications/Game.app/Contents/Frameworks/Game Helper (GPU).app/x --type=gpu-process
+  102   100   1:00.00 /Applications/Game.app/Contents/Frameworks/Game Helper (Renderer).app/x --type=renderer
+  200     1   0:02.00 /Applications/Other.app/x --type=renderer
+"""
+
+
+def test_the_renderers_cpu_time_is_read_from_the_apps_own_process_tree():
+    # macOS m:ss.cc, Linux [dd-]hh:mm:ss
+    assert electron._cpu_seconds("1:00.50") == 60.5 and electron._cpu_seconds("00:01:02") == 62
+    assert electron._cpu_seconds("1-00:00:01") == 86401 and electron._cpu_seconds("bad") is None
+    assert electron._renderer_times(PS_BEFORE, 100) == {102: 60.0}  # not the GPU, not another app's renderer
+
+
+def test_a_pegged_renderer_means_the_game_froze_an_idle_one_means_the_link():
+    after_busy = PS_BEFORE.replace("1:00.00", "1:02.85")
+    after_idle = PS_BEFORE.replace("1:00.00", "1:00.10")
+    for after, frozen in ((after_busy, True), (after_idle, False)):
+        outputs = iter([PS_BEFORE, after])
+        cpu = electron.renderer_cpu(100, window=3.0, ps=lambda: next(outputs), sleep=lambda _s: None)
+        assert (cpu is not None and cpu >= native.FROZEN_CPU) is frozen
+    assert electron.renderer_cpu(100, ps=lambda: "", sleep=lambda _s: None) is None  # no renderer found: unknown
+
+
+def test_a_frozen_game_is_s1_and_a_silent_link_is_s2():
+    [froze] = native._lost_game(native.NoAnswer("no answer to Runtime.evaluate within 20 s", cpu=0.97), "fight")
+    assert (froze["severity"], froze["kind"]) == ("S1", "game froze") and "97%" in froze["detail"]
+    [link] = native._lost_game(native.NoAnswer("no answer to Runtime.evaluate within 20 s", cpu=0.03), "fight")
+    assert (link["severity"], link["kind"]) == ("S2", "game stopped answering")
+    [unknown] = native._lost_game(native.NoAnswer("no answer to Runtime.evaluate within 20 s"), "fight")
+    assert unknown["severity"] == "S2"

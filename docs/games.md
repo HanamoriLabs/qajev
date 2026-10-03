@@ -89,8 +89,9 @@ steps:
 
 A play step **fails** on a **soft-lock** (the game stops advancing while nothing waits for the player), engine or
 script errors, a frame rate whose slowest 10% is under `min_fps`, or memory growing more than
-`max_memory_growth_mb`. A game that closes mid-play gets an S1 "game crashed or closed" finding; one still running that
-stops answering QAJev gets an S2 "game stopped answering". Either way the step is a harness stop: never a pass, even
+`max_memory_growth_mb`. A game that closes mid-play gets an S1 "game crashed or closed" finding. One still running that
+stops answering QAJev is measured for 3 s: when its renderer is using most of a CPU core, the game froze (an endless
+loop: S1 "game froze"); when it idles, the debugger link is the likely cause (S2 "game stopped answering"). Either way the step is a harness stop: never a pass, even
 when the frame rate and memory held until then. A game left paused
 by the step before also stops the step as a harness problem, instead of "playing" a frozen screen. While a play step runs, [`qajev top`](jobs-and-top.md) shows the live numbers.
 

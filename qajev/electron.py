@@ -74,6 +74,59 @@ def command_for(app):
     return [str(electron), str(app)]
 
 
+def _ps():
+    return subprocess.run(["ps", "-A", "-o", "pid=,ppid=,time=,command="], capture_output=True, text=True,
+                          timeout=10).stdout
+
+
+def _cpu_seconds(text):
+    """ps `time`: macOS [h:]m:ss.cc, Linux [dd-]hh:mm:ss."""
+    try:
+        days, _, rest = text.rpartition("-")
+        total = 0.0
+        for part in rest.split(":"):
+            total = total * 60 + float(part)
+        return total + (int(days) * 86400 if days else 0)
+    except ValueError:
+        return None
+
+
+def _renderer_times(table, root):
+    """CPU seconds of each renderer process under `root` (Linux puts them under a zygote, so the whole tree)."""
+    rows = []
+    for line in table.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) == 4 and parts[0].isdigit() and parts[1].isdigit():
+            rows.append((int(parts[0]), int(parts[1]), parts[2], parts[3]))
+    tree, grew = {root}, True
+    while grew:
+        more = {pid for pid, ppid, _t, _c in rows if ppid in tree} - tree
+        tree |= more
+        grew = bool(more)
+    out = {}
+    for pid, _ppid, cpu, command in rows:
+        seconds = _cpu_seconds(cpu)
+        if pid in tree and "--type=renderer" in command and seconds is not None:
+            out[pid] = seconds
+    return out
+
+
+def renderer_cpu(root, window=3.0, ps=_ps, sleep=time.sleep):
+    """The share of a CPU core the app's busiest renderer used over `window` seconds; None when there is none to
+    measure. Asked only once the app has stopped answering, so its cost (two `ps`, 3 s) is paid only then."""
+    try:
+        before = _renderer_times(ps(), root)
+        if not before:
+            return None
+        sleep(window)
+        after = _renderer_times(ps(), root)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    used = [after[pid] - before[pid] for pid in before if pid in after]
+    return max(used) / window if used else None
+
+
+
 # Punctuation keys: their DOM code and Windows virtual key (games read e.code, e.g. "Backquote" for a dev menu).
 PUNCT = {"`": ("Backquote", 192), "[": ("BracketLeft", 219), "]": ("BracketRight", 221), "-": ("Minus", 189),
          "=": ("Equal", 187), ";": ("Semicolon", 186), "'": ("Quote", 222), ",": ("Comma", 188),
@@ -227,7 +280,8 @@ class ElectronGame:
             if not slot[0].wait(timeout):
                 if self.proc is not None and self.proc.poll() is not None:
                     raise NativeError("the app closed (crashed or quit)")
-                raise NoAnswer(f"no answer to {method} within {timeout:.0f} s")
+                raise NoAnswer(f"no answer to {method} within {timeout:.0f} s", cpu=renderer_cpu(self.proc.pid)
+                               if self.proc is not None else None)
         except OSError as e:
             raise NativeError(f"lost the app: {e}") from None
         except ConnectionClosed:  # the app quit or crashed between two looks

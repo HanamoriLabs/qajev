@@ -76,8 +76,20 @@ class NoPilot(NativeError):
     """Real-time play needs the adapter's pilot (a game's own bot, say); not a crash."""
 
 
+FROZEN_CPU = 0.8  # a renderer using this much of a CPU core while it does not answer is stuck in a loop
+
+
 class NoAnswer(NativeError):
-    """The game is still running but did not answer in time (a hung page, or the debugger link): not a crash."""
+    """The game is still running but did not answer in time. `cpu`: the share of a core its renderer used meanwhile
+    (None: not measured). A pegged renderer is a frozen game; an idle one points at the debugger link."""
+
+    def __init__(self, message, cpu=None):
+        super().__init__(message)
+        self.cpu = cpu
+
+    @property
+    def frozen(self):
+        return self.cpu is not None and self.cpu >= FROZEN_CPU
 
 
 def free_port():
@@ -852,12 +864,18 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
 
 def _lost_game(error, name):
     """What losing the game mid-play says about it: no pilot is QAJev's side; a game that still runs but did not
-    answer is S2 (hung, or the debugger link); one that closed is S1."""
+    answer is S1 when its renderer is pegged (frozen), else S2 (the debugger link); one that closed is S1."""
     if isinstance(error, NoPilot):
         return []
-    hung = isinstance(error, NoAnswer)
-    kind, severity = ("game stopped answering", "S2") if hung else ("game crashed or closed", "S1")
-    return [{"severity": severity, "kind": kind, "detail": str(error)[:200], "scenario": name, "url": None}]
+    detail = str(error)[:200]
+    if isinstance(error, NoAnswer) and error.frozen:  # a player sees a stuck game
+        kind, severity = "game froze", "S1"
+        detail += f"; its renderer used {error.cpu:.0%} of a CPU core meanwhile (stuck in a loop)"
+    elif isinstance(error, NoAnswer):  # the page idles: most likely the debugger link, not the game
+        kind, severity = "game stopped answering", "S2"
+    else:
+        kind, severity = "game crashed or closed", "S1"
+    return [{"severity": severity, "kind": kind, "detail": detail, "scenario": name, "url": None}]
 
 
 def _perf_checks(expect, stats):
