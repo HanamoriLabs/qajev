@@ -49,7 +49,8 @@ def wanted_devices(explicit=None):
         _device(name, "devices")
     return names or list(DEFAULT_DEVICES)
 HOOK_KINDS = {"js", "fill", "click", "navigate", "wait_for", "key", "sleep", "command"}
-EXPECT_KEYS = {"url", "url_regex", "text", "absent", "visible", "js", "fetch", "command", "ignore_case", "looks"}
+EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
+               "looks"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
     "persona", "speech", "vision",
@@ -174,6 +175,8 @@ def _expect(value, where):
             re.compile(out["url_regex"])
         except re.error as e:
             raise SuiteError(f"{where}.url_regex is not a valid regex: {e}") from None
+    if "status" in out and (isinstance(out["status"], bool) or not isinstance(out["status"], int)):
+        raise SuiteError(f"{where}.status must be an HTTP status number, such as 404")
     out["fetch"] = [{"url": p, "status": 200} if isinstance(p, str) else p
                     for p in _list(value.get("fetch"), f"{where}.fetch")]
     for i, probe in enumerate(out["fetch"]):
@@ -189,7 +192,7 @@ def _expect(value, where):
 
 def page_checks(expect):
     return bool(expect.get("url") or expect.get("url_regex") or expect.get("text") or expect.get("absent")
-                or expect.get("visible") or expect.get("js"))
+                or expect.get("visible") or expect.get("js") or expect.get("status"))
 
 
 def has_checks(expect):

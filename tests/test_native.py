@@ -428,6 +428,21 @@ def test_a_play_step_cut_short_does_not_pass_on_its_frame_rate_and_memory():
     assert r["findings"][0]["kind"] == "game crashed or closed"
 
 
+def test_a_game_that_stops_answering_is_not_reported_as_a_crash():
+    # I'M HIM! "team_pocket: beaten": "no answer to Runtime.evaluate within 20 s" with the app still running was
+    # filed as an S1 "game crashed or closed".
+    class Hangs(FakeGame):
+        def observe(self):
+            if self.looks >= 2:
+                raise native.NoAnswer("no answer to Runtime.evaluate within 20 s")
+            return super().observe()
+
+    r = native.play_for(Hangs(), name="fight", seconds=30, sample=0.01, shots=False)
+    assert r["outcome"] == "harness" and "no answer" in r["reason"]
+    assert [f["kind"] for f in r["findings"]] == ["game stopped answering"]
+    assert r["findings"][0]["severity"] == "S2"
+
+
 def test_the_pilot_is_off_while_jev_works_a_goal_step():
     # I'm Him's bot closes any pause menu it sees: left on, it undid Jev's "pause the game".
     class Recording(FakeGame):

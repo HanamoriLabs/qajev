@@ -35,6 +35,14 @@ def test_expect_strings_become_lists_and_fetch_gets_a_default_status():
     assert e["fetch"] == [{"url": "/api/health", "status": 200}]
 
 
+def test_an_expected_status_is_a_page_check_and_must_be_a_number():
+    s = parse([{"url": "http://h/old", "expect": {"status": 404, "text": "File not found"}}])
+    assert s.scenarios[0].expect["status"] == 404 and S.page_checks(s.scenarios[0].expect)
+    assert S.page_checks(parse([{"url": "http://h/old", "expect": {"status": 404}}]).scenarios[0].expect)
+    with pytest.raises(S.SuiteError, match="status"):
+        parse([{"url": "http://h/", "expect": {"status": "gone"}}])
+
+
 def test_persona_is_prepended_to_the_goal():
     s = parse([{"url": "http://h/", "goal": "Find pricing."}], persona="You are new here.")
     assert s.scenarios[0].task == "You are new here.\n\nWhat you want now: Find pricing."

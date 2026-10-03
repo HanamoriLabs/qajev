@@ -76,6 +76,10 @@ class NoPilot(NativeError):
     """Real-time play needs the adapter's pilot (a game's own bot, say); not a crash."""
 
 
+class NoAnswer(NativeError):
+    """The game is still running but did not answer in time (a hung page, or the debugger link): not a crash."""
+
+
 def free_port():
     for port in PORTS:
         with socket.socket() as s:
@@ -783,12 +787,9 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
             time.sleep(sample)
     except CostCapReached as e:
         stop, detail = "cost_cap", str(e)
-    except NoPilot as e:
-        stop, detail = "browser_error", str(e)
     except NativeError as e:
         stop, detail = "browser_error", str(e)
-        findings.append({"severity": "S1", "kind": "game crashed or closed", "detail": str(e)[:200],
-                         "scenario": name, "url": None})
+        findings += _lost_game(e, name)
     except (RuntimeError, ValueError) as e:  # the decision model (or vision's picture): QAJev's side
         stop, detail = "model_error", str(e)
     finally:
@@ -801,14 +802,7 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
             result["shot"] = str(shot.relative_to(run_dir)) if shot else None
     stats = _stats(timeline)
     checks = native_checks(expect or {}, obs, game.errors) if stop != "browser_error" else []
-    if expect and expect.get("min_fps") is not None and stats:
-        low = stats["fps_p10"]
-        checks.append({"check": f"frame rate held: 90% of samples at or above {expect['min_fps']} fps",
-                       "ok": low >= float(expect["min_fps"]), "detail": f"10th percentile {low} fps"})
-    if expect and expect.get("max_memory_growth_mb") is not None and stats:
-        grew = stats["memory_growth_mb"]
-        checks.append({"check": f"memory grew at most {expect['max_memory_growth_mb']} MB", "ok":
-                       grew <= float(expect["max_memory_growth_mb"]), "detail": f"grew {grew} MB"})
+    checks += _perf_checks(expect or {}, stats)
     held = stop == "stale" and "paused" in (detail or "")  # never got to play: QAJev's trouble, no verdict on it
     locked = any(f["kind"] == "soft-lock" for f in findings)  # the game froze: a product failure
     if stop != "browser_error" and not held:
@@ -824,10 +818,7 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
                        "detail": f"a decision {who or 'the model'} did not make, {fell_back}; the step stopped there"
                        if fell_back else None})
     if until and not until_optional and stop in {"reached", "played", "game_over"}:  # what the step set out to see
-        met = stop == "reached"
-        checks.append({"check": f"reached {_until_text(until)}", "ok": met, "detail": None if met else
-                       f"not by {stats.get('seconds', 0):.0f} s" + (" (game over first)" if stop == "game_over" else "")
-                       + ": " + ", ".join(f"{k} was {_shown(_until_value(obs, k))}" for k in until)})
+        checks.append(_until_check(until, stop, stats, obs))
     looks = (expect or {}).get("looks")
     if looks and stop not in {"browser_error", "model_error"} and not held:
         try:
@@ -857,6 +848,36 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
     result["jev"] = {"status": stop, "actions": len(history), "decisions": len(decisions), "text_calls": 0,
                      "elapsed_ms": round((time.monotonic() - started) * 1000)}
     return result
+
+
+def _lost_game(error, name):
+    """What losing the game mid-play says about it: no pilot is QAJev's side; a game that still runs but did not
+    answer is S2 (hung, or the debugger link); one that closed is S1."""
+    if isinstance(error, NoPilot):
+        return []
+    hung = isinstance(error, NoAnswer)
+    kind, severity = ("game stopped answering", "S2") if hung else ("game crashed or closed", "S1")
+    return [{"severity": severity, "kind": kind, "detail": str(error)[:200], "scenario": name, "url": None}]
+
+
+def _perf_checks(expect, stats):
+    checks = []
+    if expect.get("min_fps") is not None and stats:
+        low = stats["fps_p10"]
+        checks.append({"check": f"frame rate held: 90% of samples at or above {expect['min_fps']} fps",
+                       "ok": low >= float(expect["min_fps"]), "detail": f"10th percentile {low} fps"})
+    if expect.get("max_memory_growth_mb") is not None and stats:
+        grew = stats["memory_growth_mb"]
+        checks.append({"check": f"memory grew at most {expect['max_memory_growth_mb']} MB", "ok":
+                       grew <= float(expect["max_memory_growth_mb"]), "detail": f"grew {grew} MB"})
+    return checks
+
+
+def _until_check(until, stop, stats, obs):
+    met = stop == "reached"
+    return {"check": f"reached {_until_text(until)}", "ok": met, "detail": None if met else
+            f"not by {stats.get('seconds', 0):.0f} s" + (" (game over first)" if stop == "game_over" else "")
+            + ": " + ", ".join(f"{k} was {_shown(_until_value(obs, k))}" for k in until)}
 
 
 def _until_value(obs, key):

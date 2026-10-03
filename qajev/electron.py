@@ -24,7 +24,7 @@ from pathlib import Path
 from websockets.exceptions import ConnectionClosed
 
 from .config import HOME
-from .native import STATE, NativeError, free_port, with_lists
+from .native import STATE, NativeError, NoAnswer, free_port, with_lists
 
 WEB = Path(__file__).parent / "bridges" / "web"
 ADAPTERS = WEB / "adapters"
@@ -227,7 +227,7 @@ class ElectronGame:
             if not slot[0].wait(timeout):
                 if self.proc is not None and self.proc.poll() is not None:
                     raise NativeError("the app closed (crashed or quit)")
-                raise NativeError(f"no answer to {method} within {timeout:.0f} s")
+                raise NoAnswer(f"no answer to {method} within {timeout:.0f} s")
         except OSError as e:
             raise NativeError(f"lost the app: {e}") from None
         except ConnectionClosed:  # the app quit or crashed between two looks

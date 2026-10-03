@@ -27,6 +27,7 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | `absent` | `--absent`, `-a` | the page does not show these words |
 | `url` | `--expect-url`, `-u` | the final address contains this |
 | `url_regex` | `--expect-url-regex` | the final address matches this pattern |
+| `status` | suite only | the page answered with this HTTP status, such as 404 for a removed page (that status is then not also filed as a finding) |
 | `js` | `--expect-js`, `-j` | this JavaScript expression is true in the page (a Promise counts by what it resolves to, within 5 s; a throw, a rejection or no answer fails the check) |
 | `fetch` | `--fetch URL[=STATUS]` | a request made from the page answers with that status (default 200) |
 | `command` | suite only | a shell command prints the expected output (needs `--allow-commands`) |

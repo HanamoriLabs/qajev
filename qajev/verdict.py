@@ -26,6 +26,10 @@ def page_checks(expect, observed):
         checks.append(_check(f"url contains {expect['url']!r}", expect["url"] in url, url))
     if expect.get("url_regex"):
         checks.append(_check(f"url matches /{expect['url_regex']}/", bool(re.search(expect["url_regex"], url)), url))
+    if expect.get("status"):
+        have = observed.get("status")
+        checks.append(_check(f"the page answered HTTP {expect['status']}", have == expect["status"],
+                             None if have == expect["status"] else f"HTTP {have}"))
     case = " (any case)" if expect.get("ignore_case") else ""
     for needle, seen in zip(expect.get("text", []), observed.get("text") or []):
         checks.append(_check(f"page shows {needle!r}{case}", bool(seen), None if seen else observed.get("says")))
@@ -154,6 +158,13 @@ def _stop_text(stop, detail) -> str:
         "hook_failed": "hook failed", "interrupted": "interrupted", "machine_busy": "machine too busy",
     }.get(stop, str(stop))
     return f"{text}: {detail}" if detail else text
+
+
+def document_findings(status, expect, *, scenario, url):
+    """The page's own HTTP error, unless the test set out to see that status (a removed page's 404)."""
+    if not status or status < 400 or status == (expect or {}).get("status"):
+        return []
+    return [_finding("S1" if status >= 500 else "S2", f"HTTP {status}", "document response", scenario, url)]
 
 
 def findings_from_probe(probe, *, scenario, url, first_party_hosts):
