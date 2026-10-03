@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- `expect: {status: 404}` in a website suite or project objective: the page must answer with that HTTP status. A
+  test that sets out to show a removed page passes on it, and the 404 is no longer also filed as an S2 finding.
+
+- Fixed: a game still running that did not answer QAJev in time ("no answer to Runtime.evaluate within 20 s") was
+  filed as an S1 "game crashed or closed". It is now an S2 "game stopped answering"; a game that really closed
+  stays S1.
+
 - `qajev dashboard`: every run on the machine in a local web page (designed in Claude Design, in qajev.com's look).
   Filter by project, result, kind and period; open a run to see what is running now, each test with its checks,
   findings, screenshots and the model's decisions; stop, rerun (all or failed only) or start a project's run.

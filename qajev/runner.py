@@ -167,10 +167,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                 stop, detail = "unreachable", error
         if stop is None:
             read()
-            status = observed.get("status")
-            if status and status >= 400:
-                findings.append({"severity": "S1" if status >= 500 else "S2", "kind": f"HTTP {status}",
-                                 "detail": "document response", "scenario": scenario.name, "url": observed.get("url")})
+            findings += verdict.document_findings(observed.get("status"), scenario.expect, scenario=scenario.name,
+                                                  url=observed.get("url"))
             for hook in scenario.before:
                 session.run_hook(hook, observed.get("url") or scenario.url)
             if scenario.goal:

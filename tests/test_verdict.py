@@ -160,3 +160,16 @@ def test_screens_report_the_runner_up_label_from_the_request():
 def test_ignore_case_is_named_in_the_check():
     (check,) = V.page_checks({"text": ["Solo"], "ignore_case": True}, {"text": [True]})
     assert check == {"check": "page shows 'Solo' (any case)", "ok": True, "detail": None}
+
+
+def test_an_expected_status_is_a_check_and_not_a_finding():
+    # fixture "the old page is gone": the test showed the 404 page it set out to show, and still got an S2 "HTTP 404"
+    assert V.page_checks({"status": 404}, {"status": 404}) == [
+        {"check": "the page answered HTTP 404", "ok": True, "detail": None}]
+    assert V.page_checks({"status": 404}, {"status": 200}) == [
+        {"check": "the page answered HTTP 404", "ok": False, "detail": "HTTP 200"}]
+    assert V.document_findings(404, {"status": 404}, scenario="gone", url="http://h/old") == []
+    [f] = V.document_findings(404, {}, scenario="gone", url="http://h/old")
+    assert (f["severity"], f["kind"]) == ("S2", "HTTP 404")
+    assert V.document_findings(503, {"status": 404}, scenario="gone", url="http://h/old")[0]["severity"] == "S1"
+    assert V.document_findings(200, {}, scenario="ok", url="http://h/") == []
