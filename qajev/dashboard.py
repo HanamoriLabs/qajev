@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import jobs
+from . import jobs, live
 
 PAGE = Path(__file__).with_name("dashboard.html")
 STATE = jobs.JOBS.parent / "dashboard.json"  # the running dashboard: pid, port and key (0600)
@@ -183,6 +183,8 @@ def detail(run_id):
         out.update({"command_line": "qajev " + shlex.join(meta.get("argv") or []), "cwd": meta.get("cwd")})
         scenarios = (report or {}).get("scenarios") or st.get("scenarios") or []
         decisions = jobs.decisions(run_id, limit=5000)
+        if st["state"] not in FINISHED:
+            out.update(_live(run_id, folder, st.get("current")))
     if report:
         out["models"] = report.get("models")
         if report.get("about"):
@@ -197,6 +199,33 @@ def detail(run_id):
         out["steps"].append({"name": current, "outcome": "running", "reason": (out.get("now") or {}).get("doing"),
                              "decisions": by_step.get(current, [])})
     return out
+
+
+def _live(run_id, folder, current):
+    """A running job's screen right now (while someone watches it: live.py) and what its test did last."""
+    out = {}
+    shot = live.frame(folder) if folder else None
+    if shot:
+        out["live"] = {"shot": f"{_file_url(run_id, 'live/frame.jpg')}?t={shot[1]:.3f}", "at": shot[1]}
+    events, _ = jobs.events_since(run_id, 0)
+    steps = [{"at": e.get("at"), "doing": e.get("doing")} for e in events
+             if e.get("event") == "step" and e.get("scenario") == current and e.get("doing") and not e.get("pulse")]
+    out["activity"] = steps[-8:]
+    return out
+
+
+def _signature(run_id, folder):
+    """What changes when a running job does something: its events, its frame, its end."""
+    base = jobs.JOBS / run_id
+    parts = []
+    for path in (base / "events.jsonl", base / "result.json", base / "exit_code",
+                 *([live.folder(folder) / "frame.jpg"] if folder else [])):
+        try:
+            st = path.stat()
+            parts.append((st.st_size, st.st_mtime_ns))
+        except OSError:
+            parts.append(None)
+    return tuple(parts)
 
 
 def run_file(run_id, rel):
@@ -315,6 +344,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, projects())
             if url.path.startswith("/api/run/"):
                 return self._send(200, detail(url.path.removeprefix("/api/run/")))
+            if url.path.startswith("/api/stream/"):
+                return self._stream(url.path.removeprefix("/api/stream/"))
             if url.path.startswith("/files/"):
                 run_id, _, rel = url.path.removeprefix("/files/").partition("/")
                 path = run_file(run_id, rel)
@@ -328,6 +359,42 @@ class Handler(BaseHTTPRequestHandler):
         except DashboardError as e:
             return self._error(400, str(e))
         self._error(404, "not found")
+
+    def _stream(self, run_id):
+        """Server-sent events for one running job: "change" whenever it does something (a step, a test, a new frame
+        of its screen), "done" when it ends. While the stream is open the run counts as watched, so it saves frames."""
+        # A job id, never a path: checked before it is joined to the jobs folder, as jobs._folder does.
+        if not jobs.JOB_ID.fullmatch(run_id) or not (jobs.JOBS / run_id / "job.json").is_file():
+            raise jobs.NoSuchJob(run_id)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        last, touched, quiet, checked, folder = None, 0.0, time.monotonic(), time.monotonic(), None
+        try:
+            while True:
+                done = (jobs.JOBS / run_id / "exit_code").is_file()
+                if not done and time.monotonic() - checked > 2:  # a run whose process died leaves no exit code
+                    done, checked = jobs.status(run_id)["state"] in FINISHED, time.monotonic()
+                folder = folder or (None if done else jobs.run_folder(run_id))  # found once: it does not move
+                if folder and not done and time.monotonic() - touched > live.INTERVAL:
+                    live.touch(folder)
+                    touched = time.monotonic()
+                sig = _signature(run_id, folder)
+                if sig != last or done:
+                    self.wfile.write(b"data: done\n\n" if done else b"data: change\n\n")
+                    self.wfile.flush()
+                    last, quiet = sig, time.monotonic()
+                    if done:
+                        return
+                elif time.monotonic() - quiet > 15:  # a comment keeps proxies and the browser from closing it
+                    self.wfile.write(b": still here\n\n")
+                    self.wfile.flush()
+                    quiet = time.monotonic()
+                time.sleep(0.25)
+        except (BrokenPipeError, ConnectionResetError):
+            return  # the page went away
 
     def do_POST(self):  # noqa: N802
         # An action needs the key the page carries in a header: a page elsewhere has the cookie sent, never the key.

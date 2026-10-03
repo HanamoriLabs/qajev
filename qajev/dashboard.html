@@ -176,6 +176,19 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, select:focus-vi
 .check { display:grid; grid-template-columns:16px minmax(0, 1fr); gap:8px; font-size:13px; overflow-wrap:anywhere; }
 .ok { color:var(--pass); font-weight:700; } .no { color:var(--fail); font-weight:700; }
 .cdetail { color:var(--ink-2); }
+.plain { font-size:14px; }
+.plain .cdetail { display:block; font-size:13px; margin-top:2px; }
+.agents { border-top:1px dashed var(--line); padding-top:10px; margin-top:14px; }
+.agents .check, .agents .finding { font:12px/1.5 var(--mono); }
+pre.raw { white-space:pre-wrap; font:12px/1.5 var(--mono); background:var(--ground); border-radius:8px; padding:10px; margin:6px 0 0;
+  max-height:220px; overflow:auto; overflow-wrap:anywhere; }
+.copy { margin:8px 0 2px; }
+.act { display:grid; grid-template-columns:64px minmax(0, 1fr); gap:8px; font-size:13px; overflow-wrap:anywhere; }
+.livebox { position:relative; align-self:start; }
+.liveframe { width:100%; aspect-ratio:16 / 10; object-fit:contain; border-radius:10px; border:1px solid var(--line);
+  background:var(--ground); display:block; }
+.livebadge { position:absolute; top:8px; left:8px; font:600 11px var(--mono); background:var(--navy); color:var(--hi);
+  padding:2px 8px; border-radius:999px; letter-spacing:.04em; }
 .finding { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:8px; font-size:13px; align-items:baseline; overflow-wrap:anywhere; }
 .scroll { overflow-x:auto; }
 .dtable { width:100%; border-collapse:collapse; font-size:12.5px; }
@@ -490,15 +503,115 @@ function stripHtml() {
     + `<span>${esc(im.name)}</span></div></button>`).join("")}</div></section>`;
 }
 function isOpen(s) { return opened.has(s.name) ? opened.get(s.name) : BAD.includes(s.outcome) || s.outcome === "running"; }
+// For people: each check as a plain sentence (what should have been true), failed ones first, long text cut short.
+// The raw checks, reason and the rest stay under "For agents".
+const cut = (t, n) => { t = String(t ?? ""); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
+function plainCheck(c) {
+  const t = c.check || "", q = (x) => `“${cut(x, 120)}”`;
+  let m;
+  if ((m = t.match(/^page shows (['"])([\s\S]*)\1/))) return `The page should show ${q(m[2])}.`;
+  if ((m = t.match(/^page lacks (['"])([\s\S]*)\1/))) return `The page should not show ${q(m[2])}.`;
+  if ((m = t.match(/^on screen: (['"])([\s\S]*)\1/))) return `${q(m[2])} should be on screen.`;
+  if ((m = t.match(/^(game|.*) shows (['"])([\s\S]*)\2/))) return `The ${m[1]} should show ${q(m[3])}.`;
+  if ((m = t.match(/^url contains (['"])([\s\S]*)\1/))) return `The address should contain ${q(m[2])}.`;
+  if (t.startsWith("url matches")) return "The address should match its pattern.";
+  if (t.startsWith("js ")) return "The page's own script check should come out true.";
+  if ((m = t.match(/^looks: ([\s\S]*)/))) return `On the screenshot: ${cut(m[1], 160)}`;
+  if ((m = t.match(/^reached ([\s\S]*)/))) return `The game should reach ${cut(m[1], 120)} in time.`;
+  if ((m = t.match(/^the page answered HTTP (\d+)/))) return `The page should answer with HTTP ${m[1]}.`;
+  return cut(t, 160);
+}
+function plainDetail(c) {
+  if (c.ok || !c.detail) return "";
+  const d = String(c.detail);
+  if (d.startsWith("closest on the page: ")) return `Closest on the page: “${cut(d.slice(21), 160)}”`;
+  if (d.startsWith("returned ")) return `It came out ${cut(d.slice(9), 120)}.`;
+  return cut(d, 160);
+}
+function forPeople(s, decisions, low) {
+  const checks = [...(s.checks || [])].sort((a, b) => a.ok - b.ok);
+  const bad = BAD.includes(s.outcome), failed = checks.filter((c) => !c.ok);
+  const serious = (s.findings || []).filter((x) => x.severity === "S1" || x.severity === "S2");
+  const title = bad ? "What went wrong" : s.outcome === "pass" ? "What it proved" : "What happened";
+  let out = `<div class="klabel">${title}</div>`;
+  if (bad && !failed.length && s.reason) out += `<p class="reason reason-bad">${esc(cut(s.reason, 240))}</p>`;
+  if (!checks.length && !bad && s.reason) out += `<p class="reason">${esc(cut(s.reason, 240))}</p>`;
+  if (checks.length) out += `<div class="checks plain">${checks.map((c) => `<div class="check"><span class="${c.ok ? "ok" : "no"}">`
+    + `${c.ok ? "✓" : "✗"}</span><span>${esc(plainCheck(c))}${plainDetail(c) ? `<span class="cdetail">${esc(plainDetail(c))}</span>` : ""}`
+    + `</span></div>`).join("")}</div>`;
+  if (serious.length) out += `<div class="klabel">Problems seen</div><div class="checks plain">${serious.map((x) => `<div class="finding">`
+    + `<span class="pill ${x.severity === "S1" ? "p-fail" : "p-stuck"}">${esc(x.severity)}</span>`
+    + `<span>${esc(x.kind || "")}${x.detail ? ": " + esc(cut(x.detail, 160)) : ""}</span></div>`).join("")}</div>`;
+  if (decisions.length) out += `<p class="cdetail">${decisions.length} decision${decisions.length > 1 ? "s" : ""}`
+    + `${low ? `, ${low} unsure` : ""}: see For agents.</p>`;
+  return out;
+}
+function agentText(s) {  // what an agent needs to pick the failure up: pasted into its chat
+  const d = current || {};
+  return [`QAJev test "${s.name}": ${s.outcome}`, d.title ? `Run: ${d.title} (${d.id})` : "",
+    s.about ? `About: ${s.about}` : "", s.reason ? `Reason: ${s.reason}` : "",
+    ...(s.checks || []).map((c) => `${c.ok ? "PASS" : "FAIL"} ${c.check}${c.detail ? ` -- ${c.detail}` : ""}`),
+    ...(s.findings || []).map((x) => `${x.severity} ${x.kind}${x.detail ? `: ${x.detail}` : ""}`),
+    d.folder ? `Run folder: ${d.folder}` : "", d.command_line ? `Command: ${d.command_line}` : "",
+    d.id && !String(d.id).startsWith("r-") ? `Rerun its failed tests: qajev rerun ${d.id} --failed` : ""].filter(Boolean).join("\n");
+}
+function runningBody(s) {  // the test running now: what it is doing, what it did, and its screen (while watched)
+  const d = current || {}, act = d.activity || [];
+  return `<div class="tbody${d.live ? "" : " tbody-noshot"}"><div>`
+    + (s.about ? `<p class="about">${esc(s.about)}</p>` : "")
+    + `<div class="klabel">Now</div><p class="reason">${esc((d.now && d.now.doing) || s.reason || "starting")}</p>`
+    + (act.length ? `<div class="klabel">So far</div><div class="checks">${act.slice().reverse().map((a) => `<div class="act">`
+      + `<span class="num cdetail">${a.at ? esc(clock(a.at)) : ""}</span><span>${esc(a.doing)}</span></div>`).join("")}</div>` : "")
+    + (!d.live ? `<p class="cdetail">The screen shows here while the test runs (website and Electron runs).</p>` : "")
+    + `</div>`
+    + (d.live ? `<div class="livebox"><span class="livebadge">● LIVE</span>`
+      + `<img class="liveframe" alt="The screen of the running test, live"></div>` : "")
+    + `</div>`;
+}
+// The live frame changes every 2 s: set it after rendering, once loaded, so a rebuilt row never shows a blank box.
+let liveShown = null;
+function showLive() {
+  const img = document.querySelector("img.liveframe"), url = current && current.live && current.live.shot;
+  if (!img || !url) return;
+  if (!img.dataset.src && liveShown) { img.src = liveShown; img.dataset.src = liveShown; }
+  if (img.dataset.src === url) return;
+  const next = new Image();
+  next.onload = () => {
+    liveShown = url;
+    const now = document.querySelector("img.liveframe");
+    if (now) { now.src = url; now.dataset.src = url; }
+  };
+  next.src = url;
+}
+// Pushed updates for the run on screen: the server says "change" when it does something; the 3 s poll is the fallback.
+let stream = null, streamFor = null, soon = null;
+function watch() {
+  const want = current && selected === current.id && LIVE.includes(current.state) && !String(current.id).startsWith("r-")
+    ? current.id : null;
+  if (want === streamFor) return;
+  if (stream) { stream.close(); stream = null; }
+  streamFor = want;
+  if (!want) return;
+  stream = new EventSource(`/api/stream/${encodeURIComponent(want)}`);
+  stream.onmessage = (e) => {
+    if (e.data === "done" && stream) { stream.close(); stream = null; }
+    clearTimeout(soon);
+    soon = setTimeout(() => { if (selected === want) openRun(want, true); }, 120);
+  };
+}
 function testHtml(s, n) {
   const open = isOpen(s), idx = images.findIndex((im) => im.name === s.name);
   const decisions = s.decisions || [], low = decisions.filter((x) => x.p != null && x.p < 0.6).length;
   const time = s.outcome === "running" ? "" : s.seconds != null ? took(s.seconds) : "";
   let body = "";
-  if (open) {
+  if (open && s.outcome === "running") body = runningBody(s);
+  else if (open) {
     body = `<div class="tbody${s.shot ? "" : " tbody-noshot"}"><div>`
       + (s.about ? `<p class="about">${esc(s.about)}</p>` : "")
-      + (s.reason ? `<p class="reason${BAD.includes(s.outcome) ? " reason-bad" : ""}">${esc(s.reason)}</p>` : "")
+      + forPeople(s, decisions, low)
+      + `<details class="agents"><summary>For agents</summary>`
+      + `<button class="btn copy" data-copy="${esc(s.name)}">Copy for an agent</button>`
+      + (s.reason ? `<div class="klabel">Reason</div><pre class="raw">${esc(s.reason)}</pre>` : "")
       + (s.checks && s.checks.length ? `<div class="klabel">Checks</div><div class="checks">${s.checks.map((c) => `<div class="check">`
         + `<span class="${c.ok ? "ok" : "no"}">${c.ok ? "✓" : "✗"}</span><span>${esc(c.check)}${c.detail ? ` <span class="cdetail">${esc(c.detail)}</span>` : ""}`
         + `</span></div>`).join("")}</div>` : "")
@@ -517,7 +630,7 @@ function testHtml(s, n) {
         + `<td>${esc(a.action)}${a.text ? ` <span class="cdetail">${esc(a.text)}</span>` : ""}</td><td>${esc(a.kind)}</td>`
         + `<td class="num">${pct(a.probability)}</td></tr>`).join("") + `</tbody></table></div></details>` : "")
       + (s.page_says ? `<details><summary>What the screen said</summary><pre class="said">${esc(s.page_says)}</pre></details>` : "")
-      + `</div>`
+      + `</details></div>`
       + (s.shot ? `<button class="bigshot" data-img="${idx}" aria-label="Enlarge the screenshot of ${esc(s.name)}"><img loading="lazy" src="${esc(s.shot)}" alt=""></button>` : "")
       + `</div>`;
   }
@@ -569,6 +682,8 @@ function renderDetail() {
   have.forEach((el) => el.remove());
   if (!wanted.length) tests.innerHTML = `<div class="empty">${d.steps.length ? "Every test passed." : LIVE.includes(d.state) ? "Waiting for the first test…" : "No tests recorded."}</div>`;
   else tests.querySelector(".empty")?.remove();
+  showLive();
+  watch();
 }
 async function openRun(id, quiet) {
   if (!quiet && id !== selected) { opened.clear(); current = null; }
@@ -641,6 +756,11 @@ $("runs").addEventListener("click", (e) => { const r = e.target.closest(".row");
 $("runs").addEventListener("keydown", (e) => { const r = e.target.closest(".row"); if (r && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openRun(r.dataset.id); } });
 $("detail").addEventListener("click", (e) => {
   const a = e.target.closest("[data-act]"); if (a) return act(a.dataset.act, a);
+  const cp = e.target.closest("[data-copy]");
+  if (cp) {
+    const s = current.steps.find((x) => x.name === cp.dataset.copy);
+    return navigator.clipboard.writeText(agentText(s)).then(() => toast("Copied for an agent"), () => toast("Could not copy"));
+  }
   const img = e.target.closest("[data-img]"); if (img) return showImage(Number(img.dataset.img));
   const t = e.target.closest("[data-toggle]");
   if (t) { const s = current.steps.find((x) => x.name === t.dataset.toggle); opened.set(s.name, !isOpen(s)); return renderDetail(); }
@@ -671,7 +791,7 @@ setInterval(async () => {  // the runs, and a running run's tests as they finish
   busy = true;
   try {
     await refresh();
-    if (current && selected === current.id && LIVE.includes(current.state)) await openRun(selected, true);
+    if (current && selected === current.id && LIVE.includes(current.state) && !stream) await openRun(selected, true);
   } finally { busy = false; }
 }, 3000);
 </script>

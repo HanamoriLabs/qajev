@@ -114,8 +114,18 @@ run and project report.
   result (live, PASS, FAIL, INCOMPLETE), the kind (games, checks, suites, smoke crawls) and the period. The
   filters stay in the address, so a view can be bookmarked.
 - **Open a run**: what is running now and the model deciding, the command, the folder, a bar of the results, the
-  screenshots in a strip (click one to enlarge; arrows step through them), and each test with its reason, checks,
-  findings, the model's decisions (unsure ones marked) and its actions. "Not passed" shows only the tests to look at.
+  screenshots in a strip (click one to enlarge; arrows step through them), and each test. "Not passed" shows only
+  the tests to look at. A test has two parts:
+  - **for people**: what it proves (its `about`), then "What went wrong" (or "What it proved"): each check as a plain
+    sentence, failed ones first, with what was there instead (for a missing text, the closest text on the page),
+    and the serious problems seen;
+  - **for agents** (folded): the raw reason, checks, findings, the model's decisions (unsure ones marked), its
+    actions and what the screen said, and **Copy for an agent**: the test, its checks, the run folder and the
+    `qajev rerun JOB --failed` command, ready to paste into an agent's chat.
+- **Watch it live**: an open running run updates as it happens (the page holds a stream; the server pushes each step,
+  test and frame). The running test shows what it is doing now, its last steps, and its **screen, live**: a frame
+  every 2 s for website and Electron runs. Frames are taken only while someone has the run open, so an unwatched
+  run costs nothing.
 - **Act**: stop a running job, rerun a finished one (all of it, or only its failed tests, as `qajev rerun`), or
   start a project's stored objectives (**New run**). It never reruns a job that ran shell commands
   (`--allow-commands`): do that in a terminal.

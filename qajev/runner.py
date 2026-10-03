@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import chrome, providers, verdict, vision
+from . import chrome, live, providers, verdict, vision
 from .config import redact, redact_tree, secret_values
 from .ledger import CostCapReached, Ledger
 from .suite import has_checks
@@ -166,6 +166,11 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if error:
                 stop, detail = "unreachable", error
         if stop is None:
+            # What it is doing, for the dashboard and qajev top, while a slow check runs in the page (a script that
+            # plays the game for a minute said nothing at all before).
+            _emit(opts, "step", scenario=scenario.name, at=time.time(),
+                  doing="reading the page and running its checks" if has_page_checks(scenario.expect)
+                  else "reading the page")
             read()
             findings += verdict.document_findings(observed.get("status"), scenario.expect, scenario=scenario.name,
                                                   url=observed.get("url"))
@@ -207,6 +212,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     if stop not in {"unreachable", "interrupted"}:
         try:
             if stop != "reached" and has_page_checks(scenario.expect):
+                if not page_ok():
+                    _emit(opts, "step", scenario=scenario.name, at=time.time(),
+                          doing=f"waiting up to {scenario.settle:.0f} s for the expectations to hold")
                 settle_until = time.monotonic() + scenario.settle
                 while not page_ok() and time.monotonic() < settle_until:
                     time.sleep(0.5)
@@ -427,8 +435,9 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                 _emit(opts, "start", scenario=scenario.name)
                 spent_before = ledger.spent()
                 try:
-                    result = run_scenario(session, scenario, opts=opts, hosts=set(suite_meta["hosts"]),
-                                          run_dir=run_dir)
+                    with live.frames(run_dir, session.page_socket()):  # its screen, while someone watches it
+                        result = run_scenario(session, scenario, opts=opts, hosts=set(suite_meta["hosts"]),
+                                              run_dir=run_dir)
                 except KeyboardInterrupt:  # e.g. while waiting for the machine to calm down
                     result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
                                       "mode": scenario.mode, "checks": [], "findings": [], "screens": [],

@@ -173,3 +173,15 @@ def test_an_expected_status_is_a_check_and_not_a_finding():
     assert (f["severity"], f["kind"]) == ("S2", "HTTP 404")
     assert V.document_findings(503, {"status": 404}, scenario="gone", url="http://h/old")[0]["severity"] == "S1"
     assert V.document_findings(200, {}, scenario="ok", url="http://h/") == []
+
+
+def test_a_missing_text_shows_the_closest_text_on_the_page():
+    # I'M HIM! HUD corner: "page shows 'overlapFrames=0'" failed with the first 400 characters of the page as its
+    # detail; the line that mattered ("REPRO ... overlapFrames=5 ...") was further down.
+    seen = {"text": [False, True], "near": ["REPRO 1920x1080 overlapFrames=5 maxArea=812", None], "says": "E TALK"}
+    miss, hit = V.page_checks({"text": ["overlapFrames=0", "REPRO"]}, seen)
+    assert miss == {"check": "page shows 'overlapFrames=0'", "ok": False,
+                    "detail": "closest on the page: REPRO 1920x1080 overlapFrames=5 maxArea=812"}
+    assert hit["ok"] and hit["detail"] is None
+    (nothing,) = V.page_checks({"text": ["Zebra"]}, {"text": [False], "near": [None], "says": "E TALK"})
+    assert nothing["detail"] == "not on the page; it begins: E TALK"

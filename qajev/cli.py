@@ -693,7 +693,7 @@ def cmd_play(args):
     import time
     from types import SimpleNamespace
 
-    from . import electron, mobile, native, providers
+    from . import electron, live, mobile, native, providers
     from . import report as report_mod
     from .config import load_env, redact_tree, secret_values
     from .jobs import Busy
@@ -829,17 +829,18 @@ def cmd_play(args):
                 # Only a headless Godot game renders nothing to capture; Electron always has a real window
                 # (its --headless only meant "no shots", so MCP's default headless runs had none).
                 shots = not args.no_shots and not (headless and browser["engine"] == "godot")
-                if session_steps:
-                    results = native.run_session(game, session_steps, ledger=ledger, run_dir=run_dir, shots=shots,
-                                                 emit=emit, vision=sees)
-                else:
-                    emit({"event": "start", "scenario": name})
-                    result = native.play(game, name=name, goal=args.goal, expect=expect, about=args.about,
-                                         budget={"actions": args.max_actions, "seconds": args.max_seconds},
-                                         ledger=ledger, run_dir=run_dir, shots=shots, emit=emit, vision=sees)
-                    result["cost_usd"] = round(ledger.spent(), 5)
-                    emit({"event": "scenario", "result": result})
-                    results = [result]
+                with live.frames(run_dir, getattr(game, "page_ws", None)):  # its screen, while someone watches it
+                    if session_steps:
+                        results = native.run_session(game, session_steps, ledger=ledger, run_dir=run_dir,
+                                                     shots=shots, emit=emit, vision=sees)
+                    else:
+                        emit({"event": "start", "scenario": name})
+                        result = native.play(game, name=name, goal=args.goal, expect=expect, about=args.about,
+                                             budget={"actions": args.max_actions, "seconds": args.max_seconds},
+                                             ledger=ledger, run_dir=run_dir, shots=shots, emit=emit, vision=sees)
+                        result["cost_usd"] = round(ledger.spent(), 5)
+                        emit({"event": "scenario", "result": result})
+                        results = [result]
                 results[0]["boot_seconds"] = getattr(game, "boot_seconds", None)
     except (native.NativeError, Busy) as e:
         return _fail(args, str(e), EXIT_BROWSER)
@@ -1182,7 +1183,9 @@ def cmd_nightly(args):
 
 
 def cmd_dashboard(args):
-    from . import dashboard
+    import time
+
+    from . import dashboard, jobs
 
     def tell(url, already):
         if args.json:
@@ -1201,6 +1204,11 @@ def cmd_dashboard(args):
     if args.stop:
         if there:
             os.kill(there["pid"], signal.SIGTERM)
+            # Stopped means gone: it closes its server and removes its record first. A start right after found the
+            # lock still held ("another dashboard holds the lock but is not serving").
+            deadline = time.monotonic() + 15
+            while jobs.alive(there["pid"]) and time.monotonic() < deadline:
+                time.sleep(0.1)
         if args.json:
             print(json.dumps({"stopped": there["pid"] if there else None}))
         else:
