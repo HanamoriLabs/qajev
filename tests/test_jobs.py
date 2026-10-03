@@ -124,6 +124,15 @@ def test_a_finished_job_reruns_as_it_was_or_only_its_tests_that_did_not_pass(mon
     with pytest.raises(ValueError, match="only check, run and play"):
         jobs.rerun_argv(finished(["smoke", "https://d.example"], 1))
 
+    # A job id is QAJev's own folder name, never a path: a rerun replays the command recorded there.
+    outside = jobs.JOBS.parent / "elsewhere"
+    (outside / "x").mkdir(parents=True, exist_ok=True)
+    (outside / "x" / "job.json").write_text(json.dumps({"argv": ["run", "evil.yaml", "--allow-commands"], "pid": 1,
+                                                         "started_at": time.time()}))
+    for bad in ("../elsewhere/x", "/tmp", "20261003-055116-afb3/../../elsewhere/x", ""):
+        with pytest.raises(jobs.NoSuchJob):
+            jobs.rerun_argv(bad)
+
     ran = []
     monkeypatch.setattr(cli, "main", lambda argv: ran.append(argv) or 0)
     args = cli.build_parser().parse_args(["rerun", run, "--failed", "--background"])

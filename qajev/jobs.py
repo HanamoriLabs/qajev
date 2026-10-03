@@ -292,8 +292,19 @@ def _reap_children():
             del _children[job_id]
 
 
+JOB_ID = re.compile(r"\d{8}-\d{6}-[0-9a-f]{4}")  # _new_folder's names: a job id is never a path
+
+
+def _folder(job_id):
+    """A job's folder. The id must be one of QAJev's own (an MCP client passes it): never a path elsewhere, whose
+    job.json a rerun would replay."""
+    if not JOB_ID.fullmatch(str(job_id)):
+        raise NoSuchJob(job_id)
+    return JOBS / job_id
+
+
 def _meta(job_id):
-    path = JOBS / job_id / "job.json"
+    path = _folder(job_id) / "job.json"
     if not path.is_file():
         raise NoSuchJob(job_id)
     return json.loads(path.read_text())
@@ -316,7 +327,7 @@ def _events(folder):
 
 def events_since(job_id, seen):
     """New progress events of a job after the first `seen` ones -> (events, new seen)."""
-    events, _ = _events(JOBS / job_id)
+    events, _ = _events(_folder(job_id))
     return events[seen:], len(events)
 
 
@@ -365,13 +376,13 @@ def rerun_argv(job_id, failed=False):
 
 def decisions(job_id, limit=500):
     """The model's decisions in a job so far, oldest first: what it chose, how sure, the runner-up (qajev top `d`)."""
-    events, _noise = _events(JOBS / job_id)
+    events, _noise = _events(_folder(job_id))
     return [e for e in events if e.get("event") == "decision"][-limit:]
 
 
 def result(job_id):
     """The run's final report JSON (or {"error": ...}), or None while it runs."""
-    folder = JOBS / job_id
+    folder = _folder(job_id)
     if not (folder / "exit_code").exists():
         return None
     text = (folder / "result.json").read_text(errors="replace").strip() if (folder / "result.json").exists() else ""
@@ -394,7 +405,7 @@ def _ended(folder, state):
 def status(job_id, detail=False):
     _reap_children()
     meta = _meta(job_id)
-    folder = JOBS / job_id
+    folder = _folder(job_id)
     # Order matters, each look after the one it depends on: liveness, then the exit code (the wrapper writes it
     # before it exits, so a job ending between the two is not "lost"), then the events (all written before the
     # exit code, so a job seen "done" also has its last scenario).
@@ -482,7 +493,7 @@ def stop(job_id, wait=20.0):
     if not alive(meta["pid"]):
         return status(job_id)
     meta["stop_requested"] = time.time()
-    (JOBS / job_id / "job.json").write_text(json.dumps(meta, indent=2))
+    (_folder(job_id) / "job.json").write_text(json.dumps(meta, indent=2))
     with contextlib.suppress(ProcessLookupError):
         os.kill(meta["pid"], signal.SIGTERM)
     deadline = time.monotonic() + wait

@@ -577,6 +577,9 @@ async def qa_rerun(ctx: Context, job: str, failed: bool = True, background: bool
         return {"rerun": None, "reason": str(e)}
     except ValueError as e:
         raise ToolError(str(e)) from None
+    if "--allow-commands" in argv and not _allow_commands:  # a terminal run's permission is not this server's
+        raise ToolError(f"job {job} ran shell commands (--allow-commands), which this MCP server does not allow: "
+                        "rerun it in a terminal with `qajev rerun`")
     report = await _run_report(argv, ctx, background, title=None)
     return {"rerun": what, "of": job, **(report if background else _trim(report, False))}
 
