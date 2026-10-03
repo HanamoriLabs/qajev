@@ -78,7 +78,8 @@
   const where = (el) => el && (el.src || el.href || el.currentSrc || el.tagName);
   addEventListener('error', (e) => {
     if (e.target && e.target !== window) push(state.errors, { kind: 'resource', detail: String(where(e.target)) });
-    else push(state.errors, { kind: 'exception', detail: String(e.message || e.error) });
+    // the stack (Chrome's starts with the message) points at the line; a cross-origin script gives only a message
+    else push(state.errors, { kind: 'exception', detail: String(e.error && e.error.stack || e.message || e.error) });
   }, true);
   // CSP violations never reach console.error, and the requests they stop are often third-party (tags, pixels)
   addEventListener('securitypolicyviolation', (e) => {

@@ -264,7 +264,10 @@ class ElectronGame:
         if action.get("kind") == "adapter":  # the adapter carries it out in the page (e.g. a game bot's decide())
             done = self.evaluate(f"(() => {{ const a = window.__qajevAdapter; "
                                  f"return a && a.act ? a.act({json.dumps(action)}) : null; }})()")
-            return {"ok": bool(done and done.get("ok"))}
+            out = {"ok": bool(done and done.get("ok"))}
+            if done and done.get("label"):  # what was picked: a bot's own pick says so only once made
+                out["label"] = done["label"]
+            return out
         if action.get("kind") == "key" or ("key" in action and "x" not in action):
             fields = key_event(str(action["key"]))
             self.send("Input.dispatchKeyEvent", type="keyDown", **fields)

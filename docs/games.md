@@ -87,15 +87,30 @@ steps:
     expect: {screen: GAME OVER}
 ```
 
-A play step **fails** on a **soft-lock** (the game stops advancing while nothing waits for the player), a crash,
-engine or script errors, a frame rate whose slowest 10% is under `min_fps`, or memory growing more than
-`max_memory_growth_mb`. A game left paused by the step before stops the step as a harness problem, instead of
-"playing" a frozen screen. While a play step runs, [`qajev top`](jobs-and-top.md) shows the live numbers.
+A play step **fails** on a **soft-lock** (the game stops advancing while nothing waits for the player), engine or
+script errors, a frame rate whose slowest 10% is under `min_fps`, or memory growing more than
+`max_memory_growth_mb`. A game that closes or stops answering mid-play gets an S1 "game crashed or closed" finding,
+and the step is a harness stop: never a pass, even when the frame rate and memory held until then. A game left paused
+by the step before also stops the step as a harness problem, instead of "playing" a frozen screen. While a play step runs, [`qajev top`](jobs-and-top.md) shows the live numbers.
 
-When Jev does not make a decision (it was not asked, answered DONE or BLOCKED, or picked something not on
-screen), QAJev takes the first offer to keep the game going and files an S3 "decision not made by Jev". For a run
-that must be Jev's own route, set `strict_decisions: true` on the play step: the first such decision then fails the
-step there, nothing clicked, with the screen and Jev's answer in the reason.
+`until` is what the step sets out to see: it ends the step early when the game's state matches (a key the state does
+not have, such as `screen`, is read from the game's look), and the step gets a check "reached game_over = true".
+Not met by the time cap, or the game over first, that check fails, with each key's last value in the detail. A soak
+that only wants to stop early, and passes on the cap too, says so:
+
+```yaml
+  - name: playing on, up to 5 minutes or until the core falls
+    play: {seconds: 300, until: {game_over: true}, until_optional: true}
+    expect: {min_fps: 30}
+```
+
+A play step with no `decide` asks no model. At each decision the game's own bot picks, when its adapter offers one
+(I'M HIM!: the bot's choice under the build's rules), and the step's reason counts those picks; a game with no bot
+pick gets the first offer and an S3 "decision not made by a model". When the model does not make a decision it was
+asked for (it answered DONE or BLOCKED, or picked something not on screen), the game's bot picks, or else the first
+offer, and QAJev files an S3 "decision not made by" the model, by name (Jev, Clef). For a run that must be the
+model's own route, set `strict_decisions: true` on the play step: the first such decision then fails the step there,
+nothing clicked, with the screen and the model's answer in the reason.
 
 ### Looking at the screen (Clef)
 
@@ -192,7 +207,7 @@ optionally pilots it. Three real ones ship with QAJev as examples:
 |---|---|---|
 | `qajev/bridges/godot/adapters/suho.gd` | a Godot horde-survival game | describe a menu the game draws itself; level-up decisions; pilot with touch input |
 | `qajev/bridges/godot/adapters/hypervolley.gd` | a Godot racket game | read match state; pilot with the game's own autopilot; hide online screens |
-| `qajev/bridges/web/adapters/imhim.js` | an Electron brawler | screens from DOM overlays; keys; label settings options by their row, including rows scrolled out of view (the adapter scrolls to them); count short-lived aids across looks (captions, edge markers, menus read aloud) and report saved settings; in a dev build, open the dev menu and offer its options and buttons ("Boss: Fight"); hand every decision the game's bot waits on to Jev |
+| `qajev/bridges/web/adapters/imhim.js` | an Electron brawler | screens from DOM overlays; keys; label settings options by their row, including rows scrolled out of view (the adapter scrolls to them); count short-lived aids across looks (captions, edge markers, menus read aloud) and report saved settings; in a dev build, open the dev menu and offer its options and buttons ("Boss: Fight"); hand every decision the game's bot waits on to Jev, or, with no `decide`, to the bot's own pick |
 
 Two lessons from these adapters:
 
