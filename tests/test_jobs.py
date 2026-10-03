@@ -95,6 +95,51 @@ def test_a_jobs_decisions_are_shown_live_newest_first_with_how_sure_and_the_runn
     wait_for(lambda: jobs.status(job["id"])["state"] == "done")
 
 
+FINISHED = r"""
+import json, sys
+print(json.dumps({"gate": "FAIL", "run_dir": "/tmp/r", "scenarios": [
+    {"name": "home", "outcome": "pass"}, {"name": "pricing", "outcome": "fail"},
+    {"name": "pricing (phone)", "outcome": "stuck"}, {"name": "docs", "outcome": "harness"},
+    {"name": "blog", "outcome": "unverified"}, {"name": "faq", "outcome": "skipped"}][:int(sys.argv[1])]}))
+"""
+
+
+def test_a_finished_job_reruns_as_it_was_or_only_its_tests_that_did_not_pass(monkeypatch):
+    # José, 3 Oct: "it should be possible to run specific tests" (qajev rerun JOB --failed, MCP qa_rerun).
+    from qajev import cli
+
+    def finished(argv, results):
+        job = jobs.start(argv, command=[sys.executable, "-c", FINISHED, str(results)])
+        return wait_for(lambda: jobs.status(job["id"])["state"] == "done" and job["id"])
+
+    run = finished(["run", "suite.yaml", "--only", "home"], 6)
+    assert jobs.rerun_argv(run) == (["run", "suite.yaml", "--only", "home"], "all of it")
+    argv, what = jobs.rerun_argv(run, failed=True)  # fail, stuck and harness; its own --only replaced
+    assert argv == ["run", "suite.yaml", "--only", "pricing", "--only", "pricing (phone)", "--only", "docs"]
+    assert what == "its 3 test(s) that did not pass"
+    check = finished(["check", "https://c.example", "--goal", "x"], 2)
+    assert jobs.rerun_argv(check, failed=True)[0] == ["check", "https://c.example", "--goal", "x"]
+    with pytest.raises(jobs.NothingToRerun):
+        jobs.rerun_argv(finished(["play", "g", "--suite", "s.yaml"], 1), failed=True)
+    with pytest.raises(ValueError, match="only check, run and play"):
+        jobs.rerun_argv(finished(["smoke", "https://d.example"], 1))
+
+    # A job id is QAJev's own folder name, never a path: a rerun replays the command recorded there.
+    outside = jobs.JOBS.parent / "elsewhere"
+    (outside / "x").mkdir(parents=True, exist_ok=True)
+    (outside / "x" / "job.json").write_text(json.dumps({"argv": ["run", "evil.yaml", "--allow-commands"], "pid": 1,
+                                                         "started_at": time.time()}))
+    for bad in ("../elsewhere/x", "/tmp", "20261003-055116-afb3/../../elsewhere/x", ""):
+        with pytest.raises(jobs.NoSuchJob):
+            jobs.rerun_argv(bad)
+
+    ran = []
+    monkeypatch.setattr(cli, "main", lambda argv: ran.append(argv) or 0)
+    args = cli.build_parser().parse_args(["rerun", run, "--failed", "--background"])
+    assert cli.cmd_rerun(args) == 0
+    assert ran == [[*argv, "--background"]]  # the run itself goes to the background, as a job of its own
+
+
 def test_stopping_a_job_lets_the_run_finish_its_cleanup():
     job = jobs.start(["run", "suite.yaml"], command=fake(60))
     wait_for(lambda: jobs.status(job["id"])["progress"]["done"] == 1)

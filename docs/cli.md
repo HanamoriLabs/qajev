@@ -155,6 +155,7 @@ qajev play path/to/game --suite session.yaml
 |---|---|
 | `--goal`, `-g` | what a player wants, ending with "Stop when ..." |
 | `--suite FILE` | several steps in one game session: goal steps, real-time play steps and idle steps (see [Games](games.md)) |
+| `--only STEP` | run this step of the `--suite` (repeatable), plus the steps it names in `depends_on` and every `setup: true` step |
 | `--adapter NAME\|PATH` | the game's adapter (bundled name, or a `.gd` / `.js` file) |
 | `--expect-screen NAME` | the screen the game must be on at the end |
 | `--expect-text TEXT` | the game must show this (repeatable) |
@@ -211,6 +212,19 @@ qajev stop 20261001-101502-a3f9
 ```
 
 The run closes its browser, keeps the scenarios that finished and writes its report (INCOMPLETE).
+
+## `qajev rerun`
+
+Run a finished job again with the same settings: a check, a suite or project run, or a game session.
+
+```bash
+qajev rerun 20261003-055116-afb3            # the same command again
+qajev rerun 20261003-055116-afb3 --failed   # only its tests that failed, got stuck or hit a harness limit
+```
+
+`--failed` reruns each of those tests with `--only`, so a test still brings what it depends on (a game step, its
+`setup: true` steps). The rerun is a new job; `--background`, `--json` and `--quiet` work as for any run. A check is
+one test, so it runs again as it was. From MCP: `qa_rerun(job)`.
 
 ## `qajev top`
 

@@ -120,6 +120,22 @@ def test_a_decision_still_closing_after_jevs_pick_is_not_picked_again(monkeypatc
     assert not [f for f in r["findings"] if f["kind"] == "decision not made by Jev"]
 
 
+def test_only_runs_chosen_game_steps_with_their_setup_and_dependencies():
+    # José, 3 Oct: "it should be possible to run specific tests" (qajev play --suite X --only STEP).
+    steps = [{"name": "verify helpers", "js": "1", "setup": True},
+             {"name": "boss 1", "play": {"seconds": 5}},
+             {"name": "boss 2", "play": {"seconds": 5}, "depends_on": ["boss 1"]},
+             {"play": {"seconds": 5}},  # unnamed: "step 4", as the report calls it
+             {"name": "the ending", "goal": "Watch it."}]
+    names = lambda only: [s["name"] for s in native.select_steps(steps, only)]  # noqa: E731
+    assert names(["boss 2"]) == ["verify helpers", "boss 1", "boss 2"]  # suite order, setup first
+    assert names(["the ending", "step 4"]) == ["verify helpers", "step 4", "the ending"]
+    with pytest.raises(native.NativeError, match=r"no step named \['boss 9'\]"):
+        native.select_steps(steps, ["boss 9"])
+    with pytest.raises(native.NativeError, match="depends on"):
+        native.select_steps([{"name": "a", "depends_on": ["gone"]}], ["a"])
+
+
 def test_a_game_problem_fails_the_step_it_happened_in_not_every_step_after(tmp_path):
     # I'M HIM! plan 30, 3 Oct: the watchdog raised one blocker at t=420 s; the adapter lists the last 20 blockers on
     # every look, and every later play step failed "the game reported no problems" quoting that same blocker.

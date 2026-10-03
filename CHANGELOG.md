@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Run specific tests: `qajev play --suite X --only STEP` (MCP `qa_play(only=...)`) runs chosen steps of a game
+  session, plus the steps they name in `depends_on` and every `setup: true` step. `qajev rerun JOB` runs a finished
+  job again with the same settings, and `--failed` only its tests that failed, got stuck or hit a harness limit (MCP
+  `qa_rerun`). Website suites and projects already had `--only` / `--name`.
+
 - Fixed: in a game session, one problem the game's own watchdog reported failed every later play step, not only the
   step it happened in (an adapter lists its recent problems on every look, and each step counted them again). Each
   problem is now reported once per launch, in the step where it first appears; the same kind happening again later

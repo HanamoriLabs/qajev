@@ -70,6 +70,7 @@ and `--json`.
 | Does a mobile app or a game work? | `qa_play` | `qajev play ios:BUNDLE_ID` / `android:PACKAGE` / `path/to/game` | a few cents |
 | What did a run find? | `qa_report`, `qa_screenshot` | `qajev report RUN_DIR` | free |
 | What is running, and can I stop it? | `qa_jobs`, `qa_job`, `qa_stop` | `qajev jobs`, `qajev stop ID` | free |
+| Run again only what failed last time | `qa_rerun` | `qajev rerun JOB --failed` | as the run |
 | Is the setup right? | `qa_doctor` | `qajev doctor` | free |
 
 How to write a check:

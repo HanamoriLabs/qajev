@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import json
 import os
+import shlex
 import shutil
 import signal
 import sys
@@ -172,6 +173,9 @@ def build_parser():
                                         "(suho, imhim) or a .gd (Godot) / .js (Electron) path")
     play.add_argument("--suite", type=Path, help="several steps in one game session (YAML): goal steps and "
                                                  "real-time play steps; see docs/games.md")
+    play.add_argument("--only", action="append", default=[], metavar="STEP",
+                      help="run this step of the --suite (repeatable), plus the steps it names in depends_on and "
+                           "every setup: true step")
     play.add_argument("--game-env", action="append", default=[], metavar="KEY=VALUE",
                       help="an environment setting for the game, e.g. SUHO_FORCE_MOBILE=1 (repeatable)")
     play.add_argument("--game-arg", action="append", default=[], metavar="ARG",
@@ -281,6 +285,17 @@ def build_parser():
     nightly.add_argument("--at", default="03:30", help="with --install: the time, HH:MM (default 03:30)")
     nightly.add_argument("--uninstall", action="store_true", help="remove the schedule")
     nightly.add_argument("--json", action="store_true")
+
+    rerun = sub.add_parser("rerun", help="run a finished job again: the same command, or only the tests that "
+                                         "did not pass (--failed)")
+    rerun.add_argument("job", help="the job id (qajev jobs lists them)")
+    rerun.add_argument("--failed", action="store_true",
+                       help="only the tests that failed, got stuck or hit a harness limit (with what they depend on)")
+    # Its own name: main() backgrounds any command whose args.background is set, and this one only rebuilds the run
+    rerun.add_argument("--background", dest="rerun_background", action="store_true",
+                       help="start it as a job and return its id")
+    rerun.add_argument("--json", action="store_true", help="print the report as JSON")
+    rerun.add_argument("--quiet", "-q", action="store_true", help="no progress on stderr")
 
     top = sub.add_parser("top", help="live dashboard: the browser, queued and running jobs, Chromes, recent reports")
     top.add_argument("--once", action="store_true", help="print one snapshot as text and exit")
@@ -708,6 +723,11 @@ def cmd_play(args):
         session_steps = spec.get("steps") or []
         if not session_steps:
             return _fail(args, f"{args.suite}: no steps", EXIT_CONFIG)
+        if args.only:
+            try:
+                session_steps = native.select_steps(session_steps, args.only)
+            except native.NativeError as e:
+                return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
         game_env.update({str(k): str(v) for k, v in (spec.get("env") or {}).items()})
         game_args += [str(a) for a in spec.get("args") or []]
         adapter = adapter or spec.get("adapter")
@@ -720,6 +740,8 @@ def cmd_play(args):
                 native.seed_folder(Path(args.project).expanduser(), spec["seed"])
             except native.NativeError as e:
                 return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
+    elif args.only:
+        return _fail(args, "--only picks steps of a session: it needs --suite", EXIT_CONFIG)
     looking = sees or bool(expect.get("looks")) or any(
         s.get("vision") or (s.get("expect") or {}).get("looks") for s in session_steps or [])
     if looking:
@@ -1051,6 +1073,25 @@ def cmd_jobs(args):
     return 0
 
 
+def cmd_rerun(args):
+    from . import jobs
+
+    try:
+        argv, what = jobs.rerun_argv(args.job, failed=args.failed)
+    except jobs.NoSuchJob:
+        return _fail(args, f"no job {args.job!r} (qajev jobs lists them)", EXIT_CONFIG)
+    except jobs.NothingToRerun as e:
+        print(f"qajev: {e}", file=sys.stderr)
+        return 0
+    except ValueError as e:
+        return _fail(args, str(e), EXIT_CONFIG)
+    argv += [flag for flag, on in (("--background", args.rerun_background), ("--json", args.json),
+                                   ("--quiet", args.quiet)) if on]
+    if not args.quiet:
+        print(f"qajev: rerunning job {args.job}, {what}: qajev {shlex.join(argv)}", file=sys.stderr)
+    return main(argv)
+
+
 def cmd_stop(args):
     from . import jobs
 
@@ -1188,7 +1229,7 @@ def main(argv=None):
                 "secret": cmd_secret, "account": cmd_account,
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
                 "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
-                "top": cmd_top, "nightly": cmd_nightly,
+                "top": cmd_top, "nightly": cmd_nightly, "rerun": cmd_rerun,
                 "play": cmd_play}
     code = 1  # a crash on the way out still leaves an exit code for `qajev jobs`
     try:

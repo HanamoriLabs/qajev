@@ -74,7 +74,7 @@ def test_agents_see_exactly_the_qa_tools():
     tools = sorted(t.name for t in asyncio.run(mcp_server.server.list_tools()))
     assert tools == sorted([
         "qa_browser", "qa_check", "qa_doctor", "qa_job", "qa_jobs", "qa_nightly", "qa_play", "qa_project_run",
-        "qa_projects", "qa_report", "qa_reports", "qa_run_suite", "qa_screenshot", "qa_smoke", "qa_stop"])
+        "qa_projects", "qa_report", "qa_reports", "qa_rerun", "qa_run_suite", "qa_screenshot", "qa_smoke", "qa_stop"])
 
 
 def test_website_tools_pass_devices_and_real_devices_to_the_cli(monkeypatch):
@@ -93,3 +93,20 @@ def test_website_tools_pass_devices_and_real_devices_to_the_cli(monkeypatch):
     assert check[check.index("--real-devices") + 1] == "ios"
     assert suite[suite.index("--real-devices") + 1] == "ios,android"
     assert project[project.index("--real-devices") + 1] == "android"
+
+
+def test_rerun_never_brings_shell_commands_this_server_does_not_allow(monkeypatch):
+    # A terminal run with --allow-commands, rerun from MCP: that permission was the person's, not this server's.
+    from qajev import jobs
+
+    real = jobs.rerun_argv
+    monkeypatch.setattr(mcp_server, "_allow_commands", False)
+    monkeypatch.setattr(jobs, "rerun_argv", lambda job, failed: (["run", "s.yaml", "--allow-commands"], "all of it"))
+    started = []
+    monkeypatch.setattr(jobs, "start", lambda *a, **k: started.append(a) or {})
+    with pytest.raises(ToolError, match="does not allow"):
+        asyncio.run(mcp_server.qa_rerun(None, "20261003-055116-afb3"))
+    assert not started
+    monkeypatch.setattr(jobs, "rerun_argv", real)  # a job id that is a path is no job at all
+    with pytest.raises(ToolError, match="no job"):
+        asyncio.run(mcp_server.qa_rerun(None, "../elsewhere/x"))

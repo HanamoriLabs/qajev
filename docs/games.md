@@ -119,6 +119,27 @@ steps:
 Both need the game's window: QAJev refuses them with `--headless` (MCP: `headless=false`), since a headless Godot
 game draws nothing to look at. They also refuse to start without Clef.
 
+### Running some steps only
+
+A long session need not run whole to check one part of it. `--only STEP` (repeatable; MCP `only`) runs the named
+steps, in the suite's order, in one fresh launch:
+
+```yaml
+steps:
+  - name: verify helpers
+    js: "window.__game !== undefined"
+    setup: true                  # always runs, also with --only
+  - name: boss 1
+    play: {seconds: 120}
+  - name: boss 2
+    play: {seconds: 120}
+    depends_on: [boss 1]         # --only "boss 2" runs boss 1 first
+```
+
+`qajev play GAME --suite session.yaml --only "boss 2"` runs `verify helpers`, `boss 1` and `boss 2`. A step with no
+name is `step N`, its place in the whole suite. To run only what failed last time: `qajev rerun JOB --failed`
+([CLI](cli.md#qajev-rerun)).
+
 ### Quitting on purpose
 
 QUIT is hidden from Jev, because quitting ends the session. To test a normal quit (say, that the game sends its

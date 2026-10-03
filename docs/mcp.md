@@ -59,6 +59,7 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 | `qa_jobs` | every run on the machine: queued, running, recent (anyone's) | free |
 | `qa_job` | one run: progress, what Jev is doing now, scenarios finished so far, the report once done | free |
 | `qa_stop` | stop a run (it cleans up and keeps what finished) | free |
+| `qa_rerun` | run a finished job again: by default only its failed, stuck and harness tests | as the run |
 | `qa_nightly` | the latest nightly digest: what changed per project | free |
 | `qa_browser` | QAJev's own Chrome: status, start, stop, **login** (the person signs in), reap | free |
 | `qa_doctor` | check the setup (never shows key values) | free |
@@ -73,7 +74,9 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 - `qa_smoke`: `url` (required), `max_pages`, `device`, `check_links`.
 - `qa_project_run`: `project` (required), `suite` (a tag), `names`, `env`, or an ad-hoc `objective` with `url`,
   `expect_text`, `expect_url`.
-- `qa_play`: `project` (the game, or `ios:...` / `android:...`), `goal`, `adapter`, `suite`, `game_env`,
+- `qa_rerun`: `job` (required), `failed` (default true: only the tests that did not pass), `background`.
+- `qa_play`: `project` (the game, or `ios:...` / `android:...`), `goal`, `adapter`, `suite`, `only` (steps of the
+  suite, with their `depends_on` and `setup: true` steps), `game_env`,
   `game_args`, `expect_screen`, `expect_text`, `expect_state`, `min_fps`, `name`, `headless` (Godot only), `shots`
   (a screenshot at the end of each step, on by default), and with Clef `expect_looks` and `vision` (these open the
   game's window: they need it to look). Quit and
