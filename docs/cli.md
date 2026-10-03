@@ -235,6 +235,13 @@ The live dashboard. `--once` prints one snapshot; `--json` prints it as data. `-
 decisions as they are made (what the model chose, how sure, the runner-up; `d` in the dashboard), or prints them
 with `--once` / `--json`. See [Jobs and top](jobs-and-top.md).
 
+## `qajev dashboard`
+
+Every run in a local web page: filter by project, open each test with its screenshots and decisions, stop, rerun
+or start runs. `--background` runs it detached (it outlives the terminal), `--open` opens it in the browser,
+`--stop` stops it, `--port` sets the first port to try (default 8790), `--json` prints its address as data. It
+serves 127.0.0.1 only; the address it prints carries its key. See [Jobs and top](jobs-and-top.md#qajev-dashboard-every-run-in-the-browser).
+
 ## `qajev nightly`
 
 Each project's `core` objectives plus a smoke crawl, compared with the previous night; notifies only when

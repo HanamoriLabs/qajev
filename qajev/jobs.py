@@ -8,6 +8,7 @@ Chrome and daemon and keeps the scenarios that finished, exactly like Ctrl-C.
 """
 
 import contextlib
+import copy
 import fcntl
 import functools
 import json
@@ -174,6 +175,46 @@ def _goal(goal):
     return first[:48]
 
 
+def _play_name(argv, target, meta):
+    """The game a play run drives: its bundled adapter's name (suho, imhim...), a device app, else from its path."""
+    adapter = str(_flag(argv, "--adapter") or meta.get("adapter") or "")
+    bundled = adapter and "/" not in adapter and not adapter.endswith((".gd", ".js"))
+    return target[:60] if target.startswith(("ios:", "android:")) else adapter if bundled else _game(target)
+
+
+def subject(argv, cwd=None):
+    """What a run is about, to group and filter runs by (qajev dashboard): the QAJev project, else the project or
+    host of its website, else the game. "" when nothing names one."""
+    argv = [a for a in argv or [] if a not in ("--background", "--json", "--events", "--quiet", "-q")]
+    if not argv:
+        return ""
+    project = _flag(argv, "--project", "-p")
+    if project:
+        return project
+    cmd = argv[0]
+    target = argv[1] if len(argv) > 1 and not argv[1].startswith("-") else ""
+    if not target:
+        return ""
+    if cmd == "play":
+        suite_path = _flag(argv, "--suite")
+        return _play_name(argv, target, _suite(Path(cwd or ".", suite_path)) if suite_path else {})
+    if cmd in ("check", "smoke"):
+        return _site(target).split(" ")[0]
+    if cmd == "run":
+        base = _suite(Path(cwd or ".", target)).get("base_url")
+        return _site(str(base)).split(" ")[0] if base else Path(target).stem
+    return ""
+
+
+def run_folder(job_id):
+    """A job's run folder as an absolute path (a run names it relative to where it started), or None before the
+    run has one."""
+    folder = status(job_id).get("run_dir")
+    if not folder:
+        return None
+    return Path(_meta(job_id).get("cwd") or ".", folder).resolve()
+
+
 def describe_argv(argv, cwd=None):
     """A short title for a run that says what it is about: the project, site or game, then the test.
     "check foley /pricing · Find the Pro price", "play imhim · quit sends session_end", "run project shop · core"."""
@@ -193,9 +234,7 @@ def describe_argv(argv, cwd=None):
     label = _flag(argv, "--name") or meta.get("name") or (
         Path(suite_path).stem if suite_path else None)
     if cmd == "play" and target:
-        adapter = str(_flag(argv, "--adapter") or meta.get("adapter") or "")
-        bundled = adapter and "/" not in adapter and not adapter.endswith((".gd", ".js"))  # suho, imhim...
-        game = target[:60] if target.startswith(("ios:", "android:")) else adapter if bundled else _game(target)
+        game = _play_name(argv, target, meta)
         squash = lambda s: re.sub(r"[^a-z0-9]", "", str(s).lower())  # noqa: E731
         if label and squash(game) in squash(label):
             return f"play {label}"
@@ -466,10 +505,10 @@ def status(job_id, detail=False):
         stamp = _stamp(folder)
         hit = _finished.get((job_id, detail))
         if hit and hit[0] == stamp:
-            return dict(hit[1])
+            return copy.deepcopy(hit[1])  # a caller's change, even to a nested list, stays its own
         out = _status(job_id, detail)
         _finished[(job_id, detail)] = (stamp, out)
-        return dict(out)
+        return copy.deepcopy(out)
     return _status(job_id, detail)
 
 

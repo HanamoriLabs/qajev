@@ -38,7 +38,8 @@ qajev check https://shop.example \
   [More](docs/safety.md).
 - **Built for agents.** An MCP server, a ready-made [agent prompt](AGENT_PROMPT.md), jobs that any agent can follow
   or stop, and one shared queue so many agents can share a machine.
-- **See it live.** `qajev top` shows every run, what Jev is doing right now, and what it costs.
+- **See it live.** `qajev top` in a terminal, or `qajev dashboard` in the browser: every run, what Jev is doing
+  right now, what it costs, and each test with its screenshots.
 - **Games too.** Godot and Electron games: Jev works the menus, the game's own bot plays in real time, QAJev
   watches the frame rate, memory and the game's state.
 - **Mobile too.** Native apps and mobile websites on the iOS Simulator and Android emulator, on a throwaway
@@ -71,7 +72,7 @@ Every run writes `report.html` (open it in a browser), `report.md` and `report.j
 | **Prove a product works** | store its objectives once, run them any time, see what changed since last time ([Projects](docs/projects.md)) |
 | **Every night** | `qajev nightly --install`: runs every project, tells you only when something changed |
 | **From AI agents** | `qajev mcp` ([MCP](docs/mcp.md), [agents](docs/agents.md), [prompt](AGENT_PROMPT.md)) |
-| **Watch and control runs** | `qajev top`, `qajev jobs`, `qajev stop` ([Jobs and top](docs/jobs-and-top.md)) |
+| **Watch and control runs** | `qajev top`, `qajev dashboard`, `qajev jobs`, `qajev stop` ([Jobs and top](docs/jobs-and-top.md)) |
 | **Test a game** | `qajev play path/to/game` ([Games](docs/games.md)) |
 | **Test a mobile app** | `qajev play ios:com.example.app` or `android:com.example.app` ([Mobile](docs/mobile.md)) |
 

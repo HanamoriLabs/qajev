@@ -1,4 +1,4 @@
-# Jobs, the queue and `qajev top`
+# Jobs, the queue, `qajev top` and the dashboard
 
 ## One run at a time
 
@@ -98,3 +98,28 @@ where a model that hesitates shows: many yellow rows, or BLOCKED where the way f
 
 The same without the dashboard, or for an agent: `qajev top --decisions JOB --once` prints the table, and
 `--json` prints the decisions as data.
+
+## `qajev dashboard`: every run in the browser
+
+```bash
+qajev dashboard --background --open   # start it (it outlives the terminal) and open it
+qajev dashboard                       # in the foreground; Ctrl-C stops it
+qajev dashboard --stop                # stop the one running
+```
+
+One local web page with every run on the machine, any agent's: queued and running jobs live, and every finished
+run and project report.
+
+- **Find runs**: search, a chip per project (the QAJev project, else the site or the game), and filters for the
+  result (live, PASS, FAIL, INCOMPLETE), the kind (games, checks, suites, smoke crawls) and the period. The
+  filters stay in the address, so a view can be bookmarked.
+- **Open a run**: what is running now and the model deciding, the command, the folder, a bar of the results, the
+  screenshots in a strip (click one to enlarge; arrows step through them), and each test with its reason, checks,
+  findings, the model's decisions (unsure ones marked) and its actions. "Not passed" shows only the tests to look at.
+- **Act**: stop a running job, rerun a finished one (all of it, or only its failed tests, as `qajev rerun`), or
+  start a project's stored objectives (**New run**). It never reruns a job that ran shell commands
+  (`--allow-commands`): do that in a terminal.
+
+It serves `127.0.0.1` only, behind a key in the address it prints: keep that address to yourself. Only one
+dashboard runs on a machine; a second `qajev dashboard` prints the address of the first. Report pages open
+sandboxed, and the page serves a run's own files only.
