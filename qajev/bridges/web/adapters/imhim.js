@@ -113,7 +113,7 @@ window.__qajevAdapter = {
     const key = (id, label, k) => ({ id, label, kind: 'key', key: k });
     const g = window.__game;
     const keys = [];
-    let screen = 'LOADING', decision = false, talkLine = 0, talkHint = '';
+    let screen = 'LOADING', decision = false, talkLine = 0, talkHint = '', ownPick = null;
 
     const title = $('.title-screen');
     const titleOn = title && title.classList.contains('on');
@@ -245,6 +245,8 @@ window.__qajevAdapter = {
       decision = true;
       actions = ap.options.map((o) => ({ id: 'decide:' + ap.decisionId + ':' + o.index, kind: 'adapter', op: 'decide',
         index: o.index, label: (o.label + (o.detail ? ' (' + o.detail + ')' : '')).slice(0, 160) }));
+      // The bot's own pick, by the build's rules: QAJev takes it when a play step asks no model (not one of Jev's).
+      ownPick = { id: 'decide:' + ap.decisionId + ':own', kind: 'adapter', op: 'decide_own', label: "the bot's own pick" };
     }
 
     const state = { screen };
@@ -303,13 +305,14 @@ window.__qajevAdapter = {
     if (talkHint) texts.push(talkHint);
     // Kept short: a long screen (1,400 characters of key bindings) tipped Jev into DONE; 600 kept it on task.
     texts.push((own || base.texts[0] || '').slice(0, 600));
-    return { screen, decision, actions, state, problems, texts, replaceActions: true };
+    return { screen, decision, actions, state, problems, texts, replaceActions: true, ...(ownPick ? { own_pick: ownPick } : {}) };
   },
 
   // An action QAJev hands back to the page: a decision, through the bot's own decide().
   act(action) {
     const ap = window.__autoplay;
     if (action.op === 'decide' && ap) return ap.decide(action.index);
+    if (action.op === 'decide_own' && ap) return ap.decide(undefined, 'bot'); // no choice: the bot's own pick
     if (action.op === 'dev_item') { // pick a dev menu option, or press one of its buttons
       const it = devMenuItems().find((x) => x.key === action.match);
       if (!it) return { ok: false, error: 'that dev menu item is no longer there' };

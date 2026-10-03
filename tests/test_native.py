@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -88,7 +89,8 @@ def test_real_time_play_reports_what_it_is_doing_as_it_goes():
     assert all(e["scenario"] == "survive" and "at" in e for e in steps)
     doing = [e["doing"] for e in steps]
     assert any(d.startswith("playing ") and "kills 6" in d and "60 fps" in d for d in doing)  # live numbers
-    assert "picked Laser (common, LEARN): a beam (first offer: Jev was not asked)" in doing  # the decision
+    # no decide: no model was asked, and this game has no bot pick of its own, so the first offer was taken
+    assert "picked Laser (common, LEARN): a beam (the first offer: no model was asked, the step has no decide)" in doing
 
 
 def test_a_decision_still_closing_after_jevs_pick_is_not_picked_again(monkeypatch):
@@ -117,7 +119,29 @@ def test_a_decision_still_closing_after_jevs_pick_is_not_picked_again(monkeypatc
     game = Hire()
     r = native.play_for(game, name="hire", seconds=30, sample=0.01, decide="Hire the recruit.", ledger=_NoLedger())
     assert game.acted == ["hire"] and asked == ["HIRE"]  # one pick, one ask: no second click on a closing screen
-    assert not [f for f in r["findings"] if f["kind"] == "decision not made by Jev"]
+    assert not [f for f in r["findings"] if f["kind"].startswith("decision not made by")]
+
+
+def test_with_no_model_asked_the_games_own_bot_makes_the_pick(monkeypatch):
+    # José, 3 Oct: "the bot picks its cards and talents under the build's rules" passed while QAJev clicked the first
+    # offer 31 times: the build's rules never ran. A game whose bot has its own pick (I'M HIM!) now makes it.
+    class Bot(FakeGame):
+        def observe(self):
+            obs = super().observe()
+            if obs.get("decision"):
+                obs["own_pick"] = {"id": "own", "kind": "adapter", "op": "decide_own", "label": "the bot's own pick"}
+            return obs
+
+        def act(self, action):
+            super().act(action)
+            return {"ok": True, "label": "Shadow Clone (rare, LEARN)"} if action["id"] == "own" else {"ok": True}
+
+    game = Bot()
+    r = native.play_for(game, name="build", seconds=30, sample=0.01)
+    assert game.acted == ["own"]  # not the first offer
+    assert [(h["action"], h["kind"]) for h in r["history"]] == [("Shadow Clone (rare, LEARN)", "bot")]
+    assert not [f for f in r["findings"] if f["kind"].startswith("decision not made")]  # as the step meant
+    assert "(1 by the game's bot)" in r["reason"]
 
 
 def test_only_runs_chosen_game_steps_with_their_setup_and_dependencies():
@@ -211,12 +235,13 @@ def test_a_decision_jev_answers_done_says_so_and_does_not_borrow_its_probability
 
     monkeypatch.setattr(session_mod, "load", lambda ledger: SimpleNamespace(model=SimpleNamespace(
         choose=lambda state, goal, history: {"choice": "DONE", "probabilities": {"DONE": 0.9}, "latency_ms": 5})))
+    monkeypatch.setattr(native, "_decider_name", lambda: "Clef")  # findings name the model deciding, not "Jev"
     events = []
     r = native.play_for(FakeGame(), name="pick", seconds=30, sample=0.01, decide="Pick a card.", ledger=_NoLedger(),
                         emit=events.append, every=0)
-    [f] = [f for f in r["findings"] if f["kind"] == "decision not made by Jev"]
-    assert "Jev answered DONE" in f["detail"]
-    assert "picked Laser (common, LEARN): a beam (first offer: Jev answered DONE)" in [
+    [f] = [f for f in r["findings"] if f["kind"] == "decision not made by Clef"]
+    assert "Clef answered DONE" in f["detail"]
+    assert "picked Laser (common, LEARN): a beam (the first offer: Clef answered DONE)" in [
         e["doing"] for e in events if e["event"] == "step"]
     [pick] = [h for h in r["history"] if h["action"].startswith("Laser")]
     assert pick["probability"] is None  # 0.9 was DONE's, not the card's
@@ -228,6 +253,8 @@ def test_strict_decisions_fails_the_step_at_the_first_choice_jev_did_not_make(mo
     from types import SimpleNamespace
 
     from qajev import session as session_mod
+
+    monkeypatch.setattr(native, "_decider_name", lambda: "Jev")
 
     def jev(choice):
         monkeypatch.setattr(session_mod, "load", lambda ledger: SimpleNamespace(model=SimpleNamespace(
@@ -354,6 +381,51 @@ def test_a_game_without_a_pilot_is_a_harness_stop_not_a_crash():
     r = native.play_for(NoPilot(), name="play", seconds=30, sample=0.01, pilot_wait=0.05, pilot_poll=0.01)
     assert r["outcome"] == "harness" and "no pilot" in r["reason"]
     assert not any("crash" in f["kind"] for f in r["findings"])
+
+
+def test_a_play_step_fails_when_its_until_is_not_met():
+    # I'M HIM! "eizen: beaten" (until: {boss: false}) passed at its 300 s cap with the boss alive. José, 3 Oct: an
+    # until that is not met fails the step; a step that only stops early says until_optional.
+    r = native.play_for(FakeGame(), name="beaten", seconds=30, sample=0.01, shots=False, until={"kills": ">= 1000"})
+    assert r["stop"] == "game_over" and r["outcome"] == "fail"
+    [check] = [c for c in r["checks"] if c["check"].startswith("reached")]
+    assert check["check"] == "reached kills >= 1000" and not check["ok"]
+    assert re.fullmatch(r"not by \d+ s \(game over first\): kills was \d+", check["detail"])
+
+    soak = native.play_for(FakeGame(), name="soak", seconds=30, sample=0.01, shots=False,
+                           until={"kills": ">= 1000"}, until_optional=True)
+    assert soak["outcome"] == "pass" and not [c for c in soak["checks"] if c["check"].startswith("reached")]
+
+    met = native.play_for(FakeGame(), name="met", seconds=30, sample=0.01, shots=False, until={"kills": ">= 6"})
+    assert met["stop"] == "reached" and met["outcome"] == "pass"
+    assert {"check": "reached kills >= 6", "ok": True, "detail": None} in met["checks"]
+
+    # the screen is not in the game's state: until reads it where the game reports it
+    screen = native.play_for(FakeGame(), name="screen", seconds=30, sample=0.01, shots=False,
+                             until={"screen": "LEVEL UP"})
+    assert screen["stop"] == "reached" and screen["outcome"] == "pass"
+
+
+def test_run_session_passes_until_optional_to_the_play_step():
+    steps = [{"name": "soak", "play": {"seconds": 30, "until": {"kills": ">= 1000"}, "until_optional": True}}]
+    [r] = native.run_session(FakeGame(), steps, ledger=_NoLedger(), run_dir=None, shots=False)
+    assert r["outcome"] == "pass"
+
+
+def test_a_play_step_cut_short_does_not_pass_on_its_frame_rate_and_memory():
+    # I'M HIM! "play runs until the Hearing's ending (up to 4 h)" passed: the app closed its window at 31 min, and
+    # the frame rate and memory checks, measured until then, were the only checks left.
+    class Dies(FakeGame):
+        def observe(self):
+            if self.looks >= 2:
+                raise native.NativeError("the app closed its window (crashed or quit)")
+            return super().observe()
+
+    r = native.play_for(Dies(), name="the long run", seconds=30, sample=0.01, shots=False,
+                        expect={"min_fps": 30, "max_memory_growth_mb": 100})
+    assert r["checks"] and all(c["ok"] for c in r["checks"])  # what was measured held, up to the crash
+    assert r["outcome"] == "harness" and "closed its window" in r["reason"]
+    assert r["findings"][0]["kind"] == "game crashed or closed"
 
 
 def test_the_pilot_is_off_while_jev_works_a_goal_step():

@@ -615,15 +615,27 @@ TIMELINE_KEYS = ("score", "kills", "level", "core_hp", "enemies", "weapons")
 PICK_SETTLE_S = 2.5
 
 
+def _decider_name():
+    """The decision model this run uses, as reports name it: Jev, Clef or Clef-flash."""
+    from . import providers
+
+    try:
+        return providers.describe(providers.resolve()).get("decider") or "Jev"
+    except Exception:  # no provider set up: the step fails on its first decision anyway, with the reason
+        return "the model"
+
+
 def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledger=None, run_dir=None, shots=True,
              sample=0.5, stall_after=6.0, emit=None, every=2.0, overlay_limit=90.0, pilot_wait=30.0,
-             pilot_poll=0.5, strict_decisions=False, vision=False, seen=None):
+             pilot_poll=0.5, strict_decisions=False, vision=False, seen=None, until_optional=False):
     """Play in real time for up to `seconds` (or `until` the game state matches): the adapter's pilot steers each
     frame; Jev makes every decision the game stops for (`decide` is its goal there); every `sample` seconds QAJev
     records fps, frame time, memory and the game state, and flags a soft-lock (the game stops advancing while
     nothing is waiting for the player), a crash and engine errors. A decision Jev does not make is taken with the
     first offer to keep the game going; with `strict_decisions` it instead ends the step as a fail, nothing
-    clicked, so a route run is evidence only when Jev made every choice. vision: Clef sees the screen with each
+    clicked, so a route run is evidence only when Jev made every choice. An `until` not met by the end of the step
+    (the time cap, or game over first) fails it, unless `until_optional` (a soak that only stops early). vision: Clef
+    sees the screen with each
     decision. seen: the game's problems already reported in this session (run_session shares one set), so a problem
     fails the step it happened in, not every step after it."""
     from . import session as session_mod
@@ -637,6 +649,7 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
     where = game_name(game)
     stop, detail, obs = None, None, {}
     jev = session_mod.load(ledger) if decide else None
+    who = _decider_name() if decide else None  # Jev, Clef or Clef-flash: named in what this step reports
     last_tick, still_since, paused_since, overlay_since, told = None, None, None, None, None
     picked = None  # (the decision's screen and offers, when): the last decision QAJev acted on
     fell_back = None  # strict_decisions: the decision Jev did not make, in words
@@ -674,7 +687,7 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
                     findings.append({"severity": "S2", "kind": f"game reported: {problem.get('kind')}",
                                      "detail": f"{problem.get('detail')}"[:300] + when, "scenario": name,
                                      "url": None})
-            if until and all(compare(state.get(k), v) for k, v in until.items()):
+            if until and all(compare(_until_value(obs, k), v) for k, v in until.items()):
                 stop = "reached"
                 break
             if t >= seconds:
@@ -700,29 +713,38 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
                     answer = decision["choice"]
                     pick = next((a for a in allowed if a["id"] == answer), None)
                     why = decision.get("probabilities", {}).get(answer)
-                note = ""
-                if pick is None:  # Jev did not pick (or was not asked): the first offer keeps the run going
+                note, kind = "", "click"
+                if pick is None:  # the model did not pick (or was not asked)
+                    # The game's own bot, when it has a pick (I'M HIM!: the build's rules), plays the decision as
+                    # a player of that build would; else the first offer keeps the run going.
+                    own = obs.get("own_pick")
+                    taker = "the game's bot" if own else "the first offer"
                     if jev is None:
-                        note = " (first offer: Jev was not asked)"
+                        note = f" ({taker}: no model was asked, the step has no decide)"
                     elif answer in ("DONE", "BLOCKED"):
-                        note = f" (first offer: Jev answered {answer})"
+                        note = f" ({taker}: {who} answered {answer})"
                     else:
-                        note = " (first offer: Jev's pick was not on screen)"
-                    pick, why = (allowed[0] if allowed else None), None  # a probability for the offer Jev did not pick
-                    if strict_decisions:  # the route would no longer be Jev's: stop before taking any offer
-                        fell_back = f"at {obs.get('screen')} t={t:.0f}s{note.replace('first offer: ', '')}"
+                        note = f" ({taker}: {who}'s pick was not on screen)"
+                    pick, why = (own or (allowed[0] if allowed else None)), None
+                    if strict_decisions:  # the route would no longer be the model's: stop before taking any offer
+                        fell_back = f"at {obs.get('screen')} t={t:.0f}s{note.replace(taker + ': ', '')}"
                         stop = "strict"
                         break
-                    findings.append({"severity": "S3", "kind": "decision not made by Jev",
-                                     "detail": f"at {obs.get('screen')} t={t:.0f}s the first offer was taken"
-                                               + (f": Jev answered {answer}" if answer in ("DONE", "BLOCKED") else ""),
-                                     "scenario": name, "url": None})
+                    if own:
+                        kind = "bot"
+                    if jev is not None or not own:  # the step asked a model, or no one chose: worth a look
+                        findings.append({"severity": "S3", "kind": f"decision not made by {who or 'a model'}",
+                                         "detail": f"at {obs.get('screen')} t={t:.0f}s {taker} was taken" + (
+                                             f": {who} answered {answer}" if answer in ("DONE", "BLOCKED") else
+                                             ": no model was asked (the step has no decide)" if jev is None else ""),
+                                         "scenario": name, "url": None})
                 if pick is not None:
                     picked = (offer, time.monotonic())
-                    _step(emit, name, ledger, f"picked {pick['label']}{note}", p=why if not note else None,
+                    done = game.act(pick) or {}
+                    label = done.get("label") or pick["label"]  # the bot's pick says what it chose once made
+                    _step(emit, name, ledger, f"picked {label}{note}", p=why if not note else None,
                           n=len(history) + 1)
-                    game.act(pick)
-                    history.append({"step": len(history) + 1, "action": pick["label"], "kind": "click",
+                    history.append({"step": len(history) + 1, "action": label, "kind": kind,
                                     "text": None, "url": f"game://{where}/{obs.get('screen')}", "page_changed": True,
                                     "probability": why, "latency_ms": decisions[-1].get("latency_ms")
                                     if decisions else None, "t": round(t, 1)})
@@ -797,9 +819,15 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
         checks.append({"check": "the game reported no problems (its own checks)", "ok": False,
                        "detail": f"{len(reported)} problem(s), first: {first['detail']}"})
     if strict_decisions:
-        checks.append({"check": "Jev made every decision (strict_decisions)", "ok": fell_back is None,
-                       "detail": f"a decision Jev did not make, {fell_back}; the step stopped there"
+        checks.append({"check": f"{who or 'the model'} made every decision (strict_decisions)",
+                       "ok": fell_back is None,
+                       "detail": f"a decision {who or 'the model'} did not make, {fell_back}; the step stopped there"
                        if fell_back else None})
+    if until and not until_optional and stop in {"reached", "played", "game_over"}:  # what the step set out to see
+        met = stop == "reached"
+        checks.append({"check": f"reached {_until_text(until)}", "ok": met, "detail": None if met else
+                       f"not by {stats.get('seconds', 0):.0f} s" + (" (game over first)" if stop == "game_over" else "")
+                       + ": " + ", ".join(f"{k} was {_shown(_until_value(obs, k))}" for k in until)})
     looks = (expect or {}).get("looks")
     if looks and stop not in {"browser_error", "model_error"} and not held:
         try:
@@ -808,9 +836,14 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
             stop, detail = "model_error", f"could not judge looks: {e}"
     run_stop = "checked" if locked else {"played": "checked", "game_over": "checked", "strict": "checked",
                                          "reached": "reached"}.get(stop, stop)
-    outcome, reason = verdict.classify(run_stop, [] if held else checks, has_checks=bool(checks) and not held,
-                                       stop_detail=detail)
-    reason += f"; played {stats.get('seconds', 0):.0f} s" + (f", {len(history)} decision(s)" if history else "")
+    # A step cut short (the game closed, the model failed, the cost cap) is not a pass because the frame rate and
+    # memory held until then: the play it was asked for never finished.
+    cut_short = run_stop in verdict.HARNESS_STOPS and verdict.all_ok(checks)
+    outcome, reason = verdict.classify(run_stop, [] if held else checks,
+                                       has_checks=bool(checks) and not held and not cut_short, stop_detail=detail)
+    by_bot = sum(1 for h in history if h.get("kind") == "bot")
+    reason += f"; played {stats.get('seconds', 0):.0f} s" + (f", {len(history)} decision(s)" if history else "") + (
+        f" ({by_bot} by the game's bot)" if by_bot else "")
     if stop == "game_over":
         reason += ", ended at game over"
     result.update(checks=checks, stop=stop, outcome=outcome, reason=reason, history=history[-30:],
@@ -824,6 +857,21 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
     result["jev"] = {"status": stop, "actions": len(history), "decisions": len(decisions), "text_calls": 0,
                      "elapsed_ms": round((time.monotonic() - started) * 1000)}
     return result
+
+
+def _until_value(obs, key):
+    """An `until` key, read from the game's state, or else from the look itself (the screen is not always state)."""
+    state = obs.get("state") or {}
+    return state[key] if key in state else obs.get(key)
+
+
+def _until_text(until):
+    return ", ".join(f"{k} {v.strip()}" if isinstance(v, str) and re.match(r"\s*(>=|<=|!=|==|>|<)", v)
+                     else f"{k} = {_shown(v)}" for k, v in until.items())
+
+
+def _shown(value):
+    return value if isinstance(value, str) else json.dumps(value)
 
 
 def _stats(timeline):
@@ -1035,9 +1083,10 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
         elif step.get("play"):
             p = step["play"]
             r = play_for(game, name=name, seconds=float(p.get("seconds", 60)), until=p.get("until"),
-                         decide=p.get("decide"), expect=step.get("expect"), ledger=ledger, run_dir=run_dir,
-                         shots=shots, emit=emit, strict_decisions=bool(p.get("strict_decisions")),
-                         vision=bool(step.get("vision", vision)), seen=problems)
+                         until_optional=bool(p.get("until_optional")), decide=p.get("decide"),
+                         expect=step.get("expect"), ledger=ledger, run_dir=run_dir, shots=shots, emit=emit,
+                         strict_decisions=bool(p.get("strict_decisions")), vision=bool(step.get("vision", vision)),
+                         seen=problems)
         else:
             with contextlib.suppress(NativeError):  # Jev has the controls: a game's bot would undo its moves
                 game.call(op="pilot", on=False)

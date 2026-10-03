@@ -10,6 +10,22 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   `--background` keeps it running after the terminal closes; `--stop` stops it. It serves 127.0.0.1 only, behind a
   key in its address.
 
+- Fixed: a play step with no `decide` clicked the first offer at every decision, so a step like "the bot picks its
+  cards under the build's rules" never ran the build's rules (a no-jutsu build went into its boss fight with 5
+  jutsu) and still passed. The game's own bot now makes those picks when its adapter offers one (I'M HIM!), and
+  the "decision not made" finding names the model that was asked (Jev, Clef).
+
+- A page error in a website run now carries its stack (file, line, column), not only its message, so the finding
+  points at the line that threw.
+
+- Changed: a play step's `until` is now a requirement. Not met by the time cap (or the game over first), the step
+  fails on a "reached ..." check, where it used to pass on its other checks: "eizen: beaten" (`until: {boss:
+  false}`) passed with the boss alive. A soak that only stops early sets `until_optional: true`. `until` also reads a
+  key the game's state lacks, such as `screen`, from the game's look.
+
+- Fixed: a play step cut short (the game closed its window, the model failed, the cost cap) passed when its frame
+  rate and memory checks held until then. It is now a harness stop with its S1 "game crashed or closed" finding.
+
 - Fixed: `qajev top` took seconds per refresh, too slow to use with many jobs queued: it started a `ps` for every job,
   every second, to check it was alive, and read every finished job's whole log again. On macOS it now asks the
   kernel (no process), and a finished job is read once until its files change: a refresh went from 1.9 s to 0.05 s.
