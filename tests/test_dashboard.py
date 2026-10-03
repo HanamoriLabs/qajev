@@ -221,3 +221,21 @@ def test_only_one_dashboard_can_start_at_a_time():
     again = dashboard.claim()
     assert again is not None
     os.close(again)
+
+
+def test_a_bad_body_length_is_refused_at_once(server):
+    # Orchestrator review: Content-Length -1 made rfile.read(-1) wait for the socket to close, holding a thread.
+    import socket
+
+    key, port = server.RequestHandlerClass.key, server.server_address[1]
+
+    def post(length, body=b""):
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as s:  # times out if the server waits
+            s.sendall(f"POST /api/run/20261003-055116-afb3/rerun HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                      f"Cookie: qajev_dashboard={key}\r\nX-QAJev-Key: {key}\r\nContent-Length: {length}\r\n\r\n"
+                      .encode() + body)
+            return s.recv(200).split(b"\r\n", 1)[0]
+
+    assert b" 404 " in post("-1")  # read nothing, went on: no such job
+    assert b" 400 " in post("abc")
+    assert b" 400 " in post("2", b"[]")  # not a JSON object

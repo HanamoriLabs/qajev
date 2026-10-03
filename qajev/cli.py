@@ -1189,12 +1189,19 @@ def cmd_dashboard(args):
         import subprocess
 
         log = dashboard.STATE.with_suffix(".log")
+        start = log.stat().st_size if log.exists() else 0
         with open(log, "a") as out:
-            subprocess.Popen([sys.executable, "-m", "qajev", "dashboard", "--port", str(args.port)], stdout=out,
-                             stderr=out, stdin=subprocess.DEVNULL, start_new_session=True)
-        there = dashboard.wait_running()
+            child = subprocess.Popen([sys.executable, "-m", "qajev", "dashboard", "--port", str(args.port)],
+                                     stdout=out, stderr=out, stdin=subprocess.DEVNULL, start_new_session=True)
+        there = dashboard.wait_running(timeout=45, starting=child)
         if not there:
-            return _fail(args, f"the dashboard did not start (see {log})", EXIT_CONFIG)
+            if child.poll() is None:  # never left running half-started: it would hold the one-dashboard lock
+                child.terminate()
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    child.wait(5)
+            said = log.read_text(errors="replace")[start:].strip()[-600:] if log.exists() else ""
+            return _fail(args, f"the dashboard did not start (exit {child.poll()}): {said or 'it said nothing'}",
+                         EXIT_CONFIG)
         tell(there["url"], False)
         return 0
     lock = dashboard.claim()

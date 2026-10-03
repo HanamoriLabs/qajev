@@ -332,11 +332,16 @@ class Handler(BaseHTTPRequestHandler):
         if not (self._host_ok() and self._cookie_ok()
                 and hmac.compare_digest(self.headers.get("X-QAJev-Key", ""), self.key)):
             return self._error(403, "forbidden")
-        length = min(int(self.headers.get("Content-Length") or 0), 10_000)
+        try:  # a negative length would make read() wait for the socket to close, holding a thread
+            length = max(0, min(int(self.headers.get("Content-Length") or 0), 10_000))
+        except ValueError:
+            return self._error(400, "bad Content-Length")
         try:
             body = json.loads(self.rfile.read(length) or b"{}")
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return self._error(400, "bad JSON")
+        if not isinstance(body, dict):
+            return self._error(400, "the body must be a JSON object")
         parts = urlsplit(self.path).path.strip("/").split("/")
         try:
             if parts[:2] == ["api", "run"] and len(parts) == 4 and parts[3] == "stop":
@@ -370,13 +375,16 @@ def claim():
     return fd
 
 
-def wait_running(timeout=15.0):
-    """The dashboard once it serves (another process is starting it), or None after `timeout` seconds."""
+def wait_running(timeout=15.0, starting=None):
+    """The dashboard once it serves (another process is starting it), or None after `timeout` seconds, or as soon
+    as `starting` (the Popen starting it) has exited."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         there = running()
         if there:
             return there
+        if starting is not None and starting.poll() is not None:
+            return None
         time.sleep(0.2)
     return None
 
