@@ -53,11 +53,11 @@ EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", 
                "looks"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
-    "persona", "speech", "vision",
+    "persona", "speech", "vision", "about",
 }
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
-    "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision",
+    "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about",
 }
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login"}
@@ -90,6 +90,7 @@ class Scenario:
     persona: str | None
     speech: str | None
     vision: bool = False  # Clef sees the screenshot with every decision (vision.py)
+    about: str | None = None  # what the test proves and why, in plain words, for the person reading the report
 
     @property
     def task(self):
@@ -115,6 +116,7 @@ class Suite:
     motion: str = "reduce"
     real_devices: list = field(default_factory=list)  # also run in a real device browser: "ios", "android"
     account: dict | None = None  # signed in once before the scenarios; its password is a vault reference
+    about: str | None = None  # what the run as a whole proves
 
     @property
     def mutates(self):
@@ -302,6 +304,7 @@ def parse(data, path=None, devices=None):
             persona=item.get("persona", data.get("persona")),
             speech=item.get("speech", data.get("speech")),
             vision=bool(item.get("vision", data.get("vision", False))),
+            about=about(item.get("about"), f"{where}.about"),
         ))
 
     copies = []
@@ -333,9 +336,19 @@ def parse(data, path=None, devices=None):
         motion=motion,
         real_devices=_real_devices(data.get("real_devices") or os.environ.get("QAJEV_REAL_DEVICES")),
         account=account,
+        about=about(data.get("about"), "about"),
     )
     check_safety(suite)
     return suite
+
+
+def about(value, where):
+    """`about`: what a test (or a run) proves and why, in plain words. -> the text, or None."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise SuiteError(f"{where} must be text: what the test proves and why")
+    return " ".join(value.split()) or None
 
 
 def check_safety(suite):

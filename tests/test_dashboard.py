@@ -23,11 +23,12 @@ emit(event="start", scenario="kira: beaten")
 emit(event="decision", scenario="kira: beaten", at=time.time(), screen="LEVEL UP", chose="Spiral Orb", p=0.55,
      runner_up="Shield", runner_up_p=0.4, options=3, ms=310)
 steps = [{"name": "kira: beaten", "outcome": "pass", "reason": "ok", "shot": "shots/kira.jpg",
+          "about": "Kira's fight can be won at level 18",
           "checks": [{"check": "boss gone", "ok": True, "detail": None}]},
          {"name": "kira: on the ledger", "outcome": "fail", "reason": "not on file", "shot": None}]
 for s in steps:
     emit(event="scenario", result=s)
-report = {"gate": "FAIL", "run_dir": str(run), "scenarios": steps}
+report = {"gate": "FAIL", "run_dir": str(run), "scenarios": steps, "about": "every boss can be beaten"}
 (run / "report.json").write_text(json.dumps(report))
 (run / "report.html").write_text("<p>report</p>")
 print(json.dumps(report))
@@ -90,6 +91,7 @@ def test_every_run_is_listed_by_project_with_its_tests_screenshots_and_decisions
     assert d["folder"] == str((run_root / "runs" / "boss-run").resolve())  # its run folder, wherever it ran
     assert d["report_html"] == f"/files/{job_id}/report.html"
     assert d["command_line"].startswith("qajev play games/sidescroller/desktop")
+    assert d["about"] == "every boss can be beaten" and d["steps"][0]["about"] == "Kira's fight can be won at level 18"
 
 
 def test_only_a_runs_own_files_are_served(played):

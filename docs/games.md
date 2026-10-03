@@ -58,6 +58,9 @@ A **suite** plays one game session in steps, in order. Each step is either:
   and the app runs on. After it, `idle` steps watch the app's process (there is no page left to read) and other
   steps are skipped.
 
+Any step, and the suite itself, can say what it proves with `about:` ("the build's rules hold: no banned jutsu is
+picked"). The report and the dashboard show it under the step's name, so a pass says what it means.
+
 ```yaml
 # my-game.yaml;  run: qajev play path/to/my-game --suite my-game.yaml
 name: my game

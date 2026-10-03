@@ -25,8 +25,8 @@ PAGE = Path(__file__).with_name("dashboard.html")
 STATE = jobs.JOBS.parent / "dashboard.json"  # the running dashboard: pid, port and key (0600)
 FILE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".html", ".json", ".md", ".txt", ".mp4", ".webm"}
 FINISHED = ("done", "stopped", "failed", "lost")
-STEP_KEYS = ("name", "outcome", "reason", "stop", "seconds", "cost_usd", "goal", "checks", "findings", "end_url",
-             "page_says", "history", "fps")
+STEP_KEYS = ("name", "about", "outcome", "reason", "stop", "seconds", "cost_usd", "goal", "checks", "findings",
+             "end_url", "page_says", "history", "fps")
 
 
 class DashboardError(ValueError):
@@ -185,6 +185,8 @@ def detail(run_id):
         decisions = jobs.decisions(run_id, limit=5000)
     if report:
         out["models"] = report.get("models")
+        if report.get("about"):
+            out["about"] = report["about"]
     by_step = {}
     for d in decisions:
         by_step.setdefault(d.get("scenario"), []).append(

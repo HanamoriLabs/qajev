@@ -272,3 +272,28 @@ def test_the_report_prices_the_decisions_by_the_model_that_made_them():
     assert report_html.decisions_cost({"cost": jev["cost"]}) == "TypeSafe $0.0035 (estimated per call)"  # older run
     assert report_html.decisions_cost(clef) == "Clef-flash $0.0004"  # Clef's own token count, not an estimate
     assert [report_html.decider(d) for d in (jev, clef, {"cost": jev["cost"]})] == ["Jev", "Clef-flash", "Jev"]
+
+
+def test_about_is_in_the_report_for_every_test_and_the_run(tmp_path):
+    # José, 3 Oct: the agent says what each test proves and why; the person reads it next to the result.
+    suite = parse({"name": "shop", "about": "the shop takes money", "devices": ["desktop"], "scenarios": [
+        {"name": "buy", "url": "http://h/", "goal": "Buy.", "about": "a visitor can pay <for> a plan"},
+        {"name": "home", "url": "http://h/", "expect": {"text": "Hi"}}]})
+    results = [result("buy", "pass"), result("home", "skipped")]
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
+    data = report.build(suite, results, [ledger], browser={}, started_at=time.time(), strict=False,
+                        interrupted=False, run_dir=tmp_path)
+    assert data["about"] == "the shop takes money"
+    assert [r.get("about") for r in data["scenarios"]] == ["a visitor can pay <for> a plan", None]
+    report.write(tmp_path, data)
+    page, md = (tmp_path / "report.html").read_text(), (tmp_path / "report.md").read_text()
+    assert "a visitor can pay &lt;for&gt; a plan" in page and "the shop takes money" in page
+    assert "About: a visitor can pay <for> a plan" in md and "the shop takes money" in md
+
+
+def test_check_and_play_take_about():
+    args = build_parser().parse_args(["check", "http://h/", "-t", "Pro", "--about", "the Pro plan is on sale"])
+    (sc,) = check_suite(args).scenarios
+    assert sc.about == "the Pro plan is on sale"
+    assert build_parser().parse_args(["play", "g", "--about", "the menu opens"]).about == "the menu opens"

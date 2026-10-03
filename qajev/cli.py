@@ -123,6 +123,7 @@ def build_parser():
     check.add_argument("--device", help="test on this device only: desktop | tall | phone | tablet | WIDTHxHEIGHT "
                                        "(default: every device in --devices)")
     check.add_argument("--persona", help="who Jev is, prepended to the goal")
+    check.add_argument("--about", help="what this test proves and why, in plain words (shown with its result)")
     check.add_argument("--speech", help="what the fake microphone 'hears' if the page listens")
     check.add_argument("--host", action="append", default=[], help="extra host Jev may visit (repeatable)")
     check.add_argument("--max-actions", type=int, default=20)
@@ -141,6 +142,7 @@ def build_parser():
     proj.add_argument("--objective", "-o", help="an ad-hoc goal in plain words, instead of the stored objectives")
     proj.add_argument("--name", dest="names", action="append", default=[], help="run this stored objective")
     proj.add_argument("--url", help="for --objective: where to start (default /)")
+    proj.add_argument("--about", help="for --objective: what it proves and why, in plain words")
     proj.add_argument("--expect-text", "-t", action="append", default=[], help="for --objective: page must show")
     proj.add_argument("--absent", "-a", action="append", default=[], help="for --objective: page must not show")
     proj.add_argument("--expect-url", "-u", help="for --objective: final URL must contain")
@@ -182,6 +184,7 @@ def build_parser():
                       help="a command-line switch for an Electron app, e.g. --game-arg=--query=autoplay=bot "
                            "(repeatable)")
     play.add_argument("--goal", "-g", help="what a player wants, in plain words; end with 'Stop when ...'")
+    play.add_argument("--about", help="what this test proves and why, in plain words (with --suite: the whole run)")
     play.add_argument("--expect-screen", help="the screen the game must be on at the end (from the bridge)")
     play.add_argument("--expect-text", "-t", action="append", default=[], help="the game must show this text")
     play.add_argument("--expect-state", action="append", default=[], metavar="KEY=VALUE",
@@ -475,6 +478,8 @@ def check_suite(args):
         scenario["goal"] = args.goal
     if args.persona:
         scenario["persona"] = args.persona
+    if args.about:
+        scenario["about"] = args.about
     if args.speech:
         scenario["speech"] = args.speech
     if args.vision:
@@ -553,11 +558,11 @@ def _run_project(args):
                        ("js", args.expect_js)):
         if value:
             expect[key] = value
-    if expect and not args.objective:
-        raise project_mod.ProjectError("--expect-* flags go with --objective (stored objectives carry their own)")
+    if (expect or args.about) and not args.objective:
+        raise project_mod.ProjectError("--expect-* and --about go with --objective (stored objectives carry their own)")
     env = args.env or proj.default_env
     data = project_mod.suite_data(proj, env=env, tags=args.tags, names=args.names, objective=args.objective,
-                                  url=args.url, expect=expect)
+                                  url=args.url, expect=expect, about=args.about)
     suite = parse(data, proj.config_path, devices=args.devices)
     if getattr(args, "real_devices", None):
         from .suite import _real_devices
@@ -725,6 +730,7 @@ def cmd_play(args):
         except providers.ProviderError as e:
             return _fail(args, str(e), EXIT_CONFIG)
     session_steps, game_env, adapter, headless, asked = None, {}, args.adapter, args.headless, args.vision
+    run_about = None  # with a suite, --about (or its about:) is the whole run's; without, the one test's
     game_args = []
     if args.suite:
         import yaml
@@ -736,6 +742,15 @@ def cmd_play(args):
         session_steps = spec.get("steps") or []
         if not session_steps:
             return _fail(args, f"{args.suite}: no steps", EXIT_CONFIG)
+        from .suite import SuiteError, about
+
+        try:
+            run_about = args.about or about(spec.get("about"), "about")
+            for i, step in enumerate(session_steps):
+                if isinstance(step, dict) and step.get("about") is not None:
+                    step["about"] = about(step["about"], f"steps[{i}].about")
+        except SuiteError as e:
+            return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
         if args.only:
             try:
                 session_steps = native.select_steps(session_steps, args.only)
@@ -819,7 +834,7 @@ def cmd_play(args):
                                                  emit=emit, vision=sees)
                 else:
                     emit({"event": "start", "scenario": name})
-                    result = native.play(game, name=name, goal=args.goal, expect=expect,
+                    result = native.play(game, name=name, goal=args.goal, expect=expect, about=args.about,
                                          budget={"actions": args.max_actions, "seconds": args.max_seconds},
                                          ledger=ledger, run_dir=run_dir, shots=shots, emit=emit, vision=sees)
                     result["cost_usd"] = round(ledger.spent(), 5)
@@ -830,7 +845,8 @@ def cmd_play(args):
         return _fail(args, str(e), EXIT_BROWSER)
     except KeyboardInterrupt:
         interrupted = True
-    built = report_mod.build(SimpleNamespace(name=f"play {name}"), results, [ledger.summary()], browser=browser,
+    built = report_mod.build(SimpleNamespace(name=f"play {name}", about=run_about), results, [ledger.summary()],
+                             browser=browser,
                              started_at=started_at, strict=False, interrupted=interrupted, run_dir=run_dir)
     if args.goal or session_steps:
         built["models"] = providers.describe(providers.resolve())

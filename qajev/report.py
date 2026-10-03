@@ -56,7 +56,13 @@ def build(suite, results, ledgers, *, browser, started_at, strict, interrupted, 
     gate = "INCOMPLETE" if interrupted else verdict.gate(outcomes, strict=strict)
     screens = [s for r in results for s in r.get("screens", []) if s.get("p") is not None]
     walls = [r["needs_sign_in"] for r in results if r.get("needs_sign_in")]
+    abouts = {s.name: s.about for s in getattr(suite, "scenarios", None) or [] if getattr(s, "about", None)}
+    for r in results:  # every test, skipped ones too, says what it would prove
+        if not r.get("about") and abouts.get(r["name"]):
+            r["about"] = abouts[r["name"]]
+    about = getattr(suite, "about", None)
     return {
+        **({"about": about} if about else {}),
         **({"needs_sign_in": verdict.sign_in_next_step(walls)} if walls else {}),
         "qajev": __version__,
         "suite": suite.name,
@@ -157,6 +163,7 @@ def markdown(data):
     lines = [
         f"# QAJev report: {data['suite']}",
         "",
+        *([data["about"], ""] if data.get("about") else []),
         f"**Gate: {data['gate']}**" + (" (interrupted)" if data.get("interrupted") else ""),
         "",
         f"{c['pass']} pass · {c['fail']} fail · {c['stuck']} stuck · {c['harness']} harness · "
@@ -203,6 +210,8 @@ def markdown(data):
     for r in data["scenarios"]:
         lines.append(f"### {r['name']} — {r['outcome']}")
         lines.append("")
+        if r.get("about"):
+            lines += [f"About: {r['about']}", ""]
         if r.get("goal"):
             lines.append(f"Goal: {_cell(r['goal'], 400)}")
             lines.append("")

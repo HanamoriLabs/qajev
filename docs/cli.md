@@ -114,6 +114,7 @@ qajev check https://shop.example \
 | `--mode readonly\|mutate` | `mutate` lets Jev change data: localhost only |
 | `--device NAME` | `desktop`, `tall`, `phone`, `tablet` or `WIDTHxHEIGHT` |
 | `--persona TEXT` | who Jev is, e.g. "You are on your phone and new to this site" |
+| `--about TEXT` | what this test proves and why, in plain words; shown with its result in the report and dashboard |
 | `--host HOST` | another host Jev may visit (repeatable) |
 | `--max-actions N`, `--max-seconds N` | Jev's budget |
 | `--settle SECONDS` | how long to wait for the expectations after Jev stops |
@@ -139,7 +140,7 @@ qajev run --project shop --objective "A visitor finds the refund policy" --expec
 | `--env`, `-e` | the project environment (default: the project's `default_env`) |
 | `--suite TAG` | the objectives with this tag (repeatable) |
 | `--name NAME` | one stored objective |
-| `--objective TEXT` | an ad-hoc goal instead of the stored objectives, with `--url` and `--expect-*` |
+| `--objective TEXT` | an ad-hoc goal instead of the stored objectives, with `--url`, `--expect-*` and `--about` |
 
 ## `qajev play`
 
@@ -154,6 +155,7 @@ qajev play path/to/game --suite session.yaml
 | Option | Does |
 |---|---|
 | `--goal`, `-g` | what a player wants, ending with "Stop when ..." |
+| `--about TEXT` | what the test proves and why (with `--suite`: the whole run; steps carry their own `about:`) |
 | `--suite FILE` | several steps in one game session: goal steps, real-time play steps and idle steps (see [Games](games.md)) |
 | `--only STEP` | run this step of the `--suite` (repeatable), plus the steps it names in `depends_on` and every `setup: true` step |
 | `--adapter NAME\|PATH` | the game's adapter (bundled name, or a `.gd` / `.js` file) |

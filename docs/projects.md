@@ -56,6 +56,7 @@ note = "No index page by design; redirect pending"
 
 [[objective]]
 name = "a new visitor finds the UK price"
+about = "UK visitors see the price in pounds before they sign up"   # what it proves, shown with its result
 url = "/pricing"
 goal = "You are in the UK. Find what the Pro plan costs per month. Stop when that price is visible."
 expect = { visible = ["£11.50"] }
@@ -70,7 +71,7 @@ expect = { text = ["Thanks, Ada Lovelace"], fetch = [{ url = "/api/feedback", st
 tags = ["core"]
 ```
 
-Objectives use the same goals and expectations as any scenario (see [Writing tests](writing-tests.md)).
+Objectives use the same goals, expectations and `about` as any scenario (see [Writing tests](writing-tests.md)).
 
 To run an environment's objectives signed in, name the account: `account = "tester"` under `[env.prod]` (or at
 the top of the file, for every environment). QAJev signs in with it once before the objectives; the password is
@@ -86,7 +87,8 @@ qajev projects                                        # what QAJev knows, and wh
 qajev run --project shop --suite core                 # the objectives tagged "core", in the default environment
 qajev run --project shop --env local                  # every objective, against your machine
 qajev run --project shop --name "a visitor sends feedback"
-qajev run --project shop --objective "A visitor finds the refund policy" --expect-text "30 days"   # ad hoc
+qajev run --project shop --objective "A visitor finds the refund policy" --expect-text "30 days" \
+  --about "the refund window is easy to find"   # ad hoc
 qajev smoke --project shop                            # a free crawl of the project's site
 qajev reports --project shop                          # recent runs: gate, outcome per objective, cost, path
 ```

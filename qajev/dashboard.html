@@ -161,7 +161,10 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, select:focus-vi
   cursor:pointer; border:0; background:none; width:100%; text-align:left; color:var(--ink); }
 .thead:hover { background:var(--ground); }
 .tidx { font:12px var(--mono); color:var(--ink-2); }
+.tlabel { display:flex; flex-direction:column; min-width:0; }
 .tname { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tabout { font-size:12.5px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.about { font-size:14px; color:var(--ink-2); margin:0 0 10px; overflow-wrap:anywhere; }
 .ttime { font:12px var(--mono); color:var(--ink-2); white-space:nowrap; }
 .chev { font:12px var(--mono); color:var(--ink-2); width:14px; text-align:center; }
 .tbody { border-top:1px solid var(--line); padding:14px 16px 16px 54px; display:grid; grid-template-columns:minmax(0, 1fr) 300px; gap:18px; }
@@ -437,6 +440,7 @@ function headHtml(d) {
     + `<div class="crumb mono"><span>${esc(d.subject || "—")}</span><span>·</span><span>${esc(d.command || "")}</span>`
     + `${isJob ? `<span>·</span><span>job ${esc(d.id)}</span>` : ""}</div>`
     + `<h1 class="h1">${esc(heading(d.title))}</h1>`
+    + (d.about ? `<p class="about">${esc(d.about)}</p>` : "")
     + `<div class="hrow"><span class="pill ${cls}">${esc(long)}</span>`
     + (d.rerun && d.rerun.of ? `<span class="rerunof">Rerun of <a href="#run=${esc(d.rerun.of)}">${esc(d.rerun.of)}</a>`
       + `${d.rerun.failed ? " · failed tests only" : ""}</span>` : "")
@@ -493,6 +497,7 @@ function testHtml(s, n) {
   let body = "";
   if (open) {
     body = `<div class="tbody${s.shot ? "" : " tbody-noshot"}"><div>`
+      + (s.about ? `<p class="about">${esc(s.about)}</p>` : "")
       + (s.reason ? `<p class="reason${BAD.includes(s.outcome) ? " reason-bad" : ""}">${esc(s.reason)}</p>` : "")
       + (s.checks && s.checks.length ? `<div class="klabel">Checks</div><div class="checks">${s.checks.map((c) => `<div class="check">`
         + `<span class="${c.ok ? "ok" : "no"}">${c.ok ? "✓" : "✗"}</span><span>${esc(c.check)}${c.detail ? ` <span class="cdetail">${esc(c.detail)}</span>` : ""}`
@@ -518,7 +523,8 @@ function testHtml(s, n) {
   }
   return `<div class="test${s.outcome === "running" ? " test-live" : ""}" data-name="${esc(s.name)}">`
     + `<button class="thead" data-toggle="${esc(s.name)}" aria-expanded="${open}"><span class="tidx">${n}</span>`
-    + `<span class="pill ${OUT[s.outcome] || "p-other"}">${esc(s.outcome)}</span><span class="tname">${esc(s.name)}</span>`
+    + `<span class="pill ${OUT[s.outcome] || "p-other"}">${esc(s.outcome)}</span><span class="tlabel"><span class="tname">${esc(s.name)}</span>`
+    + `${s.about ? `<span class="tabout">${esc(s.about)}</span>` : ""}</span>`
     + `<span class="ttime">${esc(time)}</span><span class="chev">${open ? "–" : "+"}</span></button>${body}</div>`;
 }
 function renderDetail() {
