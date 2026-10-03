@@ -79,7 +79,8 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   suite, with their `depends_on` and `setup: true` steps), `game_env`,
   `game_args`, `expect_screen`, `expect_text`, `expect_state`, `min_fps`, `name`, `headless` (Godot only), `shots`
   (a screenshot at the end of each step, on by default), and with Clef `expect_looks` and `vision` (these open the
-  game's window: they need it to look). Quit and
+  game's window: they need it to look). `vision` is on by default when Clef decides and the game has a window
+  (Electron, mobile, `headless=false` Godot); `vision=false` turns it off. Quit and
   delete-save buttons are hidden from Jev; to test a normal quit pass `allow: ["QUIT"]` and `expect_closed: true`
   (passes only when the game exits by itself with code 0). `hide` hides more labels.
 - Website tools also take `devices` (default desktop and phone: every website test also runs in a phone view).

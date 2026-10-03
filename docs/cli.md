@@ -162,7 +162,7 @@ qajev play path/to/game --suite session.yaml
 | `--expect-state KEY=VALUE` | a game state value, e.g. `game_over=false` or `kills=">= 1"` (repeatable) |
 | `--min-fps N` | the frame rate must be at least this |
 | `--expect-looks STATEMENT` | Clef, looking at the game's final screenshot, must judge this true (repeatable; needs Clef and a window) |
-| `--vision` | Clef sees the game's screen with every decision (needs Clef and a window) |
+| `--vision` / `--no-vision` | Clef sees the game's screen with every decision. On by default with Clef and a window; `--vision` refuses to run without them, `--no-vision` uses the labels only |
 | `--allow-errors` | engine or script errors do not fail the run |
 | `--expect-closed` | the game must quit by itself with exit code 0 (to test a normal quit) |
 | `--allow LABEL` | offer this exact label to Jev although it is hidden by default, e.g. `QUIT` (repeatable) |

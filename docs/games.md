@@ -121,9 +121,12 @@ nothing clicked, with the screen and the model's answer in the reason.
 With Clef as the decision model (it reads images; see [Configuration](configuration.md#keys)), a step can use the
 game's screenshot:
 
-- `vision: true` on a step, on the suite, or `--vision`: Clef sees the game's screen with every decision (goal
-  steps, and a play step's `decide`), not only the adapter's labels. Useful when a choice is only in the picture:
-  card art, icons, a map.
+- **Vision is on by default for games**: with Clef deciding and a window to look at (Electron, a mobile app, a Godot
+  game run without `--headless`), Clef sees the game's screen with every decision (goal steps, and a play step's
+  `decide`), not only the adapter's labels: card art, icons, a map. With Jev, or a headless Godot game, decisions use
+  the labels only, without complaint. `vision: false` on a step or on the suite, or `--no-vision`, turns it off;
+  `vision: true` or `--vision` asks for it and refuses to run without Clef and a window. Websites stay text-only
+  unless asked (`qajev check --vision`).
 - `looks` in a step's `expect` (or `--expect-looks "..."`, repeatable): statements judged by Clef from the screenshot
   at the end of the step, each passing at a probability of 0.5 or more.
 
@@ -135,8 +138,9 @@ steps:
     expect: {min_fps: 30, looks: ["The health bar is visible in the top left and is not covered by a menu"]}
 ```
 
-Both need the game's window: QAJev refuses them with `--headless` (MCP: `headless=false`), since a headless Godot
-game draws nothing to look at. They also refuse to start without Clef.
+Asked for (`vision: true`, `--vision`, or `looks`), both need the game's window: QAJev refuses them with
+`--headless` (MCP: `headless=false`), since a headless Godot game draws nothing to look at. They also refuse to start
+without Clef.
 
 ### Running some steps only
 

@@ -4,6 +4,7 @@
 visitor sees: labels drawn as pixels, a canvas, an icon. `expect: {looks: [...]}` judges plain-language statements
 from the final screenshot ("the Pro plan shows $29 per month", "the Sign up button is not cut off"), one check each.
 Both need Clef as the decision model (QAJEV_JEV_PROVIDER=cloudflare): QAJev refuses instead of silently skipping.
+A game run (`qajev play`) sees by default when Clef decides and the game has a window (for_play).
 """
 
 import base64
@@ -30,6 +31,20 @@ def require_clef(what):
         return (f"{what} needs Clef, the decision model that reads images (Jev reads text only): set "
                 "QAJEV_JEV_PROVIDER=cloudflare with CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN")
     return None
+
+
+def for_play(asked, *, window):
+    """Whether a game run sends the screen with each decision. `asked`: True or False (--vision, --no-vision or the
+    suite's `vision`), or None: on when Clef decides and there is a window to look at, else off without complaint.
+    -> (sees, refused): refused is why an explicit ask cannot run."""
+    if asked is False:
+        return False, None
+    if asked:
+        refused = require_clef("vision") or (None if window else
+                                             "vision needs the game's window, and a headless Godot game draws none: "
+                                             "run it without --headless (MCP: headless=false)")
+        return True, refused
+    return window and require_clef("vision") is None, None
 
 
 def data_url(raw):

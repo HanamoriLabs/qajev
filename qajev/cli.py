@@ -190,8 +190,11 @@ def build_parser():
     play.add_argument("--allow-errors", action="store_true", help="engine/script errors do not fail the run")
     play.add_argument("--expect-looks", action="append", default=[], metavar="STATEMENT",
                       help="judged from the game's screenshot at the end (repeatable; needs Clef and a window)")
-    play.add_argument("--vision", action="store_true",
-                      help="Clef sees the game's screenshot with every decision (needs Clef and a window)")
+    play.add_argument("--vision", action="store_true", default=None,
+                      help="Clef sees the game's screenshot with every decision (the default with Clef and a window; "
+                           "this refuses to run without them)")
+    play.add_argument("--no-vision", dest="vision", action="store_false",
+                      help="decisions are made from the adapter's labels only, no screenshot")
     play.add_argument("--expect-closed", action="store_true",
                       help="the game must quit by itself with exit code 0 (with --allow QUIT, to test a normal quit)")
     play.add_argument("--allow", action="append", default=[], metavar="LABEL",
@@ -721,7 +724,7 @@ def cmd_play(args):
                              "(Clef); see `qajev doctor`", EXIT_CONFIG)
         except providers.ProviderError as e:
             return _fail(args, str(e), EXIT_CONFIG)
-    session_steps, game_env, adapter, headless, sees = None, {}, args.adapter, args.headless, args.vision
+    session_steps, game_env, adapter, headless, asked = None, {}, args.adapter, args.headless, args.vision
     game_args = []
     if args.suite:
         import yaml
@@ -742,7 +745,8 @@ def cmd_play(args):
         game_args += [str(a) for a in spec.get("args") or []]
         adapter = adapter or spec.get("adapter")
         headless = headless or bool(spec.get("headless"))
-        sees = sees or bool(spec.get("vision"))
+        if asked is None and spec.get("vision") is not None:
+            asked = bool(spec["vision"])
         if spec.get("seed") and (mobile.is_mobile(args.project) or electron.is_electron(args.project)):
             return _fail(args, f"{args.suite}: seed is for Godot games (saves copied into user://)", EXIT_CONFIG)
         if spec.get("seed"):
@@ -752,16 +756,20 @@ def cmd_play(args):
                 return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
     elif args.only:
         return _fail(args, "--only picks steps of a session: it needs --suite", EXIT_CONFIG)
-    looking = sees or bool(expect.get("looks")) or any(
-        s.get("vision") or (s.get("expect") or {}).get("looks") for s in session_steps or [])
-    if looking:
-        from . import vision
+    from . import vision
 
-        refused = vision.require_clef("vision" if sees or any(s.get("vision") for s in session_steps or [])
-                                      else "looks")
+    # Vision is on by default for a game (José, 3 Oct): with Clef and a window to look at; else off, quietly.
+    window = not headless or mobile.is_mobile(args.project) or electron.is_electron(args.project)
+    sees, refused = vision.for_play(asked, window=window)
+    if refused:
+        return _fail(args, refused, EXIT_CONFIG)
+    looking = bool(expect.get("looks")) or any(
+        s.get("vision") or (s.get("expect") or {}).get("looks") for s in session_steps or [])
+    if looking:  # a step's own vision: true, or looks: these were asked for, so they refuse instead of skipping
+        refused = vision.require_clef("vision" if any(s.get("vision") for s in session_steps or []) else "looks")
         if refused:
             return _fail(args, refused, EXIT_CONFIG)
-        if headless and not (mobile.is_mobile(args.project) or electron.is_electron(args.project)):
+        if not window:
             return _fail(args, "vision and looks need the game's window, and a headless Godot game draws none: "
                                "run it without --headless (MCP: headless=false)", EXIT_CONFIG)
     game_env.update(dict(item.split("=", 1) for item in args.game_env if "=" in item))
@@ -799,7 +807,7 @@ def cmd_play(args):
                 browser = {"surface": "native", "engine": getattr(game, "engine", "godot"),
                            "project": str(game.project), "adapter": game.adapter.stem if game.adapter else None,
                            "headless": headless, "env": game_env, "args": game_args,
-                           "managed": True, "pid": game.proc.pid if game.proc else None}
+                           "managed": True, "pid": game.proc.pid if game.proc else None, "vision": sees}
                 emit({"event": "run", "suite": f"play {name}", "run_dir": str(run_dir), "browser": browser,
                       "scenarios": len(session_steps) if session_steps else 1,
                       "decider": providers.describe(providers.resolve()).get("decider")})

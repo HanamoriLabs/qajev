@@ -37,7 +37,8 @@ still need its key. `qajev doctor` shows which keys are present and whether they
 **Clef reads images.** Only Clef can use screenshots: `looks` expectations (statements judged from the final
 screenshot) and `vision` (Clef sees the screen with every decision). See
 [What only a look at the screen tells](writing-tests.md#what-only-a-look-at-the-screen-tells-clef). With Jev, a run
-that asks for either is refused before it starts. Screenshots go to Workers AI with the decisions, so choose Clef only
+that asks for either is refused before it starts. A game run (`qajev play`) uses vision by default with Clef, when the
+game has a window; with Jev it plays from the labels. Screenshots go to Workers AI with the decisions, so choose Clef only
 for sites and games you may send there. In our tests on QAJev's demo pages, both Clef models chose drawn buttons
 correctly with vision and judged every looks statement right; Clef-flash is cheaper and was as accurate there.
 

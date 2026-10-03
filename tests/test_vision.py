@@ -94,3 +94,31 @@ def test_a_game_screenshot_becomes_a_picture_and_a_headless_one_is_refused(tmp_p
     assert native.game_image(Windowed()).startswith("data:image/png;base64,")
     with pytest.raises(vision.VisionError, match="headless"):
         native.game_image(Headless())
+
+
+def test_a_game_run_sees_by_default_with_clef_and_a_window(monkeypatch):
+    # José, 3 Oct: vision on by default for games. Clef reads the screen; Jev cannot, so with Jev it stays off
+    # without refusing (only an explicit --vision refuses).
+    for k in ("QAJEV_JEV_PROVIDER", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "ts-key-for-test")
+    assert vision.for_play(None, window=True) == (False, None)  # Jev: off, quietly
+    sees, refused = vision.for_play(True, window=True)
+    assert sees and "needs Clef" in refused  # asked for it: say why it cannot
+    for k, v in CF.items():
+        monkeypatch.setenv(k, v)
+    assert vision.for_play(None, window=True) == (True, None)
+    assert vision.for_play(False, window=True) == (False, None)  # --no-vision, or the suite's vision: false
+    assert vision.for_play(None, window=False) == (False, None)  # a headless Godot game: nothing to see
+    sees, refused = vision.for_play(True, window=False)
+    assert sees and "headless" in refused
+
+
+def test_play_takes_vision_and_no_vision():
+    from qajev.cli import build_parser
+
+    p = build_parser()
+    assert p.parse_args(["play", "g"]).vision is None
+    assert p.parse_args(["play", "g", "--vision"]).vision is True
+    assert p.parse_args(["play", "g", "--no-vision"]).vision is False
+    assert p.parse_args(["check", "http://h/"]).vision is False  # websites stay text-only unless asked

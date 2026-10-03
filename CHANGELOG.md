@@ -7,6 +7,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `expect: {status: 404}` in a website suite or project objective: the page must answer with that HTTP status. A
   test that sets out to show a removed page passes on it, and the 404 is no longer also filed as an S2 finding.
 
+- Vision is on by default for games: with Clef deciding and a window to look at (Electron, mobile, a windowed
+  Godot game), `qajev play` sends the screen with every decision. `--no-vision` (MCP `vision=false`) or
+  `vision: false` on a suite or step turns it off; with Jev, or a headless Godot game, it stays off without
+  refusing. Websites stay text-only unless asked.
+
 - Fixed: a game still running that did not answer QAJev in time ("no answer to Runtime.evaluate within 20 s") was
   filed as an S1 "game crashed or closed". QAJev now measures its renderer for 3 s: pegged (80% of a core or more)
   is an S1 "game froze", idle is an S2 "game stopped answering" (most likely the debugger link). A game that
