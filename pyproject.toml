@@ -46,7 +46,12 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [dependency-groups]
-dev = ["pytest>=8.4,<9", "ruff>=0.14,<1", "basedpyright>=1.30"]
+dev = [
+    "pytest>=8.4,<9",
+    "ruff>=0.14,<1",
+    "basedpyright>=1.30",
+    "pytest-timeout>=2.3,<3",
+]
 
 [tool.ruff]
 line-length = 120
