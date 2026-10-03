@@ -374,6 +374,15 @@ def rerun_argv(job_id, failed=False):
         f"its {len(names)} test(s) that did not pass"
 
 
+def rerun_cwd(job_id):
+    """The folder a job ran in: its rerun runs there too, so the command's relative paths (a game, a suite) mean the
+    same files. None for a job that did not record one. ValueError when that folder no longer exists."""
+    cwd = _meta(job_id).get("cwd")
+    if cwd and not Path(cwd).is_dir():
+        raise ValueError(f"job {job_id} ran in {cwd}, which no longer exists: start the run again by hand")
+    return cwd
+
+
 def decisions(job_id, limit=500):
     """The model's decisions in a job so far, oldest first: what it chose, how sure, the runner-up (qajev top `d`)."""
     events, _noise = _events(_folder(job_id))

@@ -1078,6 +1078,7 @@ def cmd_rerun(args):
 
     try:
         argv, what = jobs.rerun_argv(args.job, failed=args.failed)
+        cwd = jobs.rerun_cwd(args.job)
     except jobs.NoSuchJob:
         return _fail(args, f"no job {args.job!r} (qajev jobs lists them)", EXIT_CONFIG)
     except jobs.NothingToRerun as e:
@@ -1088,7 +1089,10 @@ def cmd_rerun(args):
     argv += [flag for flag, on in (("--background", args.rerun_background), ("--json", args.json),
                                    ("--quiet", args.quiet)) if on]
     if not args.quiet:
-        print(f"qajev: rerunning job {args.job}, {what}: qajev {shlex.join(argv)}", file=sys.stderr)
+        print(f"qajev: rerunning job {args.job}, {what}: qajev {shlex.join(argv)}"
+              + (f" (in {cwd})" if cwd else ""), file=sys.stderr)
+    if cwd:
+        os.chdir(cwd)  # where the job ran: its relative paths (a game, a suite) are the same files
     return main(argv)
 
 
