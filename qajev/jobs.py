@@ -248,29 +248,34 @@ def _new_folder():
 def _title(meta):
     """An automatic title follows describe_argv, so older jobs get today's names too; a given title is kept."""
     argv = meta.get("argv") or []
+    rerun = meta.get("rerun") or {}
+    suffix = f" · rerun of {rerun['of']}{', failed only' if rerun.get('failed') else ''}" if rerun.get("of") else ""
     auto = meta.get("auto_title", bool(argv) and argv[0] in ("play", "check", "smoke")
                     and str(meta.get("title", "")).startswith(argv[0] + " "))
     if not auto:
-        return meta["title"]
+        return meta["title"] + suffix
     try:
-        return describe_argv(argv, cwd=meta.get("cwd"))
+        return describe_argv(argv, cwd=meta.get("cwd")) + suffix
     except Exception:  # an odd old argv must not break `qajev jobs`
-        return meta["title"]
+        return meta["title"] + suffix
 
 
-def register(argv, title=None):
+def register(argv, title=None, *, rerun=None):
     """A run started in the foreground records itself as a job (no wrapper): the same files, written by the run
-    itself, so `qajev jobs`, `qajev top` and `qajev stop` see and stop it like any other. -> the job folder."""
+    itself, so `qajev jobs`, `qajev top` and `qajev stop` see and stop it like any other. -> the job folder.
+    rerun: {"of": job id, "failed": bool} when it reruns a job (its title says so)."""
     folder = _new_folder()
     meta = {"id": folder.name, "title": title or describe_argv(argv), "auto_title": title is None, "argv": argv,
             "pid": os.getpid(),
-            "started_at": time.time(), "cwd": os.getcwd(), "started_by": os.getppid(), "foreground": True}
+            "started_at": time.time(), "cwd": os.getcwd(), "started_by": os.getppid(), "foreground": True,
+            **({"rerun": rerun} if rerun else {})}
     (folder / "job.json").write_text(json.dumps(meta, indent=2))
     return folder
 
 
-def start(argv, title=None, *, command=None, cwd=None):
-    """Start `qajev ARGV` as a detached job; returns its status. `command` replaces the qajev command (tests)."""
+def start(argv, title=None, *, command=None, cwd=None, rerun=None):
+    """Start `qajev ARGV` as a detached job; returns its status. `command` replaces the qajev command (tests);
+    rerun as for register()."""
     folder = _new_folder()
     job_id = folder.name
     command = command or [sys.executable, "-m", "qajev", *argv, "--json", "--events"]
@@ -281,7 +286,8 @@ def start(argv, title=None, *, command=None, cwd=None):
     _children[job_id] = proc
     meta = {"id": job_id, "title": title or describe_argv(argv), "auto_title": title is None, "argv": argv,
             "pid": proc.pid,
-            "started_at": time.time(), "cwd": cwd or os.getcwd(), "started_by": os.getpid()}
+            "started_at": time.time(), "cwd": cwd or os.getcwd(), "started_by": os.getpid(),
+            **({"rerun": rerun} if rerun else {})}
     (folder / "job.json").write_text(json.dumps(meta, indent=2))
     return status(job_id)
 

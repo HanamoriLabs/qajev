@@ -333,6 +333,7 @@ def _safe(write):
 
 
 _job_dir = None  # this process's job folder while a check/run/smoke runs in the foreground
+_rerun = None  # {"of": job id, "failed": bool} while `qajev rerun` starts its run: the new job records it
 
 
 def _printer(args):
@@ -1025,7 +1026,7 @@ def cmd_background(args):
     from . import jobs
 
     argv = [a for a in args.argv if a != "--background"]
-    job = jobs.start(argv)
+    job = jobs.start(argv, **({"rerun": _rerun} if _rerun else {}))
     if args.json:
         print(json.dumps(job, indent=2))
     else:
@@ -1093,7 +1094,12 @@ def cmd_rerun(args):
               + (f" (in {cwd})" if cwd else ""), file=sys.stderr)
     if cwd:
         os.chdir(cwd)  # where the job ran: its relative paths (a game, a suite) are the same files
-    return main(argv)
+    global _rerun
+    _rerun = {"of": args.job, "failed": bool(args.failed)}
+    try:
+        return main(argv)
+    finally:
+        _rerun = None
 
 
 def cmd_stop(args):
@@ -1228,7 +1234,7 @@ def main(argv=None):
         if not os.environ.get("QAJEV_JOB"):  # a background job's run is already recorded by its wrapper
             from . import jobs
 
-            _job_dir = jobs.register(args.argv)
+            _job_dir = jobs.register(args.argv, rerun=_rerun)
     handlers = {"check": cmd_run, "run": cmd_run, "smoke": cmd_smoke, "browser": cmd_browser, "doctor": cmd_doctor,
                 "secret": cmd_secret, "account": cmd_account,
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,

@@ -225,7 +225,9 @@ qajev rerun 20261003-055116-afb3 --failed   # only its tests that failed, got st
 `--failed` reruns each of those tests with `--only`, so a test still brings what it depends on (a game step, its
 `setup: true` steps). The rerun is a new job; `--background`, `--json` and `--quiet` work as for any run. A check is
 one test, so it runs again as it was. It runs in the folder its job ran in, so relative paths mean the same files,
-and it reads the suite file as it is now. From MCP: `qa_rerun(job)`.
+and it reads the suite file as it is now. Anything the command or suite points at (a game's save folder, a seeded
+file) is as the first run left it: a rerun starts from a fresh save only if the plan makes one. In `qajev jobs` the
+new job's title ends "rerun of JOB" (", failed only" with `--failed`). From MCP: `qa_rerun(job)`.
 
 ## `qajev top`
 

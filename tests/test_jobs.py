@@ -134,11 +134,15 @@ def test_a_finished_job_reruns_as_it_was_or_only_its_tests_that_did_not_pass(mon
         with pytest.raises(jobs.NoSuchJob):
             jobs.rerun_argv(bad)
 
-    ran = []
-    monkeypatch.setattr(cli, "main", lambda argv: ran.append(argv) or 0)
-    args = cli.build_parser().parse_args(["rerun", run, "--failed", "--background"])
-    assert cli.cmd_rerun(args) == 0
-    assert ran == [[*argv, "--background"]]  # the run itself goes to the background, as a job of its own
+    # SideGame1, 3 Oct: in `qajev jobs` a rerun looked just like the job it reran.
+    rerun = jobs.start(argv, command=[sys.executable, "-c", FINISHED, "2"], rerun={"of": run, "failed": True})
+    assert jobs.status(rerun["id"])["title"] == f"{jobs.status(run)['title']} · rerun of {run}, failed only"
+    started = []
+    monkeypatch.setattr(jobs, "start", lambda argv, title=None, **k: started.append((argv, k)) or
+                        {"id": "x", "title": "t"})
+    assert cli.cmd_rerun(cli.build_parser().parse_args(["rerun", run, "--failed", "--background", "--quiet"])) == 0
+    assert started == [([*argv, "--quiet"], {"rerun": {"of": run, "failed": True}})]  # a job of its own
+    assert cli._rerun is None  # a later run in this process is no rerun
 
 
 def test_a_rerun_runs_in_the_folder_its_job_ran_in(tmp_path, monkeypatch):

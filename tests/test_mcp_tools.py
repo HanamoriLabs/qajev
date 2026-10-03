@@ -109,14 +109,15 @@ def test_rerun_never_brings_shell_commands_this_server_does_not_allow(monkeypatc
         asyncio.run(mcp_server.qa_rerun(None, "20261003-055116-afb3"))
     assert not started
 
-    async def fake_run(args, ctx, background, title=None, cwd=None):
-        started.append((args, cwd))
+    async def fake_run(args, ctx, background, title=None, cwd=None, rerun=None):
+        started.append((args, cwd, rerun))
         return {"job": "x"}
 
     monkeypatch.setattr(mcp_server, "_run_report", fake_run)
     monkeypatch.setattr(jobs, "rerun_argv", lambda job, failed: (["run", "s.yaml"], "all of it"))
-    asyncio.run(mcp_server.qa_rerun(None, "20261003-055116-afb3", background=True))
-    assert started == [(["run", "s.yaml"], "/projects/shop")]  # where the job ran: s.yaml is that folder's
+    asyncio.run(mcp_server.qa_rerun(None, "20261003-055116-afb3", failed=False, background=True))
+    # where the job ran (s.yaml is that folder's), and the new job says what it reruns
+    assert started == [(["run", "s.yaml"], "/projects/shop", {"of": "20261003-055116-afb3", "failed": False})]
     monkeypatch.setattr(jobs, "rerun_argv", real)  # a job id that is a path is no job at all
     with pytest.raises(ToolError, match="no job"):
         asyncio.run(mcp_server.qa_rerun(None, "../elsewhere/x"))
