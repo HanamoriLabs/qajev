@@ -363,7 +363,8 @@ class Handler(BaseHTTPRequestHandler):
     def _stream(self, run_id):
         """Server-sent events for one running job: "change" whenever it does something (a step, a test, a new frame
         of its screen), "done" when it ends. While the stream is open the run counts as watched, so it saves frames."""
-        if not (jobs.JOBS / run_id / "job.json").is_file():
+        # A job id, never a path: checked before it is joined to the jobs folder, as jobs._folder does.
+        if not jobs.JOB_ID.fullmatch(run_id) or not (jobs.JOBS / run_id / "job.json").is_file():
             raise jobs.NoSuchJob(run_id)
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")

@@ -302,3 +302,14 @@ def test_the_stream_marks_the_run_watched_and_pushes_each_change(running, server
 def test_the_stream_needs_the_key(running, server):
     status, _headers, _body = request(server, "GET", f"/api/stream/{running[0]}", cookie=False)
     assert status == 401
+
+
+def test_the_stream_takes_only_a_job_id(server):
+    # A path built from the raw URL id must not leave the jobs folder: the stream checks the id first, as files do.
+    jobs.JOBS.mkdir(parents=True, exist_ok=True)  # .. resolves only through a folder that exists
+    outside = jobs.JOBS.parent / "evil"
+    outside.mkdir(parents=True, exist_ok=True)
+    (outside / "job.json").write_text("{}")  # what ../evil would reach without the check
+    for bad in ("../evil", "..%2Fevil", "a/b", "20261004-001731-174f%2F..%2F..", "nope"):
+        status, _headers, _body = request(server, "GET", f"/api/stream/{bad}")
+        assert status == 404, bad
