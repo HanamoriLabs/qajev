@@ -497,16 +497,16 @@ def _playing(t, obs):
 
 
 def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, settle=0.4, emit=None, wait=10.0,
-         poll=0.5, vision=False):
+         poll=0.5, vision=False, about=None):
     """One scenario on a running game: Jev pursues `goal` (if any), then the checks judge the game's state.
-    vision: Clef sees the game's screenshot with every decision."""
+    vision: Clef sees the game's screenshot with every decision. about: what the test proves, for its result."""
     from . import session as session_mod
     from . import vision as vision_mod
 
     os.environ.setdefault("BU_NAME", f"qajev-native-{os.getpid()}")  # the jev modules read it at import
     started = time.monotonic()
     result = {"name": name, "url": f"game://{name}", "goal": goal, "mode": "native", "checks": [], "findings": [],
-              "screens": [], "history": [], "jev": None, "shot": None}
+              "screens": [], "history": [], "jev": None, "shot": None, **({"about": about} if about else {})}
     decisions, history, stop, detail = [], [], None, None
     where = game_name(game)
     obs = game.observe()
@@ -1056,6 +1056,14 @@ def select_steps(steps, only):
     return [{**s, "name": n} for n, s in zip(names, steps) if n in keep or s.get("setup")]
 
 
+def _with_about(results, steps):
+    """Each step's `about` (what it proves) on its result, skipped steps too."""
+    abouts = {step.get("name") or f"step {i + 1}": step["about"] for i, step in enumerate(steps) if step.get("about")}
+    for r in results:
+        if abouts.get(r["name"]):
+            r.setdefault("about", abouts[r["name"]])
+
+
 def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=False):
     """Several steps in one game session, in order: `goal` steps (Jev on the UI) and `play` steps (real-time
     play). A step that loses the game ends the session; the rest are skipped."""
@@ -1140,4 +1148,5 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
         results.append(r)
         if callable(emit):
             emit({"event": "scenario", "result": r})
+    _with_about(results, steps)
     return results

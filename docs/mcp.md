@@ -67,17 +67,17 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 ### Main parameters
 
 - `qa_check`: `url` (required), `goal`, `expect_text`, `absent_text`, `expect_url`, `expect_js`, `fetch`, `mode`
-  (`readonly` or `mutate`), `device`, `persona`, `max_actions`, `max_seconds`, `cost_cap`, `profile`, `headless`,
+  (`readonly` or `mutate`), `device`, `persona`, `about`, `max_actions`, `max_seconds`, `cost_cap`, `profile`, `headless`,
   `background`, and with Clef `expect_looks` (statements judged from the final screenshot) and `vision` (Clef sees
   the screen with every decision).
 - `qa_run_suite`: `suite_path` or `suite_yaml`, `only`, `jobs`, `cost_cap`, `profile`, `background`.
 - `qa_smoke`: `url` (required), `max_pages`, `device`, `check_links`.
 - `qa_project_run`: `project` (required), `suite` (a tag), `names`, `env`, or an ad-hoc `objective` with `url`,
-  `expect_text`, `expect_url`.
+  `expect_text`, `expect_url`, `about`.
 - `qa_rerun`: `job` (required), `failed` (default true: only the tests that did not pass), `background`.
 - `qa_play`: `project` (the game, or `ios:...` / `android:...`), `goal`, `adapter`, `suite`, `only` (steps of the
   suite, with their `depends_on` and `setup: true` steps), `game_env`,
-  `game_args`, `expect_screen`, `expect_text`, `expect_state`, `min_fps`, `name`, `headless` (Godot only), `shots`
+  `game_args`, `expect_screen`, `expect_text`, `expect_state`, `min_fps`, `name`, `about`, `headless` (Godot only), `shots`
   (a screenshot at the end of each step, on by default), and with Clef `expect_looks` and `vision` (these open the
   game's window: they need it to look). `vision` is on by default when Clef decides and the game has a window
   (Electron, mobile, `headless=false` Godot); `vision=false` turns it off. Quit and
@@ -88,6 +88,9 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   also run in Chrome on an Android emulator (iOS Safari cannot read page content yet): opt-in, read-only, and slower
   (see [Mobile](mobile.md)).
 - All run tools take `verbose` (include Jev's steps) and `background` (return a job id at once).
+- `about`: what the test proves and why, in plain words. The server's instructions ask agents to give it on every
+  test (and `about:` on each scenario or step of a suite); a result lists the tests without one under
+  `about_missing`. The report and `qajev dashboard` show it under each test's name.
 
 ## How a call runs
 

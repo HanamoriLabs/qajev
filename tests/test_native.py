@@ -406,6 +406,12 @@ def test_a_play_step_fails_when_its_until_is_not_met():
     assert screen["stop"] == "reached" and screen["outcome"] == "pass"
 
 
+def test_a_game_steps_about_goes_into_its_result():
+    steps = [{"name": "look", "expect": {}, "about": "the menu is reachable"}, {"name": "again", "expect": {}}]
+    a, b = native.run_session(FakeGame(), steps, ledger=_NoLedger(), run_dir=None, shots=False)
+    assert a["about"] == "the menu is reachable" and "about" not in b
+
+
 def test_run_session_passes_until_optional_to_the_play_step():
     steps = [{"name": "soak", "play": {"seconds": 30, "until": {"kills": ">= 1000"}, "until_optional": True}}]
     [r] = native.run_session(FakeGame(), steps, ledger=_NoLedger(), run_dir=None, shots=False)

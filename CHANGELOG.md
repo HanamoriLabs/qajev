@@ -7,6 +7,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `expect: {status: 404}` in a website suite or project objective: the page must answer with that HTTP status. A
   test that sets out to show a removed page passes on it, and the 404 is no longer also filed as an S2 finding.
 
+- `about`: what a test proves and why, in plain words. On a suite, its scenarios or steps, a project objective,
+  `--about` on `check`, `play` and `run --objective`, and `about=` on the MCP tools. The report (HTML and Markdown)
+  and the dashboard show it under the test's name and the run's title. The MCP instructions ask agents to always
+  give it, and a result lists the tests without one under `about_missing`.
+
 - Vision is on by default for games: with Clef deciding and a window to look at (Electron, mobile, a windowed
   Godot game), `qajev play` sends the screen with every decision. `--no-vision` (MCP `vision=false`) or
   `vision: false` on a suite or step turns it off; with Jev, or a headless Godot game, it stays off without

@@ -137,3 +137,15 @@ def test_an_account_names_where_its_password_lives_and_signs_in_over_https():
     with pytest.raises(S.SuiteError, match="login.url"):
         parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.example",
               account={**account, "login": {}})
+
+
+def test_about_says_what_a_test_proves_on_the_suite_and_each_scenario():
+    s = parse([{"name": "buy", "url": "http://h/", "goal": "Buy it.", "about": "a visitor can pay for a plan"},
+               {"name": "home", "url": "http://h/", "expect": {"text": "Hi"}}],
+              about="the shop takes money", devices=["desktop", "phone"])
+    assert s.about == "the shop takes money"
+    assert [(x.name, x.about) for x in s.scenarios] == [
+        ("buy", "a visitor can pay for a plan"), ("home", None),
+        ("buy (phone)", "a visitor can pay for a plan"), ("home (phone)", None)]
+    with pytest.raises(S.SuiteError, match="about"):
+        parse([{"url": "http://h/", "goal": "x", "about": ["not", "text"]}])

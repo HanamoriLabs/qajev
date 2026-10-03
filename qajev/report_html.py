@@ -33,6 +33,7 @@ h2 { font-size:17px; margin:32px 0 10px; }
 h3 { font-size:15px; margin:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
   overflow-wrap:anywhere; }
 .sub, .muted { color:var(--muted); }
+.about { margin:6px 0 0; font-style:italic; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin:12px 0; }
 .gate { display:inline-block; font-weight:700; font-size:18px; padding:4px 12px; border-radius:8px; margin:12px 0 8px; }
 .pill { display:inline-block; font-size:12px; font-weight:600; padding:1px 8px; border-radius:999px;
@@ -97,6 +98,7 @@ def _table(head, rows):
 def _scenario(i, r, who="Jev"):
     jev = r.get("jev") or {}
     parts = [f'<section class="card" id="s{i}"><h3>{_pill(r["outcome"])} {_e(r["name"])}</h3>',
+             f'<p class="about">{_e(r["about"])}</p>' if r.get("about") else "",
              f'<p>{_e(r.get("reason"))}</p>']
     facts = []
     if r.get("url"):
@@ -241,6 +243,7 @@ def render(data):
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         f"<title>{_e(title)}</title><style>{CSS}</style></head><body><main>",
         f"<h1>{_e(title)}</h1>",
+        f'<p class="about">{_e(data["about"])}</p>' if data.get("about") else "",
         f'<div class="sub">{_e(" · ".join(sub))}</div>' if sub else "",
         f'<div class="gate {_e(data["gate"])}">Gate: {_e(data["gate"])}{interrupted}</div>',
         f'<div class="counts">{counts}</div><div class="muted">{_e(summary)}</div>',

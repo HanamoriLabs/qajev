@@ -97,6 +97,9 @@ For a phone's real browser (Chrome on an Android emulator; iOS Safari is not rea
   That is a real finding.
 - **Personas help.** `--persona "You are on your phone and have never seen this site."` changes how Jev reads the
   page.
+- **Say what the test proves.** `about` (`--about` on the command line) is what a pass means and why it matters, in
+  plain words: "a first-time visitor can find the Pro price without signing in". The report and the dashboard show
+  it under the test's name, so whoever reads the result knows what was, and was not, proven.
 
 ## A suite: several scenarios in one file
 
@@ -111,6 +114,7 @@ A suite in full:
 
 ```yaml
 name: Shop
+about: a visitor can see what we sell and what it costs   # what the whole run proves
 base_url: http://localhost:3000
 mode: readonly            # readonly (default) or mutate (only on localhost / 127.0.0.1)
 device: desktop           # desktop | tall | phone | tablet | WIDTHxHEIGHT
@@ -128,6 +132,7 @@ scenarios:
       absent: ["Something went wrong"]
 
   - name: a visitor finds the Pro price
+    about: the Pro price is one click from the home page, with no sign-in
     url: /
     goal: Find out how much the Pro plan costs. Stop when its monthly price is visible.
     expect:

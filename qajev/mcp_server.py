@@ -39,6 +39,9 @@ something on a site, and to catch errors a browser can see.
 - Specific tests: qa_run_suite(only=[...]) and qa_play(suite=..., only=[...]) run chosen scenarios or game steps
   (with what they depend on); qa_rerun(job) runs a finished job's failed, stuck and harness tests again.
 - Every run writes report.html for the person (its path is in the result as report_html).
+- ALWAYS say what each test proves and why, in plain words: `about` on qa_check, qa_play and qa_project_run, and
+  `about:` on each scenario or step of a suite (and on the suite). The person reads it next to the result, so a
+  pass means something. A result lists the tests without one under `about_missing`.
 
 Outcomes: pass; fail (product wrong); stuck (Jev found no way forward: verify by hand, often UX);
 harness (budget/stale/model/browser trouble: says nothing about the product); unverified (no checks);
@@ -178,13 +181,18 @@ def _trim(report, verbose):
     """Keep tool results small enough for a model's context; the full report stays on disk."""
     if verbose or "scenarios" not in report:
         return report
-    keep = ("name", "outcome", "reason", "stop", "seconds", "cost_usd", "end_url", "checks", "findings", "shot",
-            "jev", "blocked_writes", "page_says", "needs_sign_in")
+    keep = ("name", "about", "outcome", "reason", "stop", "seconds", "cost_usd", "end_url", "checks", "findings",
+            "shot", "jev", "blocked_writes", "page_says", "needs_sign_in")
     out = {k: v for k, v in report.items() if k != "scenarios"}
     out["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [], {})} for r in report["scenarios"]]
     for r in out["scenarios"]:
         if r.get("blocked_writes"):
             r["blocked_writes"] = len(r["blocked_writes"])
+    missing = [r["name"] for r in report["scenarios"] if not r.get("about")]
+    if missing:  # the person reads what each test proves next to its result: ask for it every time
+        out["about_missing"] = {"tests": missing[:20], "next": "Next time give each test an about: what it proves "
+                                "and why, in plain words (about= on qa_check/qa_play/qa_project_run, about: on a "
+                                "suite's scenarios or steps)."}
     out["report_md"] = str(Path(report["run_dir"]) / "report.md")
     out["report_html"] = str(Path(report["run_dir"]) / "report.html")
     return out
@@ -213,6 +221,7 @@ async def qa_check(
     mode: str = "readonly",
     device: str | None = None,
     persona: str | None = None,
+    about: str | None = None,
     hosts: list[str] | None = None,
     max_actions: int = 20,
     max_seconds: float = 90,
@@ -238,6 +247,7 @@ async def qa_check(
     fetch: in-page GET checks, "URL" or "URL=STATUS". mode: readonly (default) or mutate (loopback only).
     device: desktop | tall | phone | tablet | WIDTHxHEIGHT pins one; otherwise `devices` (default desktop and
     phone). real_devices: also in ios Safari / android Chrome on a throwaway simulator (read-only, slower).
+    about: what this test proves and why, in plain words, for the person reading the report (always give it).
     Returns the report with a gate and findings.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
     """
@@ -263,6 +273,8 @@ async def qa_check(
         args += ["--fetch", probe]
     if persona:
         args += ["--persona", persona]
+    if about:
+        args += ["--about", about]
     for host in hosts or []:
         args += ["--host", host]
     if cost_cap is not None:
@@ -377,6 +389,7 @@ async def qa_project_run(
     project: str,
     ctx: Context,
     objective: str | None = None,
+    about: str | None = None,
     suite: str | None = None,
     names: list[str] | None = None,
     env: str | None = None,
@@ -392,12 +405,13 @@ async def qa_project_run(
     motion: str | None = None,
 ) -> dict:
     """Prove a product works: run a project's stored objectives (optionally only those tagged `suite`, or named
-    in `names`), or one ad-hoc `objective` in plain words with `expect_text`/`expect_url` checks. The report is
+    in `names`), or one ad-hoc `objective` in plain words with `expect_text`/`expect_url` checks and an `about` (what
+    it proves and why). The report is
     filed with the project and in the cross-project index. Production environments are always read-only.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop)."""
     args = ["run", "--project", project, *_browser_args(profile, None, headless)]
     for flag, value in (("--env", env), ("--objective", objective), ("--suite", suite), ("--url", url),
-                        ("--expect-url", expect_url)):
+                        ("--expect-url", expect_url), ("--about", about)):
         if value:
             args += [flag, value]
     for name in names or []:
@@ -451,6 +465,7 @@ async def qa_play(
     allow_errors: bool = False,
     expect_closed: bool = False,
     expect_looks: list[str] | None = None,
+    about: str | None = None,
     vision: bool | None = None,
     allow: list[str] | None = None,
     hide: list[str] | None = None,
@@ -479,11 +494,12 @@ async def qa_play(
     expect_looks: statements judged from the game's screenshot at the end; vision: the screenshot goes with every
     decision. Both need Clef as the decision model and a picture, so they run the game windowed. vision is on by
     default when Clef decides and the game has a window (Electron, mobile, a windowed Godot game); vision=false
-    turns it off, vision=true refuses to run without Clef."""
+    turns it off, vision=true refuses to run without Clef. about: what this test proves and why, in plain words (with
+    a suite: the whole run; each step can carry its own `about:`)."""
     args = ["play", project, "--max-actions", str(max_actions), "--max-seconds", str(max_seconds),
             "--out", out_dir or str(DEFAULT_OUT)]
     for flag, value in (("--goal", goal), ("--adapter", adapter), ("--suite", suite),
-                        ("--expect-screen", expect_screen), ("--name", name)):
+                        ("--expect-screen", expect_screen), ("--name", name), ("--about", about)):
         if value:
             args += [flag, value]
     for key, value in (game_env or {}).items():
@@ -562,7 +578,7 @@ async def qa_job(job: str, verbose: bool = False) -> dict:
     if st.get("report"):
         st["report"] = _trim(st["report"], verbose)
     if not verbose:
-        keep = ("name", "outcome", "reason", "seconds", "findings", "shot", "needs_sign_in")
+        keep = ("name", "about", "outcome", "reason", "seconds", "findings", "shot", "needs_sign_in")
         st["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [])} for r in st["scenarios"]]
     return st
 

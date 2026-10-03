@@ -137,3 +137,21 @@ def test_qa_play_vision_is_the_default_unless_turned_off(monkeypatch):
     assert "--no-vision" in seen["args"]
     asyncio.run(mcp_server.qa_play("/games/ImHim.app", None, vision=True))
     assert "--vision" in seen["args"]
+
+
+def test_tools_pass_about_and_a_result_names_the_tests_without_one(monkeypatch):
+    seen = {}
+
+    async def fake_run(args, ctx, background, title=None):
+        seen["args"] = args
+        return {"gate": "PASS", "run_dir": "/runs/x", "scenarios": [
+            {"name": "a", "outcome": "pass", "about": "the menu opens"}, {"name": "b", "outcome": "pass"}]}
+
+    monkeypatch.setattr(mcp_server, "_run_report", fake_run)
+    out = asyncio.run(mcp_server.qa_play("/games/ImHim.app", None, goal="Open the menu.", about="the menu opens"))
+    assert seen["args"][seen["args"].index("--about") + 1] == "the menu opens"
+    assert out["scenarios"][0]["about"] == "the menu opens"
+    assert "b" in out["about_missing"]["tests"] and "about" in out["about_missing"]["next"]
+    asyncio.run(mcp_server.qa_check("http://h/", None, expect_text=["Pro"], about="the Pro plan shows"))
+    assert seen["args"][seen["args"].index("--about") + 1] == "the Pro plan shows"
+    assert "about" in mcp_server.INSTRUCTIONS

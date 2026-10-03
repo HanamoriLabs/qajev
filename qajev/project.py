@@ -38,7 +38,7 @@ KNOWN_KEYS = {"kind", "url", "note"}
 ENV_KEYS = {"base_url", "hosts", "mode", "device", "devices", "real_devices", "persona", "smoke_start", "motion",
             "account"}
 OBJECTIVE_KEYS = {"name", "env", "url", "goal", "expect", "tags", "before", "after", "budget", "device", "persona",
-                  "mode", "settle", "depends_on", "speech", "vision"}
+                  "mode", "settle", "depends_on", "speech", "vision", "about"}
 # email and password are vault references (vault.py) or, for email, the plain address; never a password value.
 ACCOUNT_KEYS = {"email", "password", "login", "email_env", "password_env", "seed", "profile", "note"}
 
@@ -179,14 +179,15 @@ def slug(text):
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60] or "objective"
 
 
-def suite_data(project, *, env=None, tags=(), names=(), objective=None, url=None, expect=None):
+def suite_data(project, *, env=None, tags=(), names=(), objective=None, url=None, expect=None, about=None):
     """The suite (as data for suite.parse) that runs the chosen objectives in one environment."""
     env_name = env or project.default_env
     if env_name not in project.envs:
         raise ProjectError(f"{project.name}: no env {env_name!r}; have {sorted(project.envs)}")
     target = project.envs[env_name]
     if objective:
-        chosen = [{"name": slug(objective), "url": url or "/", "goal": objective, "expect": expect or {}}]
+        chosen = [{"name": slug(objective), "url": url or "/", "goal": objective, "expect": expect or {},
+                   **({"about": about} if about else {})}]
     else:
         chosen = [o for o in project.objectives if (o.get("env") or project.default_env) == env_name]
         if tags:
