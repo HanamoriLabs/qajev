@@ -91,7 +91,9 @@ A play step **fails** on a **soft-lock** (the game stops advancing while nothing
 script errors, a frame rate whose slowest 10% is under `min_fps`, or memory growing more than
 `max_memory_growth_mb`. A game that closes mid-play gets an S1 "game crashed or closed" finding. One still running that
 stops answering QAJev is measured for 3 s: when its renderer is using most of a CPU core, the game froze (an endless
-loop: S1 "game froze"); when it idles, the debugger link is the likely cause (S2 "game stopped answering"). Either way the step is a harness stop: never a pass, even
+loop: S1 "game froze"); when it idles, the debugger link is the likely cause (S2 "game stopped answering"). The finding gives the number ("renderer
+CPU 1.04 cores over 3 s") so a person can judge. Two known limits: a game frozen in a deadlock waits at about 0% CPU,
+so it is filed S2; and a game busy at 80% of a core or more when the debugger link stalls could be filed S1. Either way the step is a harness stop: never a pass, even
 when the frame rate and memory held until then. A game left paused
 by the step before also stops the step as a harness problem, instead of "playing" a frozen screen. While a play step runs, [`qajev top`](jobs-and-top.md) shows the live numbers.
 

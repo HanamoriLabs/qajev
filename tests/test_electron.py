@@ -115,9 +115,12 @@ def test_a_pegged_renderer_means_the_game_froze_an_idle_one_means_the_link():
 
 
 def test_a_frozen_game_is_s1_and_a_silent_link_is_s2():
-    [froze] = native._lost_game(native.NoAnswer("no answer to Runtime.evaluate within 20 s", cpu=0.97), "fight")
-    assert (froze["severity"], froze["kind"]) == ("S1", "game froze") and "97%" in froze["detail"]
+    [froze] = native._lost_game(native.NoAnswer("no answer to Runtime.evaluate within 20 s", cpu=1.04, window=3.0),
+                                "fight")
+    assert (froze["severity"], froze["kind"]) == ("S1", "game froze")
+    assert "renderer CPU 1.04 cores over 3 s" in froze["detail"]  # the number, so a person can judge
     [link] = native._lost_game(native.NoAnswer("no answer to Runtime.evaluate within 20 s", cpu=0.03), "fight")
     assert (link["severity"], link["kind"]) == ("S2", "game stopped answering")
+    assert "renderer CPU 0.03 cores" in link["detail"]
     [unknown] = native._lost_game(native.NoAnswer("no answer to Runtime.evaluate within 20 s"), "fight")
     assert unknown["severity"] == "S2"

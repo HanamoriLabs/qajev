@@ -74,6 +74,9 @@ def command_for(app):
     return [str(electron), str(app)]
 
 
+FREEZE_WINDOW = 3.0  # seconds of renderer CPU sampled once the app stops answering
+
+
 def _ps():
     return subprocess.run(["ps", "-A", "-o", "pid=,ppid=,time=,command="], capture_output=True, text=True,
                           timeout=10).stdout
@@ -111,7 +114,7 @@ def _renderer_times(table, root):
     return out
 
 
-def renderer_cpu(root, window=3.0, ps=_ps, sleep=time.sleep):
+def renderer_cpu(root, window=FREEZE_WINDOW, ps=_ps, sleep=time.sleep):
     """The share of a CPU core the app's busiest renderer used over `window` seconds; None when there is none to
     measure. Asked only once the app has stopped answering, so its cost (two `ps`, 3 s) is paid only then."""
     try:
@@ -280,8 +283,8 @@ class ElectronGame:
             if not slot[0].wait(timeout):
                 if self.proc is not None and self.proc.poll() is not None:
                     raise NativeError("the app closed (crashed or quit)")
-                raise NoAnswer(f"no answer to {method} within {timeout:.0f} s", cpu=renderer_cpu(self.proc.pid)
-                               if self.proc is not None else None)
+                raise NoAnswer(f"no answer to {method} within {timeout:.0f} s", window=FREEZE_WINDOW,
+                               cpu=renderer_cpu(self.proc.pid, FREEZE_WINDOW) if self.proc is not None else None)
         except OSError as e:
             raise NativeError(f"lost the app: {e}") from None
         except ConnectionClosed:  # the app quit or crashed between two looks

@@ -83,9 +83,9 @@ class NoAnswer(NativeError):
     """The game is still running but did not answer in time. `cpu`: the share of a core its renderer used meanwhile
     (None: not measured). A pegged renderer is a frozen game; an idle one points at the debugger link."""
 
-    def __init__(self, message, cpu=None):
+    def __init__(self, message, cpu=None, window=None):
         super().__init__(message)
-        self.cpu = cpu
+        self.cpu, self.window = cpu, window
 
     @property
     def frozen(self):
@@ -870,9 +870,11 @@ def _lost_game(error, name):
     detail = str(error)[:200]
     if isinstance(error, NoAnswer) and error.frozen:  # a player sees a stuck game
         kind, severity = "game froze", "S1"
-        detail += f"; its renderer used {error.cpu:.0%} of a CPU core meanwhile (stuck in a loop)"
+        detail += f"; renderer CPU {error.cpu:.2f} cores over {error.window or 3:.0f} s (stuck in a loop)"
     elif isinstance(error, NoAnswer):  # the page idles: most likely the debugger link, not the game
         kind, severity = "game stopped answering", "S2"
+        if error.cpu is not None:
+            detail += f"; renderer CPU {error.cpu:.2f} cores over {error.window or 3:.0f} s"
     else:
         kind, severity = "game crashed or closed", "S1"
     return [{"severity": severity, "kind": kind, "detail": detail, "scenario": name, "url": None}]
