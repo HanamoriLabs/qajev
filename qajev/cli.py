@@ -304,6 +304,15 @@ def build_parser():
                      help="a job's decisions as they are made: what the model chose, how sure, the runner-up "
                           "(the `d` view; with --once or --json, print them and exit)")
 
+    dash = sub.add_parser("dashboard", help="every run in a local web page: filter by project, open each test with "
+                                            "its screenshots and decisions, stop, rerun or start runs")
+    dash.add_argument("--port", type=int, default=8790, help="first port to try on 127.0.0.1 (default 8790)")
+    dash.add_argument("--open", action="store_true", help="open it in the browser")
+    dash.add_argument("--json", action="store_true", help="print the address as JSON")
+    dash.add_argument("--background", dest="dash_background", action="store_true",
+                      help="run it detached (it outlives this terminal); print its address and return")
+    dash.add_argument("--stop", action="store_true", help="stop the dashboard running on this machine")
+
     init = sub.add_parser("init", help="write a starter suite file")
     init.add_argument("path", type=Path, nargs="?", default=Path("qajev.yaml"))
 
@@ -1148,6 +1157,64 @@ def cmd_nightly(args):
     return 0
 
 
+def cmd_dashboard(args):
+    from . import dashboard
+
+    def tell(url, already):
+        if args.json:
+            print(json.dumps({"url": url, "already_running": already}), flush=True)
+        else:
+            stop = "" if already else (" `qajev dashboard --stop` stops it." if args.dash_background
+                                       else " Ctrl-C stops it.")
+            print(f"QAJev dashboard{' (already running)' if already else ''}: {url}\n"
+                  "  The address carries its key: keep it to yourself." + stop, flush=True)
+        if args.open:
+            import webbrowser
+
+            webbrowser.open(url)
+
+    there = dashboard.running()
+    if args.stop:
+        if there:
+            os.kill(there["pid"], signal.SIGTERM)
+        if args.json:
+            print(json.dumps({"stopped": there["pid"] if there else None}))
+        else:
+            print(f"qajev: stopped the dashboard (pid {there['pid']})" if there else "qajev: no dashboard running")
+        return 0
+    if there:  # one dashboard per machine: it shows every run anyway
+        tell(there["url"], True)
+        return 0
+    if args.dash_background:
+        import subprocess
+
+        log = dashboard.STATE.with_suffix(".log")
+        with open(log, "a") as out:
+            subprocess.Popen([sys.executable, "-m", "qajev", "dashboard", "--port", str(args.port)], stdout=out,
+                             stderr=out, stdin=subprocess.DEVNULL, start_new_session=True)
+        there = dashboard.wait_running()
+        if not there:
+            return _fail(args, f"the dashboard did not start (see {log})", EXIT_CONFIG)
+        tell(there["url"], False)
+        return 0
+    lock = dashboard.claim()
+    if lock is None:  # another `qajev dashboard` is starting right now: point at that one
+        there = dashboard.wait_running()
+        if not there:
+            return _fail(args, "another dashboard holds the lock but is not serving", EXIT_CONFIG)
+        tell(there["url"], True)
+        return 0
+    try:
+        server = dashboard.make_server(args.port)
+    except OSError as e:
+        return _fail(args, str(e), EXIT_CONFIG)
+    tell(f"http://127.0.0.1:{server.server_address[1]}/?k={server.RequestHandlerClass.key}", False)
+    signal.signal(signal.SIGTERM, signal.default_int_handler)  # `kill` stops it like Ctrl-C: it removes its record
+    with contextlib.suppress(KeyboardInterrupt):
+        dashboard.serve(server)
+    return 0
+
+
 def cmd_top(args):
     from . import jobs, top
 
@@ -1239,7 +1306,7 @@ def main(argv=None):
                 "secret": cmd_secret, "account": cmd_account,
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
                 "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
-                "top": cmd_top, "nightly": cmd_nightly, "rerun": cmd_rerun,
+                "top": cmd_top, "nightly": cmd_nightly, "rerun": cmd_rerun, "dashboard": cmd_dashboard,
                 "play": cmd_play}
     code = 1  # a crash on the way out still leaves an exit code for `qajev jobs`
     try:

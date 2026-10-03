@@ -55,6 +55,7 @@ errors and a lint of the page.
 | projects, the index, changes, nightly | `qajev/project.py`, `qajev/changes.py`, `qajev/nightly.py` |
 | jobs and the queue | `qajev/jobs.py` |
 | `qajev top` | `qajev/top.py` |
+| `qajev dashboard` | `qajev/dashboard.py`, `qajev/dashboard.html` |
 | games | `qajev/native.py`, `qajev/electron.py`, `qajev/bridges/` |
 | QAJev's own Chrome | `qajev/chrome.py` |
 | model routing and the cost ledger | `qajev/providers.py`, `qajev/ledger.py` |

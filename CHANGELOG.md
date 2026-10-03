@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- `qajev dashboard`: every run on the machine in a local web page (designed in Claude Design, in qajev.com's look).
+  Filter by project, result, kind and period; open a run to see what is running now, each test with its checks,
+  findings, screenshots and the model's decisions; stop, rerun (all or failed only) or start a project's run.
+  `--background` keeps it running after the terminal closes; `--stop` stops it. It serves 127.0.0.1 only, behind a
+  key in its address.
+
 - Fixed: `qajev top` took seconds per refresh, too slow to use with many jobs queued: it started a `ps` for every job,
   every second, to check it was alive, and read every finished job's whole log again. On macOS it now asks the
   kernel (no process), and a finished job is read once until its files change: a refresh went from 1.9 s to 0.05 s.
