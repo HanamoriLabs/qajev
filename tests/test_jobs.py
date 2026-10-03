@@ -145,6 +145,35 @@ def test_a_finished_job_reruns_as_it_was_or_only_its_tests_that_did_not_pass(mon
     assert cli._rerun is None  # a later run in this process is no rerun
 
 
+def test_liveness_needs_no_ps_and_an_exited_unreaped_child_is_not_alive(monkeypatch):
+    # José, 3 Oct: `qajev top` "incredibly slow": one `ps` per job, every second, on a machine at load 56.
+    import subprocess
+
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    time.sleep(0.5)  # exited, not reaped: a zombie, which kill(pid, 0) still finds
+    started = []
+    real = subprocess.run
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: started.append(a) or real(*a, **k))
+    assert jobs.alive(os.getpid()) and not jobs.alive(child.pid)
+    assert started == []
+    child.wait()
+
+
+def test_a_finished_job_is_read_once_until_its_files_change(monkeypatch):
+    job = jobs.start(["run", "suite.yaml"], command=[sys.executable, "-c", FINISHED, "2"])
+    wait_for(lambda: jobs.status(job["id"])["state"] == "done")
+    reads = []
+    real = jobs._status
+    monkeypatch.setattr(jobs, "_status", lambda *a: reads.append(a) or real(*a))
+    first = jobs.status(job["id"])
+    first["title"] = "changed by a caller"  # a caller's change is its own
+    assert jobs.status(job["id"])["title"] != "changed by a caller" and reads == []
+    folder = jobs.JOBS / job["id"]
+    meta = json.loads((folder / "job.json").read_text())
+    (folder / "job.json").write_text(json.dumps({**meta, "title": "renamed", "auto_title": False}))
+    assert jobs.status(job["id"])["title"] == "renamed" and len(reads) == 1
+
+
 def test_a_rerun_runs_in_the_folder_its_job_ran_in(tmp_path, monkeypatch):
     # Live, 3 Oct: `qajev play tests/fixtures/godot_game ...` rerun from another folder found no Godot project there.
     from qajev import cli
