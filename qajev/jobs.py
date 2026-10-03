@@ -52,6 +52,33 @@ class NoSuchJob(KeyError):
     pass
 
 
+@functools.cache
+def _libproc():
+    import ctypes
+
+    try:
+        return ctypes, ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+    except OSError:
+        return None
+
+
+def _darwin_state(pid):
+    """macOS: a process's state from the kernel, with no `ps` process (a `ps` per job took `qajev top` seconds per
+    refresh on a loaded machine). "Z" for a zombie, "" for a live one, None when it cannot tell."""
+    loaded = _libproc() if sys.platform == "darwin" else None
+    if loaded is None:
+        return None
+    ctypes, lib = loaded
+    info = ctypes.create_string_buffer(136)  # struct proc_bsdinfo; pbi_status is its second uint32
+    ctypes.set_errno(0)
+    if lib.proc_pidinfo(int(pid), 3, ctypes.c_uint64(0), info, 136) == 136:  # 3: PROC_PIDTBSDINFO
+        return "Z" if int.from_bytes(info.raw[4:8], "little") == 5 else ""  # 5: SZOMB
+    errno = ctypes.get_errno()
+    if errno == 3:  # ESRCH although kill(pid, 0) found it: a zombie has no task info left
+        return "Z"
+    return "" if errno == 1 else None  # EPERM: another user's process, alive
+
+
 def alive(pid):
     if not pid:
         return False
@@ -66,11 +93,13 @@ def alive(pid):
     try:
         state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[-1].split()[0]  # Linux, even without procps
     except (OSError, IndexError):
-        try:
-            state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True,
-                                   timeout=5).stdout.strip()
-        except (OSError, subprocess.TimeoutExpired):
-            return True  # no ps here: kill(pid, 0) already showed the process exists
+        state = _darwin_state(pid)
+        if state is None:
+            try:
+                state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True,
+                                       timeout=5).stdout.strip()
+            except (OSError, subprocess.TimeoutExpired):
+                return True  # no ps here: kill(pid, 0) already showed the process exists
     return not state.startswith("Z")
 
 
@@ -417,7 +446,34 @@ def _ended(folder, state):
     return time.time()
 
 
+_finished = {}  # (job id, detail) -> (files' stamp, status): a finished job changes only when its files do
+
+
+def _stamp(folder):
+    stamp = []
+    for name in ("job.json", "exit_code", "events.jsonl", "result.json"):
+        try:
+            st = (folder / name).stat()
+            stamp.append((st.st_mtime_ns, st.st_size))
+        except OSError:
+            stamp.append(None)
+    return tuple(stamp)
+
+
 def status(job_id, detail=False):
+    folder = _folder(job_id)
+    if (folder / "exit_code").exists():  # finished: read once, until a file of it changes (qajev top asks every second)
+        stamp = _stamp(folder)
+        hit = _finished.get((job_id, detail))
+        if hit and hit[0] == stamp:
+            return dict(hit[1])
+        out = _status(job_id, detail)
+        _finished[(job_id, detail)] = (stamp, out)
+        return dict(out)
+    return _status(job_id, detail)
+
+
+def _status(job_id, detail):
     _reap_children()
     meta = _meta(job_id)
     folder = _folder(job_id)

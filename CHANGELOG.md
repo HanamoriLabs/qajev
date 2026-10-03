@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: `qajev top` took seconds per refresh, too slow to use with many jobs queued: it started a `ps` for every job,
+  every second, to check it was alive, and read every finished job's whole log again. On macOS it now asks the
+  kernel (no process), and a finished job is read once until its files change: a refresh went from 1.9 s to 0.05 s.
+
 - Run specific tests: `qajev play --suite X --only STEP` (MCP `qa_play(only=...)`) runs chosen steps of a game
   session, plus the steps they name in `depends_on` and every `setup: true` step. `qajev rerun JOB` runs a finished
   job again with the same settings, and `--failed` only its tests that failed, got stuck or hit a harness limit (MCP
