@@ -143,10 +143,11 @@ async def _progress(ctx, event, counts):
                                   f"{event.get('scenario')}: {event.get('doing')}{spent}")
 
 
-async def _run_report(args, ctx, background=False, title=None):
+async def _run_report(args, ctx, background=False, title=None, cwd=None, rerun=None):
     """A browser run as a QAJev job. background: return the job at once. Otherwise wait for it (relaying its
-    progress) and return the report JSON; cancelling the call stops the job."""
-    job = await asyncio.to_thread(jobs.start, args, title)
+    progress) and return the report JSON; cancelling the call stops the job. cwd: where it runs (default: here);
+    rerun: the job it reruns (jobs.start)."""
+    job = await asyncio.to_thread(jobs.start, args, title, cwd=cwd, rerun=rerun)
     if background:
         return {"job": job["id"], "state": job["state"], "title": job["title"],
                 "next": "qa_job(job) for progress and partial results; qa_stop(job) to stop it"}
@@ -571,6 +572,7 @@ async def qa_rerun(ctx: Context, job: str, failed: bool = True, background: bool
     true steps). The rerun is a new job; background=true returns its id at once."""
     try:
         argv, what = await asyncio.to_thread(jobs.rerun_argv, job, failed)
+        cwd = await asyncio.to_thread(jobs.rerun_cwd, job)  # its relative paths mean the files where it ran
     except jobs.NoSuchJob:
         raise ToolError(f"no job {job}") from None
     except jobs.NothingToRerun as e:
@@ -580,7 +582,7 @@ async def qa_rerun(ctx: Context, job: str, failed: bool = True, background: bool
     if "--allow-commands" in argv and not _allow_commands:  # a terminal run's permission is not this server's
         raise ToolError(f"job {job} ran shell commands (--allow-commands), which this MCP server does not allow: "
                         "rerun it in a terminal with `qajev rerun`")
-    report = await _run_report(argv, ctx, background, title=None)
+    report = await _run_report(argv, ctx, background, title=None, cwd=cwd, rerun={"of": job, "failed": failed})
     return {"rerun": what, "of": job, **(report if background else _trim(report, False))}
 
 

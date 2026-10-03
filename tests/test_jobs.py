@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import time
 
@@ -133,11 +134,37 @@ def test_a_finished_job_reruns_as_it_was_or_only_its_tests_that_did_not_pass(mon
         with pytest.raises(jobs.NoSuchJob):
             jobs.rerun_argv(bad)
 
+    # SideGame1, 3 Oct: in `qajev jobs` a rerun looked just like the job it reran.
+    rerun = jobs.start(argv, command=[sys.executable, "-c", FINISHED, "2"], rerun={"of": run, "failed": True})
+    assert jobs.status(rerun["id"])["title"] == f"{jobs.status(run)['title']} · rerun of {run}, failed only"
+    started = []
+    monkeypatch.setattr(jobs, "start", lambda argv, title=None, **k: started.append((argv, k)) or
+                        {"id": "x", "title": "t"})
+    assert cli.cmd_rerun(cli.build_parser().parse_args(["rerun", run, "--failed", "--background", "--quiet"])) == 0
+    assert started == [([*argv, "--quiet"], {"rerun": {"of": run, "failed": True}})]  # a job of its own
+    assert cli._rerun is None  # a later run in this process is no rerun
+
+
+def test_a_rerun_runs_in_the_folder_its_job_ran_in(tmp_path, monkeypatch):
+    # Live, 3 Oct: `qajev play tests/fixtures/godot_game ...` rerun from another folder found no Godot project there.
+    from qajev import cli
+
+    project, elsewhere = tmp_path / "project", tmp_path / "elsewhere"
+    project.mkdir()
+    elsewhere.mkdir()
+    job = jobs.start(["play", "games/g", "--suite", "s.yaml"], command=[sys.executable, "-c", FINISHED, "2"],
+                     cwd=str(project))
+    run = wait_for(lambda: jobs.status(job["id"])["state"] == "done" and job["id"])
+    assert jobs.rerun_cwd(run) == str(project)
+    monkeypatch.chdir(elsewhere)
     ran = []
-    monkeypatch.setattr(cli, "main", lambda argv: ran.append(argv) or 0)
-    args = cli.build_parser().parse_args(["rerun", run, "--failed", "--background"])
-    assert cli.cmd_rerun(args) == 0
-    assert ran == [[*argv, "--background"]]  # the run itself goes to the background, as a job of its own
+    monkeypatch.setattr(cli, "main", lambda argv: ran.append(os.getcwd()) or 0)
+    assert cli.cmd_rerun(cli.build_parser().parse_args(["rerun", run, "--failed", "--quiet"])) == 0
+    assert ran == [os.path.realpath(project)]
+    project.rmdir()  # its relative paths mean nothing anywhere else
+    with pytest.raises(ValueError, match="no longer exists"):
+        jobs.rerun_cwd(run)
+    assert cli.cmd_rerun(cli.build_parser().parse_args(["rerun", run, "--quiet"])) == 3
 
 
 def test_stopping_a_job_lets_the_run_finish_its_cleanup():
