@@ -121,3 +121,19 @@ def test_rerun_never_brings_shell_commands_this_server_does_not_allow(monkeypatc
     monkeypatch.setattr(jobs, "rerun_argv", real)  # a job id that is a path is no job at all
     with pytest.raises(ToolError, match="no job"):
         asyncio.run(mcp_server.qa_rerun(None, "../elsewhere/x"))
+
+
+def test_qa_play_vision_is_the_default_unless_turned_off(monkeypatch):
+    seen = {}
+
+    async def fake_run(args, ctx, background, title=None):
+        seen["args"] = args
+        return {"gate": "PASS", "run_dir": "/runs/x", "scenarios": []}
+
+    monkeypatch.setattr(mcp_server, "_run_report", fake_run)
+    asyncio.run(mcp_server.qa_play("/games/ImHim.app", None))
+    assert "--vision" not in seen["args"] and "--no-vision" not in seen["args"]
+    asyncio.run(mcp_server.qa_play("/games/ImHim.app", None, vision=False))
+    assert "--no-vision" in seen["args"]
+    asyncio.run(mcp_server.qa_play("/games/ImHim.app", None, vision=True))
+    assert "--vision" in seen["args"]

@@ -451,7 +451,7 @@ async def qa_play(
     allow_errors: bool = False,
     expect_closed: bool = False,
     expect_looks: list[str] | None = None,
-    vision: bool = False,
+    vision: bool | None = None,
     allow: list[str] | None = None,
     hide: list[str] | None = None,
     name: str | None = None,
@@ -477,7 +477,9 @@ async def qa_play(
     run in qa_jobs. Each step ends with a screenshot (shots=false skips them); headless (default) only applies to
     Godot, where it is invisible and fastest but takes no screenshots. Electron apps always open a window.
     expect_looks: statements judged from the game's screenshot at the end; vision: the screenshot goes with every
-    decision. Both need Clef as the decision model and a picture, so they run the game windowed."""
+    decision. Both need Clef as the decision model and a picture, so they run the game windowed. vision is on by
+    default when Clef decides and the game has a window (Electron, mobile, a windowed Godot game); vision=false
+    turns it off, vision=true refuses to run without Clef."""
     args = ["play", project, "--max-actions", str(max_actions), "--max-seconds", str(max_seconds),
             "--out", out_dir or str(DEFAULT_OUT)]
     for flag, value in (("--goal", goal), ("--adapter", adapter), ("--suite", suite),
@@ -502,8 +504,8 @@ async def qa_play(
             args += [flag, label]
     for statement in expect_looks or []:
         args += ["--expect-looks", statement]
-    if vision:
-        args.append("--vision")
+    if vision is not None:
+        args.append("--vision" if vision else "--no-vision")
     if headless and not (vision or expect_looks):  # a headless Godot game draws nothing to look at
         args.append("--headless")
     if not shots:
