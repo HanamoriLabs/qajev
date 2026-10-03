@@ -36,6 +36,8 @@ something on a site, and to catch errors a browser can see.
 - Long runs: pass background=true to get a job id at once, then qa_job(job) for progress and partial results,
   qa_stop(job) to stop it. qa_jobs lists every QAJev run on the machine (any agent's), queued or running.
   Only one browser run executes at a time machine-wide; the others queue.
+- Specific tests: qa_run_suite(only=[...]) and qa_play(suite=..., only=[...]) run chosen scenarios or game steps
+  (with what they depend on); qa_rerun(job) runs a finished job's failed, stuck and harness tests again.
 - Every run writes report.html for the person (its path is in the result as report_html).
 
 Outcomes: pass; fail (product wrong); stuck (Jev found no way forward: verify by hand, often UX);
@@ -438,6 +440,7 @@ async def qa_play(
     goal: str | None = None,
     adapter: str | None = None,
     suite: str | None = None,
+    only: list[str] | None = None,
     game_env: dict | None = None,
     game_args: list[str] | None = None,
     expect_screen: str | None = None,
@@ -466,6 +469,7 @@ async def qa_play(
     throwaway save folder. `adapter`: a bundled name (suho, hypervolley, imhim) or a path, for games that draw their
     own UI. `suite`: a YAML file of steps in one session: goal steps, real-time play steps (`play:`, needs the
     game's bot), idle steps (`idle: SECONDS`, the game runs untouched), with top-level `allow`/`hide` labels.
+    `only`: run these steps of the suite, plus the steps they name in `depends_on` and every `setup: true` step.
     `game_env`: environment settings for the game; `game_args`: switches for an Electron app. expect_state: game
     state values, e.g. {"game_over": false, "kills": ">= 1"}. Quit, exit and delete-save buttons are hidden from Jev;
     to test a normal quit pass allow=["QUIT"] and expect_closed=true (passes only on exit code 0). `name` titles the
@@ -492,7 +496,7 @@ async def qa_play(
         args.append("--allow-errors")
     if expect_closed:
         args.append("--expect-closed")
-    for flag, labels in (("--allow", allow), ("--hide", hide)):
+    for flag, labels in (("--allow", allow), ("--hide", hide), ("--only", only)):
         for label in labels or []:
             args += [flag, label]
     for statement in expect_looks or []:
@@ -558,6 +562,23 @@ async def qa_job(job: str, verbose: bool = False) -> dict:
         keep = ("name", "outcome", "reason", "seconds", "findings", "shot", "needs_sign_in")
         st["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [])} for r in st["scenarios"]]
     return st
+
+
+@server.tool()
+async def qa_rerun(ctx: Context, job: str, failed: bool = True, background: bool = False) -> dict:
+    """Run a finished check, run or play job again with the same settings. failed (default): only its tests that
+    failed, got stuck or hit a harness limit (each still brings what it depends on; a game session its setup:
+    true steps). The rerun is a new job; background=true returns its id at once."""
+    try:
+        argv, what = await asyncio.to_thread(jobs.rerun_argv, job, failed)
+    except jobs.NoSuchJob:
+        raise ToolError(f"no job {job}") from None
+    except jobs.NothingToRerun as e:
+        return {"rerun": None, "reason": str(e)}
+    except ValueError as e:
+        raise ToolError(str(e)) from None
+    report = await _run_report(argv, ctx, background, title=None)
+    return {"rerun": what, "of": job, **(report if background else _trim(report, False))}
 
 
 @server.tool()

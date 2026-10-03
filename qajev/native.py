@@ -944,6 +944,29 @@ def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit, vision=Fals
     return r
 
 
+def select_steps(steps, only):
+    """--only NAME: the named steps of a session, plus the steps they name in `depends_on` and every `setup: true`
+    step (a launch check, a seeded save), in the suite's order. Steps keep their names, numbered as in the full
+    suite, so a report and a rerun say the same thing."""
+    names = [s.get("name") or f"step {i + 1}" for i, s in enumerate(steps)]
+    by_name = dict(zip(names, steps))
+    missing = [n for n in only if n not in by_name]
+    if missing:
+        raise NativeError(f"no step named {missing}; the suite has {names}")
+    keep, todo = set(), list(only)
+    while todo:
+        name = todo.pop()
+        if name in keep:
+            continue
+        keep.add(name)
+        needs = by_name[name].get("depends_on") or []
+        unknown = [n for n in needs if n not in by_name]
+        if unknown:
+            raise NativeError(f"step {name!r} depends on {unknown}, which the suite does not have")
+        todo.extend(needs)
+    return [{**s, "name": n} for n, s in zip(names, steps) if n in keep or s.get("setup")]
+
+
 def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=False):
     """Several steps in one game session, in order: `goal` steps (Jev on the UI) and `play` steps (real-time
     play). A step that loses the game ends the session; the rest are skipped."""
