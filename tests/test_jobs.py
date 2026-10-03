@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import time
 
@@ -85,7 +86,8 @@ def test_a_jobs_decisions_are_shown_live_newest_first_with_how_sure_and_the_runn
     lines = top.render_decisions(jobs.status(job["id"]), seen, width=140)
     assert lines[0][0].startswith("Decisions · check b.example · Clef · running")
     assert "2 decision(s) · median p 0.93 · 0 under 0.6 · 1 BLOCKED · median 600 ms" in lines[1][0]
-    rows = [(text, style) for text, style in lines if text.startswith(time.strftime("%H:"))]
+    # a decision row starts with its clock time (by pattern: a run made at 08:59:59 is read at 09:00:00)
+    rows = [(text, style) for text, style in lines if re.match(r"\d\d:\d\d:\d\d ", text)]
     assert "See pricing" in rows[0][0] and "Contact us" in rows[0][0] and rows[0][1] == "pass"  # newest first
     assert all(text.rstrip().endswith(ms) for (text, _), ms in zip(rows, ("280", "600")))  # nothing cut off
     assert all(len(text) <= 140 for text, _ in lines)
