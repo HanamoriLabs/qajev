@@ -218,7 +218,8 @@ class ElectronGame:
             self.close()
             raise NativeError(f"no app window on DevTools port {self.port} within {self.start_wait:.0f} s")
         self.url = page["url"]
-        self.ws = connect(page["webSocketDebuggerUrl"], max_size=64 * 2**20, open_timeout=10)
+        self.page_ws = page["webSocketDebuggerUrl"]  # also for live.py's frames, as a second client
+        self.ws = connect(self.page_ws, max_size=64 * 2**20, open_timeout=10)
         threading.Thread(target=self._read_ws, daemon=True).start()
         self.send("Runtime.enable")
         self.send("Page.enable")

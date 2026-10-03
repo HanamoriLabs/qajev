@@ -7,6 +7,17 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `expect: {status: 404}` in a website suite or project objective: the page must answer with that HTTP status. A
   test that sets out to show a removed page passes on it, and the 404 is no longer also filed as an S2 finding.
 
+- The dashboard, live: an open running run updates as it happens (a server-sent stream, not a 3 s poll), and its
+  running test shows what it is doing, its last steps and its screen (a frame every 2 s for website and Electron
+  runs, taken only while someone watches). A website test whose check runs a long script now says so ("reading the
+  page and running its checks"), where it showed nothing.
+- The dashboard's tests have a part for people ("What went wrong": each check in plain words, with what was there
+  instead) and a folded part for agents (the raw checks, reason, decisions and actions, and **Copy for an agent**).
+- A missing text's check now shows the closest text on the page ("closest on the page: … overlapFrames=5 …")
+  instead of the first 400 characters of the page.
+- Fixed: `qajev dashboard --stop` returned before the dashboard had exited, so a start right after failed ("another
+  dashboard holds the lock but is not serving"). It now waits for it to go.
+
 - `about`: what a test proves and why, in plain words. On a suite, its scenarios or steps, a project objective,
   `--about` on `check`, `play` and `run --objective`, and `about=` on the MCP tools. The report (HTML and Markdown)
   and the dashboard show it under the test's name and the run's title. The MCP instructions ask agents to always

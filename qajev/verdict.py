@@ -31,8 +31,11 @@ def page_checks(expect, observed):
         checks.append(_check(f"the page answered HTTP {expect['status']}", have == expect["status"],
                              None if have == expect["status"] else f"HTTP {have}"))
     case = " (any case)" if expect.get("ignore_case") else ""
-    for needle, seen in zip(expect.get("text", []), observed.get("text") or []):
-        checks.append(_check(f"page shows {needle!r}{case}", bool(seen), None if seen else observed.get("says")))
+    near = observed.get("near") or []
+    for i, (needle, seen) in enumerate(zip(expect.get("text", []), observed.get("text") or [])):
+        closest = near[i] if i < len(near) else None
+        miss = f"closest on the page: {closest}" if closest else f"not on the page; it begins: {observed.get('says')}"
+        checks.append(_check(f"page shows {needle!r}{case}", bool(seen), None if seen else miss))
     for needle, seen in zip(expect.get("absent", []), observed.get("absent") or []):
         checks.append(_check(f"page lacks {needle!r}{case}", not seen, "still shown" if seen else None))
     for needle, seen in zip(expect.get("visible", []), observed.get("visible") or []):

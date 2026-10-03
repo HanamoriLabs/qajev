@@ -144,6 +144,21 @@ PROBE_JS = Template("""(async () => {
       return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
     });
   };
+  // A missing text's closest match: the longest start of it (4 characters at least) that the page has, with the
+  // words around it, so a failed check shows "overlapFrames=5" next to the "overlapFrames=0" it wanted.
+  const nearest = (t) => {
+    const want = fold(norm(t));
+    for (let n = want.length - 1; n >= 4; n--) {
+      const at = page.indexOf(want.slice(0, n));
+      if (at >= 0) {
+        let from = Math.max(0, at - 40);
+        const space = body.indexOf(' ', from);
+        if (from > 0 && space >= 0 && space < at) from = space + 1;  // start on a word
+        return body.slice(from, at + n + 80).trim();
+      }
+    }
+    return null;
+  };
   let js = null;
   if (spec.js) {
     const r = await $js;
@@ -153,7 +168,7 @@ PROBE_JS = Template("""(async () => {
   try { status = performance.getEntriesByType('navigation')[0].responseStatus || null; } catch (e) {}
   return { probe, url: location.href, title: document.title, status,
     text: spec.text.map(t => has(t)), absent: spec.absent.map(t => has(t)), visible: spec.visible.map(onScreen),
-    js, says: body.slice(0, 400) };
+    near: spec.text.map(t => has(t) ? null : nearest(t)), js, says: body.slice(0, 400) };
 })()""")
 
 FIND_JS = Template("""(() => {
@@ -351,6 +366,14 @@ class Session:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(base64.b64decode(data))
         return path
+
+    def page_socket(self):
+        """This tab's own debugger WebSocket, for a second client (live.py's frames), or None."""
+        from . import live
+
+        if not hasattr(self, "_page_socket"):
+            self._page_socket = live.page_socket(os.environ.get("BU_CDP_URL", ""), self.browser.target)
+        return self._page_socket
 
     def screen_image(self):
         """The viewport as a JPEG data URL, for Clef (vision.py): what a visitor sees right now."""

@@ -211,7 +211,11 @@ def test_a_background_dashboard_outlives_its_command_and_stops_on_request(capsys
     assert main(["dashboard", "--json"]) == 0 and json.loads(capsys.readouterr().out)["already_running"]
     assert main(["dashboard", "--stop", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == {"stopped": there["pid"]}
-    wait_for(lambda: dashboard.running() is None and not dashboard.STATE.exists())  # it removed its own record
+    # Stopped means gone: a start right after must not find the lock still held (3 Oct: a restart failed so).
+    assert dashboard.running() is None and not dashboard.STATE.exists()  # it removed its own record
+    free = dashboard.claim()
+    assert free is not None
+    os.close(free)
 
 
 def test_only_one_dashboard_can_start_at_a_time():
@@ -241,3 +245,60 @@ def test_a_bad_body_length_is_refused_at_once(server):
     assert b" 404 " in post("-1")  # read nothing, went on: no such job
     assert b" 400 " in post("abc")
     assert b" 400 " in post("2", b"[]")  # not a JSON object
+
+
+SLOW_RUN = r"""
+import json, pathlib, sys, time
+emit = lambda **e: print(json.dumps(e), file=sys.stderr, flush=True)
+run = pathlib.Path("runs/live-run"); run.mkdir(parents=True, exist_ok=True)
+emit(event="run", suite="run HUD", run_dir=str(run), scenarios=1)
+emit(event="start", scenario="16x9")
+emit(event="step", scenario="16x9", doing="reading the page and running its checks", at=time.time())
+time.sleep(60)
+"""
+
+
+@pytest.fixture
+def running(tmp_path, monkeypatch):
+    monkeypatch.setenv("QAJEV_REPORTS", str(tmp_path / "reports"))
+    job = jobs.start(["run", "hud.yaml"], command=[sys.executable, "-c", SLOW_RUN], cwd=str(tmp_path))
+    wait_for(lambda: jobs.status(job["id"]).get("current") == "16x9")
+    yield job["id"], tmp_path / "runs" / "live-run"
+    jobs.stop(job["id"])
+
+
+def test_a_running_run_shows_its_live_frame_and_what_it_is_doing(running):
+    from qajev import live
+
+    job_id, run = running
+    assert "live" not in dashboard.detail(job_id)  # no frame yet: nobody was watching
+    (run / "live").mkdir()
+    (run / "live" / "frame.jpg").write_bytes(b"\xff\xd8\xff\xe0frame")
+    d = dashboard.detail(job_id)
+    assert d["live"]["shot"].startswith(f"/files/{job_id}/live/frame.jpg?t=")
+    assert d["activity"][-1]["doing"] == "reading the page and running its checks"
+    assert live.frame(run)
+
+
+def test_the_stream_marks_the_run_watched_and_pushes_each_change(running, server):
+    job_id, run = running
+    port = server.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn.request("GET", f"/api/stream/{job_id}", headers={
+        "Host": f"127.0.0.1:{port}", "Cookie": f"qajev_dashboard={server.RequestHandlerClass.key}"})
+    res = conn.getresponse()
+    assert res.status == 200 and res.getheader("Content-Type") == "text/event-stream"
+    assert res.fp.readline() == b"data: change\n"  # the page loads at once
+    assert wait_for(lambda: (run / "live" / "watching").is_file())  # the run now saves frames
+    (run / "live" / "frame.jpg").write_bytes(b"\xff\xd8\xff\xe0new")
+    deadline = time.monotonic() + 5
+    line = b""
+    while time.monotonic() < deadline and line != b"data: change\n":
+        line = res.fp.readline()
+    assert line == b"data: change\n"  # a new frame is pushed, no 3 s poll
+    conn.close()
+
+
+def test_the_stream_needs_the_key(running, server):
+    status, _headers, _body = request(server, "GET", f"/api/stream/{running[0]}", cookie=False)
+    assert status == 401
