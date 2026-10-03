@@ -8,8 +8,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   test that sets out to show a removed page passes on it, and the 404 is no longer also filed as an S2 finding.
 
 - Fixed: a game still running that did not answer QAJev in time ("no answer to Runtime.evaluate within 20 s") was
-  filed as an S1 "game crashed or closed". It is now an S2 "game stopped answering"; a game that really closed
-  stays S1.
+  filed as an S1 "game crashed or closed". QAJev now measures its renderer for 3 s: pegged (80% of a core or more)
+  is an S1 "game froze", idle is an S2 "game stopped answering" (most likely the debugger link). A game that
+  really closed stays S1 "game crashed or closed".
 
 - `qajev dashboard`: every run on the machine in a local web page (designed in Claude Design, in qajev.com's look).
   Filter by project, result, kind and period; open a run to see what is running now, each test with its checks,
