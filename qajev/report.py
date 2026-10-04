@@ -234,7 +234,9 @@ def markdown(data):
                 lines.append(f"- Jev stopped with the expected text below the fold; QAJev scrolled {a['scrolled']} "
                              f"screen(s) {found}")
         if r.get("guard_hidden"):
-            lines.append(f"- Guard hid or disabled {r['guard_hidden']} control(s) Jev must not use")
+            held = r.get("guard_hidden_controls") or []
+            lines.append(f"- Guard hid or disabled {r['guard_hidden']} control(s) Jev must not use"
+                         + (f": {_cell(verdict.hidden_words(held, limit=8), 600)}" if held else ""))
         if r.get("guard_hydration"):
             lines.append(f"- React reported {r['guard_hydration']} hydration mismatch(es) on attributes the read-only "
                          "guard set (QAJev's doing, not the page's)")

@@ -7,6 +7,8 @@ from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .verdict import hidden_words
+
 OBVIOUS = 0.8
 OUTCOME_ORDER = ("pass", "fail", "stuck", "harness", "unverified", "skipped")
 LEGEND = {
@@ -143,7 +145,9 @@ def _scenario(i, r, who="Jev"):
             notes.append(f"Jev stopped with the expected text below the fold; QAJev scrolled {a['scrolled']} screen(s) "
                          + ("and brought it on screen" if a["found"] else "without bringing it on screen"))
     if r.get("guard_hidden"):
-        notes.append(f"Guard hid or disabled {r['guard_hidden']} control(s) Jev must not use")
+        held = r.get("guard_hidden_controls") or []
+        notes.append(f"Guard hid or disabled {r['guard_hidden']} control(s) Jev must not use"
+                     + (f": {_e(hidden_words(held, limit=8))}" if held else ""))
     if r.get("guard_hydration"):
         notes.append(f"React reported {r['guard_hydration']} hydration mismatch(es) on attributes the read-only guard "
                      "set (QAJev's doing, not the page's)" + "".join(

@@ -196,7 +196,10 @@ true, up to 15 s; a Promise counts by what it resolves to), `key` (`Escape`, `En
 
 ## Guard options
 
-The guard hides dangerous controls and blocks writes (see [Safety](safety.md)). A suite can tune it:
+The guard hides dangerous controls and blocks writes (see [Safety](safety.md)). It reads everything a person could
+read on a control: its text, `aria-label`, `title` (the tooltip) and an input's value. A stuck or harness result
+names what it held back ("guard hid: 'Shop Show clothes and gear you can buy' (danger: buy)"), and so does the
+report. A suite can tune it:
 
 ```yaml
 hosts: [accounts.example.com]      # other sites Jev may visit; anything else stops the scenario

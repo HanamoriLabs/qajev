@@ -43,6 +43,10 @@ session expired. If that page should be public, that is the bug.
 Jev found no way forward. Open the screenshot: a visitor would often be stuck too (a hidden menu, two buttons
 with the same name, content far below). If the target is far down a long page, start closer to it.
 
+If the reason ends with **"guard hid: ..."**, the way forward may be a control QAJev's guard held back, with the
+words that made it ("'Shop Show clothes and gear you can buy' (danger: buy)": the guard reads the tooltip too).
+When that control is safe, let it through with a narrow `guard: allow:` entry ([Guard options](writing-tests.md#guard-options)).
+
 **Jev keeps re-typing a field**
 Give the value in the goal, and make it different from the field's placeholder. For long forms, use a `fill` hook
 and let Jev do the rest.

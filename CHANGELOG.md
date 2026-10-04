@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- A `stuck` or `harness` result names what the guard held back, and the words that made it ("guard hid: 'Shop Show
+  clothes and gear you can buy' (danger: buy)"), and the report's note lists them, so a hidden control is no longer
+  mistaken for a layout problem.
+- Hook clicks and fills prove the guard as Jev's actions do: on a page where it is absent, out of date or still
+  waiting, the scenario stops (`guard_missing`) and nothing is clicked.
 - The read-only guard no longer causes React hydration errors on React and Next.js sites: it waits for the page's
   load, and for React to take over each server-rendered control, before disabling or hiding it (writing requests
   stay blocked from the first byte). QAJev waits for it before every action and hook click, and stops the scenario

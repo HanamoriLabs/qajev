@@ -196,12 +196,26 @@
   // An off-site link (a store badge, a social link) stays on the page as a visitor sees it, for the screenshots and
   // the checks; inert keeps it out of Jev's actions and its clicks. Risky controls are taken off the page.
   const OFFSITE = 'off-site link';
+  // What the guard holds back now, and the words that made it, so a stuck or harness result can name them (a
+  // tooltip's "buy" hid a "Shop" button: verse1, 4 Oct). -> {label, why, match}
+  const held = new Map();
+  const words = (pattern, text) => { const m = pattern && pattern.exec(text); return m ? squash(m[0]) : null; };
+  const record = (el, why) => {
+    const text = label(el);
+    const kind = why === OFFSITE ? OFFSITE : why === 'field' ? 'secret field' : why.split(':')[0];
+    const match = kind === 'danger' ? words(deny, text) : kind === 'read-only' ? words(mutating, accessibleName(el))
+      : kind === OFFSITE ? (() => { try { return new URL(el.href, location.href).host; } catch (e) { return null; } })()
+      : null;
+    held.set(el, { label: (text || el.getAttribute('placeholder') || el.getAttribute('name') || el.type || '').slice(0, 80),
+                   why: kind, match });
+  };
   const hide = (el, why) => {
     if (el.dataset.qajevGuard === why) return;
     if (el.dataset.qajevGuard) restore(el);  // its reason changed (a label rewritten): judge it afresh
     el.dataset.qajevGuard = why;
     el.inert = true;
     state.hidden++;
+    record(el, why);
     if (why === OFFSITE) return;
     el.dataset.qajevDisplay = el.style.getPropertyValue('display');
     el.style.setProperty('display', 'none', 'important');
@@ -217,11 +231,12 @@
     el.inert = false;
     delete el.dataset.qajevGuard; delete el.dataset.qajevDisplay;
     state.hidden--;
+    held.delete(el);
   }
   const judge = (el) => {
     if (el.matches(FIELD)) {
       // Secrets are the person's job. Disabled, not removed, so forms keep rendering.
-      if (!(cfg.allow_secret_fields && loopback) && !el.disabled) { el.disabled = true; el.dataset.qajevGuard = 'field'; state.hidden++; }
+      if (!(cfg.allow_secret_fields && loopback) && !el.disabled) { el.disabled = true; el.dataset.qajevGuard = 'field'; state.hidden++; record(el, 'field'); }
       return;
     }
     if (el.tagName === 'A' && el.target === '_blank' && !offsite(el)) el.target = '_self';
@@ -309,6 +324,7 @@
       v: state.v, mode: state.mode, deaf: state.deaf && window.webkitSpeechRecognition === DeafRecognition,
       hidden: state.hidden, errors: state.errors.splice(0), blocked: state.blocked.splice(0), pending: waiting.size,
       guard_hydration: state.hydration, guard_hydration_details: state.hydrationText.splice(0),
+      hidden_controls: [...held].filter(([el]) => el.isConnected).slice(0, 20).map(([, v]) => v),
       blank_ms: state.busySince === null ? 0 : Math.round(performance.now() - state.busySince),
       lcp: state.lcp, cls: Math.round(state.cls * 1000) / 1000,
     };

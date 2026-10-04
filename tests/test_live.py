@@ -349,6 +349,37 @@ def test_a_hook_never_clicks_a_control_the_guard_has_not_judged(session, site, m
         session.require_guard()
 
 
+def test_the_guard_names_what_it_held_back_and_the_words_that_did_it(session, site):
+    # verse1, 4 Oct: a tooltip's "buy" hid the wardrobe's "Shop" button; the stuck result read as a layout bug.
+    from qajev import verdict
+
+    session.arm("readonly")
+    session.navigate(site + "/shop.html")
+    held = session.probe({})["probe"]["hidden_controls"]
+    assert held == [{"label": "Shop Show clothes and gear you can buy", "why": "danger", "match": "buy"},
+                    {"label": "Card number", "why": "secret field", "match": None},
+                    {"label": "Elsewhere", "why": "off-site link", "match": "elsewhere.example"}]
+    assert verdict.with_guard_note("stuck", "Jev found no way forward; unmet: text 'Crown'", held) == (
+        "Jev found no way forward; unmet: text 'Crown'; guard hid: 'Shop Show clothes and gear you can buy' "
+        "(danger: buy), 'Card number' (secret field), 'Elsewhere' (off-site link: elsewhere.example)")
+
+
+def test_a_hook_never_clicks_on_a_page_without_the_guard(session, site):
+    # Orchestrator's review of #25: with the guard armed for the tab but absent from the page, find() clicked anyway.
+    from qajev.session import GuardMissing
+
+    session.arm("readonly")
+    session.call("Page.removeScriptToEvaluateOnNewDocument", identifier=session.script_id)  # the next page: no guard
+    try:
+        session.navigate(site + "/never.html")
+        assert session.guard_state() is None
+        with pytest.raises(GuardMissing, match="guard absent on"):
+            session.run_hook({"click": "#del"}, site + "/never.html")
+        assert session.evaluate("window.clicked || 0") == 0
+    finally:
+        session.script_id = session.guard_cfg = None  # the next test arms afresh
+
+
 def test_a_hydration_warning_about_only_the_guards_attributes_is_a_harness_note(session, site):
     # The fallback, if React hydrates later than the guard waits: React's warning names only what the guard set.
     session.arm("readonly")

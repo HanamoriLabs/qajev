@@ -223,6 +223,23 @@ def dedupe(findings):
     return sorted(out, key=lambda f: SEVERITY_ORDER.get(f["severity"], 9))
 
 
+def hidden_words(hidden, limit=3):
+    """What the guard held back, in words: "'Shop Show clothes and gear you can buy' (danger: buy), 'Card number'
+    (secret field) and 2 more"."""
+    named = [f"{str(h.get('label') or '?')[:60]!r} ({h.get('why')}{': ' + str(h['match']) if h.get('match') else ''})"
+             for h in hidden[:limit]]
+    more = f" and {len(hidden) - limit} more" if len(hidden) > limit else ""
+    return ", ".join(named) + more
+
+
+def with_guard_note(outcome, reason, hidden):
+    """A stuck or harness result while the guard held controls back names them: the way forward may be one of them
+    (a tooltip's "buy" hid verse1's "Shop" button, and the stuck result read as a layout bug)."""
+    if outcome in {"stuck", "harness"} and hidden:
+        return f"{reason}; guard hid: {hidden_words(hidden)}"
+    return reason
+
+
 def stale_words(why):
     """One stale decision's reason, in a line: Jev's reason, then what was in the way or what changed."""
     if not why:
