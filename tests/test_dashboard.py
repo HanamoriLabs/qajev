@@ -313,3 +313,26 @@ def test_the_stream_takes_only_a_job_id(server):
     for bad in ("../evil", "..%2Fevil", "a/b", "20261004-001731-174f%2F..%2F..", "nope"):
         status, _headers, _body = request(server, "GET", f"/api/stream/{bad}")
         assert status == 404, bad
+
+
+REPO = Path(__file__).resolve().parents[1]
+
+
+def test_the_dashboard_wears_the_real_qajev_logo(server):
+    # José, 4 Oct: the dashboard uses QAJev's own logo (the repo's brand files, never a redrawn mark).
+    status, headers, logo = request(server, "GET", "/logo.svg")
+    assert status == 200 and headers["Content-Type"] == "image/svg+xml"
+    assert logo == (REPO / "docs" / "images" / "logo-dark.svg").read_bytes()  # the lockup, for the navy header
+    status, _headers, mark = request(server, "GET", "/favicon.svg")
+    assert status == 200 and mark == (REPO / "site" / "favicon.svg").read_bytes()
+    _status, _headers, page = request(server, "GET", "/")
+    assert b'src="/logo.svg"' in page and b'rel="icon" href="/favicon.svg"' in page
+    assert request(server, "GET", "/logo.svg", cookie=False)[0] == 401  # behind the key, like the rest
+
+
+def test_the_key_survives_a_restart_unless_asked_for_a_new_one():
+    first = dashboard.stored_key()
+    assert dashboard.stored_key() == first and len(first) >= 32
+    assert oct(dashboard.KEY.stat().st_mode & 0o777) == "0o600"
+    rotated = dashboard.stored_key(new=True)
+    assert rotated != first and dashboard.stored_key() == rotated

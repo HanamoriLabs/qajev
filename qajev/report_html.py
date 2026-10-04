@@ -1,8 +1,10 @@
 """report.html: the same report as report.md, as one self-contained page (inline CSS, no scripts, screenshots linked
 relative to the run folder). URLs lose their query strings, as in report.md: they carry tokens and codes."""
 
+import base64
 import time
 from html import escape
+from pathlib import Path
 from urllib.parse import urlsplit
 
 OBVIOUS = 0.8
@@ -16,6 +18,10 @@ LEGEND = {
     "skipped": "not run (machine busy, or an earlier step failed)",
 }
 
+# QAJev's mark (the repo's site/favicon.svg, copied to qajev/assets), inline: a report loads nothing from elsewhere.
+MARK = "data:image/svg+xml;base64," + base64.b64encode(
+    (Path(__file__).with_name("assets") / "mark.svg").read_bytes()).decode()
+
 CSS = """
 :root { --bg:#f7f7f5; --card:#fff; --ink:#1c1c1a; --muted:#6b6b66; --line:#e3e3de; --code:#f0f0ec;
   --pass:#1f7a3a; --pass-bg:#e3f4e8; --fail:#b3261e; --fail-bg:#fde8e6; --stuck:#9a5b00; --stuck-bg:#fdf0d9;
@@ -28,7 +34,8 @@ CSS = """
 body { margin:0; background:var(--bg); color:var(--ink);
   font:15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 main { max-width:1100px; margin:0 auto; padding:24px 16px 48px; }
-h1 { font-size:22px; margin:0 0 4px; overflow-wrap:anywhere; }
+h1 { font-size:22px; margin:0 0 4px; overflow-wrap:anywhere; display:flex; align-items:center; gap:10px; }
+h1 .mark { flex:none; border-radius:6px; }
 h2 { font-size:17px; margin:32px 0 10px; }
 h3 { font-size:15px; margin:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
   overflow-wrap:anywhere; }
@@ -241,8 +248,8 @@ def render(data):
     out = [
         '<!doctype html><html lang="en"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        f"<title>{_e(title)}</title><style>{CSS}</style></head><body><main>",
-        f"<h1>{_e(title)}</h1>",
+        f'<title>{_e(title)}</title><link rel="icon" href="{MARK}"><style>{CSS}</style></head><body><main>',
+        f'<h1><img class="mark" src="{MARK}" alt="" width="28" height="28">{_e(title)}</h1>',
         f'<p class="about">{_e(data["about"])}</p>' if data.get("about") else "",
         f'<div class="sub">{_e(" · ".join(sub))}</div>' if sub else "",
         f'<div class="gate {_e(data["gate"])}">Gate: {_e(data["gate"])}{interrupted}</div>',

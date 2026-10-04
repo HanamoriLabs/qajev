@@ -318,6 +318,9 @@ def build_parser():
     dash.add_argument("--background", dest="dash_background", action="store_true",
                       help="run it detached (it outlives this terminal); print its address and return")
     dash.add_argument("--stop", action="store_true", help="stop the dashboard running on this machine")
+    dash.add_argument("--new-key", action="store_true",
+                      help="start with a new key: every address printed before stops working (the key is otherwise "
+                           "kept across restarts, so an open tab keeps working)")
 
     init = sub.add_parser("init", help="write a starter suite file")
     init.add_argument("path", type=Path, nargs="?", default=Path("qajev.yaml"))
@@ -1200,6 +1203,10 @@ def cmd_dashboard(args):
 
             webbrowser.open(url)
 
+    if args.new_key and not args.stop:
+        if dashboard.running():
+            return _fail(args, "a dashboard is running: `qajev dashboard --stop` first, then --new-key", EXIT_CONFIG)
+        dashboard.stored_key(new=True)
     there = dashboard.running()
     if args.stop:
         if there:
@@ -1244,7 +1251,7 @@ def cmd_dashboard(args):
         tell(there["url"], True)
         return 0
     try:
-        server = dashboard.make_server(args.port)
+        server = dashboard.make_server(args.port, key=dashboard.stored_key())
     except OSError as e:
         return _fail(args, str(e), EXIT_CONFIG)
     tell(f"http://127.0.0.1:{server.server_address[1]}/?k={server.RequestHandlerClass.key}", False)

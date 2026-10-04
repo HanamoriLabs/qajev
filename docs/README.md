@@ -10,6 +10,7 @@
 
 - [Projects](projects.md): store a product's objectives, run them any time, see what changed, nightly runs.
 - [Jobs, the queue and `qajev top`](jobs-and-top.md): follow, stop and watch runs live.
+- [The dashboard](dashboard.md): every run in a local web page; start it, open a run, watch it live.
 - [CLI reference](cli.md): every command and option.
 
 **AI agents**

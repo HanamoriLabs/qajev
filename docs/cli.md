@@ -241,8 +241,9 @@ with `--once` / `--json`. See [Jobs and top](jobs-and-top.md).
 
 Every run in a local web page: filter by project, open each test with its screenshots and decisions, stop, rerun
 or start runs. `--background` runs it detached (it outlives the terminal), `--open` opens it in the browser,
-`--stop` stops it, `--port` sets the first port to try (default 8790), `--json` prints its address as data. It
-serves 127.0.0.1 only; the address it prints carries its key. See [Jobs and top](jobs-and-top.md#qajev-dashboard-every-run-in-the-browser).
+`--stop` stops it, `--port` sets the first port to try (default 8790), `--json` prints its address as data,
+`--new-key` starts it with a new key. It serves 127.0.0.1 only; the address it prints carries its key, kept across
+restarts. See [The dashboard](dashboard.md).
 
 ## `qajev nightly`
 

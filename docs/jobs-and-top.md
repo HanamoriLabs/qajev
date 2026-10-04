@@ -103,33 +103,8 @@ The same without the dashboard, or for an agent: `qajev top --decisions JOB --on
 
 ```bash
 qajev dashboard --background --open   # start it (it outlives the terminal) and open it
-qajev dashboard                       # in the foreground; Ctrl-C stops it
-qajev dashboard --stop                # stop the one running
 ```
 
-One local web page with every run on the machine, any agent's: queued and running jobs live, and every finished
-run and project report.
-
-- **Find runs**: search, a chip per project (the QAJev project, else the site or the game), and filters for the
-  result (live, PASS, FAIL, INCOMPLETE), the kind (games, checks, suites, smoke crawls) and the period. The
-  filters stay in the address, so a view can be bookmarked.
-- **Open a run**: what is running now and the model deciding, the command, the folder, a bar of the results, the
-  screenshots in a strip (click one to enlarge; arrows step through them), and each test. "Not passed" shows only
-  the tests to look at. A test has two parts:
-  - **for people**: what it proves (its `about`), then "What went wrong" (or "What it proved"): each check as a plain
-    sentence, failed ones first, with what was there instead (for a missing text, the closest text on the page),
-    and the serious problems seen;
-  - **for agents** (folded): the raw reason, checks, findings, the model's decisions (unsure ones marked), its
-    actions and what the screen said, and **Copy for an agent**: the test, its checks, the run folder and the
-    `qajev rerun JOB --failed` command, ready to paste into an agent's chat.
-- **Watch it live**: an open running run updates as it happens (the page holds a stream; the server pushes each step,
-  test and frame). The running test shows what it is doing now, its last steps, and its **screen, live**: a frame
-  every 2 s for website and Electron runs. Frames are taken only while someone has the run open, so an unwatched
-  run costs nothing.
-- **Act**: stop a running job, rerun a finished one (all of it, or only its failed tests, as `qajev rerun`), or
-  start a project's stored objectives (**New run**). It never reruns a job that ran shell commands
-  (`--allow-commands`): do that in a terminal.
-
-It serves `127.0.0.1` only, behind a key in the address it prints: keep that address to yourself. Only one
-dashboard runs on a machine; a second `qajev dashboard` prints the address of the first. Report pages open
-sandboxed, and the page serves a run's own files only.
+One local web page with every run on the machine, any agent's: filter by project, open a run to see each test (what
+it proves, what went wrong, its screenshots and decisions), watch a running one live, stop, rerun or start runs. See
+[The dashboard](dashboard.md) for starting and stopping it, its key, and troubleshooting.

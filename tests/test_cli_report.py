@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import sys
 import time
@@ -109,7 +110,8 @@ def test_every_report_also_writes_a_self_contained_html_page(tmp_path):
     assert "token=secret" not in page and "code=123" not in page  # no query strings, as in the Markdown
     assert 'href="http://h/p"' in page and 'href="javascript:' not in page  # only http(s) URLs become links
     assert 'src="shots/buy.jpg"' in page  # screenshots stay relative to the run folder
-    assert "<link" not in page and "http://fonts" not in page  # nothing loaded from elsewhere
+    assert not re.search(r'<link[^>]*href="(https?:)?//', page) and "http://fonts" not in page  # nothing from elsewhere
+    assert '<link rel="icon" href="data:image/svg+xml;base64,' in page  # QAJev's mark rides inline
 
 
 def test_report_html_rebuilds_the_page_from_a_finished_run(tmp_path, capsys):
@@ -297,3 +299,34 @@ def test_check_and_play_take_about():
     (sc,) = check_suite(args).scenarios
     assert sc.about == "the Pro plan is on sale"
     assert build_parser().parse_args(["play", "g", "--about", "the menu opens"]).about == "the menu opens"
+
+
+def test_the_report_carries_the_qajev_mark_without_loading_anything(tmp_path):
+    from pathlib import Path
+
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
+    data = report.build(SimpleNamespace(name="demo"), [result("home", "pass")], [ledger], browser={},
+                        started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+    report.write(tmp_path, data)
+    page = (tmp_path / "report.html").read_text()
+    mark = (Path(__file__).resolve().parents[1] / "site" / "favicon.svg").read_bytes()
+    import base64
+
+    inline = "data:image/svg+xml;base64," + base64.b64encode(mark).decode()
+    assert f'<link rel="icon" href="{inline}">' in page and f'src="{inline}"' in page
+    assert "http://" not in page.split("<main>")[0] and "https://" not in page.split("<main>")[0]
+
+
+def test_the_docs_links_resolve():
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    for doc in [root / "README.md", *sorted((root / "docs").glob("*.md"))]:
+        for target in re.findall(r"\]\(([^)#\s]+)(?:#[^)]*)?\)", doc.read_text()):
+            if target.startswith(("http://", "https://", "mailto:")):
+                continue
+            assert (doc.parent / target).exists(), f"{doc.name} links to {target}, which does not exist"
+    assert "dashboard.md" in (root / "docs" / "README.md").read_text()
+    assert "docs/dashboard.md" in (root / "README.md").read_text()
