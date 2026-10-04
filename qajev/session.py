@@ -7,6 +7,7 @@ Order matters and every step here was learned from an incident or a measured mis
   4. The guard is re-proven right before every action Jev executes (fail closed).
 """
 
+import contextlib
 import json
 import os
 import subprocess
@@ -392,15 +393,30 @@ class Session:
 
     def guard_state(self):
         return self.evaluate("window.__qajev ? {v: window.__qajev.v, deaf: window.__qajev.deaf, "
-                             "mode: window.__qajev.mode} : null")
+                             "mode: window.__qajev.mode, "
+                             "pending: window.__qajev.pending ? window.__qajev.pending() : 0} : null")
+
+    GUARD_WAIT = 12.0  # the guard's longest wait: the page's load (5 s after it is parsed) plus React's hydration (5 s)
+
+    def guard_settled(self, timeout=GUARD_WAIT):
+        """Wait until the guard has judged every control on the page: it holds back until React has hydrated them
+        (its writes would read as the page's hydration errors). -> the guard's state."""
+        deadline = time.monotonic() + timeout
+        while True:
+            state = self.guard_state()
+            if not state or not state.get("pending") or time.monotonic() >= deadline:
+                return state
+            time.sleep(0.1)
 
     def require_guard(self):
         if self.guard_cfg is None:
             raise GuardMissing("guard not armed for this tab")
-        state = self.guard_state()
+        state = self.guard_settled()
         if not state or state.get("v") != self.guard_cfg["v"] or state.get("deaf") is not True:
             url = self.evaluate("location.href")
             raise GuardMissing(f"guard {'absent' if not state else 'stale or not deaf'} on {url}")
+        if state.get("pending"):  # fail closed: a control it has not judged yet may be one Jev must not use
+            raise GuardMissing(f"guard still waiting on {state['pending']} control(s) after {self.GUARD_WAIT:.0f} s")
         return state
 
     def set_device(self, device):
@@ -429,6 +445,9 @@ class Session:
             except RuntimeError:
                 pass
             time.sleep(0.05)
+        if self.guard_cfg is not None:
+            with contextlib.suppress(RuntimeError):  # navigating on: the next page's guard is judged in its turn
+                self.guard_settled()
         self.minimize()
         return None
 
@@ -580,6 +599,8 @@ class Session:
         self.call("Input.dispatchKeyEvent", type="keyUp", **{k: v for k, v in spec.items() if k != "text"})
 
     def find(self, selector):
+        if self.guard_cfg is not None:
+            self.guard_settled()  # so a control the guard hides is refused, not clicked before it is judged
         found = self.evaluate(FIND_JS.substitute(selector=json.dumps(selector)))
         if not found or found.get("error"):
             raise HookFailed((found or {}).get("error") or f"cannot locate {selector!r}")

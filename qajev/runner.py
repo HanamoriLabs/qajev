@@ -143,6 +143,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                                     first_party_hosts=hosts, why=getattr(session, "why_failed", None)))
         result["blocked_writes"].extend(probe.get("blocked") or [])
         result["guard_hidden"] = max(result["guard_hidden"], probe.get("hidden") or 0)
+        if probe.get("guard_hydration"):  # React's warnings about the guard's own attributes: a note, not a finding
+            result["guard_hydration"] = max(result.get("guard_hydration", 0), probe["guard_hydration"])
         result["blank_ms"] = max(result.get("blank_ms", 0), probe.get("blank_ms") or 0)
         for vital in ("lcp", "cls"):
             if probe.get(vital):

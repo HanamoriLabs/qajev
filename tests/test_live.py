@@ -5,6 +5,7 @@ QAJEV_LIVE_JEV=1  plus one end-to-end Jev check (a few paid TypeSafe decisions, 
 QAJEV_LIVE_CLEF=1 plus two Clef checks with screenshots (Workers AI, under $0.01; needs the Cloudflare variables).
 """
 
+import contextlib
 import http.server
 import json
 import os
@@ -285,6 +286,65 @@ def test_a_stale_move_says_what_was_in_the_way(session, site):
     changed = page_changes(page, session.agent.state["page"], now, node)
     assert any(c.startswith("target's text around it:") and "Please wait" in c for c in changed), changed
     assert any(c.startswith("text:") and "Please wait" in c for c in changed), changed
+
+
+def test_the_guard_waits_for_react_to_hydrate(session, site):
+    # FlockTab1's sign-in page (run 20261004-210258): the guard wrote `disabled` and data-qajev-guard onto the password
+    # field before React hydrated it, and React's "attributes didn't match" error read as the page's own bug.
+    from qajev import verdict
+
+    session.arm("readonly")
+    session.navigate(site + "/hydrate.html")  # it waits for the guard to settle, after React has hydrated
+    assert session.evaluate("window.atHydration") == {"disabled": False, "marked": None}  # untouched until then
+    probe = session.probe({})["probe"]
+    found = verdict.findings_from_probe(probe, scenario="h", url=site, first_party_hosts={site.split("//")[1]})
+    mismatch = [f for f in found if any(w in f["detail"] for w in ("did not match", "Extra attributes", "qajev"))]
+    assert not mismatch and not probe.get("guard_hydration"), mismatch
+    assert probe["pending"] == 0 and session.require_guard()["pending"] == 0
+    marks = session.evaluate("[...document.querySelectorAll('#pw,#del,#out')].map(e => "
+                             "[e.id, e.dataset.qajevGuard || null, e.disabled ?? null, e.inert])")
+    assert marks[0] == ["pw", "field", True, False]  # the secret field: disabled, after hydration
+    assert marks[1][:2] == ["del", "danger: Delete account"] and marks[1][3] is True  # the risky button: taken off
+    assert marks[2][:2] == ["out", "off-site link"] and marks[2][3] is True  # the off-site link: inert
+
+
+def test_jev_cannot_type_into_a_secret_field_while_the_guard_waits(session, site):
+    # The deferral window: a card number field (Jev never lists password fields; it does list this one) is not
+    # disabled until React has hydrated it. Jev may see it and choose it then, but before it acts QAJev waits for the
+    # guard (require_guard: pending 0), so the move goes stale and nothing is typed.
+    session.arm("readonly")
+    session.call("Page.navigate", url=site + "/hydrate.html")  # not session.navigate: that would wait for the guard
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:  # loaded, React not yet hydrated: the guard is waiting on its controls
+        with contextlib.suppress(RuntimeError):
+            if session.evaluate("document.readyState === 'complete' && !window.atHydration && "
+                                "window.__qajev.pending() > 0"):
+                break
+        time.sleep(0.02)
+    else:
+        pytest.fail("never caught the guard waiting")
+    session.observe()
+    page = session.agent.state["page"]
+    field = next(a for a in page["actions"] if a["kind"] == "fill" and a["label"] == "Card number")  # Jev sees it
+    assert session.require_guard()["pending"] == 0  # it waited until the guard had judged every control
+    stale = session.jev.browser.StalePage
+    with pytest.raises(stale):
+        session.browser.act(field, page, text="hunter2")
+    assert session.evaluate("[document.getElementById('card').disabled, document.getElementById('card').value]") == [
+        True, ""]
+
+
+def test_a_hydration_warning_about_only_the_guards_attributes_is_a_harness_note(session, site):
+    # The fallback, if React hydrates later than the guard waits: React's warning names only what the guard set.
+    session.arm("readonly")
+    session.navigate(site + "/")
+    session.probe({})  # empty the error buffer
+    session.evaluate("console.error('Warning: Extra attributes from the server: %s%s', ['disabled', "
+                     "'data-qajev-guard'], '\\n    in input'); console.error('Warning: Prop `%s` did not match. "
+                     "Server: %s Client: %s%s', 'className', '\"a\"', '\"b\"', '\\n    in div')")
+    probe = session.probe({})["probe"]
+    assert probe["guard_hydration"] == 1  # ours: a note
+    assert [e["detail"][:40] for e in probe["errors"]] == ["Warning: Prop `%s` did not match. Server"]  # the page's
 
 
 def test_csp_blocks_and_report_only_violations_are_findings(session, site):

@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- The read-only guard no longer causes React hydration errors on React and Next.js sites: it waits for the page's
+  load, and for React to take over each server-rendered control, before disabling or hiding it (writing requests
+  stay blocked from the first byte). QAJev waits for it before every action and hook click, and stops the scenario
+  if it is still waiting after 12 s. A hydration warning that names only the guard's own attributes is a harness
+  note in the report, not a page finding.
 - A decision that goes stale says why: Jev's own reason, what was wrong with its target ("covered by div#toast",
   "hidden", "off the screen") and what changed under it ("text: 'Score 41' → 'Score 42'", "controls: +'Pay'"). It
   shows in the dashboard's decisions, in `qajev top --decisions`, and at the end of a "stale" stop's reason.
