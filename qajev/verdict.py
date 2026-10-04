@@ -170,8 +170,9 @@ def document_findings(status, expect, *, scenario, url):
     return [_finding("S1" if status >= 500 else "S2", f"HTTP {status}", "document response", scenario, url)]
 
 
-def findings_from_probe(probe, *, scenario, url, first_party_hosts):
-    """Product signals (errors, failed requests, blank screens) independent of the scenario outcome."""
+def findings_from_probe(probe, *, scenario, url, first_party_hosts, why=None):
+    """Product signals (errors, failed requests, blank screens) independent of the scenario outcome. why(url), when
+    given, says why a resource failed to load (Chrome's net::ERR_*, from netlog)."""
     out = []
     for err in (probe or {}).get("errors", []):
         kind, detail = err.get("kind"), str(err.get("detail", ""))[:300]
@@ -187,7 +188,9 @@ def findings_from_probe(probe, *, scenario, url, first_party_hosts):
             status = int(err.get("status", 0))
             out.append(_finding("S2" if status >= 500 else "S3", f"HTTP {status}", detail, scenario, url))
         elif kind == "resource" and not third_party:
-            out.append(_finding("S3", "failed to load", detail, scenario, url))
+            reason = why(detail) if why and detail.startswith("http") else None
+            out.append(_finding("S3", "failed to load", f"{detail} ({reason})"[:600] if reason else detail,
+                                scenario, url))
         elif kind == "console":
             out.append(_finding("S3", "console error", detail, scenario, url))
         elif kind == "csp":  # third-party too: a blocked tag or pixel is the site's own policy at work
@@ -220,6 +223,15 @@ def dedupe(findings):
     return sorted(out, key=lambda f: SEVERITY_ORDER.get(f["severity"], 9))
 
 
+def stale_words(why):
+    """One stale decision's reason, in a line: Jev's reason, then what was in the way or what changed."""
+    if not why:
+        return ""
+    more = [why["target"]] if why.get("target") else []
+    more += why.get("changed") or []
+    return why["reason"] + (" " + "; ".join(more) if more else " (nothing Jev reads changed: it moved or re-rendered)")
+
+
 def screens(decisions):
     """Per decision: what Jev chose, how sure, and the runner-up ("one obvious next step?")."""
     out = []
@@ -242,6 +254,7 @@ def screens(decisions):
             "confidence": d.get("confidence"),
             "options": len(criteria) or len(d.get("operation_probabilities") or {}) or None,
             "ms": d.get("latency_ms"),
+            **({"stale": stale_words(d["stale"])} if d.get("stale") else {}),
         })
     return out
 

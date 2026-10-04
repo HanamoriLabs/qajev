@@ -197,7 +197,8 @@ def detail(run_id):
     by_step = {}
     for d in decisions:
         by_step.setdefault(d.get("scenario"), []).append(
-            {k: d.get(k) for k in ("at", "screen", "chose", "operation", "p", "runner_up", "runner_up_p", "ms")})
+            {k: d.get(k) for k in ("at", "screen", "chose", "operation", "p", "runner_up", "runner_up_p", "ms",
+                                   "stale")})
     out["steps"] = [{**_step(run_id, s), "decisions": by_step.get(s.get("name"), [])} for s in scenarios]
     current = out.get("current")
     if current and not any(s["name"] == current for s in out["steps"]):  # the test running now

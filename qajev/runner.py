@@ -140,7 +140,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     def absorb(obs):
         probe = (obs or {}).get("probe") or {}
         findings.extend(verdict.findings_from_probe(probe, scenario=scenario.name, url=obs.get("url"),
-                                                    first_party_hosts=hosts))
+                                                    first_party_hosts=hosts, why=getattr(session, "why_failed", None)))
         result["blocked_writes"].extend(probe.get("blocked") or [])
         result["guard_hidden"] = max(result["guard_hidden"], probe.get("hidden") or 0)
         result["blank_ms"] = max(result.get("blank_ms", 0), probe.get("blank_ms") or 0)
@@ -188,7 +188,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                     _emit(opts, "decision", scenario=scenario.name, at=time.time(),
                           screen=observed.get("title") or observed.get("url"), chose=s["next_step"],
                           operation=s["operation"], p=s["p"], runner_up=s["runner_up"],
-                          runner_up_p=s["runner_up_p"], options=s["options"], ms=s["ms"])
+                          runner_up_p=s["runner_up_p"], options=s["options"], ms=s["ms"],
+                          **({"stale": s["stale"]} if s.get("stale") else {}))
 
                 with vision.seeing(session.screen_image if scenario.vision else None):
                     stop, detail = drive(session, scenario, read, page_ok, started, step, decided)
@@ -330,6 +331,12 @@ def _did(h):
     return f"{h.get('kind') or 'act'} {action!r}"
 
 
+def _last_stale(session):
+    """The last stale decision's reason, for a "stale" stop: "; the last: <Jev's reason> <what changed>"."""
+    words = verdict.stale_words(getattr(session, "last_stale", None))
+    return f"; the last: {words}" if words else ""
+
+
 def drive(session, scenario, read, page_ok, started, step=None, decided=None):
     """Jev's loop with QAJev's judgment around it. Returns (stop, detail). step(doing, **extra) hears each move;
     decided(decision) hears each of the model's decisions as it is made, stale ones too (qajev top's decisions view)."""
@@ -364,7 +371,8 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None):
             moves = sum(1 for d in state["decisions"] if d.get("operation") not in {"BLOCKED", "DONE"})
             wasted = moves - len(state["history"])
             if wasted >= 4 and wasted > len(state["history"]):
-                return "stale", f"{wasted} of Jev's moves went stale before they ran (the page kept changing)"
+                return "stale", (f"{wasted} of Jev's moves went stale before they ran (the page kept changing)"
+                                 + _last_stale(session))
             return "blocked", None
         if len(state["history"]) >= scenario.budget["actions"]:
             return "budget_actions", f"{len(state['history'])} actions"
@@ -379,7 +387,7 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None):
                 session.observe()
                 stale_base += pending
                 continue
-            return "stale", f"{pending} decisions without an action"
+            return "stale", f"{pending} decisions without an action" + _last_stale(session)
         try:
             session.tick()
             model_failures = 0

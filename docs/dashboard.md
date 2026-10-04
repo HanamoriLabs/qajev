@@ -55,9 +55,10 @@ enlarge; the arrows step through them), and its tests. "Not passed" shows only t
 - **what it proves**: its `about`, under its name ([Writing tests](writing-tests.md) says how to give one);
 - **for people**: "What went wrong" (or "What it proved"): each check as a plain sentence, failed ones first, with
   what was there instead (for a missing text, the closest text on the page), and the serious problems seen;
-- **for agents** (folded): the raw reason, checks and findings, the model's decisions (unsure ones marked), its
-  actions and what the screen said, and **Copy for an agent**: the test, its checks, the run folder, the command and
-  `qajev rerun JOB --failed`, ready to paste into an agent's chat.
+- **for agents** (folded): the raw reason, checks and findings, the model's decisions (unsure ones marked; a move
+  that went stale says why: what covered its target, or what changed), its actions and what the screen said, and
+  **Copy for an agent**: the test, its checks, the run folder, the command and `qajev rerun JOB --failed`, ready to
+  paste into an agent's chat.
 
 **A running run** updates as it happens: the page holds a stream to the dashboard, which pushes each step, test and
 frame. The running test shows what it is doing now, its last steps, and its **screen, live**: a frame every 2 s for

@@ -22,6 +22,8 @@ emit(event="run", suite="play imhim", run_dir=str(run), scenarios=2)
 emit(event="start", scenario="kira: beaten")
 emit(event="decision", scenario="kira: beaten", at=time.time(), screen="LEVEL UP", chose="Spiral Orb", p=0.55,
      runner_up="Shield", runner_up_p=0.4, options=3, ms=310)
+emit(event="decision", scenario="kira: beaten", at=time.time(), screen="LEVEL UP", chose="Shield", p=0.9,
+     ms=290, stale="Target changed or is covered. Observe again. click 'Shield': covered by div#toast")
 steps = [{"name": "kira: beaten", "outcome": "pass", "reason": "ok", "shot": "shots/kira.jpg",
           "about": "Kira's fight can be won at level 18",
           "checks": [{"check": "boss gone", "ok": True, "detail": None}]},
@@ -88,6 +90,7 @@ def test_every_run_is_listed_by_project_with_its_tests_screenshots_and_decisions
     assert [s["name"] for s in d["steps"]] == ["kira: beaten", "kira: on the ledger"]
     assert d["steps"][0]["shot"] == f"/files/{job_id}/shots/kira.jpg" and d["steps"][0]["checks"][0]["ok"]
     assert d["steps"][0]["decisions"][0]["chose"] == "Spiral Orb" and d["steps"][0]["decisions"][0]["p"] == 0.55
+    assert d["steps"][0]["decisions"][1]["stale"].endswith("covered by div#toast")  # why that move never ran
     assert d["folder"] == str((run_root / "runs" / "boss-run").resolve())  # its run folder, wherever it ran
     assert d["report_html"] == f"/files/{job_id}/report.html"
     assert d["command_line"].startswith("qajev play games/sidescroller/desktop")
