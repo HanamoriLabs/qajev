@@ -7,6 +7,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `expect: {status: 404}` in a website suite or project objective: the page must answer with that HTTP status. A
   test that sets out to show a removed page passes on it, and the 404 is no longer also filed as an S2 finding.
 
+- The dashboard wears QAJev's logo: the repo's own brand files (the dark lockup in its header, the mark as its
+  favicon), packaged with QAJev; report.html carries the mark inline (it still loads nothing from elsewhere).
+- The dashboard's key is kept across restarts (`~/.qajev/dashboard.key`, 0600), so restarting it no longer breaks an
+  open tab; `qajev dashboard --new-key` makes a new one.
+- [The dashboard](docs/dashboard.md): its own page in the docs: what it shows, starting and stopping it, its key,
+  opening a run, what the MCP tools give, and troubleshooting.
+
 - The dashboard, live: an open running run updates as it happens (a server-sent stream, not a 3 s poll), and its
   running test shows what it is doing, its last steps and its screen (a frame every 2 s for website and Electron
   runs, taken only while someone watches). A website test whose check runs a long script now says so ("reading the

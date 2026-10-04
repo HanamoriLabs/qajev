@@ -23,6 +23,11 @@ from . import jobs, live
 
 PAGE = Path(__file__).with_name("dashboard.html")
 STATE = jobs.JOBS.parent / "dashboard.json"  # the running dashboard: pid, port and key (0600)
+KEY = jobs.JOBS.parent / "dashboard.key"  # its key, kept across restarts so an open tab keeps working (0600)
+# QAJev's own logo files, copied from the repo's brand files (docs/images/logo-dark.svg, site/favicon.svg): never
+# redrawn. A test checks the copies still match.
+ASSETS = {"/logo.svg": Path(__file__).with_name("assets") / "logo-dark.svg",
+          "/favicon.svg": Path(__file__).with_name("assets") / "mark.svg"}
 FILE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".html", ".json", ".md", ".txt", ".mp4", ".webm"}
 FINISHED = ("done", "stopped", "failed", "lost")
 STEP_KEYS = ("name", "about", "outcome", "reason", "stop", "seconds", "cost_usd", "goal", "checks", "findings",
@@ -338,6 +343,9 @@ class Handler(BaseHTTPRequestHandler):
                                     "style-src 'unsafe-inline' https://fonts.googleapis.com; "
                                     "font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; "
                                     "frame-ancestors 'none'")])
+            if url.path in ASSETS:
+                return self._send(200, ASSETS[url.path].read_bytes(), "image/svg+xml",
+                                  [("Cache-Control", "private, max-age=86400")])
             if url.path == "/api/state":
                 return self._send(200, state())
             if url.path == "/api/projects":
@@ -467,6 +475,22 @@ def running():
     if not jobs.alive(info.get("pid", 0)):
         return None
     return {**info, "url": f"http://127.0.0.1:{info['port']}/?k={info['key']}"}
+
+
+def stored_key(new=False):
+    """The dashboard's key: the one kept from before (a restart keeps the address, and an open tab works on), or a
+    new one with `new` (qajev dashboard --new-key: every old address stops working)."""
+    if not new:
+        with contextlib.suppress(OSError):
+            kept = KEY.read_text().strip()
+            if len(kept) >= 32:
+                return kept
+    key = secrets.token_urlsafe(24)
+    KEY.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(KEY, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(key)
+    return key
 
 
 def make_server(port=8790, key=None):

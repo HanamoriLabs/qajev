@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>QAJev dashboard</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&amp;family=DM+Mono:wght@400;500&amp;display=swap">
 <!-- Design: Claude Design project "QAJev dashboard", file "QAJev Dashboard.dc.html" (qajev.com's brand). -->
@@ -36,8 +37,9 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, select:focus-vi
 .app { height:100vh; display:flex; flex-direction:column; overflow:hidden; }
 
 .top { background:var(--navy); color:#fff; display:flex; align-items:center; gap:20px; padding:12px 24px; flex-wrap:wrap; }
-.brand { font-weight:700; font-size:20px; letter-spacing:-0.01em; display:flex; align-items:baseline; gap:8px; }
+.brand { font-weight:700; font-size:20px; letter-spacing:-0.01em; display:flex; align-items:center; gap:10px; }
 .brand-sub { font:500 12px var(--mono); color:var(--muted-dark); }
+.logo { display:block; height:28px; width:auto; }
 .machine { display:flex; gap:8px; flex:1; flex-wrap:wrap; min-width:0; }
 .mchip { display:inline-flex; align-items:center; gap:7px; padding:4px 10px; border-radius:999px; background:var(--navy-2);
   color:var(--pale); font:12px var(--mono); max-width:100%; min-width:0; }
@@ -249,7 +251,7 @@ pre.said { white-space:pre-wrap; font:12px/1.5 var(--mono); background:var(--gro
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand">QAJev<span class="brand-sub" id="where">dashboard</span></div>
+    <div class="brand"><img class="logo" src="/logo.svg" alt="QAJev" width="110" height="28"><span class="brand-sub" id="where">dashboard</span></div>
     <div class="machine" id="machine" aria-live="polite"><span class="mchip"><span class="mtext">Loading…</span></span></div>
     <button class="btn-hi" id="newrun">New run</button>
   </header>
