@@ -334,6 +334,21 @@ def test_jev_cannot_type_into_a_secret_field_while_the_guard_waits(session, site
         True, ""]
 
 
+def test_a_hook_never_clicks_a_control_the_guard_has_not_judged(session, site, monkeypatch):
+    # Orchestrator's review of #25: find() waited for the guard, then clicked anyway when it was still waiting. It
+    # fails closed now, as require_guard does: the scenario ends guard_missing, and the button is never clicked.
+    from qajev.session import GuardMissing
+
+    monkeypatch.setattr(session, "GUARD_WAIT", 1.0)  # the page holds the guard for 5 s; give up sooner
+    session.arm("readonly")
+    session.navigate(site + "/never.html")
+    with pytest.raises(GuardMissing, match=r"guard still waiting on 1 control\(s\)"):
+        session.run_hook({"click": "#del"}, site + "/never.html")
+    assert session.evaluate("window.clicked || 0") == 0
+    with pytest.raises(GuardMissing, match="guard still waiting"):  # Jev's actions: the same helper, the same stop
+        session.require_guard()
+
+
 def test_a_hydration_warning_about_only_the_guards_attributes_is_a_harness_note(session, site):
     # The fallback, if React hydrates later than the guard waits: React's warning names only what the guard set.
     session.arm("readonly")
@@ -342,9 +357,16 @@ def test_a_hydration_warning_about_only_the_guards_attributes_is_a_harness_note(
     session.evaluate("console.error('Warning: Extra attributes from the server: %s%s', ['disabled', "
                      "'data-qajev-guard'], '\\n    in input'); console.error('Warning: Prop `%s` did not match. "
                      "Server: %s Client: %s%s', 'className', '\"a\"', '\"b\"', '\\n    in div')")
+    # React 19: one diff that lists the guard's attribute and the page's own className stays the page's finding
+    session.evaluate("console.error(\"A tree hydrated but some attributes of the server rendered HTML didn't match "
+                     "the client properties.%s\", '\\n  <div\\n+   className=\"a\"\\n-   className=\"b\"\\n-   "
+                     "data-qajev-guard=\"field\"\\n  >')")
     probe = session.probe({})["probe"]
-    assert probe["guard_hydration"] == 1  # ours: a note
-    assert [e["detail"][:40] for e in probe["errors"]] == ["Warning: Prop `%s` did not match. Server"]  # the page's
+    assert probe["guard_hydration"] == 1  # ours: a note, its text kept for the report
+    assert probe["guard_hydration_details"][0].startswith("Warning: Extra attributes from the server: %s%s disabled,")
+    assert [e["detail"][:40] for e in probe["errors"]] == [  # the page's: findings
+        "Warning: Prop `%s` did not match. Server", "A tree hydrated but some attributes of t"]
+    assert 'className="a"' in probe["errors"][1]["detail"]
 
 
 def test_csp_blocks_and_report_only_violations_are_findings(session, site):

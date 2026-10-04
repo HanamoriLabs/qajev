@@ -238,6 +238,7 @@ def markdown(data):
         if r.get("guard_hydration"):
             lines.append(f"- React reported {r['guard_hydration']} hydration mismatch(es) on attributes the read-only "
                          "guard set (QAJev's doing, not the page's)")
+            lines += [f"  - {_cell(d, 500)}" for d in r.get("guard_hydration_details") or []]
         lines += _play_md(r)
         screens = r.get("screens") or []
         if screens:

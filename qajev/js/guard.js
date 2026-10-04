@@ -10,7 +10,7 @@
   }
 
   const state = { v: '', mode: '', deaf: false, hidden: 0, errors: [], blocked: [], lcp: 0, cls: 0, busySince: null,
-                  hydration: 0 };
+                  hydration: 0, hydrationText: [] };
   const MAX = 200;
   const push = (list, item) => { if (list.length < MAX) list.push(item); };
   const re = (list) => (list && list.length ? new RegExp(list.join('|'), 'i') : null);
@@ -116,7 +116,8 @@
   const consoleError = console.error;
   console.error = function (...args) {
     const text = args.map((a) => (a && a.message) || String(a)).join(' ');
-    if (guardHydration(args)) state.hydration++;
+    // re-classed, never hidden: its text goes to the report's harness note
+    if (guardHydration(args)) { state.hydration++; push(state.hydrationText, text.slice(0, 500)); }
     else push(state.errors, { kind: 'console', detail: text.slice(0, 500) });
     return consoleError.apply(this, args);
   };
@@ -307,7 +308,7 @@
     const out = {
       v: state.v, mode: state.mode, deaf: state.deaf && window.webkitSpeechRecognition === DeafRecognition,
       hidden: state.hidden, errors: state.errors.splice(0), blocked: state.blocked.splice(0), pending: waiting.size,
-      guard_hydration: state.hydration,
+      guard_hydration: state.hydration, guard_hydration_details: state.hydrationText.splice(0),
       blank_ms: state.busySince === null ? 0 : Math.round(performance.now() - state.busySince),
       lcp: state.lcp, cls: Math.round(state.cls * 1000) / 1000,
     };

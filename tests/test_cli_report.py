@@ -338,11 +338,17 @@ def test_the_guards_own_hydration_warnings_are_a_note_in_both_reports(tmp_path):
               "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
     result = {"name": "login", "url": "http://127.0.0.1:3100/login", "goal": None, "mode": "readonly",
               "outcome": "pass", "reason": "ok", "checks": [], "findings": [], "screens": [], "guard_hydration": 2,
+              "guard_hydration_details": [
+                  "A tree hydrated but some attributes ... <input - data-qajev-guard=\"field\""],
               "seconds": 1.0}
     data = report.build(SimpleNamespace(name="demo"), [result], [ledger], browser={}, started_at=time.time(),
                         strict=False, interrupted=False, run_dir=tmp_path)
     report.write(tmp_path, data)
     note = ("React reported 2 hydration mismatch(es) on attributes the read-only guard set (QAJev's doing, not the "
             "page's)")
-    assert note in (tmp_path / "report.md").read_text() and note in (tmp_path / "report.html").read_text()
+    md, html = (tmp_path / "report.md").read_text(), (tmp_path / "report.html").read_text()
+    assert note in md and note in html
+    # re-classed, never hidden: React's own text under the note (escaped: it is the page's text)
+    assert '  - A tree hydrated but some attributes ... <input - data-qajev-guard="field"' in md
+    assert "A tree hydrated but some attributes ... &lt;input - data-qajev-guard=&quot;field&quot;" in html
     assert not data["scenarios"][0]["findings"]

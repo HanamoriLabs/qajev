@@ -398,25 +398,31 @@ class Session:
 
     GUARD_WAIT = 12.0  # the guard's longest wait: the page's load (5 s after it is parsed) plus React's hydration (5 s)
 
-    def guard_settled(self, timeout=GUARD_WAIT):
+    def guard_settled(self, timeout=None):
         """Wait until the guard has judged every control on the page: it holds back until React has hydrated them
-        (its writes would read as the page's hydration errors). -> the guard's state."""
-        deadline = time.monotonic() + timeout
+        (its writes would read as the page's hydration errors). -> the guard's state, pending or not."""
+        deadline = time.monotonic() + (self.GUARD_WAIT if timeout is None else timeout)
         while True:
             state = self.guard_state()
             if not state or not state.get("pending") or time.monotonic() >= deadline:
                 return state
             time.sleep(0.1)
 
+    def all_judged(self):
+        """The guard's state once it has judged every control. Fail closed: GuardMissing while it is still waiting,
+        as a control it has not judged may be one nobody must use. Before every Jev action and every hook click."""
+        state = self.guard_settled()
+        if state and state.get("pending"):
+            raise GuardMissing(f"guard still waiting on {state['pending']} control(s) after {self.GUARD_WAIT:.0f} s")
+        return state
+
     def require_guard(self):
         if self.guard_cfg is None:
             raise GuardMissing("guard not armed for this tab")
-        state = self.guard_settled()
+        state = self.all_judged()
         if not state or state.get("v") != self.guard_cfg["v"] or state.get("deaf") is not True:
             url = self.evaluate("location.href")
             raise GuardMissing(f"guard {'absent' if not state else 'stale or not deaf'} on {url}")
-        if state.get("pending"):  # fail closed: a control it has not judged yet may be one Jev must not use
-            raise GuardMissing(f"guard still waiting on {state['pending']} control(s) after {self.GUARD_WAIT:.0f} s")
         return state
 
     def set_device(self, device):
@@ -600,7 +606,7 @@ class Session:
 
     def find(self, selector):
         if self.guard_cfg is not None:
-            self.guard_settled()  # so a control the guard hides is refused, not clicked before it is judged
+            self.all_judged()  # so a control the guard hides is refused, never clicked before it is judged
         found = self.evaluate(FIND_JS.substitute(selector=json.dumps(selector)))
         if not found or found.get("error"):
             raise HookFailed((found or {}).get("error") or f"cannot locate {selector!r}")

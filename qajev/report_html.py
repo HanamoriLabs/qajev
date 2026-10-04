@@ -146,7 +146,8 @@ def _scenario(i, r, who="Jev"):
         notes.append(f"Guard hid or disabled {r['guard_hidden']} control(s) Jev must not use")
     if r.get("guard_hydration"):
         notes.append(f"React reported {r['guard_hydration']} hydration mismatch(es) on attributes the read-only guard "
-                     "set (QAJev's doing, not the page's)")
+                     "set (QAJev's doing, not the page's)" + "".join(
+                         f'<pre class="muted">{_e(d)}</pre>' for d in r.get("guard_hydration_details") or []))
     if checks or notes:
         items = [f'<li><span class="{"ok" if c["ok"] else "no"}">{"✓" if c["ok"] else "✗"}</span> '
                  f'{_e(c["check"])}' + (f' <span class="muted">— {_e(c["detail"])}</span>' if c.get("detail") else "")
