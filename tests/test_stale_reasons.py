@@ -157,3 +157,23 @@ def test_the_network_log_hears_chromes_reasons_on_a_link_of_its_own(monkeypatch)
             server.shutdown()
     assert not failures.is_alive()
     assert netlog.start(None) is None  # no page link (Godot, mobile): no log
+
+
+def test_the_network_log_stays_bounded_on_a_page_that_polls_a_dead_endpoint():
+    # Orchestrator's review of #24: a long run on a page that keeps polling must not grow the log without end.
+    log = netlog.Failures("ws://127.0.0.1:9/unused")  # never started: take() is fed directly
+
+    def fail(n, url):
+        log.take({"method": "Network.requestWillBeSent", "params": {"requestId": str(n), "request": {"url": url}}})
+        log.take({"method": "Network.loadingFailed", "params": {"requestId": str(n), "errorText": "net::ERR_FAILED"}})
+
+    for n in range(1000):  # the same dead endpoint, polled again and again: one entry, its latest failure
+        fail(n, "http://h/api/poll")
+    assert list(log.failed) == ["http://h/api/poll"] and not log.urls
+    for n in range(netlog.KEEP + 50):  # every request a new address (a cache-busting query)
+        fail(10_000 + n, f"http://h/api/poll?t={n}")
+    assert len(log.failed) == netlog.KEEP  # the oldest are let go
+    assert "http://h/api/poll" not in log.failed and f"http://h/api/poll?t={netlog.KEEP + 49}" in log.failed
+    for n in range(netlog.IDS + 10):  # requests that never fail: their ids are let go too
+        log.take({"method": "Network.requestWillBeSent", "params": {"requestId": f"ok{n}", "request": {"url": "http://h/"}}})
+    assert len(log.urls) == netlog.IDS
