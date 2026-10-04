@@ -349,6 +349,68 @@ def test_a_hook_never_clicks_a_control_the_guard_has_not_judged(session, site, m
         session.require_guard()
 
 
+def test_the_guard_names_what_it_held_back_and_the_words_that_did_it(session, site):
+    # verse1, 4 Oct: a tooltip's "buy" hid the wardrobe's "Shop" button; the stuck result read as a layout bug.
+    from qajev import verdict
+
+    session.arm("readonly")
+    session.navigate(site + "/shop.html")
+    held = session.probe({})["probe"]["hidden_controls"]
+    assert held == [{"label": "Shop Show clothes and gear you can buy", "why": "danger", "match": "buy"},
+                    {"label": "Card number", "why": "secret field", "match": None},
+                    {"label": "password", "why": "secret field", "match": None},
+                    {"label": "Elsewhere", "why": "off-site link", "match": "elsewhere.example"}]
+    assert verdict.with_guard_note("stuck", "Jev found no way forward; unmet: text 'Crown'", held) == (
+        "Jev found no way forward; unmet: text 'Crown'; guard hid: 'Shop Show clothes and gear you can buy' "
+        "(danger: buy), 'Card number' (secret field), 'password' (secret field) and 1 more")
+
+
+def test_a_secret_fields_value_never_reaches_the_reason_or_the_reports(session, site, tmp_path):
+    # Orchestrator's review of #26: a record's label joined an input's value, so a filled secret field leaked it into
+    # the stuck reason and both reports. The page holds the values; nothing QAJev writes may.
+    from types import SimpleNamespace
+
+    from qajev import report, verdict
+
+    session.arm("readonly")
+    session.navigate(site + "/shop.html")
+    assert session.evaluate("[card.value, pw.value]") == ["4111111111111111", "hunter2"]  # the page does hold them
+    probe = session.probe({})["probe"]
+    held = probe["hidden_controls"]
+    reason = verdict.with_guard_note("stuck", "Jev found no way forward", held)
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
+    result = {"name": "wardrobe", "url": site + "/shop.html", "goal": "Open the shop", "mode": "readonly",
+              "outcome": "stuck", "reason": reason, "checks": [], "findings": [], "screens": [], "seconds": 1.0,
+              "guard_hidden": probe["hidden"], "guard_hidden_controls": held}
+    data = report.build(SimpleNamespace(name="leak"), [result], [ledger], browser={}, started_at=time.time(),
+                        strict=False, interrupted=False, run_dir=tmp_path)
+    report.write(tmp_path, data)
+    (tmp_path / "probe.json").write_text(json.dumps(probe))  # what the run read from the page, too
+    files = [p for p in tmp_path.rglob("*") if p.is_file()]
+    assert {p.name for p in files} >= {"report.json", "report.md", "report.html", "probe.json"}
+    assert "'password' (secret field)" in (tmp_path / "report.md").read_text()  # named, by its attributes
+    for secret in ("4111111111111111", "hunter2"):
+        assert secret not in reason and secret not in json.dumps(held)
+        assert [p.name for p in files if secret in p.read_text(errors="replace")] == []  # 0 hits in the run folder
+
+
+def test_a_hook_never_clicks_on_a_page_without_the_guard(session, site):
+    # Orchestrator's review of #25: with the guard armed for the tab but absent from the page, find() clicked anyway.
+    from qajev.session import GuardMissing
+
+    session.arm("readonly")
+    session.call("Page.removeScriptToEvaluateOnNewDocument", identifier=session.script_id)  # the next page: no guard
+    try:
+        session.navigate(site + "/never.html")
+        assert session.guard_state() is None
+        with pytest.raises(GuardMissing, match="guard absent on"):
+            session.run_hook({"click": "#del"}, site + "/never.html")
+        assert session.evaluate("window.clicked || 0") == 0
+    finally:
+        session.script_id = session.guard_cfg = None  # the next test arms afresh
+
+
 def test_a_hydration_warning_about_only_the_guards_attributes_is_a_harness_note(session, site):
     # The fallback, if React hydrates later than the guard waits: React's warning names only what the guard set.
     session.arm("readonly")

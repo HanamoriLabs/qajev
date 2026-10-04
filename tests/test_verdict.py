@@ -185,3 +185,18 @@ def test_a_missing_text_shows_the_closest_text_on_the_page():
     assert hit["ok"] and hit["detail"] is None
     (nothing,) = V.page_checks({"text": ["Zebra"]}, {"text": [False], "near": [None], "says": "E TALK"})
     assert nothing["detail"] == "not on the page; it begins: E TALK"
+
+
+def test_a_stuck_or_harness_result_names_what_the_guard_held_back():
+    # verse1, 4 Oct: "stuck" read as a layout bug; the guard had hidden the "Shop" button over its tooltip's "buy".
+    held = [{"label": "Shop Show clothes and gear you can buy", "why": "danger", "match": "buy"},
+            {"label": "Card number", "why": "secret field", "match": None},
+            {"label": "Elsewhere", "why": "off-site link", "match": "elsewhere.example"},
+            {"label": "Delete account", "why": "danger", "match": "Delete account"}]
+    stuck = V.with_guard_note("stuck", "Jev found no way forward", held)
+    assert stuck == ("Jev found no way forward; guard hid: 'Shop Show clothes and gear you can buy' (danger: buy), "
+                     "'Card number' (secret field), 'Elsewhere' (off-site link: elsewhere.example) and 1 more")
+    harness = V.with_guard_note("harness", "action budget spent", held[:1])
+    assert harness == "action budget spent; guard hid: 'Shop Show clothes and gear you can buy' (danger: buy)"
+    assert V.with_guard_note("pass", "ok", held) == "ok" and V.with_guard_note("fail", "no", held) == "no"
+    assert V.with_guard_note("stuck", "Jev found no way forward", []) == "Jev found no way forward"

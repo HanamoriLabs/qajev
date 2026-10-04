@@ -606,7 +606,7 @@ class Session:
 
     def find(self, selector):
         if self.guard_cfg is not None:
-            self.all_judged()  # so a control the guard hides is refused, never clicked before it is judged
+            self.require_guard()  # present, current, deaf and done judging: else no hook clicks or types here
         found = self.evaluate(FIND_JS.substitute(selector=json.dumps(selector)))
         if not found or found.get("error"):
             raise HookFailed((found or {}).get("error") or f"cannot locate {selector!r}")

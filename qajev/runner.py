@@ -143,6 +143,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                                     first_party_hosts=hosts, why=getattr(session, "why_failed", None)))
         result["blocked_writes"].extend(probe.get("blocked") or [])
         result["guard_hidden"] = max(result["guard_hidden"], probe.get("hidden") or 0)
+        if "hidden_controls" in probe:  # what the guard holds back on the page now
+            result["guard_hidden_controls"] = probe["hidden_controls"]
         if probe.get("guard_hydration"):  # React's warnings about the guard's own attributes: a note, not a finding
             result["guard_hydration"] = max(result.get("guard_hydration", 0), probe["guard_hydration"])
             kept = result.setdefault("guard_hydration_details", [])
@@ -294,6 +296,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                        "reading on would" if a["found"] else
                        f"; the expected text is in the page but {a['scrolled']} screen(s) of scrolling did not bring "
                        "it on screen")
+    reason = verdict.with_guard_note(outcome, reason, result.get("guard_hidden_controls") or [])
     return _finish(result, outcome, reason, started)
 
 
