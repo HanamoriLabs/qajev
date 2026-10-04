@@ -330,3 +330,25 @@ def test_the_docs_links_resolve():
             assert (doc.parent / target).exists(), f"{doc.name} links to {target}, which does not exist"
     assert "dashboard.md" in (root / "docs" / "README.md").read_text()
     assert "docs/dashboard.md" in (root / "README.md").read_text()
+
+
+def test_the_guards_own_hydration_warnings_are_a_note_in_both_reports(tmp_path):
+    # Orchestrator, 4 Oct: React's hydration warning about the guard's attributes is QAJev's doing, never the page's.
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
+    result = {"name": "login", "url": "http://127.0.0.1:3100/login", "goal": None, "mode": "readonly",
+              "outcome": "pass", "reason": "ok", "checks": [], "findings": [], "screens": [], "guard_hydration": 2,
+              "guard_hydration_details": [
+                  "A tree hydrated but some attributes ... <input - data-qajev-guard=\"field\""],
+              "seconds": 1.0}
+    data = report.build(SimpleNamespace(name="demo"), [result], [ledger], browser={}, started_at=time.time(),
+                        strict=False, interrupted=False, run_dir=tmp_path)
+    report.write(tmp_path, data)
+    note = ("React reported 2 hydration mismatch(es) on attributes the read-only guard set (QAJev's doing, not the "
+            "page's)")
+    md, html = (tmp_path / "report.md").read_text(), (tmp_path / "report.html").read_text()
+    assert note in md and note in html
+    # re-classed, never hidden: React's own text under the note (escaped: it is the page's text)
+    assert '  - A tree hydrated but some attributes ... <input - data-qajev-guard="field"' in md
+    assert "A tree hydrated but some attributes ... &lt;input - data-qajev-guard=&quot;field&quot;" in html
+    assert not data["scenarios"][0]["findings"]

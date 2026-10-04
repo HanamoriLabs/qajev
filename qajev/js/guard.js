@@ -9,7 +9,8 @@
     return;
   }
 
-  const state = { v: '', mode: '', deaf: false, hidden: 0, errors: [], blocked: [], lcp: 0, cls: 0, busySince: null };
+  const state = { v: '', mode: '', deaf: false, hidden: 0, errors: [], blocked: [], lcp: 0, cls: 0, busySince: null,
+                  hydration: 0, hydrationText: [] };
   const MAX = 200;
   const push = (list, item) => { if (list.length < MAX) list.push(item); };
   const re = (list) => (list && list.length ? new RegExp(list.join('|'), 'i') : null);
@@ -74,6 +75,29 @@
     state.deaf = false;
   }
 
+  // A hydration warning (React's) that names only attributes the guard itself sets: QAJev's doing, a harness note.
+  // React 18 lists them ("Extra attributes from the server: disabled,data-qajev-guard", "Prop `target` did not
+  // match"); React 19 prints a diff whose changed lines are `+ name=...` / `- name=...`.
+  const GUARD_ATTRS = new Set(['data-qajev-guard', 'data-qajev-display', 'disabled', 'inert', 'aria-hidden', 'style',
+    'target']);
+  function guardHydration(args) {
+    // printf-style, as the console prints it: React 18 passes the attribute names as separate arguments
+    const parts = args.map((a) => (a && a.message) || String(a));
+    let i = 1;
+    const text = [typeof args[0] === 'string' ? parts[0].replace(/%[sdifoOc]/g, () => (i < parts.length ? parts[i++] : ''))
+      : parts[0], ...parts.slice(i)].join(' ');
+    if (!/hydrat|did not match|Extra attributes from the server/i.test(text)) return false;
+    const names = [];
+    const extra = /Extra attributes from the server:[^\n]*?\s([\w-]+(?:,\s*[\w-]+)*)\s*(?:\n|$)/i.exec(text);
+    if (extra) names.push(...extra[1].split(/,\s*/));
+    const prop = /Prop `([\w-]+)` did not match/i.exec(text);
+    if (prop) names.push(prop[1]);
+    for (const m of text.matchAll(/^\s*[+-]\s+([\w-]+)=/gm)) names.push(m[1]);
+    // the guard's marker must be among them (a lone `disabled` may be the page's own), or only its `target` rewrite
+    return names.length > 0 && (names.some((n) => /^data-qajev-/i.test(n)) || names.every((n) => n === 'target')) &&
+      names.every((n) => GUARD_ATTRS.has(n.toLowerCase()) || /^data-qajev-/i.test(n));
+  }
+
   // ---- Errors, failed requests, vitals: product signals collected for the report. ----
   const where = (el) => el && (el.src || el.href || el.currentSrc || el.tagName);
   addEventListener('error', (e) => {
@@ -91,7 +115,10 @@
   });
   const consoleError = console.error;
   console.error = function (...args) {
-    push(state.errors, { kind: 'console', detail: args.map((a) => (a && a.message) || String(a)).join(' ').slice(0, 500) });
+    const text = args.map((a) => (a && a.message) || String(a)).join(' ');
+    // re-classed, never hidden: its text goes to the report's harness note
+    if (guardHydration(args)) { state.hydration++; push(state.hydrationText, text.slice(0, 500)); }
+    else push(state.errors, { kind: 'console', detail: text.slice(0, 500) });
     return consoleError.apply(this, args);
   };
   try {
@@ -201,10 +228,42 @@
     const why = dangerous(el);
     if (why) hide(el, why); else restore(el);
   };
+  // React (Next.js and the like) hydrates the server's HTML and reports any attribute it did not render as a
+  // mismatch, the page's own error. So the guard writes nothing onto the page's elements until it has loaded (at
+  // most HYDRATE_MS after it was parsed), and on a page React is hydrating, nothing onto an element until React has
+  // taken it over (React checks an element in the same step that puts its fiber key on it), at most HYDRATE_MS
+  // after the load. Writes stay blocked all along; QAJev waits for `pending` to empty before Jev or a hook acts.
+  const HYDRATE_MS = 5000;
+  const waiting = new Set();
+  let readyAt = document.readyState === 'complete' ? performance.now() : null;  // re-armed in place: already loaded
+  const keyed = (o, prefix) => { for (const k of Object.keys(o)) if (k.startsWith(prefix)) return true; return false; };
+  const reactHydrating = () => !!(window.__NEXT_DATA__ || self.__next_f) ||
+    [document, document.documentElement, document.body, ...document.querySelectorAll('#__next,#root,#app,[data-reactroot]')]
+      .some((c) => c && keyed(c, '__reactContainer$'));
+  const flush = () => {
+    const react = reactHydrating(), late = performance.now() - readyAt > HYDRATE_MS;
+    for (const el of waiting) {
+      if (!el.isConnected) waiting.delete(el);
+      else if (!react || late || keyed(el, '__reactFiber$')) { waiting.delete(el); judge(el); }
+    }
+    if (waiting.size) setTimeout(flush, 100);
+  };
+  const ready = () => { if (readyAt === null) { readyAt = performance.now(); flush(); } };
+  if (readyAt === null) {
+    addEventListener('load', ready, { once: true });
+    document.addEventListener('DOMContentLoaded', () => setTimeout(ready, HYDRATE_MS), { once: true });
+  }
+  // Server-rendered elements (in the page by its load) wait; any added later were rendered in the page and are
+  // judged at once.
+  const judgeSoon = (el) => {
+    if (readyAt === null || waiting.size && waiting.has(el)) waiting.add(el);
+    else judge(el);
+  };
+  state.pending = () => waiting.size;
   const sweep = (root) => {
     if (root.nodeType !== 1) return;
-    if (root.matches(CONTROL) || root.matches(FIELD)) judge(root);
-    for (const el of root.querySelectorAll(CONTROL + ',' + FIELD)) judge(el);
+    if (root.matches(CONTROL) || root.matches(FIELD)) judgeSoon(root);
+    for (const el of root.querySelectorAll(CONTROL + ',' + FIELD)) judgeSoon(el);
   };
   const guardDoc = () => sweep(document.documentElement || document);
   // Observe `document`, never `document.documentElement`: at new-document time it is still null.
@@ -213,7 +272,7 @@
       if (r.type === 'childList') { for (const n of r.addedNodes) sweep(n); }
       const host = (r.target.nodeType === 1 ? r.target : r.target.parentElement);
       const control = host && host.closest && host.closest(CONTROL);
-      if (control) judge(control);
+      if (control) judgeSoon(control);
     }
   }).observe(document, { childList: true, subtree: true, characterData: true, attributes: true,
     attributeFilter: ['aria-label', 'title', 'href', 'value', 'type', 'role'] });
@@ -248,7 +307,8 @@
     if (!blank) state.busySince = null;
     const out = {
       v: state.v, mode: state.mode, deaf: state.deaf && window.webkitSpeechRecognition === DeafRecognition,
-      hidden: state.hidden, errors: state.errors.splice(0), blocked: state.blocked.splice(0),
+      hidden: state.hidden, errors: state.errors.splice(0), blocked: state.blocked.splice(0), pending: waiting.size,
+      guard_hydration: state.hydration, guard_hydration_details: state.hydrationText.splice(0),
       blank_ms: state.busySince === null ? 0 : Math.round(performance.now() - state.busySince),
       lcp: state.lcp, cls: Math.round(state.cls * 1000) / 1000,
     };

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Hydrate">
+<title>Hydrate</title>
+<!-- As Next.js's app router does: tells the guard React will hydrate this page. -->
+<script>self.__next_f = self.__next_f || [];</script>
+<script src="/vendor/react.development.js"></script>
+<script src="/vendor/react-dom.development.js"></script></head>
+<body>
+  <div id="root"><form action="/session" method="post"><h1>Sign in</h1><input id="pw" type="password" name="password"/><input id="card" type="text" name="card-number" placeholder="Card number"/><button type="button" id="del">Delete account</button><a id="out" href="https://elsewhere.example/" target="_blank">Elsewhere</a></form></div>
+  <script>
+    // The server's HTML above, hydrated by React 18 (its development build checks every attribute) after the load,
+    // as a slow chunk would: the guard must not have written onto these elements by then.
+    const e = React.createElement;
+    const Login = () => e('form', { action: '/session', method: 'post' },
+      e('h1', null, 'Sign in'),
+      e('input', { id: 'pw', type: 'password', name: 'password' }),
+      e('input', { id: 'card', type: 'text', name: 'card-number', placeholder: 'Card number' }),
+      e('button', { type: 'button', id: 'del' }, 'Delete account'),
+      e('a', { id: 'out', href: 'https://elsewhere.example/', target: '_blank' }, 'Elsewhere'));
+    addEventListener('load', () => setTimeout(() => {
+      const pw = document.getElementById('pw');
+      window.atHydration = { disabled: pw.disabled, marked: pw.dataset.qajevGuard || null };
+      ReactDOM.hydrateRoot(document.getElementById('root'), e(Login));
+    }, 800));
+  </script>
+</body>
+</html>

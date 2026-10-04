@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Never">
+<title>Never</title>
+<!-- Says React will hydrate it (as Next.js's app router does), and React never comes: the guard keeps waiting. -->
+<script>self.__next_f = self.__next_f || [];</script></head>
+<body>
+  <h1>A page whose hydration never comes</h1>
+  <button id="del" type="button" onclick="window.clicked = (window.clicked || 0) + 1">Delete account</button>
+</body>
+</html>

@@ -31,9 +31,14 @@ the model behaving well: the rules are enforced in the page and in QAJev itself.
 ## How it is enforced
 
 1. The new tab opens on a blank page. The **guard** is installed for every page **before** the site's first byte
-   loads.
-2. Before **every** action Jev takes, QAJev proves the guard is still active on the live page. If it is missing,
-   the scenario stops (a harness outcome).
+   loads. Writing requests are blocked from that moment. The guard marks the page's own controls (disables,
+   hides) once the page has loaded, and on a page React hydrates (Next.js and the like), once React has taken each
+   one over, at most 5 s later: marking them sooner makes React report "attributes didn't match", which would
+   read as the site's bug. A warning like that about only the guard's own attributes is a harness note, not a
+   finding.
+2. Before **every** action Jev takes, and every control a hook clicks, QAJev proves the guard is still active on
+   the live page and has judged every control on it. If it is missing, or still waiting after 12 s, the scenario
+   stops (a harness outcome).
 3. Jev may only stay on the site's own hosts (plus any you list); leaving them stops the scenario.
 4. Secrets from your environment are removed from reports, and addresses in Markdown reports lose their query
    strings (which often carry tokens).
