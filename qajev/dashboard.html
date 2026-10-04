@@ -623,7 +623,8 @@ function testHtml(s, n) {
       + (decisions.length ? `<div class="klabel">Decisions · ${decisions.length}${low ? ", " + low + " unsure" : ""}</div><div class="scroll">`
         + `<table class="dtable"><thead><tr><th>Time</th><th>Screen</th><th>Chose</th><th>Sure</th><th>Runner-up</th><th>ms</th></tr></thead><tbody>`
         + decisions.slice(-200).map((x) => `<tr><td class="num">${x.at ? esc(new Date(x.at * 1000).toLocaleTimeString()) : ""}</td>`
-        + `<td>${esc(x.screen)}</td><td>${esc(x.chose)}</td><td class="num${x.p != null && x.p < 0.6 ? " unsure" : ""}">${pct(x.p)}</td>`
+        + `<td>${esc(x.screen)}</td><td>${esc(x.chose)}${x.stale ? `<div class="cdetail">went stale: ${esc(x.stale)}</div>` : ""}</td>`
+        + `<td class="num${x.p != null && x.p < 0.6 ? " unsure" : ""}">${pct(x.p)}</td>`
         + `<td>${esc(x.runner_up || "")}${x.runner_up_p != null ? " " + pct(x.runner_up_p) : ""}</td><td class="num">${esc(x.ms ?? "")}</td></tr>`).join("")
         + `</tbody></table></div>` : "")
       + (s.history && s.history.length ? `<details><summary>Actions · ${s.history.length}</summary><div class="scroll"><table class="dtable">`

@@ -48,6 +48,9 @@ class Recorder(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         Recorder.requests.append(("GET", self.path))
+        if self.path == "/reset.png":  # hang up without an answer: Chrome says net::ERR_EMPTY_RESPONSE
+            self.close_connection = True
+            return
         if not self._download_redirect():
             super().do_GET()
 
@@ -245,6 +248,43 @@ def test_errors_are_collected_as_findings(session, site):
     found = verdict.findings_from_probe(probe, scenario="b", url=site, first_party_hosts={site.split("//")[1]})
     kinds = {f["kind"] for f in found}
     assert "page error" in kinds and ({"failed to load", "HTTP 404"} & kinds)
+
+
+def test_a_failed_load_says_why_in_chromes_words(session, site):
+    # verse1: "main.js failed to load" said nothing of why. main.js itself came from the server; its three.js import
+    # from a CDN had failed, so the finding now names that request and Chrome's error for it.
+    from qajev import verdict
+
+    session.arm("readonly")
+    session.navigate(site + "/unloaded.html")
+    time.sleep(0.5)
+    probe = session.probe({})["probe"]
+    found = verdict.findings_from_probe(probe, scenario="u", url=site, first_party_hosts={site.split("//")[1]},
+                                        why=session.why_failed)
+    details = [f["detail"] for f in found if f["kind"] == "failed to load"]
+    assert any(d.startswith(f"{site}/reset.png (net::ERR_") for d in details), details
+    module = next(d for d in details if d.startswith(f"{site}/mod.js"))
+    assert "no network error for it; failed: " in module, module
+    assert "http://127.0.0.2:9/three.module.js (net::ERR_" in module, module
+
+
+def test_a_stale_move_says_what_was_in_the_way(session, site):
+    # verse1's wardrobe: 27 decisions for "Character", none ran, and nothing said why. Now the decision says which
+    # of Jev's checks failed (here: a popup over the button) and what changed on the page.
+    from qajev.session import page_changes
+
+    session.arm("readonly")
+    session.navigate(site + "/covered.html")
+    session.observe()
+    page = session.agent.state["page"]
+    go = next(a for a in page["actions"] if a["label"] == "Go")
+    session.evaluate("document.getElementById('cover').hidden = false")
+    why, now, node = session.why_stale("Target changed or is covered. Observe again.", page, {"choice": go["id"]})
+    assert why["target"] == "click 'Go': covered by div#cover \"Please wait\"", why
+    session.observe()
+    changed = page_changes(page, session.agent.state["page"], now, node)
+    assert any(c.startswith("target's text around it:") and "Please wait" in c for c in changed), changed
+    assert any(c.startswith("text:") and "Please wait" in c for c in changed), changed
 
 
 def test_csp_blocks_and_report_only_violations_are_findings(session, site):

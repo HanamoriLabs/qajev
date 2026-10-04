@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- A decision that goes stale says why: Jev's own reason, what was wrong with its target ("covered by div#toast",
+  "hidden", "off the screen") and what changed under it ("text: 'Score 41' → 'Score 42'", "controls: +'Pay'"). It
+  shows in the dashboard's decisions, in `qajev top --decisions`, and at the end of a "stale" stop's reason.
+- A "failed to load" finding says why, in Chrome's words (`net::ERR_EMPTY_RESPONSE`, `CORS: ...`), from a network
+  log on a debugger link of its own. When the file itself loaded (a module whose import failed), it names the
+  requests that failed around it.
 - `expect: {status: 404}` in a website suite or project objective: the page must answer with that HTTP status. A
   test that sets out to show a removed page passes on it, and the 404 is no longer also filed as an S2 finding.
 

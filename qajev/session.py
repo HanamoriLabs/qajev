@@ -16,7 +16,7 @@ import uuid
 from string import Template
 from types import SimpleNamespace
 
-from . import chrome, providers
+from . import chrome, netlog, providers
 from . import guard as guard_mod
 from .config import is_loopback
 
@@ -184,6 +184,97 @@ FIND_JS = Template("""(() => {
   return { x, y, secret, covered: !(hit && (el === hit || el.contains(hit))), tag: el.tagName };
 })()""")
 
+# Why a decision went stale, read before Jev looks again: Jev's freshness keys now (its pageKey and the target's
+# guard, as Browser.fresh compares them) and the first of Browser.act's target checks that fails.
+STALE_JS = Template("""(() => {
+  const c = window.__jevFast;
+  if (!c) return { target: null, key: null, guard: null };
+  const e = $node === null ? null : c.nodes.get($node);
+  const named = (el) => {
+    if (!el) return 'nothing';
+    const cls = typeof el.className === 'string' ? el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '';
+    const words = String(el.innerText || el.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().slice(0, 40);
+    return el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (cls ? '.' + cls : '') +
+      (words ? ' "' + words + '"' : '');
+  };
+  let target = null;
+  if ($node !== null) {
+    if (!e || !e.isConnected) target = 'gone from the page';
+    else if (e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]')) target = 'disabled';
+    else if (!e.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) target = 'hidden';
+    else {
+      const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+      if (!r.width || !r.height || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) target = 'off the screen';
+      else {
+        const hit = document.elementFromPoint(x, y);
+        if (!e.contains(hit)) target = 'covered by ' + named(hit);
+      }
+    }
+  }
+  return { target, key: c.pageKey(), guard: e && e.isConnected ? c.guard(e) : null };
+})()""")
+# Jev's pageKey and guard arrays, item by item (jev_ultrafast/snapshot.js)
+PAGE_KEY = ("page load", "address", "scroll x", "scroll y", "width", "height", "form fields")
+GUARD = ("element", "role", "name", "value", "checked", "selected option", "read-only", "disabled", "aria-disabled",
+         "aria-expanded", "aria-checked", "aria-selected", "link", "text around it")
+
+
+def _first_difference(before, after):
+    """The first lines that differ between two texts: ("Score 41", "Score 42")."""
+    import difflib
+
+    a, b = str(before or "").splitlines(), str(after or "").splitlines()
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag != "equal":
+            return " / ".join(a[i1:i2])[:60], " / ".join(b[j1:j2])[:60]
+    return None
+
+
+def _items(names, before, after):
+    """What changed between two of Jev's freshness arrays, named."""
+    out = []
+    for name, a, b in zip(names, before or [], after or [], strict=False):
+        if a == b:
+            continue
+        if name == "text around it":
+            diff = _first_difference(a, b)
+            out.append(f"text around it: {diff[0]!r} → {diff[1]!r}" if diff else "text around it")
+        elif name in {"page load", "form fields"}:
+            out.append("a new page load" if name == "page load" else "a form field's value")
+        else:
+            out.append(f"{name}: {str(a)[:40]!r} → {str(b)[:40]!r}")
+    return out
+
+
+def page_changes(before, after, now=None, node=None):
+    """What changed between the page Jev decided on (`before`) and the page now (`after`, a new observation; `now`,
+    Jev's freshness keys read before it): words, at most six."""
+    out = []
+    if now:
+        out += _items(PAGE_KEY, before.get("page_key"), now.get("key"))
+        if node is not None:
+            guard = (before.get("guards") or {}).get(str(node))
+            if now.get("guard") != guard:
+                out += [f"target's {x}" for x in _items(GUARD, guard, now.get("guard"))] or ["the target"]
+    for name, a, b in (("address", before.get("url"), after.get("url")), ("title", before.get("title"),
+                                                                           after.get("title"))):
+        if a != b and not any(x.startswith(f"{name}:") for x in out):
+            out.append(f"{name}: {str(a)[:60]!r} → {str(b)[:60]!r}")
+    a, b = (before.get("scroll") or {}).get("y"), (after.get("scroll") or {}).get("y")
+    if a != b and not any(x.startswith("scroll") for x in out):
+        out.append(f"scroll y: {a} → {b}")
+    diff = _first_difference(before.get("text"), after.get("text"))
+    if diff:
+        out.append(f"text: {diff[0]!r} → {diff[1]!r}")
+    def labels(page):
+        return {a.get("label") for a in page.get("actions") or [] if a.get("kind") not in {"scroll", "wait"}}
+
+    gone, came = sorted(labels(before) - labels(after))[:3], sorted(labels(after) - labels(before))[:3]
+    if gone or came:
+        out.append("controls: " + ", ".join([f"-{x!r}" for x in gone] + [f"+{x!r}" for x in came]))
+    return out[:6]
+
+
 KEYS = {
     "Escape": {"key": "Escape", "code": "Escape", "windowsVirtualKeyCode": 27},
     "Enter": {"key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13, "text": "\r"},
@@ -205,6 +296,8 @@ class Session:
         self.guard_cfg = None
         self.device = None
         self.assists = []
+        self.last_stale = None
+        self.net = None
         Agent = self.jev.agent.Agent
         self.agent = Agent("about:blank", "Wait for instructions.")
         self.browser = self.agent.browser
@@ -230,6 +323,7 @@ class Session:
                 except (RuntimeError, TimeoutError):
                     pass  # the in-page stub still refuses capture
             self.minimize()
+            self.net = netlog.start(self.page_socket())  # still on about:blank: it hears the site's first request
         except Exception:
             self.close()
             raise
@@ -375,6 +469,10 @@ class Session:
             self._page_socket = live.page_socket(os.environ.get("BU_CDP_URL", ""), self.browser.target)
         return self._page_socket
 
+    def why_failed(self, url):
+        """Chrome's reason a resource failed to load (or the requests that failed around it), or None."""
+        return self.net.explain(url) if self.net else None
+
     def screen_image(self):
         """The viewport as a JPEG data URL, for Clef (vision.py): what a visitor sees right now."""
         data = self.call("Page.captureScreenshot", format="jpeg", quality=70)["data"]
@@ -401,20 +499,43 @@ class Session:
         self.observe()
 
     def tick(self):
-        """predict -> prove the guard on the live document -> act. Returns False when the page went stale."""
+        """predict -> prove the guard on the live document -> act. Returns False when the page went stale; the
+        decision then carries why (`stale`: Jev's reason, what was in the way, what changed)."""
         stale = self.jev.browser.StalePage
         state = self.agent.state
+        made = len(state["decisions"])
         try:
             self.agent.command("predict")
             self.require_guard()
             self.agent.command("act", {"fingerprint": state["page"]["fingerprint"]})
             self.settle_scroll()
             return True
-        except stale:
+        except stale as e:
+            decision = state["decisions"][-1] if len(state["decisions"]) > made else None
+            before = state["page"]
+            why, now, node = self.why_stale(str(e), before, decision)
             state["decision"] = None
             state["status"] = "ready"
             self.observe()
+            why["changed"] = page_changes(before, state["page"], now, node)
+            self.last_stale = why
+            if decision is not None:
+                decision["stale"] = why
             return False
+
+    def why_stale(self, reason, page, decision):
+        """Before Jev looks again: its reason, and what is wrong with the target it chose. -> (why, keys now, node)."""
+        why = {"reason": reason}
+        action = next((a for a in page.get("actions") or []
+                       if decision and a.get("id") == decision.get("choice")), None)
+        node = action.get("node") if action and type(action.get("node")) is int else None
+        try:
+            now = self.evaluate(STALE_JS.substitute(node=json.dumps(node)), timeout_ms=3000) or {}
+        except (RuntimeError, TimeoutError):
+            now = {}
+        if action is not None and node is not None:
+            why["target"] = f"{action.get('kind')} {action.get('label')!r}: {now.get('target') or 'still clickable'}"
+        return why, now, node
 
     # ---- direct steps (hooks): for forms Jev would re-type forever, resets, seeding ----
     def trusted_click(self, x, y):
@@ -526,6 +647,9 @@ class Session:
     # ---- teardown ----
     def close(self):
         target = getattr(self.browser, "target", None) if hasattr(self, "browser") else None
+        net, self.net = getattr(self, "net", None), None
+        if net:
+            net.stop()
         try:
             self.agent.close()
         except Exception:

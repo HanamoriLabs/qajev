@@ -424,6 +424,8 @@ def render_decisions(job, decisions, *, width=120, scroll=0):
                f"{_clip(d.get('runner_up') or '', runner_w):<{runner_w}} {_p(d.get('runner_up_p')):>5} "
                f"{d['ms'] if isinstance(d.get('ms'), (int, float)) else '':>6}")
         add((row[:width], _sure(d)))
+        if d.get("stale"):
+            add((f"{'':<8} went stale: {d['stale']}"[:width], "dim"))
     return lines
 
 

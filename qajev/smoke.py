@@ -169,7 +169,8 @@ def _examine(session, result, page, dev, *, settle, host, opts, run_dir):
     probe = session.probe({}).get("probe") or {}
     facts.update(lcp=probe.get("lcp"), cls=probe.get("cls"))
     findings = lint(facts, mobile=dev.get("mobile"), name=page)
-    findings += verdict.findings_from_probe(probe, scenario=page, url=facts.get("url"), first_party_hosts={host})
+    findings += verdict.findings_from_probe(probe, scenario=page, url=facts.get("url"), first_party_hosts={host},
+                                            why=getattr(session, "why_failed", None))
     result["findings"] = verdict.dedupe(findings)
     result["end_url"] = facts.get("url")
     result["timing"] = facts.get("timing")

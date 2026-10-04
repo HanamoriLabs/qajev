@@ -19,8 +19,10 @@ Another QAJev run has the browser; yours starts when it ends. See who with `qaje
 **Many scenarios come out `harness`**
 That is QAJev's side, not your product:
 
-- *decisions went stale*: the page kept changing (a live counter, a video, an animation). Keep `--motion
-  reduce` (the default) and start the scenario on a calmer page.
+- *decisions went stale*: the page kept changing (a live counter, a video, an animation). The reason ends with the
+  last stale move's own: what was over its target ("covered by div#toast") or what changed ("text: 'Score 41' →
+  'Score 42'"); each stale decision says it in the dashboard and in `qajev top --decisions`. Keep `--motion reduce`
+  (the default) and start the scenario on a calmer page, or close what covers the target with a `before:` hook.
 - *action or time budget spent*: split the goal, or start closer to the target with `url`.
 - *cost cap reached*: raise `--cost-cap`, or narrow the goals.
 
