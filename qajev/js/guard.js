@@ -200,14 +200,18 @@
   // tooltip's "buy" hid a "Shop" button: verse1, 4 Oct). -> {label, why, match}
   const held = new Map();
   const words = (pattern, text) => { const m = pattern && pattern.exec(text); return m ? squash(m[0]) : null; };
+  // A record's label never carries an input's value: a secret field may hold one (filled by the page, the browser
+  // or a hook), and the label goes into the reason and the reports. An input is named by its attributes instead.
+  const named = (el) => squash(el.tagName === 'INPUT'
+    ? el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name') || el.type
+    : label(el)).slice(0, 80);
   const record = (el, why) => {
-    const text = label(el);
     const kind = why === OFFSITE ? OFFSITE : why === 'field' ? 'secret field' : why.split(':')[0];
-    const match = kind === 'danger' ? words(deny, text) : kind === 'read-only' ? words(mutating, accessibleName(el))
+    // a button input's value is its caption, so the deny words may come from it; a secret field has no match
+    const match = kind === 'danger' ? words(deny, label(el)) : kind === 'read-only' ? words(mutating, accessibleName(el))
       : kind === OFFSITE ? (() => { try { return new URL(el.href, location.href).host; } catch (e) { return null; } })()
       : null;
-    held.set(el, { label: (text || el.getAttribute('placeholder') || el.getAttribute('name') || el.type || '').slice(0, 80),
-                   why: kind, match });
+    held.set(el, { label: named(el), why: kind, match });
   };
   const hide = (el, why) => {
     if (el.dataset.qajevGuard === why) return;
@@ -304,6 +308,12 @@
     new MutationObserver(() => document.body && redact(document.body)).observe(document, { childList: true, subtree: true });
   }
 
+  // What the guard holds back now; a control the page removed is let go (the map must not keep it alive).
+  const forgetGone = () => {
+    for (const el of held.keys()) if (!el.isConnected) held.delete(el);
+    return [...held.values()];
+  };
+
   const BUSY = '[aria-busy="true"],[role=progressbar],.spinner,.loading,[data-loading="true"]';
   state.probe = () => {
     // A busy element counts only when it covers a real part of the screen: a small decorative progress bar in a
@@ -324,7 +334,7 @@
       v: state.v, mode: state.mode, deaf: state.deaf && window.webkitSpeechRecognition === DeafRecognition,
       hidden: state.hidden, errors: state.errors.splice(0), blocked: state.blocked.splice(0), pending: waiting.size,
       guard_hydration: state.hydration, guard_hydration_details: state.hydrationText.splice(0),
-      hidden_controls: [...held].filter(([el]) => el.isConnected).slice(0, 20).map(([, v]) => v),
+      hidden_controls: forgetGone().slice(0, 20),
       blank_ms: state.busySince === null ? 0 : Math.round(performance.now() - state.busySince),
       lcp: state.lcp, cls: Math.round(state.cls * 1000) / 1000,
     };
