@@ -389,6 +389,43 @@ def test_tap_targets_are_counted_as_wcag_2_5_8_says_and_named(session, site):
         "not counted (WCAG 2.5.8): 1 inline in a sentence, 1 with room around them")
 
 
+def test_key_hooks_press_real_keys_repeat_them_and_hold_them(session, site):
+    # Real-key play-tests for every game change (Orchestrator, 5 Oct): Jev cannot press a game's keys, so hooks do.
+    session.navigate(site + "/keys.html")
+    log = lambda: session.evaluate("window.keyLog.splice(0)")  # noqa: E731 (read and empty the page's log)
+
+    session.run_hook({"key": "Backquote"}, site)
+    assert [(e["type"], e["key"], e["code"], e["trusted"]) for e in log()] == [
+        ("keydown", "`", "Backquote", True), ("keyup", "`", "Backquote", True)]  # trusted: a real key press
+
+    session.run_hook({"key": {"press": ["f", "j"], "repeat": 5, "interval_ms": 20}}, site)
+    downs = [e["code"] for e in log() if e["type"] == "keydown"]
+    assert downs == ["KeyF", "KeyJ"] * 5  # alternating, ten presses
+
+    session.run_hook({"key": {"press": "Space", "hold_ms": 400}}, site)
+    held = log()
+    assert [(e["type"], e["code"]) for e in held] == [("keydown", "Space"), ("keyup", "Space")]
+    assert 380 <= held[1]["at"] - held[0]["at"] < 1500, held  # down for the whole hold, then released
+
+
+def test_a_react_hook_answers_a_cue_at_human_speed_and_saves_the_frame(session, site, tmp_path):
+    # SideGame1's roadside play-test (5 Oct): see the cue, wait a human 0.3 s, press and hold. Polling at 250 ms could
+    # not answer a 0.6 s flash on time; a react hook polls the page every 50 ms.
+    session.navigate(site + "/keys.html")
+    session.evaluate("window.keyLog.length = 0; window.cueAt = performance.now() + 400; true")
+    session.shot_dir, session.shot_prefix, session.react_log = tmp_path, "cue", []
+    policy = ("(() => { const now = performance.now(); if (now < window.cueAt) return null;"
+              " if (!window.downAt) { if (now - window.cueAt < 300) return null;"  # the human delay, in the suite
+              " window.downAt = now; return [{down: 'Space'}, {shot: 'flash'}]; }"
+              " if (now - window.downAt >= 600) { window.released = true; return {up: 'Space'}; } return null; })()")
+    session.run_hook({"react": {"js": policy, "until": "window.released === true", "every_ms": 50, "for_s": 5}}, site)
+    log, cue = session.evaluate("window.keyLog"), session.evaluate("window.cueAt")
+    assert [(e["type"], e["code"], e["trusted"]) for e in log] == [("keydown", "Space", True), ("keyup", "Space", True)]
+    assert 300 <= log[0]["at"] - cue < 450, log[0]["at"] - cue  # 0.3 s after the cue, within a poll or two
+    assert 600 <= log[1]["at"] - log[0]["at"] < 800, log  # held as long as the policy said
+    assert session.react_log[0]["shot"] == "flash" and (tmp_path / "cue-flash.jpg").stat().st_size > 1000
+
+
 def test_a_secret_fields_value_never_reaches_the_reason_or_the_reports(session, site, tmp_path):
     # Orchestrator's review of #26: a record's label joined an input's value, so a filled secret field leaked it into
     # the stuck reason and both reports. The page holds the values; nothing QAJev writes may.

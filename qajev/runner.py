@@ -126,6 +126,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
 
     started = time.monotonic()
     session.assists = []  # this scenario's own; a hook failing before Jev's loop must not inherit the last one's
+    session.react_log = []  # frames and releases from react hooks, this scenario's own
+    session.shot_dir = run_dir / "shots" if opts.shots and run_dir else None
+    session.shot_prefix = slug(scenario.name)
     quiet, load1 = wait_for_quiet(opts)
     result = {
         "name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
@@ -278,6 +281,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             for h in state["history"][-15:]
         ]
     result["checks"] = checks
+    if session.react_log:  # what react hooks saw: the frames they asked for (relative to the run) and any releases
+        result["react"] = [{**e, "path": str(Path(e["path"]).relative_to(run_dir)) if e.get("path") and run_dir
+                            else e.get("path")} for e in session.react_log]
     result["end_url"] = observed.get("url")
     result["page_says"] = observed.get("says")
     findings += verdict.blank_finding(result.get("blank_ms", 0), scenario=scenario.name, url=observed.get("url"))

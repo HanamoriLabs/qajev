@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
+from . import keys
 from .config import host_of, is_loopback
 from .guard import MODES
 
@@ -48,7 +49,7 @@ def wanted_devices(explicit=None):
     for name in names:
         _device(name, "devices")
     return names or list(DEFAULT_DEVICES)
-HOOK_KINDS = {"js", "fill", "click", "navigate", "wait_for", "key", "sleep", "command", "reload"}
+HOOK_KINDS = {"js", "fill", "click", "navigate", "wait_for", "key", "react", "sleep", "command", "reload"}
 EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
                "looks", "across"}
 SCENARIO_KEYS = {
@@ -168,7 +169,18 @@ def _hooks(value, where):
     for i, hook in enumerate(hooks):
         if not isinstance(hook, dict) or len(hook) != 1 or next(iter(hook)) not in HOOK_KINDS:
             raise SuiteError(f"{where}[{i}] must be one of {sorted(HOOK_KINDS)}, e.g. {{js: '...'}}")
+        _key_hook(hook, f"{where}[{i}]")
     return hooks
+
+
+def _key_hook(hook, where):
+    """A key hook names real keys within its bounds (keys.py), checked here so a bad one fails before the run."""
+    for kind, check in (("key", keys.plan), ("react", keys.react_plan)):
+        if kind in hook:
+            try:
+                check(hook[kind])
+            except ValueError as e:
+                raise SuiteError(f"{where}.{kind}: {e}") from None
 
 
 def _expect(value, where):
@@ -268,6 +280,7 @@ def _steps(value, names, where):
                 raise SuiteError(f"{at}: put the hook under all: (all: {{js: ...}})")
             if not isinstance(hook, dict) or len(hook) != 1 or next(iter(hook)) not in CLIENT_HOOK_KINDS:
                 raise SuiteError(f"{at} needs one hook, one of {sorted(CLIENT_HOOK_KINDS)}")
+            _key_hook(hook, at)
             who = names if kind == "all" else _list(step["client"], f"{at}.client")
             unknown = [w for w in who if w not in names]
             if unknown:

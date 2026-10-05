@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Keys">
+<title>Keys</title></head>
+<body>
+  <!-- QAJev's key hooks (tests/test_live.py): every keydown and keyup the page hears, with its key, its code, whether
+       the browser marked it trusted (a real key press, not page script), and when, in window.keyLog. -->
+  <h1>Keys</h1>
+  <p id="last">no key yet</p>
+  <script>
+    window.keyLog = [];
+    for (const type of ['keydown', 'keyup']) {
+      window.addEventListener(type, (e) => {
+        window.keyLog.push({ type, key: e.key, code: e.code, trusted: e.isTrusted, at: performance.now() });
+        document.getElementById('last').textContent = type + ' ' + e.code;
+      });
+    }
+  </script>
+</body>
+</html>
