@@ -7,6 +7,7 @@ UX notes never change a run's PASS/FAIL. Everything here is free: no model calls
 """
 
 import json
+import re
 from pathlib import Path
 
 UX_FACTS = (Path(__file__).parent / "js" / "ux_facts.js").read_text()
@@ -253,17 +254,59 @@ def consistency(pages):
 
 UNSURE_P, UNSURE_GAP, SCROLLS = 0.8, 0.25, 4
 
+# A goal not reached for a reason that is not the page's (5 Oct testers): the guard hid what it needed (Marketing:
+# an off-site link, no --host), or it needed an action Jev does not have (SideGame1: the backquote key). Jev clicks,
+# types, chooses and scrolls; a key or a drag is a hook's job.
+KEYS = [("backquote", r"`|\bback ?quote\b|\bbacktick\b"), ("Escape", r"\b(?:press|hit)\s+(?:the\s+)?esc(?:ape)?\b"),
+        ("Enter", r"\b(?:press|hit)\s+(?:the\s+)?(?:enter|return)\b"),
+        ("Space", r"\b(?:press|hit|hold)\s+(?:the\s+)?space(?:bar)?\b"),
+        ("Tab", r"\b(?:press|hit)\s+(?:the\s+)?tab\b"), ("a key", r"\b(?:press|hit|hold|tap)\b[^.]{0,30}?\bkey\b")]
+DRAG = r"\b(?:drag|swipe)\b"
+COMMON = {"find", "where", "what", "when", "then", "there", "your", "with", "that", "this", "from", "into", "page",
+          "open", "click", "show", "shows", "stop", "goal", "until", "after", "before", "have", "they", "them", "some"}
+
+
+def _words(text):
+    return {w for w in re.findall(r"[a-z0-9]+", str(text).lower()) if len(w) >= 4 and w not in COMMON}
+
+
+def blocked_by(goal, outcome, hidden):
+    """Why a goal run that did not get there says nothing about the page, if it does not: the guard hid a control the
+    goal needed, or the goal needs an action Jev does not have. -> the reason (the run is harness), or None (a real
+    struggle, the page's)."""
+    if outcome not in {"stuck", "harness"} or not goal:
+        return None
+    task = re.split(r"(?i)\bstop when\b", goal)[0]
+    want = _words(task)
+    for h in hidden:
+        host = str(h.get("match") or "") if h.get("why") == "off-site link" else ""
+        if want & _words(h.get("label")) or any(w in host.lower() for w in want):
+            match = f": {h['match']}" if h.get("match") else ""
+            held = f"{str(h.get('label') or '?')[:60]!r} ({h.get('why')}{match})"
+            fix = (f"add --host {host} to let Jev follow it" if host else
+                   "the guard holds it back on purpose, so this goal cannot be checked read-only")
+            return f"blocked by the guard: it hid {held}, which the goal needs; {fix}"
+    for name, pattern in KEYS:
+        if re.search(pattern, task, re.I):
+            return (f"the goal needs a key press ({name}); Jev can only click, type, choose and scroll: press it "
+                    "with a `key` hook before the goal")
+    if re.search(DRAG, task, re.I):
+        return ("the goal needs a drag; Jev can only click, type, choose and scroll: do the drag in a hook before "
+                "the goal")
+    return None
+
 
 def _struggle(kind, detail, rule, samples=None):
     return {"basis": "struggle", "kind": kind, "detail": detail, "rule": rule,
             **({"samples": samples} if samples else {})}
 
 
-def struggle(history, screens, outcome, assists=()):
+def struggle(history, screens, outcome, assists=(), jev_done=False):
     """What Jev's own run says about how findable the goal was (free: from the run already made). A struggle signal is
     evidence, not a verdict: a person may find a page Jev hesitated on, and the reverse.
     history: Jev's executed actions (kind, action, url); screens: verdict.screens() per decision; assists: QAJev's
-    scrolls after Jev stopped. -> notes."""
+    scrolls after Jev stopped; jev_done: Jev said it got there (a failed check is then the expectation's business, not
+    findability's: FlockTab1, 5 Oct). -> notes."""
     if not history:
         return []
     pages = []
@@ -276,9 +319,14 @@ def struggle(history, screens, outcome, assists=()):
     unsure = [s for s in screens if s.get("p") is not None and s.get("runner_up_p") is not None
               and s["p"] < UNSURE_P and s["p"] - s["runner_up_p"] <= UNSURE_GAP]
     below = sum(a.get("scrolled", 0) for a in assists if a.get("after") == "visible")
-    reached = "reached" if outcome == "pass" else f"not reached ({outcome})"
+    recovered = sum(a.get("scrolled", 0) for a in assists if a.get("after") == "BLOCKED")
+    finished = outcome == "fail" and jev_done
+    reached = ("reached" if outcome == "pass" else "Jev finished, but the checks failed" if finished
+               else f"not reached ({outcome})")
     parts = [f"{len(history)} action(s) over {len(pages)} page(s)", f"{len(backs)} backtrack(s)",
              f"{scrolls} scroll(s)", f"{len(unsure)} unsure step(s)"]
+    if recovered:  # QAJev's, after Jev said BLOCKED: not Jev's searching (SideGame1, 5 Oct)
+        parts.append(f"QAJev's own recovery scrolls: {recovered}")
     if below:
         parts.append(f"QAJev scrolled {below} more screen(s) to bring it on screen")
     out = [_struggle("findability", f"{reached} in " + ", ".join(parts),

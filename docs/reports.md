@@ -103,13 +103,19 @@ The keyboard walk and the zoom pass run on a desktop layout (a phone has no Tab 
 Known limit: a game is told apart from a page by its canvas size only. An ordinary page with a decorative full-screen
 canvas that cancels Tab reads "keyboard not measurable", not "keyboard blocked"; check such a page's keyboard by hand.
 
-A scenario with a goal adds **struggle signals**: what Jev's own run says about how findable the goal was. They are
-free (read from the run already made) and are evidence, not a verdict: a person may find a page Jev hesitated on, and
-the reverse.
+A scenario with a goal adds **struggle signals**: what Jev's own run says about how findable the goal was. They cost
+nothing on top of the goal run they are read from (that run itself calls Jev, so it is paid), and they are evidence,
+not a verdict: a person may find a page Jev hesitated on, and the reverse.
+
+Before blaming the page, QAJev asks whether the reason was its own. A goal not reached because the read-only guard hid
+a control the goal needs (an off-site link without `--host`: "blocked by the guard: it hid 'Open on the web'
+(off-site link: my.foleyapp.com), which the goal needs; add --host my.foleyapp.com"), or because the goal needs a key
+press or a drag (Jev clicks, types, chooses and scrolls; a key is a `key` hook's job), is **harness** with that reason,
+and gets no struggle signals: it says nothing about the page.
 
 | Note | From |
 |---|---|
-| findability | always: reached or not, in how many actions over how many pages, with backtracks, scrolls and unsure steps |
+| findability | always: reached or not (or "Jev finished, but the checks failed"), in how many actions over how many pages, with backtracks, scrolls and unsure steps, and QAJev's own recovery scrolls apart |
 | unclear choice | a step where Jev's top choice was under 0.8 and the runner-up within 0.25: two options looked almost equally right (`'Plans' (0.48) vs 'Pricing' (0.41)`) |
 | backtracked | Jev went back to a page it had already left |
 | searched by scrolling | 4 or more scrolls: what Jev needed was not near the top |

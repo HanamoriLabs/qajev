@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="A game's title">
+<title>A game</title></head>
+<body>
+  <h1>A game</h1>
+  <p>Press the backquote key (`) to open the menu.</p>
+  <!-- Only a key opens the menu, as in a game's dev menu: nothing to click. -->
+  <div id="menu" hidden><button onclick="state.textContent = 'Started'">Start</button></div>
+  <p id="state"></p>
+  <script>
+    addEventListener('keydown', (e) => { if (e.code === 'Backquote') document.getElementById('menu').hidden = false; });
+  </script>
+</body>
+</html>

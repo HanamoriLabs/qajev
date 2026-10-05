@@ -319,10 +319,17 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                        "reading on would" if a["found"] else
                        f"; the expected text is in the page but {a['scrolled']} screen(s) of scrolling did not bring "
                        "it on screen")
-    if scenario.goal and session.agent.state["history"]:  # how findable the goal was, from Jev's own run (free)
+    hidden = result.get("guard_hidden_controls") or []
+    # Before blaming the page: was it the guard, or an action Jev does not have? Then harness, and no struggle notes.
+    blame = ux.blocked_by(scenario.goal, outcome, hidden) if scenario.goal else None
+    if blame:
+        outcome, reason = "harness", f"{blame}; {reason}"
+    elif scenario.goal and session.agent.state["history"]:  # how findable the goal was, from Jev's own run (free)
         result["ux"] = [*result.get("ux", []), *ux.struggle(session.agent.state["history"], result.get("screens") or [],
-                                                             outcome, assists)]
-    reason = verdict.with_guard_note(outcome, reason, result.get("guard_hidden_controls") or [])
+                                                             outcome, assists,
+                                                             jev_done=session.agent.state.get("status") == "done")]
+    if not (blame or "").startswith("blocked by the guard"):  # the blame already names what the guard hid
+        reason = verdict.with_guard_note(outcome, reason, hidden)
     return _finish(result, outcome, reason, started)
 
 
