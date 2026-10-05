@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Targets">
+<title>Targets</title>
+<style>
+  body { margin: 0; font: 12px/14px sans-serif; }
+  .t { position: absolute; width: 16px; height: 16px; padding: 0; border: 0; }
+</style></head>
+<body>
+  <!-- Tap targets for the smoke's WCAG 2.5.8 check (tests/test_live.py). Two 16 px buttons 4 px apart, a short
+       field just below them, a select under it and a textarea beside it: all five counted. A link inside a sentence:
+       exempt (inline). A 16 px button alone: exempt (spacing). A 40 px button: big enough. The fields hold a value,
+       an option and typed text that must never be reported: a field is named by its label or name. -->
+  <nav id="tools">
+    <button class="t close" style="left: 10px; top: 10px" aria-label="Close"></button>
+    <button class="t" style="left: 30px; top: 10px">x</button>
+  </nav>
+  <input id="pin" aria-label="PIN" value="hunter2-secret" style="position: absolute; left: 10px; top: 28px; width: 60px; height: 16px; padding: 0; border: 0">
+  <select name="size" style="position: absolute; left: 10px; top: 46px; width: 60px; height: 16px; padding: 0; border: 0"><option>Small</option><option>Medium-option-text</option></select>
+  <textarea placeholder="Note" style="position: absolute; left: 72px; top: 28px; width: 16px; height: 16px; padding: 0; border: 0">typed-secret</textarea>
+  <p style="position: absolute; left: 10px; top: 120px; width: 300px">Read the <a href="#terms">terms</a> before you start.</p>
+  <button class="t" style="left: 200px; top: 200px" title="Help">?</button>
+  <button style="position: absolute; left: 400px; top: 400px; width: 40px; height: 40px">Big</button>
+</body>
+</html>

@@ -85,7 +85,7 @@ findings):
 |---|---|
 | **S1** | the page itself answered with a server error (HTTP 5xx); a game froze (soft-lock) or crashed |
 | **S2** | an uncaught script error, a missing page (HTTP 4xx), a blank page, a blank screen or spinner over 10 seconds, a broken image or link, form fields without labels, buttons without names, a request or script the page's Content Security Policy blocked (`blocked by CSP`, other hosts' tags and pixels included), a game's own error reports |
-| **S3** | smaller problems: a failed request for a secondary file (with Chrome's reason, such as `net::ERR_NAME_NOT_RESOLVED`; for a script that loaded but whose import failed, the requests that failed around it), console errors, what a report-only Content Security Policy would block (`CSP violation (report-only)`), a missing title, language, heading or description, images without alt text, slow loading, layout shifts, tap targets under 24 px |
+| **S3** | smaller problems: a failed request for a secondary file (with Chrome's reason, such as `net::ERR_NAME_NOT_RESOLVED`; for a script that loaded but whose import failed, the requests that failed around it), console errors, what a report-only Content Security Policy would block (`CSP violation (report-only)`), a missing title, language, heading or description, images without alt text, slow loading, layout shifts, tap targets under 24 px on a phone (up to 10 named, with their size and where they are; as WCAG 2.5.8 says, a link inside a sentence and a small target with room around it are not counted, and the finding says how many were let off) |
 
 Repeated findings are grouped (`×3`). In a project, a finding you listed as `[[known]]` is shown as known, with
 your note, and not raised again.

@@ -355,3 +355,17 @@ def test_the_guards_own_hydration_warnings_are_a_note_in_both_reports(tmp_path):
     assert '  - A tree hydrated but some attributes ... <input - data-qajev-guard="field"' in md
     assert "A tree hydrated but some attributes ... &lt;input - data-qajev-guard=&quot;field&quot;" in html
     assert not data["scenarios"][0]["findings"]
+
+
+def test_the_tap_target_finding_names_up_to_ten_and_what_wcag_let_off():
+    from qajev import smoke
+
+    samples = [{"tag": "a", "text": "", "size": "20x18", "path": f"#footer a.icon{i}"} for i in range(10)]
+    facts = {"small_targets": 44, "small_target_samples": samples, "small_targets_skipped": {"inline": 7, "spaced": 0}}
+    found = [f for f in smoke.lint(facts, mobile=True, name="home") if f["kind"] == "tap targets under 24 px"]
+    assert found and found[0]["detail"].startswith("44 target(s): a 20x18 (#footer a.icon0), a 20x18 (#footer a.icon1)")
+    assert found[0]["detail"].endswith("a 20x18 (#footer a.icon9) and 34 more; not counted (WCAG 2.5.8): "
+                                       "7 inline in a sentence")
+    assert smoke.small_targets({"small_targets": 2}) == "2 target(s)"  # an older page_facts: the count alone
+    exempt_only = {"small_targets": 0, "small_targets_skipped": {"inline": 9}}  # nothing counted: no finding
+    assert all(f["kind"] != "tap targets under 24 px" for f in smoke.lint(exempt_only, mobile=True, name="home"))

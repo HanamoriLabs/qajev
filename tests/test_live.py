@@ -365,6 +365,30 @@ def test_the_guard_names_what_it_held_back_and_the_words_that_did_it(session, si
         "(danger: buy), 'Card number' (secret field), 'password' (secret field) and 1 more")
 
 
+def test_tap_targets_are_counted_as_wcag_2_5_8_says_and_named(session, site):
+    # FlockTab1, 5 Oct: "44 target(s)" said nothing about which ones to fix, and counted links inside sentences that
+    # WCAG 2.5.8 exempts.
+    from qajev import smoke
+
+    session.navigate(site + "/targets.html")
+    facts = session.evaluate(smoke.FACTS)
+    assert facts["small_targets"] == 5  # the crowded pair and the three fields next to them
+    assert facts["small_targets_skipped"] == {"inline": 1, "spaced": 1}  # the link in a sentence; the lone "?"
+    assert facts["small_target_samples"] == [
+        {"tag": "button", "text": "Close", "size": "16x16", "path": "#tools button.t.close"},
+        {"tag": "button", "text": "x", "size": "16x16", "path": "#tools button.t"},
+        {"tag": "input", "text": "PIN", "size": "60x16", "path": "input#pin"},
+        {"tag": "select", "text": "size", "size": "60x16", "path": "select"},
+        {"tag": "textarea", "text": "Note", "size": "16x16", "path": "textarea"},
+    ]
+    for value in ("hunter2", "Medium-option-text", "typed-secret"):  # fields by their names, never what they hold
+        assert value not in str(facts)
+    assert smoke.small_targets(facts) == (
+        "5 target(s): button 'Close' 16x16 (#tools button.t.close), button 'x' 16x16 (#tools button.t), "
+        "input 'PIN' 60x16 (input#pin), select 'size' 60x16 (select), textarea 'Note' 16x16 (textarea); "
+        "not counted (WCAG 2.5.8): 1 inline in a sentence, 1 with room around them")
+
+
 def test_a_secret_fields_value_never_reaches_the_reason_or_the_reports(session, site, tmp_path):
     # Orchestrator's review of #26: a record's label joined an input's value, so a filled secret field leaked it into
     # the stuck reason and both reports. The page holds the values; nothing QAJev writes may.
