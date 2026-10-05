@@ -10,9 +10,10 @@
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
 ![macOS and Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
-**Test your website the way a person uses it.** Say what a visitor wants in plain words; **Jev**, a small, fast
-model, clicks through a real Chrome to do it; QAJev judges the result from the page itself and gives you a clear
-report. From the command line, or from any AI agent through MCP. **[qajev.com](https://qajev.com)**
+**Test your website, game or app the way a person uses it.** Say what a visitor wants in plain words; **Jev**, a
+small, fast model, clicks through a real Chrome to do it (or plays your game, or taps through your iOS or Android
+app); QAJev judges the result from the page itself and gives you a clear report. From the command line, or from any
+AI agent through MCP. **[qajev.com](https://qajev.com)**
 
 ```bash
 qajev check https://shop.example \
