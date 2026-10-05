@@ -4,6 +4,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- The smoke's "tap targets under 24 px" finding names up to 10 of them (tag, text, size, a short CSS path; a field
+  by its label, never its value), and counts as WCAG 2.5.8 does: links inside a sentence and small targets with
+  room around them are left out, and the finding says how many.
 - A run that broke before it finished (browser error, failed hook, missing guard), or that never ran some of its
   checks or steps, is `harness` (gate INCOMPLETE), never `pass` on the checks that did run. The reason names where it
   stopped and what never ran; `report.json` and the MCP results carry `stop_detail` and `not_run`. A five-player

@@ -66,12 +66,25 @@ def lint(facts, *, mobile, name):
     if facts.get("duplicate_ids"):
         add("S3", "duplicate ids", ", ".join(facts["duplicate_ids"][:5]))
     if mobile and facts.get("small_targets"):
-        add("S3", "tap targets under 24 px", f"{facts['small_targets']} target(s)")
+        add("S3", "tap targets under 24 px", small_targets(facts))
     if (facts.get("lcp") or 0) > 4000:
         add("S3", "slow largest contentful paint", f"{facts['lcp']} ms")
     if (facts.get("cls") or 0) > 0.25:
         add("S3", "layout shift", f"CLS {facts['cls']}")
     return out
+
+
+def small_targets(facts):
+    """The tap-target finding's detail: how many, which (up to 10), and what WCAG 2.5.8 let off."""
+    named = [f"{s['tag']}" + (f" '{s['text']}'" if s.get("text") else "") + f" {s['size']} ({s['path']})"
+             for s in facts.get("small_target_samples") or []]
+    more = facts["small_targets"] - len(named)
+    detail = f"{facts['small_targets']} target(s)" + (": " + ", ".join(named) if named else "") + (
+        f" and {more} more" if named and more > 0 else "")
+    skipped = facts.get("small_targets_skipped") or {}
+    let_off = [f"{n} {what}" for what, n in (("inline in a sentence", skipped.get("inline")),
+                                              ("with room around them", skipped.get("spaced"))) if n]
+    return detail + (f"; not counted (WCAG 2.5.8): {', '.join(let_off)}" if let_off else "")
 
 
 USER_AGENT = "QAJev"

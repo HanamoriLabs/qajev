@@ -27,10 +27,38 @@
   const text = (document.body && document.body.innerText || '').trim();
   const mixed = location.protocol === 'https:'
     ? performance.getEntriesByType('resource').filter((r) => r.name.startsWith('http:')).map((r) => r.name) : [];
-  const small = [...document.querySelectorAll('a,button,[role=button],input,select')].filter(visible).filter((e) => {
-    const r = e.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && (r.width < 24 || r.height < 24);
+  // Tap targets under 24 CSS px, as WCAG 2.5.8 counts them: a link inside a sentence is exempt (inline), and so is
+  // an undersized target with room around it (spacing: a 24 px circle on its centre meets no other target and no
+  // other undersized target's circle). Each counted one is named, never by an input's value.
+  const targets = [...document.querySelectorAll('a,button,[role=button],input,select')].filter(visible)
+    .map((e) => ({ e, r: e.getBoundingClientRect() })).filter(({ r }) => r.width > 0 && r.height > 0);
+  const undersized = targets.filter(({ r }) => r.width < 24 || r.height < 24);
+  const under = new Set(undersized);
+  const centre = (r) => [r.left + r.width / 2, r.top + r.height / 2];
+  const toBox = ([x, y], r) => Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+  const inline = (e) => getComputedStyle(e).display === 'inline' && !!e.parentElement
+    && [...e.parentElement.childNodes].some((n) => n.nodeType === 3 && /\S/.test(n.textContent));
+  const spaced = (t) => {
+    const c = centre(t.r);
+    return targets.every((o) => o === t || (toBox(c, o.r) >= 12
+      && !(under.has(o) && Math.hypot(c[0] - centre(o.r)[0], c[1] - centre(o.r)[1]) < 24)));
+  };
+  const skipped = { inline: 0, spaced: 0 };
+  const small = undersized.filter((t) => {
+    if (inline(t.e)) { skipped.inline++; return false; }
+    if (spaced(t)) { skipped.spaced++; return false; }
+    return true;
   });
+  const short = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const said = (e) => (/^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName)
+    ? e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.getAttribute('name') || e.type
+    : e.getAttribute('aria-label') || e.getAttribute('title') || e.innerText);
+  const path = (e) => {
+    const self = e.tagName.toLowerCase() + (e.id ? '#' + CSS.escape(e.id)
+      : [...e.classList].slice(0, 2).map((c) => '.' + CSS.escape(c)).join(''));
+    const up = !e.id && e.parentElement && e.parentElement.closest('[id]');
+    return up ? `#${CSS.escape(up.id)} ${self}` : self;
+  };
   return {
     url: location.href,
     status: nav.responseStatus || null,
@@ -53,6 +81,11 @@
     duplicate_ids: Object.entries(ids).filter(([, n]) => n > 1).map(([id, n]) => `${id} (x${n})`).slice(0, 20),
     horizontal_overflow: document.documentElement.scrollWidth > innerWidth + 1,
     small_targets: small.length,
+    small_targets_skipped: skipped,
+    small_target_samples: small.slice(0, 10).map(({ e, r }) => ({
+      tag: e.tagName.toLowerCase(), text: short(said(e)), size: `${Math.round(r.width)}x${Math.round(r.height)}`,
+      path: path(e),
+    })),
     mixed_content: mixed.slice(0, 20),
     timing: {
       ttfb: Math.round(nav.responseStart || 0),
