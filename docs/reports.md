@@ -100,6 +100,9 @@ A smoke crawl also measures how easy each page is to use, and adds a **UX** sect
 The keyboard walk and the zoom pass run on a desktop layout (a phone has no Tab key). `--no-ux` (or `ux: false` in
 `qa_smoke`) skips all of it.
 
+Known limit: a game is told apart from a page by its canvas size only. An ordinary page with a decorative full-screen
+canvas that cancels Tab reads "keyboard not measurable", not "keyboard blocked"; check such a page's keyboard by hand.
+
 ## Findings
 
 Findings are problems noticed along the way, separate from the outcome (a scenario can pass and still have
