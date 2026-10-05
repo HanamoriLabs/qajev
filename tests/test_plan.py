@@ -61,8 +61,8 @@ def test_qajev_plan_lists_a_suites_plan_and_its_not_described_tests_without_runn
     data = json.loads(capsys.readouterr().out)
     assert data["not_described"] == ["fight"]
     title, fight = data["plan"]
-    assert [c["words"] for c in title["checks"]] == ["the screen is TITLE", "the game runs at 30 frames a second or more",
-                                                     "no script errors"]
+    assert [c["words"] for c in title["checks"]] == [
+        "the screen is TITLE", "the game runs at 30 frames a second or more", "no script errors"]
     assert fight["checks"][0]["words"] == "the game reaches boss_hp <= 0 in time"
     site.write_text(site.read_text().replace("expect: {js: 'window.ok === true'}",
                                              "about: the home page opens\n    expect: {text: [Welcome]}"))
