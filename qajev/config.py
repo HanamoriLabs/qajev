@@ -90,5 +90,21 @@ def is_loopback(url):
     return bool(LOOPBACK.match(host))
 
 
+def is_local_dev(url):
+    """A local development host: loopback, or a name under .localhost or .test (RFC 6761: never on the internet)."""
+    host = (urlsplit(url).hostname or "").lower()
+    return is_loopback(url) or host.endswith((".test", ".localhost"))
+
+
+# Reserved for testing and examples (RFC 2606, RFC 6761): no real person signs in with an address here.
+TEST_EMAIL_DOMAINS = ("example.com", "example.net", "example.org")
+TEST_EMAIL_SUFFIXES = (".test", ".example", ".invalid", ".localhost")
+
+
+def is_test_email(email):
+    domain = str(email).rpartition("@")[2].strip().lower()
+    return domain in TEST_EMAIL_DOMAINS or domain.endswith(TEST_EMAIL_SUFFIXES) or domain in ("test", "localhost")
+
+
 def host_of(url):
     return urlsplit(url).netloc

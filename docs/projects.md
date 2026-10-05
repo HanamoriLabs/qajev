@@ -44,6 +44,12 @@ login = { url = "/login" }       # QAJev signs in with it before the objectives 
 seed = "scripts/seed-test-user.sh"
 profile = "shop-local"           # or: a QAJev browser profile you signed in to once
 
+[accounts.qa-test]               # a seeded TEST user on a local dev host: second factor included
+email = "seed:dev_support/qa_test_user.json#email"            # FILE#KEY, relative to the project's repo
+password = "seed:dev_support/qa_test_user.json#password"
+totp = "seed:dev_support/qa_test_user.json#totp_secret_base32"  # or: cookie = { name = "...", value = "seed:...#session" }
+login = { url = "/login" }       # localhost, 127.0.0.1, *.test only (Writing tests: "A seeded test user")
+
 [budget]
 cost_cap_usd = 0.50
 actions = 20

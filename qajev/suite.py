@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 from . import keys
-from .config import host_of, is_loopback
+from .config import host_of, is_local_dev, is_loopback, is_test_email
 from .guard import MODES
 
 DEVICES = {
@@ -68,8 +68,9 @@ SUITE_KEYS = {
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about",
 }
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
-ACCOUNT_KEYS = {"name", "email", "password", "login"}
-LOGIN_KEYS = {"url", "email_field", "password_field", "next", "submit", "signed_in"}
+ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
+LOGIN_KEYS = {"url", "email_field", "password_field", "next", "submit", "signed_in", "code_field", "code_submit"}
+COOKIE_KEYS = {"name", "value", "path", "http_only"}
 SIGNED_IN_KEYS = {"url_not", "text", "js"}
 # reduce: the tab tells pages the visitor prefers reduced motion (CSS media query and matchMedia), so sites that
 # honour it stop scroll-scrubbing, carousels and counters that otherwise keep changing under Jev. full: as-is.
@@ -326,7 +327,8 @@ def has_checks(expect):
                                        or expect.get("across"))
 
 
-def _account(raw, base):
+def _account(raw, base, folder=None):
+    """A suite's account block. folder: where seed:FILE#KEY references are relative to (the suite's folder)."""
     from . import vault
 
     if not isinstance(raw, dict):
@@ -335,10 +337,19 @@ def _account(raw, base):
     if not isinstance(raw.get("email"), str) or not raw["email"].strip():
         raise SuiteError("account.email is required (the test account's sign-in name, or an env:/keychain:/op:// "
                          "reference to it)")
-    try:
-        vault.parse(raw.get("password"))
-    except vault.VaultError as e:
-        raise SuiteError(f"account.password: {e}") from None
+    cookie = raw.get("cookie")
+    if cookie is not None:
+        if not isinstance(cookie, dict) or not cookie.get("name") or "value" not in cookie:
+            raise SuiteError("account.cookie must be {name, value: a vault reference} (a seeded test user's session)")
+        _unknown("account.cookie", cookie, COOKIE_KEYS)
+    refs = {"password": raw.get("password"), "totp": raw.get("totp"), "cookie.value": (cookie or {}).get("value")}
+    for key, ref in refs.items():
+        if ref is None and (key != "password" or cookie is not None):
+            continue  # a preset cookie signs in without a password
+        try:
+            vault.parse(ref)
+        except vault.VaultError as e:
+            raise SuiteError(f"account.{key}: {e}") from None
     login = raw.get("login")
     if not isinstance(login, dict) or not login.get("url"):
         raise SuiteError("account.login.url is required (the sign-in page)")
@@ -349,8 +360,21 @@ def _account(raw, base):
     if scheme != "https" and not (scheme == "http" and is_loopback(url)):
         raise SuiteError("account.login.url must be https (http only on localhost): a password never travels "
                          "unencrypted")
-    return {"name": str(raw.get("name") or raw["email"]), "email": raw["email"], "password": raw["password"],
-            "login": {**login, "url": url}}
+    if raw.get("totp") is not None or cookie is not None:  # a seeded TEST user on a local dev host, nothing else
+        what = "account.totp" if raw.get("totp") is not None else "account.cookie"
+        if not is_local_dev(url):
+            raise SuiteError(f"{what} is for a seeded test account on a local dev host (localhost, 127.0.0.1, *.test), "
+                             f"not {urlsplit(url).hostname}")
+        if not vault.is_ref(raw["email"]) and not is_test_email(raw["email"]):
+            raise SuiteError(f"{what} is for a seeded test account at a reserved test domain (example.test, *.test, "
+                             f"example.com...), not {raw['email']}")
+    out = {"name": str(raw.get("name") or raw["email"]), "email": vault.anchor(raw["email"], folder),
+           "password": vault.anchor(raw.get("password"), folder), "login": {**login, "url": url}}
+    if raw.get("totp") is not None:
+        out["totp"] = vault.anchor(raw["totp"], folder)
+    if cookie is not None:
+        out["cookie"] = {**cookie, "value": vault.anchor(cookie["value"], folder)}
+    return out
 
 
 def parse(data, path=None, devices=None):
@@ -473,7 +497,7 @@ def parse(data, path=None, devices=None):
     if base:
         hosts.add(host_of(base))
     hosts |= set(_list(data.get("hosts"), "hosts"))
-    account = _account(data["account"], base) if data.get("account") else None
+    account = _account(data["account"], base, Path(path).parent if path else None) if data.get("account") else None
     if account:
         hosts.add(host_of(account["login"]["url"]))
     suite = Suite(
