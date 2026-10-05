@@ -31,7 +31,7 @@ ASSETS = {"/logo.svg": Path(__file__).with_name("assets") / "logo-dark.svg",
 FILE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".html", ".json", ".md", ".txt", ".mp4", ".webm"}
 FINISHED = ("done", "stopped", "failed", "lost")
 STEP_KEYS = ("name", "about", "outcome", "reason", "stop", "seconds", "cost_usd", "goal", "checks", "findings",
-             "end_url", "page_says", "history", "fps")
+             "end_url", "page_says", "history", "fps", "ux")
 
 
 class DashboardError(ValueError):
@@ -169,7 +169,8 @@ def _step(run_id, s):
 
 
 def detail(run_id):
-    """One run: what it ran, how it went, and each test with its checks, findings, screenshot and decisions."""
+    """One run: what it ran, how it went, its UX, and each test with its checks, findings, UX notes, screenshot and
+    decisions."""
     folder = _folder(run_id)
     report = None
     if folder and (folder / "report.json").is_file():
@@ -194,6 +195,8 @@ def detail(run_id):
         out["models"] = report.get("models")
         if report.get("about"):
             out["about"] = report["about"]
+        if report.get("ux"):  # the run's design consistency and AI design review (each test's notes are its own)
+            out["ux"] = report["ux"]
     by_step = {}
     for d in decisions:
         by_step.setdefault(d.get("scenario"), []).append(

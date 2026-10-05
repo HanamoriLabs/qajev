@@ -192,6 +192,17 @@ pre.raw { white-space:pre-wrap; font:12px/1.5 var(--mono); background:var(--grou
 .livebadge { position:absolute; top:8px; left:8px; font:600 11px var(--mono); background:var(--navy); color:var(--hi);
   padding:2px 8px; border-radius:999px; letter-spacing:.04em; }
 .finding { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:8px; font-size:13px; align-items:baseline; overflow-wrap:anywhere; }
+.tline { display:flex; gap:8px; align-items:center; min-width:0; }
+.tline .tname { min-width:0; }
+.uxn { flex:none; font:11px var(--mono); color:var(--ink-2); background:var(--chip); border-radius:999px; padding:1px 8px; white-space:nowrap; }
+.uxbasis { display:flex; gap:8px; align-items:center; margin:8px 0 2px; }
+.uxnote { font-size:13px; padding:4px 0; overflow-wrap:anywhere; }
+.uxnote .cdetail { display:block; font-size:12.5px; margin-top:2px; }
+.uxkind { font-weight:600; }
+.uxnote details { margin-top:4px; }
+.uxnote ul { margin:4px 0 0; padding-left:18px; font:12px/1.5 var(--mono); color:var(--ink-2); }
+.uxcard { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-top:10px; }
+.uxhead { font-weight:700; margin-bottom:2px; }
 .scroll { overflow-x:auto; }
 .dtable { width:100%; border-collapse:collapse; font-size:12.5px; }
 .dtable th { text-align:left; font:600 10.5px var(--mono); color:var(--ink-2); text-transform:uppercase; letter-spacing:.05em;
@@ -548,12 +559,65 @@ function forPeople(s, decisions, low) {
     + `${low ? `, ${low} unsure` : ""}: see For agents.</p>`;
   return out;
 }
+// UX notes (a smoke crawl's measurements, struggle signals, a model's opinion): advice that never changes a result,
+// grouped by what each rests on, in the report's words.
+const BASIS = {measured: "measured", struggle: "struggle signal", opinion: "model opinion"};
+const BASIS_ORDER = ["measured", "struggle", "opinion", "heuristic"];
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+function byBasis(notes) {  // -> [[basis, notes]]: the known ones in that order, then any other as met
+  const groups = new Map();
+  (notes || []).forEach((n) => { if (!groups.has(n.basis)) groups.set(n.basis, []); groups.get(n.basis).push(n); });
+  const rank = (b) => BASIS_ORDER.includes(b) ? BASIS_ORDER.indexOf(b) : BASIS_ORDER.length;
+  return [...groups].sort((a, b) => rank(a[0]) - rank(b[0]));
+}
+const uxTally = (notes) => byBasis(notes).map(([b, ns]) => `${ns.length} ${BASIS[b] || b}`).join(" · ");
+const uxChip = (notes) => notes && notes.length
+  ? `<span class="uxn" title="${esc(uxTally(notes))}">${plural(notes.length, "UX note")}</span>` : "";
+function uxNote(n) {
+  const samples = n.samples || [];
+  return `<div class="uxnote"><span class="uxkind">${esc(n.kind)}</span>${n.detail ? ": " + esc(n.detail) : ""}`
+    + (n.rule ? `<span class="cdetail">Rule: ${esc(n.rule)}</span>` : "")
+    + (samples.length ? `<details><summary>Examples · ${samples.length}</summary><ul>${samples.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>` : "")
+    + `</div>`;
+}
+function uxHtml(notes) {  // one test's notes
+  if (!notes || !notes.length) return "";
+  return `<div class="klabel">UX · advice, never changes the result</div>`
+    + byBasis(notes).map(([b, ns]) => `<div class="uxbasis"><span class="pill p-other">${esc(BASIS[b] || b)}</span>`
+      + `<span class="cdetail">${plural(ns.length, "note")}</span></div>${ns.map(uxNote).join("")}`).join("");
+}
+function reviewLine(rv) {  // the paid design review (report.py's words): what it cost, against its estimate and cap
+  const est = rv.estimate || {}, money = (v) => "$" + Number(v || 0).toFixed(4);
+  const terms = [est.usd != null ? "estimate " + money(est.usd) : "", rv.cap_usd != null ? "cap $" + rv.cap_usd : ""].filter(Boolean);
+  return `AI design review: ${rv.screens ?? 0}${est.screens != null ? " of " + est.screens : ""} screen(s) reviewed by Clef, `
+    + money(rv.usd) + (terms.length ? ` (${terms.join(", ")})` : "") + (rv.stopped ? `; stopped: ${rv.stopped}` : "");
+}
+function uxRunHtml(d) {  // the run's UX: its tests' notes counted, the design review, design consistency per device
+  const ux = d.ux || {}, devices = Object.entries(ux.consistency || {});
+  const noted = d.steps.filter((s) => s.ux && s.ux.length), notes = noted.flatMap((s) => s.ux);
+  if (!notes.length && !devices.length && !ux.review) return "";
+  const note = (notes.length ? `${plural(notes.length, "note")} on ${plural(noted.length, "test")}: ${uxTally(notes)}`
+    : "no notes on its tests") + " · advice, never changes the gate";
+  return `<section class="sect"><div class="sect-head"><h2 class="h2">UX</h2><span class="sect-note">${esc(note)}</span></div>`
+    + (ux.review ? `<p class="reason">${esc(reviewLine(ux.review))}</p>` : "")
+    + devices.map(([device, ns]) => {
+      // one rule for every note in the card is said once, under its heading, not under each note
+      const rules = new Set(ns.map((n) => n.rule || "")), shared = ns.length > 1 && rules.size === 1 ? [...rules][0] : "";
+      return `<div class="uxcard"><div class="uxhead">Design consistency (${esc(device)})</div>`
+        + (shared ? `<p class="cdetail">Rule: ${esc(shared)}</p>` : "")
+        + (ns.length ? ns.map((n) => uxNote(shared ? { ...n, rule: "" } : n)).join("")
+          : `<p class="cdetail">No differences between pages.</p>`) + `</div>`;
+    }).join("")
+    + `</section>`;
+}
 function agentText(s) {  // what an agent needs to pick the failure up: pasted into its chat
   const d = current || {};
   return [`QAJev test "${s.name}": ${s.outcome}`, d.title ? `Run: ${d.title} (${d.id})` : "",
     s.about ? `About: ${s.about}` : "", s.reason ? `Reason: ${s.reason}` : "",
     ...(s.checks || []).map((c) => `${c.ok ? "PASS" : "FAIL"} ${c.check}${c.detail ? ` -- ${c.detail}` : ""}`),
     ...(s.findings || []).map((x) => `${x.severity} ${x.kind}${x.detail ? `: ${x.detail}` : ""}`),
+    ...(s.ux || []).map((n) => `UX (${BASIS[n.basis] || n.basis}) ${n.kind}${n.detail ? `: ${n.detail}` : ""}`
+      + `${n.rule ? ` [rule: ${n.rule}]` : ""}`),
     d.folder ? `Run folder: ${d.folder}` : "", d.command_line ? `Command: ${d.command_line}` : "",
     d.id && !String(d.id).startsWith("r-") ? `Rerun its failed tests: qajev rerun ${d.id} --failed` : ""].filter(Boolean).join("\n");
 }
@@ -611,6 +675,7 @@ function testHtml(s, n) {
     body = `<div class="tbody${s.shot ? "" : " tbody-noshot"}"><div>`
       + (s.about ? `<p class="about">${esc(s.about)}</p>` : "")
       + forPeople(s, decisions, low)
+      + uxHtml(s.ux)
       + `<details class="agents"><summary>For agents</summary>`
       + `<button class="btn copy" data-copy="${esc(s.name)}">Copy for an agent</button>`
       + (s.reason ? `<div class="klabel">Reason</div><pre class="raw">${esc(s.reason)}</pre>` : "")
@@ -639,7 +704,8 @@ function testHtml(s, n) {
   }
   return `<div class="test${s.outcome === "running" ? " test-live" : ""}" data-name="${esc(s.name)}">`
     + `<button class="thead" data-toggle="${esc(s.name)}" aria-expanded="${open}"><span class="tidx">${n}</span>`
-    + `<span class="pill ${OUT[s.outcome] || "p-other"}">${esc(s.outcome)}</span><span class="tlabel"><span class="tname">${esc(s.name)}</span>`
+    + `<span class="pill ${OUT[s.outcome] || "p-other"}">${esc(s.outcome)}</span><span class="tlabel">`
+    + `<span class="tline"><span class="tname">${esc(s.name)}</span>${uxChip(s.ux)}</span>`
     + `${s.about ? `<span class="tabout">${esc(s.about)}</span>` : ""}</span>`
     + `<span class="ttime">${esc(time)}</span><span class="chev">${open ? "–" : "+"}</span></button>${body}</div>`;
 }
@@ -649,7 +715,7 @@ function renderDetail() {
   images = d.steps.filter((s) => s.shot).map((s) => ({src: s.shot, name: s.name, outcome: s.outcome}));
   const shownSteps = d.steps.map((s, i) => [s, i + 1]).filter(([s]) => !onlyBad || BAD.includes(s.outcome) || s.outcome === "running");
   const parts = {
-    head: headHtml(d), results: resultsHtml(d), strip: stripHtml(),
+    head: headHtml(d), results: resultsHtml(d), ux: uxRunHtml(d), strip: stripHtml(),
     tools: `<div class="sect-head"><h2 class="h2">Tests</h2><span class="sect-note">${shownSteps.length} shown</span><div class="tools">`
       + `<div class="toggle" role="group" aria-label="Show"><button class="tbtn${onlyBad ? "" : " tbtn-on"}" data-only="0" aria-pressed="${!onlyBad}">All</button>`
       + `<button class="tbtn${onlyBad ? " tbtn-on" : ""}" data-only="1" aria-pressed="${onlyBad}">Not passed</button></div></div></div>`,
@@ -657,7 +723,7 @@ function renderDetail() {
   const root = $("detail");
   if (root.dataset.run !== d.id) {  // another run: build it whole
     root.dataset.run = d.id;
-    root.innerHTML = `<div data-part="head"></div><div data-part="results"></div><div data-part="strip"></div>`
+    root.innerHTML = `<div data-part="head"></div><div data-part="results"></div><div data-part="ux"></div><div data-part="strip"></div>`
       + `<section class="sect"><div data-part="tools"></div><div id="tests"></div></section>`;
     root.scrollTop = 0;
   }

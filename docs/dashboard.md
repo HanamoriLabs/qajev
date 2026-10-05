@@ -50,16 +50,21 @@ and the project runs filed in a project's reports without a job behind them.
   PASS, FAIL, INCOMPLETE), the kind (games, checks, suites, smoke crawls) and the period. The filters stay in the
   address, so a view can be bookmarked.
 
-**A run**: what it is, the command and folder, a bar of the results, the screenshots in a strip (click one to
-enlarge; the arrows step through them), and its tests. "Not passed" shows only the tests to look at. Each test has:
+**A run**: what it is, the command and folder, a bar of the results, its **UX** when it has any (how many UX notes
+its tests have, by what they rest on, and the design consistency per device), the screenshots in a strip (click one
+to enlarge; the arrows step through them), and its tests. "Not passed" shows only the tests to look at. Each test
+has:
 
 - **what it proves**: its `about`, under its name ([Writing tests](writing-tests.md) says how to give one);
 - **for people**: "What went wrong" (or "What it proved"): each check as a plain sentence, failed ones first, with
   what was there instead (for a missing text, the closest text on the page), and the serious problems seen;
+- **UX notes**, when it has any: their count beside its name (`3 UX notes`), and in the test each note by what it
+  rests on, with its rule and examples. A UX note is advice: it never changes the test's result or the gate
+  ([Reports](reports.md#ux));
 - **for agents** (folded): the raw reason, checks and findings, the model's decisions (unsure ones marked; a move
   that went stale says why: what covered its target, or what changed), its actions and what the screen said, and
-  **Copy for an agent**: the test, its checks, the run folder, the command and `qajev rerun JOB --failed`, ready to
-  paste into an agent's chat.
+  **Copy for an agent**: the test, its checks and UX notes, the run folder, the command and
+  `qajev rerun JOB --failed`, ready to paste into an agent's chat.
 
 **A running run** updates as it happens: the page holds a stream to the dashboard, which pushes each step, test and
 frame. The running test shows what it is doing now, its last steps, and its **screen, live**: a frame every 2 s for

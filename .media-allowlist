@@ -3,3 +3,5 @@ site/apple-touch-icon.png
 site/icon-192.png
 site/icon-512.png
 site/favicon.ico
+# The dashboard's page is source, not a report: media-guard reads any .html under a qajev/ folder as a QAJev report.
+qajev/dashboard.html

@@ -52,7 +52,8 @@ From the top:
 - **The header**: who has the browser and for how long, how many runs are queued, the machine's load, and today's
   runs and spend (plus what running jobs have spent so far).
 - **Jobs**: each run with its state, a progress bar, scenarios done out of the total, time, cost so far and the
-  scenario in flight. Under a running job, a line shows what the decision model is doing right now, named for the
+  scenario in flight (a finished one: its gate, and its UX notes counted by what they rest on, as
+  `PASS · UX 12 measured`). Under a running job, a line shows what the decision model is doing right now, named for the
   model deciding (**`Jev ▸`**, or **`Clef-flash ▸`** / **`Clef ▸`** when the run uses Clef), for example
   `click 'See pricing' (p 0.93) · step 4 · 1s ago`, or during a game `playing 42s: kills 120 · level 3 · 60 fps`.
 - **Chrome**: the browsers QAJev has open (and whether they are headless).
@@ -60,8 +61,8 @@ From the top:
 
   A browser or game that is up shows in green with a `●`; "none running" and "no game running" stay grey, and a
   browser that has gone away shows in red.
-- **Recent reports**: the latest runs of all projects, with the gate, cost, outcomes and a `Δ` when something
-  changed since the previous run.
+- **Recent reports**: the latest runs of all projects, with the gate, cost, outcomes, the UX notes' count and a `Δ`
+  when something changed since the previous run.
 
 ### Keys
 
@@ -76,7 +77,9 @@ From the top:
 | `q` | quit |
 
 **Details** explain each scenario: why it ended as it did, each failed check with what was found instead, the
-findings (repeats grouped), where Jev ended up, what the page said, time, cost and the screenshot.
+findings (repeats grouped), its UX notes' count, where Jev ended up, what the page said, time, cost and the
+screenshot. Above them, a run's design consistency per device. The notes themselves are in the report and the
+dashboard.
 
 ![qajev top, a run's details](images/top-details.png)
 

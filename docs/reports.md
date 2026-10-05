@@ -99,7 +99,8 @@ A smoke crawl also measures how easy each page is to use, and adds a **UX** sect
 | *kind* style differs | **design consistency**: the computed style of each kind of element (h1, h2, h3, body text, inline links, buttons, text fields) compared across pages, per device; each page that differs from the style most pages use is named with both values (`about: font-size 28px (vs 32px)`) | |
 
 The keyboard walk and the zoom pass run on a desktop layout (a phone has no Tab key). `--no-ux` (or `ux: false` in
-`qa_smoke`) skips all of it.
+`qa_smoke`) skips all of it. The [dashboard](dashboard.md) shows the same notes under each test, and
+[`qajev top`](jobs-and-top.md) counts them.
 
 Known limit: a game is told apart from a page by its canvas size only. An ordinary page with a decorative full-screen
 canvas that cancels Tab reads "keyboard not measurable", not "keyboard blocked"; check such a page's keyboard by hand.

@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- The dashboard and `qajev top` show the UX notes, not only the reports. In the dashboard a test with notes says how
+  many beside its name (`3 UX notes`); open, it lists each note by what it rests on, with its rule and examples, and
+  the run has a UX section with the count and the design consistency per device. `qajev top` counts them
+  (`UX 12 measured`) on a finished job, a recent report and each scenario in the details, and shows a run's design
+  consistency. ([The dashboard](docs/dashboard.md), [Jobs and top](docs/jobs-and-top.md))
 - Fixed: a run with `--ephemeral` was reported as "QAJev-managed profile default", and `qajev browser status`
   listed its Chrome as `default`, so a throwaway run looked like the shared profile. Both now say throwaway.
 - Fixed: four UX false alarms seen on a real game's title screen. Text hidden for screen readers only was called cut

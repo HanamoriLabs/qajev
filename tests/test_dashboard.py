@@ -97,6 +97,46 @@ def test_every_run_is_listed_by_project_with_its_tests_screenshots_and_decisions
     assert d["about"] == "every boss can be beaten" and d["steps"][0]["about"] == "Kira's fight can be won at level 18"
 
 
+# Stands in for a smoke crawl with UX notes: a page with notes (measured, and a model's opinion), a page without, and
+# the run's design consistency and AI design review.
+FAKE_SMOKE_UX = r"""
+import json, pathlib, sys
+emit = lambda **e: print(json.dumps(e), file=sys.stderr, flush=True)
+run = pathlib.Path("runs/smoke-run"); run.mkdir(parents=True, exist_ok=True)
+emit(event="run", suite="smoke shop", run_dir=str(run), scenarios=2)
+notes = [{"basis": "measured", "kind": "low text contrast", "detail": "2 of 40 text(s) below WCAG AA",
+          "rule": "WCAG 2.2 1.4.3", "samples": ["'Sale' 2.1:1 (needs 4.5:1)"]},
+         {"basis": "opinion", "kind": "primary action unclear", "detail": "Clef answered no"}]
+steps = [{"name": "/", "outcome": "pass", "reason": "loaded", "ux": notes},
+         {"name": "/about", "outcome": "pass", "reason": "loaded", "ux": []}]
+for s in steps:
+    emit(event="scenario", result=s)
+h1 = {"basis": "measured", "kind": "h1 style differs", "detail": "/about: font-size 28px"}
+ux = {"consistency": {"desktop": [h1]},
+      "review": {"estimate": {"screens": 2, "usd": 0.004}, "screens": 2, "usd": 0.0031, "cap_usd": 0.5,
+                 "stopped": None, "calls": 4}}
+report = {"gate": "PASS", "run_dir": str(run), "scenarios": steps, "ux": ux}
+(run / "report.json").write_text(json.dumps(report))
+print(json.dumps(report))
+"""
+
+
+def test_each_tests_ux_notes_and_the_runs_ux_reach_the_page(played):
+    # José, 5 Oct: the UX notes were only in report.md and report.html, not in the dashboard.
+    played_id, run_root = played
+    job = jobs.start(["smoke", "https://shop.example/"], command=[sys.executable, "-c", FAKE_SMOKE_UX],
+                     cwd=str(run_root))
+    wait_for(lambda: jobs.status(job["id"])["state"] == "done")
+    d = dashboard.detail(job["id"])
+    home, about = d["steps"]
+    assert [n["basis"] for n in home["ux"]] == ["measured", "opinion"]
+    assert home["ux"][0]["rule"] == "WCAG 2.2 1.4.3" and home["ux"][0]["samples"] == ["'Sale' 2.1:1 (needs 4.5:1)"]
+    assert "ux" not in about  # no notes: nothing sent, as for checks and findings
+    assert d["ux"]["consistency"]["desktop"][0]["kind"] == "h1 style differs"
+    assert d["ux"]["review"]["usd"] == 0.0031 and d["ux"]["review"]["estimate"]["screens"] == 2
+    assert "ux" not in dashboard.detail(played_id)  # a run without UX has no UX section to show
+
+
 def test_only_a_runs_own_files_are_served(played):
     job_id, run_root = played
     assert dashboard.run_file(job_id, "shots/kira.jpg").read_bytes().startswith(b"\xff\xd8")
