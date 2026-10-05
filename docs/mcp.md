@@ -89,8 +89,10 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   (see [Mobile](mobile.md)).
 - All run tools take `verbose` (include Jev's steps) and `background` (return a job id at once).
 - `about`: what the test proves and why, in plain words. The server's instructions ask agents to give it on every
-  test (and `about:` on each scenario or step of a suite); a result lists the tests without one under
-  `about_missing`. The report and `qajev dashboard` show it under each test's name.
+  test (and `about:` on each scenario or step of a suite); a result lists the tests without one, or with a check
+  without words, under `about_missing`. The report and `qajev dashboard` show it under each test's name.
+- `says` (`qa_check`): what `expect_js` proves, in plain words, for the test plan. Without it the check is NOT
+  DESCRIBED and the gate INCOMPLETE ([Reports](reports.md#the-test-plan)).
 
 ## How a call runs
 

@@ -7,6 +7,7 @@ from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from . import plan as plan_mod
 from .verdict import hidden_words
 
 OBVIOUS = 0.8
@@ -61,6 +62,15 @@ td { overflow-wrap:break-word; }
 ul.checks { list-style:none; padding:0; margin:8px 0; }
 ul.checks li { padding:2px 0; }
 .ok { color:var(--pass); font-weight:700; } .no { color:var(--fail); font-weight:700; }
+ol.plan { list-style:none; padding:0; margin:8px 0 0; } ol.plan > li { display:flex; gap:10px; padding:8px 0;
+  border-top:1px solid var(--line); } ol.plan > li:first-child { border-top:0; }
+ol.plan ul { list-style:none; padding:0; margin:4px 0 0; } ol.plan ul li { display:flex; gap:8px; padding:1px 0; }
+.box { flex:none; display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px;
+  border-radius:5px; border:1.5px solid var(--line); font-size:13px; font-weight:700; }
+.box.pass { color:var(--pass); background:var(--pass-bg); border-color:var(--pass); }
+.box.fail { color:var(--fail); background:var(--fail-bg); border-color:var(--fail); }
+.box.warn { color:var(--stuck); background:var(--stuck-bg); border-color:var(--stuck); }
+.nd { color:var(--fail); font-weight:700; font-size:12px; letter-spacing:.04em; }
 .shot img { max-width:100%; max-height:360px; border:1px solid var(--line); border-radius:6px; margin-top:8px; }
 .clients { display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:10px; margin-top:8px; }
 .clients figure { margin:0; } .clients figcaption { font-size:13px; color:var(--muted); }
@@ -106,11 +116,49 @@ def _table(head, rows):
     return f'<div class="scroll"><table><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>'
 
 
+BOX = {"pass": "✓", "fail": "✗", "warn": "!", "todo": ""}
+NOT_DESCRIBED = '<span class="nd">NOT DESCRIBED</span>'
+
+
+def _line(line):
+    """One check in plain words, ticked by its result, the raw check folded away for agents."""
+    state = "todo" if "ok" not in line else "pass" if line["ok"] else "fail"
+    said = _e(line["words"]) if line["words"] else f"{NOT_DESCRIBED} <code>{_e(line['check'])}</code>"
+    raw = (f'<details><summary>For agents</summary><code>{_e(line["check"])}</code></details>'
+           if line["words"] and line.get("check") else "")
+    reason = f' <span class="muted">— {_e(line["detail"])}</span>' if line.get("detail") else ""
+    return f'<li><span class="box {state}">{BOX[state]}</span><div>{said}{reason}{raw}</div></li>'
+
+
+def _plan(items, scenarios):
+    """The test plan, at the top of the report: each test, what it proves and its checks, ticked as they ran."""
+    if not items:
+        return ""
+    out = ['<section class="card" id="plan"><h2>Test plan</h2><p class="muted">What each test proves, ticked as it '
+           "ran: ✓ passed, ✗ failed, ! stuck or harness, empty: not run.</p><ol class=\"plan\">"]
+    for i, it in enumerate(items):
+        about = _e(it["about"]) if it["about"] else f"{NOT_DESCRIBED}: this test has no about"
+        details = {c.get("check"): c.get("detail") for c in (scenarios[i].get("checks") or [])} if i < len(
+            scenarios) else {}
+        lines = "".join(_line({**c, "detail": details.get(c["check"])}) for c in it["checks"])
+        out.append(f'<li class="plan-item {it["state"]}"><span class="box {it["state"]}">{BOX[it["state"]]}</span>'
+                   f'<div><a href="#s{i}"><strong>{it["n"]}. {_e(it["name"])}</strong></a><div>{about}</div>'
+                   + (f"<ul>{lines}</ul>" if lines else "") + "</div></li>")
+    missing = plan_mod.not_described(items)
+    out.append("</ol>" + (f'<p class="nd">{len(missing)} test(s) NOT DESCRIBED: a pass would not say what it proved, '
+                          "so the gate cannot be PASS.</p>" if missing else "") + "</section>")
+    return "".join(out)
+
+
 def _scenario(i, r, who="Jev"):
     jev = r.get("jev") or {}
+    it = plan_mod.item(i + 1, r.get("name"), r.get("about"), r.get("checks") or [], r.get("outcome"))
+    title = {"pass": "What it proved", "fail": "What went wrong"}.get(r["outcome"], "What happened")
     parts = [f'<section class="card" id="s{i}"><h3>{_pill(r["outcome"])} {_e(r["name"])}</h3>',
-             f'<p class="about">{_e(r["about"])}</p>' if r.get("about") else "",
+             f'<p class="about"><strong>{title}:</strong> '
+             + (_e(r["about"]) if r.get("about") else f"{NOT_DESCRIBED}: this test has no about") + "</p>",
              f'<p>{_e(r.get("reason"))}</p>']
+    r = {**r, "_lines": [{**line, "detail": c.get("detail")} for line, c in zip(it["checks"], r.get("checks") or [])]}
     facts = []
     if r.get("url"):
         facts.append(("Start", _link(r["url"])))
@@ -155,9 +203,7 @@ def _scenario(i, r, who="Jev"):
                      "set (QAJev's doing, not the page's)" + "".join(
                          f'<pre class="muted">{_e(d)}</pre>' for d in r.get("guard_hydration_details") or []))
     if checks or notes:
-        items = [f'<li><span class="{"ok" if c["ok"] else "no"}">{"✓" if c["ok"] else "✗"}</span> '
-                 f'{_e(c["check"])}' + (f' <span class="muted">— {_e(c["detail"])}</span>' if c.get("detail") else "")
-                 + "</li>" for c in checks]
+        items = [_line(line) for line in r["_lines"]]
         items += [f'<li class="muted">{n}</li>' for n in notes]
         parts.append(f'<ul class="checks">{"".join(items)}</ul>')
 
@@ -349,6 +395,7 @@ def render(data):
                    f'sign in ({", ".join(_link(u) for u in wall["pages"][:3])}).</p><p>{_e(wall["next_step"])}</p>'
                    "</div>")
 
+    out.append(_plan(data.get("plan") or plan_mod.from_results(data["scenarios"]), data["scenarios"]))
     rows = [[f'<a href="#s{i}">{_e(r["name"])}</a>', _pill(r["outcome"]), _e(r.get("reason")),
              _link(r.get("end_url") or r.get("url"))] for i, r in enumerate(data["scenarios"])]
     out += ["<h2>Scenarios</h2>", _table(["Scenario", "Outcome", "Why", "Ended at"], rows) or

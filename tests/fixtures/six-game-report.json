@@ -1,0 +1,189 @@
+{
+ "gate": "PASS",
+ "counts": {
+  "pass": 8,
+  "fail": 0,
+  "stuck": 0,
+  "harness": 0,
+  "unverified": 0,
+  "skipped": 0
+ },
+ "suite": "Roadside mini games, real keys (sidescroller 73870de, QAJev e07964d)",
+ "about": "Each of the six roadside mini games played to its verdict with real key presses, following its own HOW TO PLAY card, reacting to every cue a human 0.3 s after it shows. Each match logs its frame rate and game time against real time; an Arm Wrestle or Claw match counts only at 50 fps or more with game time at least 0.95 of real time, else that test is harness.",
+ "cost": {
+  "usd": 0.0,
+  "usd_typesafe_estimated": 0.0,
+  "usd_text": 0.0,
+  "calls": {
+   "typesafe": 0,
+   "text": 0
+  },
+  "tokens": {
+   "typesafe": 0,
+   "text": 0
+  },
+  "errors": 0,
+  "text_cost_reported": true,
+  "cap_usd": 1.0
+ },
+ "seconds": 433.59,
+ "started_at": 1791212896.722608,
+ "exit_code": 0,
+ "interrupted": false,
+ "run_dir": "runs/six-game",
+ "findings": [],
+ "scenarios": [
+  {
+   "name": "arm wrestle: follow the card",
+   "about": "Following the card (steady alternation at 7 a second, plus holding the flash key 0.3 s after it shows) beats Granny within six matches, and every flash answered at human speed turns into a steal.",
+   "outcome": "pass",
+   "reason": "all 1 check(s) passed",
+   "checks": [
+    {
+     "check": "js \"(() => {\\n  const r = window.__qa.results().filter((x) => x.game === 'arm');\\n  const card = (() => {\\n  const r = window.__qa.results().filter((x) => x.game === 'arm');\\n  const bad = r.filter((x) => !(x.card && x.card.shown && x.card.heldOn && x.card.frozen));\\n  return bad.length === 0 || 'card not shown or not holding the game in match(es) ' + bad.map((x) => x.match).join(', ');\\n})();\\n  if (card !== true) return card;\\n  const stolen = r.every((x) => x.tellsTaken === x.tells);\\n  const won = r.filter((x) => x.verdict === 'win').length;\\n  if (r.length < 6) return 'only ' + r.length + ' of 6 matches finished';\\n  if (!stolen) return 'a flash answered at 0.3 s did not become a steal: ' + JSON.stringify(r.map((x) => [x.tellsTaken, x.tells]));\\n  return won >= 1 || 'no win in 6 matches: ' + JSON.stringify(r.map((x) => x.verdict));\\n})()\"",
+     "ok": true,
+     "detail": null
+    }
+   ],
+   "seconds": 158.91,
+   "cost_usd": 0.0,
+   "goal": null,
+   "url": "http://127.0.0.1:5320/?nologos",
+   "mode": "mutate",
+   "stop": "checked"
+  },
+  {
+   "name": "arm wrestle: mashing alone",
+   "about": "Alternating without ever holding the flash key loses: the card's trick is what wins.",
+   "outcome": "pass",
+   "reason": "all 1 check(s) passed",
+   "checks": [
+    {
+     "check": "js \"(() => {\\n  const r = window.__qa.results().filter((x) => x.game === 'arm');\\n  return (r.length === 1 && r[0].verdict === 'lose') || 'mashing alone: ' + JSON.stringify(r.map((x) => x.verdict));\\n})()\"",
+     "ok": true,
+     "detail": null
+    }
+   ],
+   "seconds": 25.6,
+   "cost_usd": 0.0,
+   "goal": null,
+   "url": "http://127.0.0.1:5320/?nologos",
+   "mode": "mutate",
+   "stop": "checked"
+  },
+  {
+   "name": "claw: drop on the glint",
+   "about": "Dropping on the glint, as the card says, wins the toy at human reaction speed (0.3 s after the glint, at the moment the claw is over the toy).",
+   "outcome": "pass",
+   "reason": "all 1 check(s) passed",
+   "checks": [
+    {
+     "check": "js \"(() => {\\n  const r = window.__qa.results().filter((x) => x.game === 'claw');\\n  const card = (() => {\\n  const r = window.__qa.results().filter((x) => x.game === 'claw');\\n  const bad = r.filter((x) => !(x.card && x.card.shown && x.card.heldOn && x.card.frozen));\\n  return bad.length === 0 || 'card not shown or not holding the game in match(es) ' + bad.map((x) => x.match).join(', ');\\n})();\\n  if (card !== true) return card;\\n  if (r.length < 4) return 'only ' + r.length + ' of 4 matches finished';\\n  if (!r.every((x) => x.tellsTaken >= 1)) return 'a match took no glint: ' + JSON.stringify(r.map((x) => [x.tellsTaken, x.tells]));\\n  return r.some((x) => x.verdict === 'win') || 'no win in 4 matches: ' + JSON.stringify(r.map((x) => x.verdict));\\n})()\"",
+     "ok": true,
+     "detail": null
+    }
+   ],
+   "seconds": 74.34,
+   "cost_usd": 0.0,
+   "goal": null,
+   "url": "http://127.0.0.1:5320/?nologos",
+   "mode": "mutate",
+   "stop": "checked"
+  },
+  {
+   "name": "claw: drop without the glint",
+   "about": "A drop over the toy without the glint goes limp and loses: the glint is what wins.",
+   "outcome": "pass",
+   "reason": "all 1 check(s) passed",
+   "checks": [
+    {
+     "check": "js \"(() => {\\n  const r = window.__qa.results().filter((x) => x.game === 'claw');\\n  return (r.length === 1 && r[0].verdict === 'lose') || 'dropping blind: ' + JSON.stringify(r.map((x) => x.verdict));\\n})()\"",
+     "ok": true,
+     "detail": null
+    }
+   ],
+   "seconds": 21.03,
+   "cost_usd": 0.0,
+   "goal": null,
+   "url": "http://127.0.0.1:5320/?nologos",
+   "mode": "mutate",
+   "stop": "checked"
+  },
+  {
+   "name": "karaoke: the lane and the spark card",
+   "about": "The lane and the spark card are enough to play: each note's key pressed as it reaches the line, the dark notes from the card. Reports the numbers; Jos\u00e9 judges the feel.",
+   "outcome": "pass",
+   "reason": "all 1 check(s) passed",
+   "checks": [
+    {
+     "check": "js \"(() => {\\n  const r = window.__qa.results().filter((x) => x.game === 'karaoke');\\n  return r.length === 1 || 'no verdict';\\n})()\"",
+     "ok": true,
+     "detail": null
+    }
+   ],
+   "seconds": 55.67,
+   "cost_usd": 0.0,
+   "goal": null,
+   "url": "http://127.0.0.1:5320/?nologos",
+   "mode": "mutate",
+   "stop": "checked"
+  },
+  {
+   "name": "poker: call the cheat, then show",
+   "about": "Calling hand 1's cheat 0.3 s after it shows wins that hand, and SHOW ends every hand.",
+   "outcome": "pass",
+   "reason": "all 1 check(s) passed",
+   "checks": [
+    {
+     "check": "js \"(() => {\\n  const r = window.__qa.results().filter((x) => x.game === 'poker');\\n  return r.length === 1 || 'no verdict';\\n})()\"",
+     "ok": true,
+     "detail": null
+    }
+   ],
+   "seconds": 22.04,
+   "cost_usd": 0.0,
+   "goal": null,
+   "url": "http://127.0.0.1:5320/?nologos",
+   "mode": "mutate",
+   "stop": "checked"
+  },
+  {
+   "name": "shells: three in a row",
+   "about": "Three rounds in a row, as the card now says: one wrong cup ends it; round 3's cheat is caught by ACCUSE and naming it.",
+   "outcome": "pass",
+   "reason": "all 1 check(s) passed",
+   "checks": [
+    {
+     "check": "js \"(() => {\\n  const r = window.__qa.results().filter((x) => x.game === 'shells');\\n  return r.length === 1 || 'no verdict';\\n})()\"",
+     "ok": true,
+     "detail": null
+    }
+   ],
+   "seconds": 30.7,
+   "cost_usd": 0.0,
+   "goal": null,
+   "url": "http://127.0.0.1:5320/?nologos",
+   "mode": "mutate",
+   "stop": "checked"
+  },
+  {
+   "name": "critter clash: the right type",
+   "about": "Picking the type that beats theirs (dog > cat > bird > dog) does double damage, as the card says.",
+   "outcome": "pass",
+   "reason": "all 1 check(s) passed",
+   "checks": [
+    {
+     "check": "js \"(() => {\\n  const r = window.__qa.results().filter((x) => x.game === 'critter');\\n  return r.length === 1 || 'no verdict';\\n})()\"",
+     "ok": true,
+     "detail": null
+    }
+   ],
+   "seconds": 41.87,
+   "cost_usd": 0.0,
+   "goal": null,
+   "url": "http://127.0.0.1:5320/?nologos",
+   "mode": "mutate",
+   "stop": "checked"
+  }
+ ]
+}

@@ -36,7 +36,7 @@ def test_a_scenario_with_clients_names_them_and_parses_its_steps():
                      ("client", ["p1"], 0, 0), ("client", ["p2", "p3"], 0, 0), ("snapshot", None, None, None)]
     assert s.steps[3]["hook"] == {"reload": True}
     assert s.steps[4]["expect"] == [{"check": "clients.length === 3", "js": "clients.length === 3"},
-                                    {"check": "same roster", "js": "true"}]
+                                    {"check": "same roster", "js": "true", "says": "same roster"}]  # named: its words
     assert s.expect["across"] == [{"check": "clients.every(c => c.state.id)", "js": "clients.every(c => c.state.id)"}]
     named = suite(clients=["host", {"name": "guest", "url": "http://127.0.0.1:8765/guest"}],
                   steps=[{"client": "guest", "js": "1"}], expect={"text": "Room"}).scenarios[0]

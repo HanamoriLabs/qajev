@@ -5,7 +5,7 @@ import os
 import time
 from urllib.parse import urlsplit
 
-from . import __version__, report_html, verdict
+from . import __version__, plan, report_html, verdict
 
 OBVIOUS = 0.8
 MOTION = {
@@ -61,8 +61,16 @@ def build(suite, results, ledgers, *, browser, started_at, strict, interrupted, 
         if not r.get("about") and abouts.get(r["name"]):
             r["about"] = abouts[r["name"]]
     about = getattr(suite, "about", None)
+    # The test plan (José, 6 Oct): each test's about and checks in plain words. A test or check without them is NOT
+    # DESCRIBED, and a pass that cannot say what it proved is no PASS.
+    the_plan = plan.from_results(results)
+    missing = plan.not_described(the_plan)
+    if gate == "PASS" and missing:
+        gate = "INCOMPLETE"
     return {
         **({"about": about} if about else {}),
+        "plan": the_plan,
+        **({"not_described": missing} if missing else {}),
         **({"needs_sign_in": verdict.sign_in_next_step(walls)} if walls else {}),
         "qajev": __version__,
         "suite": suite.name,

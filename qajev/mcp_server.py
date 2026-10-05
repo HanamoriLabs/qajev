@@ -183,16 +183,18 @@ def _trim(report, verbose):
         return report
     keep = ("name", "about", "outcome", "reason", "stop", "stop_detail", "not_run", "seconds", "cost_usd", "end_url",
             "checks", "findings", "shot", "jev", "blocked_writes", "page_says", "needs_sign_in")
-    out = {k: v for k, v in report.items() if k != "scenarios"}
+    out = {k: v for k, v in report.items() if k not in ("scenarios", "plan")}  # the plan repeats the scenarios
     out["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [], {})} for r in report["scenarios"]]
     for r in out["scenarios"]:
         if r.get("blocked_writes"):
             r["blocked_writes"] = len(r["blocked_writes"])
-    missing = [r["name"] for r in report["scenarios"] if not r.get("about")]
+    missing = report.get("not_described") or [r["name"] for r in report["scenarios"] if not r.get("about")]
     if missing:  # the person reads what each test proves next to its result: ask for it every time
         out["about_missing"] = {"tests": missing[:20], "next": "Next time give each test an about: what it proves "
                                 "and why, in plain words (about= on qa_check/qa_play/qa_project_run, about: on a "
-                                "suite's scenarios or steps)."}
+                                "suite's scenarios or steps), and each js, url_regex, fetch or command check its "
+                                "words (says: on the suite's expect, or says= with expect_js on qa_check). Until "
+                                "then the gate is INCOMPLETE, never PASS."}
     out["report_md"] = str(Path(report["run_dir"]) / "report.md")
     out["report_html"] = str(Path(report["run_dir"]) / "report.html")
     return out
@@ -215,6 +217,7 @@ async def qa_check(
     absent_text: list[str] | None = None,
     expect_url: str | None = None,
     expect_js: str | None = None,
+    says: str | None = None,
     expect_looks: list[str] | None = None,
     vision: bool = False,
     fetch: list[str] | None = None,
@@ -242,7 +245,8 @@ async def qa_check(
     goal: plain words, e.g. "Open the pricing page. Stop when plan prices are visible."
     expect_text / absent_text: case-sensitive substrings the page must / must not show.
     expect_url: substring of the final URL. expect_js: JS expression that must return exactly true (a string it
-    returns fails, and is the reason).
+    returns fails, and is the reason). says: what expect_js proves, in plain words (the report's test plan;
+    without it the check is NOT DESCRIBED and the gate INCOMPLETE).
     expect_looks: statements judged from the final screenshot ("the Sign up button is not cut off"); vision: the
     screenshot goes with every decision. Both need Clef as the decision model (Jev reads text only).
     fetch: in-page GET checks, "URL" or "URL=STATUS". mode: readonly (default) or mutate (loopback only).
@@ -265,7 +269,7 @@ async def qa_check(
     if expect_url:
         args += ["--expect-url", expect_url]
     if expect_js:
-        args += ["--expect-js", expect_js]
+        args += ["--expect-js", expect_js, *(["--says", says] if says else [])]
     for statement in expect_looks or []:
         args += ["--expect-looks", statement]
     if vision:

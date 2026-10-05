@@ -100,6 +100,12 @@ For a phone's real browser (Chrome on an Android emulator; iOS Safari is not rea
 - **Say what the test proves.** `about` (`--about` on the command line) is what a pass means and why it matters, in
   plain words: "a first-time visitor can find the Pro price without signing in". The report and the dashboard show
   it under the test's name, so whoever reads the result knows what was, and was not, proven.
+- **Say what each check proves.** A text, an address or an HTTP status says itself ("the page shows “Paid”"). A
+  `js`, `url_regex`, `fetch` or `command` check does not: give it `says`, its words in plain language
+  (`--says` with `--expect-js` on the command line). The report and the dashboard open with a **test plan**: each
+  test's `about` and its checks in these words, a box for each, ticked as the run goes. A test without an `about`,
+  or with a check without words, is **NOT DESCRIBED**: the plan flags it and the gate cannot be PASS (it is
+  INCOMPLETE), because its pass would not say what it proved.
 
 ## A suite: several scenarios in one file
 
@@ -140,11 +146,13 @@ scenarios:
       visible: ["$29 per month"]
 
   - name: pricing on a phone
+    about: both plans fit a phone screen
     url: /
     device: phone
     goal: Open the pricing page. Stop when the plan prices are visible.
     expect:
       js: document.querySelectorAll('[data-plan]').length === 2
+      says: {js: the page lists both plans}   # also url_regex, fetch, command: what each proves, in plain words
 
   - name: a visitor sends feedback
     url: /feedback

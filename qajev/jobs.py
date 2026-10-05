@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from . import plan
 from .config import HOME
 
 JOBS = HOME / "jobs"
@@ -578,6 +579,8 @@ def _status(job_id, detail):
     if detail:
         out["argv"] = meta["argv"]
         out["scenarios"] = finished
+        planned = next((e["items"] for e in events if e.get("event") == "plan"), None)
+        out["plan"] = plan.merge(planned, finished) if planned else plan.from_results(finished)
         if final and "gate" in final:
             out["report"] = final
     return out

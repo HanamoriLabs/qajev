@@ -179,6 +179,21 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, select:focus-vi
 .ok { color:var(--pass); font-weight:700; } .no { color:var(--fail); font-weight:700; }
 .cdetail { color:var(--ink-2); }
 .plain { font-size:14px; }
+/* The test plan: one box per test, ticked as it runs (José, 5 Oct) */
+ol.plan { list-style:none; padding:0; margin:0; counter-reset:none; }
+ol.plan > li { display:grid; grid-template-columns:22px minmax(0, 1fr); gap:10px; padding:9px 0; border-top:1px solid var(--line); }
+ol.plan > li:first-child { border-top:0; }
+.pbox { width:20px; height:20px; border:1.5px solid var(--muted-dark); border-radius:5px; display:inline-flex;
+  align-items:center; justify-content:center; font-size:13px; font-weight:700; line-height:1; flex:none; }
+.pbox.pass { color:var(--pass); background:var(--pass-bg); border-color:var(--pass); }
+.pbox.fail { color:var(--fail); background:var(--fail-bg); border-color:var(--fail); }
+.pbox.warn { color:var(--stuck); background:var(--stuck-bg); border-color:var(--stuck); }
+.pbox.run { border-color:var(--ink); border-style:dashed; }
+.pbox.small { width:16px; height:16px; font-size:11px; border-radius:4px; }
+.ptitle { font-size:14px; } .ptitle b { font-weight:600; }
+ol.plan ul { list-style:none; padding:0; margin:6px 0 0; display:flex; flex-direction:column; gap:4px; }
+ol.plan ul li { display:grid; grid-template-columns:16px minmax(0, 1fr); gap:8px; font-size:13px; overflow-wrap:anywhere; }
+.nd { font:600 11px var(--mono); color:var(--fail); letter-spacing:.04em; }
 .plain .cdetail { display:block; font-size:13px; margin-top:2px; }
 .agents { border-top:1px dashed var(--line); padding-top:10px; margin-top:14px; }
 .agents .check, .agents .finding { font:12px/1.5 var(--mono); }
@@ -520,6 +535,7 @@ function isOpen(s) { return opened.has(s.name) ? opened.get(s.name) : BAD.includ
 // The raw checks, reason and the rest stay under "For agents".
 const cut = (t, n) => { t = String(t ?? ""); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
 function plainCheck(c) {
+  if (c.says) return `${cut(c.says, 200)}`;  // the suite's own words for what this check proves
   const t = c.check || "", q = (x) => `“${cut(x, 120)}”`;
   let m;
   if ((m = t.match(/^page shows (['"])([\s\S]*)\1/))) return `The page should show ${q(m[2])}.`;
@@ -527,12 +543,34 @@ function plainCheck(c) {
   if ((m = t.match(/^on screen: (['"])([\s\S]*)\1/))) return `${q(m[2])} should be on screen.`;
   if ((m = t.match(/^(game|.*) shows (['"])([\s\S]*)\2/))) return `The ${m[1]} should show ${q(m[3])}.`;
   if ((m = t.match(/^url contains (['"])([\s\S]*)\1/))) return `The address should contain ${q(m[2])}.`;
-  if (t.startsWith("url matches")) return "The address should match its pattern.";
-  if (t.startsWith("js ")) return "The page's own script check should come out true.";
+  if (t.startsWith("url matches ") || t.startsWith("js ") || t.startsWith("command ")) return ND_CHECK;
   if ((m = t.match(/^looks: ([\s\S]*)/))) return `On the screenshot: ${cut(m[1], 160)}`;
   if ((m = t.match(/^reached ([\s\S]*)/))) return `The game should reach ${cut(m[1], 120)} in time.`;
   if ((m = t.match(/^the page answered HTTP (\d+)/))) return `The page should answer with HTTP ${m[1]}.`;
   return cut(t, 160);
+}
+// A check only its author can describe, without its words: flagged, never a generic sentence (José, 5 Oct).
+const ND_CHECK = "NOT DESCRIBED: the test does not say what this check proves (raw check under For agents).";
+const BOXMARK = {pass: "✓", fail: "✗", warn: "!", todo: "", run: ""};
+function planHtml(d) {  // the test plan: shown before the run, each box ticked as its test finishes
+  const items = d.plan || [];
+  if (!items.length) return "";
+  const running = (d.steps.find((s) => s.outcome === "running") || {}).name;
+  const ticked = items.filter((it) => it.state !== "todo").length, missing = items.filter((it) => !it.described).length;
+  const note = `${ticked} of ${items.length} ticked` + (missing ? ` · ${missing} not described: the gate cannot be PASS` : "");
+  return `<section class="sect"><div class="sect-head"><h2 class="h2">Test plan</h2><span class="sect-note">${esc(note)}</span></div>`
+    + `<ol class="plan">${items.map((it) => {
+      const st = it.state === "todo" && it.name === running ? "run" : it.state;
+      return `<li><span class="pbox ${st}" aria-label="${esc(st)}">${BOXMARK[st] || ""}</span><div>`
+        + `<div class="ptitle"><b>${esc(it.n)}. ${esc(it.name)}</b>${it.about ? ` · ${esc(it.about)}`
+          : ` · <span class="nd">NOT DESCRIBED</span>: this test has no about`}</div>`
+        + (it.checks.length ? `<ul>${it.checks.map((c) => {
+          const cs = c.ok === true ? "pass" : c.ok === false ? "fail" : "todo";
+          return `<li><span class="pbox small ${cs}">${BOXMARK[cs]}</span><span>${c.words ? esc(c.words)
+            : `<span class="nd">NOT DESCRIBED</span> <span class="cdetail mono">${esc(cut(c.check, 100))}</span>`}</span></li>`;
+        }).join("")}</ul>` : "")
+        + `</div></li>`;
+    }).join("")}</ol></section>`;
 }
 function plainDetail(c) {
   if (c.ok || !c.detail) return "";
@@ -715,7 +753,7 @@ function renderDetail() {
   images = d.steps.filter((s) => s.shot).map((s) => ({src: s.shot, name: s.name, outcome: s.outcome}));
   const shownSteps = d.steps.map((s, i) => [s, i + 1]).filter(([s]) => !onlyBad || BAD.includes(s.outcome) || s.outcome === "running");
   const parts = {
-    head: headHtml(d), results: resultsHtml(d), ux: uxRunHtml(d), strip: stripHtml(),
+    head: headHtml(d), plan: planHtml(d), results: resultsHtml(d), ux: uxRunHtml(d), strip: stripHtml(),
     tools: `<div class="sect-head"><h2 class="h2">Tests</h2><span class="sect-note">${shownSteps.length} shown</span><div class="tools">`
       + `<div class="toggle" role="group" aria-label="Show"><button class="tbtn${onlyBad ? "" : " tbtn-on"}" data-only="0" aria-pressed="${!onlyBad}">All</button>`
       + `<button class="tbtn${onlyBad ? " tbtn-on" : ""}" data-only="1" aria-pressed="${onlyBad}">Not passed</button></div></div></div>`,
@@ -723,7 +761,7 @@ function renderDetail() {
   const root = $("detail");
   if (root.dataset.run !== d.id) {  // another run: build it whole
     root.dataset.run = d.id;
-    root.innerHTML = `<div data-part="head"></div><div data-part="results"></div><div data-part="ux"></div><div data-part="strip"></div>`
+    root.innerHTML = `<div data-part="head"></div><div data-part="plan"></div><div data-part="results"></div><div data-part="ux"></div><div data-part="strip"></div>`
       + `<section class="sect"><div data-part="tools"></div><div id="tests"></div></section>`;
     root.scrollTop = 0;
   }

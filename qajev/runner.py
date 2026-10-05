@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import chrome, live, providers, ux, verdict, vision
+from . import chrome, live, plan, providers, ux, verdict, vision
 from .config import redact, redact_tree, secret_values
 from .ledger import CostCapReached, Ledger
 from .suite import has_checks
@@ -253,12 +253,17 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                 ran.add("after")  # a hook that fails is named by the stop itself, not as never run
                 for hook in scenario.after:
                     session.run_hook(hook, observed.get("url") or scenario.url)
+                says = scenario.expect.get("says") or {}  # the author's words for these checks (the test plan)
                 for probe in scenario.expect.get("fetch", []):
                     checks.append(verdict.fetch_check(probe, session.fetch(probe) or {}))
+                    if says.get("fetch"):
+                        checks[-1]["says"] = says["fetch"]
                 ran.add("fetch")
                 if scenario.expect.get("command"):
                     spec = scenario.expect["command"]
                     checks.append(verdict.command_check(spec, session.command(spec["run"], observed.get("url"))))
+                    if says.get("command"):
+                        checks[-1]["says"] = says["command"]
                 ran.add("command")
         except HookFailed as e:
             stop, detail = "hook_failed", str(e)
@@ -632,6 +637,7 @@ def run(suite, opts):
         browser = chrome.run_record(owned)
     _emit(opts, "run", suite=suite.name, run_dir=str(run_dir), browser=browser, scenarios=len(scenarios),
           decider=models.get("decider"))
+    _emit(opts, "plan", items=plan.from_suite(scenarios))  # what each test will prove, shown before it runs
 
     cap = opts.cost_cap_usd if opts.cost_cap_usd is not None else suite.cost_cap_usd
     motion = opts.motion or getattr(suite, "motion", "reduce")

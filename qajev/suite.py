@@ -51,7 +51,9 @@ def wanted_devices(explicit=None):
     return names or list(DEFAULT_DEVICES)
 HOOK_KINDS = {"js", "fill", "click", "navigate", "wait_for", "key", "react", "sleep", "command", "reload"}
 EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
-               "looks", "across"}
+               "looks", "across", "says"}
+# The checks only their author can describe, by what `says` gives them in plain words (the test plan, 6 Oct)
+SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
     "persona", "speech", "vision", "about", "clients", "steps", "state", "seed",
@@ -194,6 +196,7 @@ def _expect(value, where):
     out["visible"] = _list(value.get("visible"), f"{where}.visible")
     out["looks"] = [str(s) for s in _list(value.get("looks"), f"{where}.looks")]  # judged from the screenshot
     out["across"] = _across(value.get("across"), f"{where}.across")  # a multiplayer scenario's (clients.py)
+    out["says"] = _says(value.get("says"), f"{where}.says")
     if "url_regex" in out:
         try:
             re.compile(out["url_regex"])
@@ -214,15 +217,32 @@ def _expect(value, where):
     return out
 
 
+def _says(value, where):
+    """`says`: what a check proves, in plain words, for the test plan. A string is the `js` check's; a mapping gives
+    each check only its author can describe ({js, url_regex, command, fetch}) its own. -> {kind: words}"""
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        value = {"js": value}
+    if not isinstance(value, dict) or set(value) - SAYS_KEYS or not all(
+            isinstance(v, str) and v.strip() for v in value.values()):
+        raise SuiteError(f"{where} must be plain words for the js check, or a mapping of "
+                         f"{', '.join(sorted(SAYS_KEYS))} to plain words")
+    return {k: v.strip() for k, v in value.items()}
+
+
 def _across(value, where):
     """Checks judged over every client's state: "js" or {check, js}. -> [{check, js}]."""
     out = []
     for i, item in enumerate(_list(value, where)):
         if isinstance(item, str):
             item = {"js": item}
-        if not isinstance(item, dict) or not isinstance(item.get("js"), str) or set(item) - {"check", "js"}:
-            raise SuiteError(f"{where}[{i}] must be a JS expression, or {{check: name, js: expression}}")
-        out.append({"check": str(item.get("check") or item["js"]), "js": item["js"]})
+        if not isinstance(item, dict) or not isinstance(item.get("js"), str) or set(item) - {"check", "js", "says"}:
+            raise SuiteError(f"{where}[{i}] must be a JS expression, or {{check: name, js: expression, says: words}}")
+        # a check named apart from its expression is named in the author's words
+        says = item.get("says") or (item["check"] if item.get("check") and item["check"] != item["js"] else None)
+        entry = {"check": str(item.get("check") or item["js"]), "js": item["js"]}
+        out.append({**entry, "says": says} if says else entry)
     return out
 
 
