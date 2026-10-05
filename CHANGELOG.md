@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- `key` hooks press any plain key (letters, digits, punctuation, Space, the arrows...), repeat a sequence
+  (`{press: [f, j], repeat: 15, interval_ms: 30}`) and hold a key (`hold_ms`, up to 5 s), as trusted key events: real-key
+  play-tests for web games. No modifiers or combinations. ([Writing tests](docs/writing-tests.md))
+- `react` hooks play in real time: every 50 ms a policy in the page reads what the player can see and returns keys to
+  press, hold or release, and frames to keep (`{shot: label}`), until a condition holds. For cues too short for
+  slower polling, at a human reaction time the suite states. Held keys are bounded to 5 s and always released.
 - The smoke's "tap targets under 24 px" finding names up to 10 of them (tag, text, size, a short CSS path; a field
   by its label, never its value), and counts as WCAG 2.5.8 does: links inside a sentence and small targets with
   room around them are left out, and the finding says how many.

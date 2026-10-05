@@ -10,6 +10,7 @@ Order matters and every step here was learned from an incident or a measured mis
 import contextlib
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -18,7 +19,7 @@ from string import Template
 from types import SimpleNamespace
 from typing import Any
 
-from . import chrome, netlog, providers
+from . import chrome, keys, netlog, providers
 from . import guard as guard_mod
 from .config import is_loopback
 
@@ -141,6 +142,15 @@ def awaited(expression, timeout_ms=JS_WAIT_MS):
             f"new Promise((_, no) => setTimeout(() => no(new Error('no answer within {timeout_ms} ms')), "
             f"{timeout_ms}))]); return {{ value: v === undefined ? null : v }}; }} "
             "catch (e) { return { error: String(e && e.message || e) }; } })()")
+
+
+# One tick of a react hook: done when `until` holds, else the policy's key actions. A throw is the policy's error.
+REACT_JS = Template("""(async () => {
+  try {
+    if (await (async () => ($until))()) return { done: true };
+    return { actions: await (async () => ($js))() };
+  } catch (e) { return { error: String(e && e.message || e) }; }
+})()""")
 
 
 PROBE_JS = Template("""(async () => {
@@ -295,13 +305,6 @@ def page_changes(before, after, now=None, node=None):
     if gone or came:
         out.append("controls: " + ", ".join([f"-{x!r}" for x in gone] + [f"+{x!r}" for x in came]))
     return out[:6]
-
-
-KEYS = {
-    "Escape": {"key": "Escape", "code": "Escape", "windowsVirtualKeyCode": 27},
-    "Enter": {"key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13, "text": "\r"},
-    "Tab": {"key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9},
-}
 
 
 class Tab:
@@ -683,12 +686,100 @@ class Session:
         self.settle_scroll()
         return self.evaluate(self.SCROLL_STATE) != before
 
-    def press(self, key):
-        spec = KEYS.get(key)
-        if not spec:
-            raise HookFailed(f"unknown key {key!r}; known: {sorted(KEYS)}")
-        self.call("Input.dispatchKeyEvent", type="keyDown", **spec)
-        self.call("Input.dispatchKeyEvent", type="keyUp", **{k: v for k, v in spec.items() if k != "text"})
+    def press(self, value):
+        """A key hook: trusted keyDown/keyUp events in the page, as keys.plan() reads `value` (a key name, or
+        {press, repeat, interval_ms, hold_ms})."""
+        try:
+            p = keys.plan(value)
+        except ValueError as e:
+            raise HookFailed(str(e)) from None
+        for _ in range(p["repeat"]):
+            for name in p["keys"]:
+                spec = keys.spec(name)
+                self.call("Input.dispatchKeyEvent", type="keyDown", **spec)
+                if p["hold_ms"]:
+                    time.sleep(p["hold_ms"] / 1000)
+                self.call("Input.dispatchKeyEvent", type="keyUp", **{k: v for k, v in spec.items() if k != "text"})
+                if p["interval_ms"]:
+                    time.sleep(p["interval_ms"] / 1000)
+
+    def react(self, value):
+        """A react hook: run a key policy in the page every `every_ms` (keys.react_plan) and send the key actions it
+        returns as trusted key events, until `until` holds or `for_s` runs out. A policy can also ask for a frame
+        ({shot: label}: the cue on screen at that moment). A key held 5 s is released; every key still down is released
+        at the end. What it saw goes in self.react_log (frames, releases)."""
+        try:
+            p = keys.react_plan(value)
+        except ValueError as e:
+            raise HookFailed(str(e)) from None
+        tick = REACT_JS.substitute(until=p["until"] or "false", js=p["js"])
+        log = self.react_log = getattr(self, "react_log", [])
+        held, start, shots, capped = {}, time.monotonic(), 0, False
+        deadline = start + p["for_s"]
+        try:
+            while True:
+                began = time.monotonic()
+                if began > deadline:
+                    if p["until"]:
+                        raise HookFailed(f"react: {p['until']!r} did not hold within {p['for_s']:g} s")
+                    return
+                # a policy awaiting a promise that never settles must not outlast for_s
+                left_ms = int((deadline - began) * 1000)
+                out = self.evaluate(tick, timeout_ms=max(1, min(left_ms, max(4 * p["every_ms"], 1000)))) or {}
+                if out.get("error"):
+                    raise HookFailed(f"react policy: {out['error']}"[:300])
+                if out.get("done"):
+                    return
+                items = out.get("actions")
+                items = [x for x in (items if isinstance(items, list) else [items]) if x is not None]
+                asked = [x for x in items if isinstance(x, dict) and "shot" in x]
+                for i, x in enumerate(asked):
+                    if i >= keys.MAX_SHOTS_TICK or shots >= keys.MAX_SHOTS_HOOK:
+                        if not capped:
+                            capped = True
+                            log.append({"note": f"frame cap reached ({keys.MAX_SHOTS_TICK} a tick, "
+                                                f"{keys.MAX_SHOTS_HOOK} a hook): later frames not kept",
+                                        "at_s": round(began - start, 2)})
+                        continue
+                    shots += 1
+                    log.append(self._react_shot(str(x["shot"]), began - start))
+                try:
+                    todo = keys.actions([x for x in items if not (isinstance(x, dict) and "shot" in x)])
+                except ValueError as e:
+                    raise HookFailed(f"react: {e}") from None
+                for what, name in todo:
+                    spec = keys.spec(name)
+                    up = {k: v for k, v in spec.items() if k != "text"}
+                    if what in {"press", "down"} and name not in held:
+                        self.call("Input.dispatchKeyEvent", type="keyDown", **spec)
+                        held[name] = time.monotonic()
+                    if what in {"press", "up"} and name in held:
+                        self.call("Input.dispatchKeyEvent", type="keyUp", **up)
+                        held.pop(name)
+                for name, since in list(held.items()):  # a hold is bounded, as in a key hook
+                    if time.monotonic() - since >= keys.MAX_HOLD_MS / 1000:
+                        self.call("Input.dispatchKeyEvent", type="keyUp",
+                                  **{k: v for k, v in keys.spec(name).items() if k != "text"})
+                        held.pop(name)
+                        log.append({"released": name, "at_s": round(time.monotonic() - start, 2),
+                                    "why": f"held {keys.MAX_HOLD_MS // 1000} s"})
+                time.sleep(max(0.0, p["every_ms"] / 1000 - (time.monotonic() - began)))
+        finally:
+            for name in held:  # each on its own: one failed keyUp must not leave the others down
+                with contextlib.suppress(Exception):
+                    self.call("Input.dispatchKeyEvent", type="keyUp",
+                              **{k: v for k, v in keys.spec(name).items() if k != "text"})
+            held.clear()
+
+    def _react_shot(self, label, at_s):
+        """A frame a react policy asked for, saved next to the scenario's own screenshot when the run keeps shots. Each
+        gets its own file (a number before the label): a policy labelling every round's cue the same keeps them all."""
+        label = re.sub(r"[^A-Za-z0-9_.-]+", "-", label).strip("-")[:40] or "frame"
+        self.react_frames = getattr(self, "react_frames", 0) + 1
+        where = getattr(self, "shot_dir", None)
+        name = f"{getattr(self, 'shot_prefix', 'react')}-{self.react_frames:03d}-{label}.jpg"
+        path = self.screenshot(where / name) if where else None
+        return {"shot": label, "at_s": round(at_s, 2), "path": str(path) if path else None}
 
     def find(self, selector):
         if self.guard_cfg is not None:
@@ -740,6 +831,8 @@ class Session:
             self.reload()
         elif kind == "key":
             self.press(value)
+        elif kind == "react":
+            self.react(value)
         elif kind == "sleep":
             time.sleep(min(float(value), 30))
         elif kind == "command":

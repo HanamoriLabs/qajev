@@ -120,6 +120,17 @@ def _clients_md(r):
     return lines
 
 
+def _react_md(r):
+    """What react hooks saw: the frames their policies asked for (a cue on screen), and any key held too long."""
+    frames = [e for e in r.get("react") or [] if "shot" in e]
+    out = ["- Frames: " + ", ".join(f"[{_cell(e['shot'], 40)}]({e['path']}) at {e['at_s']} s" if e.get("path")
+                                    else f"{_cell(e['shot'], 40)} at {e['at_s']} s (not saved)" for e in frames)] \
+        if frames else []
+    out += [f"- Released {e['released']} at {e['at_s']} s: {e['why']}" for e in r.get("react") or [] if "released" in e]
+    out += [f"- At {e['at_s']} s: {e['note']}" for e in r.get("react") or [] if "note" in e]
+    return out
+
+
 def _play_md(r):
     """A real-time play step (Native): its numbers, the decisions made during play, and a sampled timeline."""
     st = r.get("stats")
@@ -258,6 +269,7 @@ def markdown(data):
             lines += [f"  - {_cell(d, 500)}" for d in r.get("guard_hydration_details") or []]
         lines += _play_md(r)
         lines += _clients_md(r)
+        lines += _react_md(r)
         screens = r.get("screens") or []
         if screens:
             lines += ["", f"| Step | {report_html.decider(data)}'s next step | p | Runner-up | p "

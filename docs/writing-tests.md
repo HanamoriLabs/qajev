@@ -191,8 +191,50 @@ For long forms or setup, drive the page directly and let Jev do the decisions:
 ```
 
 Hooks: `js`, `click` (a CSS selector), `fill` (`{selector: text}`), `navigate`, `wait_for` (JavaScript that must turn
-true, up to 15 s; a Promise counts by what it resolves to), `key` (`Escape`, `Enter`, `Tab`), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
+true, up to 15 s; a Promise counts by what it resolves to), `key` (a real key press, below), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
 cookies and storage), and `command` (a shell command, only with `--allow-commands`). Hooks refuse to click dangerous controls or fill password fields on a real site.
+
+A `key` hook presses real keys, as a player does: the page gets trusted `keydown` and `keyup` events. Jev clicks and
+types but cannot press a game's keys, so a game's real-key test drives them with hooks.
+
+```yaml
+- key: Escape                                       # once
+- key: Backquote                                    # a key's code works as its name (here: `)
+- key: {press: [f, j], repeat: 15, interval_ms: 30} # f, j, f, j... 15 times: alternating fast
+- key: {press: Space, hold_ms: 1200}                # held down for 1.2 s, then released
+```
+
+The keys are plain key names only: a letter, a digit, punctuation (`` ` - = [ ] ; ' , . / \ ``), `Space`, `Enter`,
+`Escape`, `Tab`, `Backspace` and the four arrows. No modifiers or combinations, so a hook cannot send a browser or
+system shortcut. Bounds: `hold_ms` up to 5000, `repeat` up to 200, `interval_ms` up to 2000, and one hook at most
+30 s in all. A suite with a key outside them is refused before it runs.
+
+A `react` hook plays in real time: every `every_ms` (default 50) it runs a small policy in the page, and sends the
+keys the policy returns. It is for a cue too short for anything slower, such as a 0.6 s flash: the policy reads what the
+player can see, waits a human reaction time, and answers.
+
+```yaml
+- react:
+    every_ms: 50          # 20 to 1000
+    for_s: 60             # at most 180; without `until` it simply runs this long
+    until: "!!document.querySelector('.verdict')"   # ends the hook; never true in time = the hook fails
+    js: |
+      (() => {
+        const v = game.view(), now = performance.now();
+        if (v.flash && !window.seenAt) window.seenAt = now;          // the cue showed
+        if (window.seenAt && now - window.seenAt >= 300) {           // a person reacts after 0.3 s
+          window.seenAt = 0;
+          return [{down: v.flashKey}, {shot: 'flash'}];              // hold its key; keep the frame
+        }
+        return v.locked ? {up: v.flashKey} : null;
+      })()
+```
+
+A policy returns nothing, or one action or a list of them: a key name or `{press: k}` (down and up), `{down: k}`,
+`{up: k}`, and `{shot: label}` for a screenshot of that moment (in the report as a frame, at its time). The keys are
+the same allow-list as `key`, at most 10 actions a tick. A key held 5 s is released (and the report says so), and
+every key still down is released when the hook ends, fails or the policy throws. Keep the reaction delay in the
+policy, as above: then the test shows how fast a player had to be.
 
 ## Guard options
 
