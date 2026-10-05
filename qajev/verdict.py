@@ -260,6 +260,8 @@ def _stop_text(stop, detail) -> str:
         "browser_error": "browser/daemon error", "left_site": "left the allowed hosts",
         "hook_failed": "hook failed", "interrupted": "interrupted", "machine_busy": "machine too busy",
     }.get(stop, str(stop))
+    if stop == "model_error" and detail and re.search(r"\b40[13]\b", str(detail)):  # a key the provider refused
+        detail = f"{detail} (the model's key was refused: `qajev doctor` says which file or variable it came from)"
     return f"{text}: {detail}" if detail else text
 
 

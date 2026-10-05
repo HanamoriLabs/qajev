@@ -4,9 +4,15 @@ Most people only set one API key. Everything else has a sensible default.
 
 ## Where settings are read from
 
-Keys and settings are environment variables. QAJev reads them from, in order: `--env-file`, `$QAJEV_ENV_FILE`,
-`./.env`, then `~/.qajev/.env`. A variable already set in your shell always wins (`qajev doctor` warns you when a
-shell variable overrides a file).
+Keys and settings are environment variables. QAJev reads its own files, in order: `--env-file`, `$QAJEV_ENV_FILE`,
+then `~/.qajev/.env`. It never reads the current folder's `.env`: a project's file is the project's, and can hold
+production secrets or a token for something else (a Cloudflare deploy token there once made Clef answer 401).
+
+QAJev's own keys (the `TYPESAFE_*`, `OPENROUTER_API_KEY`, `TEXT_MODEL*` and `CLOUDFLARE_*` variables below) come from
+those files even when your shell has another value; to use another one on purpose, set it as `QAJEV_<NAME>`, e.g.
+`QAJEV_OPENROUTER_API_KEY`. A key no file sets is taken from the shell, as in CI. Any other setting: the shell wins
+over the files. `qajev doctor` and each report's header say where each of QAJev's keys came from (names, never
+values), and a key the model refused (HTTP 401 or 403) points you there.
 
 ## Keys
 
