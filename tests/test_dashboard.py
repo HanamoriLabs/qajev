@@ -221,6 +221,50 @@ def test_a_background_dashboard_outlives_its_command_and_stops_on_request(capsys
     os.close(free)
 
 
+def test_stop_returns_only_once_the_lock_is_free_not_when_the_pid_looks_gone(capsys, monkeypatch):
+    # 5 Oct: macOS answers ESRCH for a process still exiting, so jobs.alive() calls it gone before the kernel frees its
+    # lock (99 of 100 rounds on a loaded machine), and a start right after found the lock held. Here alive() says gone
+    # the moment the stop is sent, as it does in that window.
+    import signal
+
+    from qajev.cli import main
+
+    assert main(["dashboard", "--background", "--json", "--port", "0"]) == 0
+    capsys.readouterr()
+    there = dashboard.running()
+    assert there
+    sent, kill, alive = set(), os.kill, jobs.alive
+    monkeypatch.setattr(os, "kill", lambda pid, sig: (sig == signal.SIGTERM and sent.add(pid), kill(pid, sig))[1])
+    monkeypatch.setattr(jobs, "alive", lambda pid: pid not in sent and alive(pid))
+    try:
+        assert main(["dashboard", "--stop", "--json"]) == 0
+        free = dashboard.claim()
+        assert free is not None
+        os.close(free)
+    finally:
+        monkeypatch.undo()
+        wait_for(lambda: not jobs.alive(there["pid"]))
+
+
+def test_a_stop_that_does_not_finish_in_time_is_an_error_not_a_pass(capsys, monkeypatch):
+    import subprocess
+
+    from qajev import cli
+
+    stubborn = subprocess.Popen([sys.executable, "-c", "import signal, time; signal.signal(signal.SIGTERM, "
+                                 "signal.SIG_IGN); print('ok', flush=True); time.sleep(60)"], stdout=subprocess.PIPE)
+    try:
+        stubborn.stdout.readline()
+        monkeypatch.setattr(dashboard, "running", lambda: {"pid": stubborn.pid, "port": 1, "key": "k", "url": "u"})
+        monkeypatch.setattr(cli, "DASHBOARD_STOP_S", 0.5)
+        assert cli.main(["dashboard", "--stop", "--json"]) == cli.EXIT_CONFIG
+        said = capsys.readouterr()
+        assert f"the dashboard (pid {stubborn.pid}) did not stop within 0.5 s" in said.out + said.err
+    finally:
+        stubborn.kill()
+        stubborn.wait()
+
+
 def test_only_one_dashboard_can_start_at_a_time():
     held = dashboard.claim()
     try:

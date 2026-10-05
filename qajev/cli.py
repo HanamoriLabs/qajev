@@ -13,6 +13,7 @@ from pathlib import Path
 from . import __version__
 
 EXIT_CONFIG, EXIT_BROWSER, EXIT_INTERRUPTED = 3, 4, 130
+DASHBOARD_STOP_S = 15  # `qajev dashboard --stop` waits this long for the dashboard to exit and free its lock
 
 SUITE_TEMPLATE = """\
 # QAJev suite. Run: qajev run {name}
@@ -1215,10 +1216,17 @@ def cmd_dashboard(args):
         if there:
             os.kill(there["pid"], signal.SIGTERM)
             # Stopped means gone: it closes its server and removes its record first. A start right after found the
-            # lock still held ("another dashboard holds the lock but is not serving").
-            deadline = time.monotonic() + 15
-            while jobs.alive(there["pid"]) and time.monotonic() < deadline:
-                time.sleep(0.1)
+            # lock still held ("another dashboard holds the lock but is not serving"). Its pid is not proof: macOS
+            # calls a process that is still exiting gone before the kernel frees its lock, so wait for the lock too.
+            deadline, free = time.monotonic() + DASHBOARD_STOP_S, None
+            while time.monotonic() < deadline:
+                if not jobs.alive(there["pid"]) and (free := dashboard.claim()) is not None:
+                    break
+                time.sleep(0.05)
+            if free is None:
+                return _fail(args, f"the dashboard (pid {there['pid']}) did not stop within {DASHBOARD_STOP_S:g} s: "
+                             "it still runs or still holds its lock", EXIT_CONFIG)
+            os.close(free)
         if args.json:
             print(json.dumps({"stopped": there["pid"] if there else None}))
         else:

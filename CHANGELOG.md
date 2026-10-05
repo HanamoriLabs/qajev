@@ -9,6 +9,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   presses Tab through the page), 200% zoom (sideways scroll, text cut off), text cut off or overlapping, and open
   dialogs (named, modal, focus, Escape). Design consistency compares each kind of element's computed style across
   pages and names each page that differs, with both values. `--no-ux` skips it. ([Reports](docs/reports.md#ux))
+- Fixed: on macOS `qajev dashboard --stop` could return while the dashboard was still exiting and held its lock, so a
+  start right after failed ("another dashboard holds the lock but is not serving"). It now waits for the lock too,
+  and fails with an error (exit 3) if the dashboard has not stopped within 15 s.
 - `key` hooks press any plain key (letters, digits, punctuation, Space, the arrows...), repeat a sequence
   (`{press: [f, j], repeat: 15, interval_ms: 30}`) and hold a key (`hold_ms`, up to 5 s), as trusted key events: real-key
   play-tests for web games. No modifiers or combinations. ([Writing tests](docs/writing-tests.md))
