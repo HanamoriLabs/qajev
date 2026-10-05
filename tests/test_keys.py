@@ -75,8 +75,11 @@ class FakePage:
         self.answers, self.log, self.now = list(answers), [], 0.0
         self.page = Session.__new__(Session)
         self.page.call = lambda method, **p: self.log.append((round(self.now, 2), p["type"], p["code"]))
-        self.page.evaluate = lambda expression, timeout_ms=15000: self.answers.pop(0) if self.answers else {}
-        self.page.screenshot = lambda path: path
+        self.timeouts = []
+        self.page.evaluate = lambda expression, timeout_ms=15000: (
+            self.timeouts.append(timeout_ms), self.answers.pop(0) if self.answers else {})[1]
+        self.page.screenshot = lambda path: (path.parent.mkdir(parents=True, exist_ok=True), path.write_bytes(b"jpg"),
+                                             path)[2]
         monkeypatch.setattr("qajev.session.time.monotonic", lambda: self.now)
         monkeypatch.setattr("qajev.session.time.sleep", lambda s: setattr(self, "now", self.now + max(s, tick_s)))
 
@@ -88,7 +91,7 @@ def test_a_react_hook_sends_what_its_policy_returns_and_ends_when_until_holds(mo
     f.page.react({"js": "policy()", "until": "over()", "every_ms": 50})
     assert f.log == [(0.05, "keyDown", "ArrowLeft"), (0.05, "keyUp", "ArrowLeft"), (0.05, "keyDown", "Space"),
                      (0.15, "keyUp", "Space")]  # pressed, then held two ticks
-    assert f.page.react_log == [{"shot": "grip-flash", "at_s": 0.1, "path": str(tmp_path / "arm-grip-flash.jpg")}]
+    assert f.page.react_log == [{"shot": "grip-flash", "at_s": 0.1, "path": str(tmp_path / "arm-001-grip-flash.jpg")}]
 
 
 def test_a_react_hook_releases_every_key_and_bounds_its_holds(monkeypatch):
@@ -159,3 +162,42 @@ def test_the_frames_a_react_hook_kept_reach_the_result_and_both_reports(monkeypa
     assert "- Frames: [grip-flash](shots/arm-grip-flash.jpg) at 2.4 s" in md
     assert "- Released s at 7.1 s: held 5 s" in md
     assert 'src="shots/arm-grip-flash.jpg"' in html and "grip-flash at 2.4 s" in html
+
+
+def test_frames_are_capped_per_tick_and_per_hook_and_never_overwrite_each_other(monkeypatch, tmp_path):
+    # Orchestrator's review of #32: shots skipped the 10-action cap, and every round's "cue" frame overwrote the last.
+    f = FakePage(monkeypatch, [{"actions": [{"shot": "cue"}] * 5}, {"actions": [{"shot": "cue"}]}, {"done": True}])
+    f.page.shot_dir, f.page.shot_prefix = tmp_path, "arm"
+    f.page.react({"js": "p()", "until": "d()"})
+    frames = [e for e in f.page.react_log if "shot" in e]
+    assert [e["path"] for e in frames] == [str(tmp_path / n) for n in ("arm-001-cue.jpg", "arm-002-cue.jpg",
+                                                                        "arm-003-cue.jpg")]  # 2 in tick 1, 1 in tick 2
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["arm-001-cue.jpg", "arm-002-cue.jpg", "arm-003-cue.jpg"]
+    notes = [e for e in f.page.react_log if "note" in e]
+    assert len(notes) == 1 and notes[0]["note"].startswith("frame cap reached (2 a tick, 60 a hook)")
+
+    f = FakePage(monkeypatch, [{"actions": [{"shot": "x"}, {"shot": "y"}]}] * 40 + [{"done": True}])
+    f.page.shot_dir, f.page.shot_prefix = tmp_path / "many", "c"
+    f.page.react({"js": "p()", "until": "d()"})
+    assert len([e for e in f.page.react_log if "shot" in e]) == 60  # the hook's cap: 60 of the 80 asked for
+    assert len([e for e in f.page.react_log if "note" in e]) == 1  # said once
+
+
+def test_a_ticks_evaluate_never_outlasts_the_hook_and_every_held_key_is_released(monkeypatch):
+    f = FakePage(monkeypatch, [{"actions": None}] * 100, tick_s=0.5)
+    f.page.react({"js": "p()", "every_ms": 50, "for_s": 2})
+    assert f.timeouts[0] == 1000 and f.timeouts[-1] <= 500  # max(4 x every_ms, 1 s), then what is left of for_s
+
+    f = FakePage(monkeypatch, [{"actions": [{"down": "a"}, {"down": "b"}, {"down": "c"}]}, {"error": "boom"}])
+    ups = []
+
+    def call(method, **p):
+        if p["type"] == "keyUp":
+            ups.append(p["code"])
+            if p["code"] == "KeyA":
+                raise RuntimeError("socket closed")
+
+    f.page.call = call
+    with pytest.raises(HookFailed, match="boom"):
+        f.page.react({"js": "p()"})
+    assert ups == ["KeyA", "KeyB", "KeyC"]  # a failed keyUp for a does not leave b and c down

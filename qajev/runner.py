@@ -126,7 +126,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
 
     started = time.monotonic()
     session.assists = []  # this scenario's own; a hook failing before Jev's loop must not inherit the last one's
-    session.react_log = []  # frames and releases from react hooks, this scenario's own
+    session.react_log, session.react_frames = [], 0  # frames and releases from react hooks, this scenario's own
     session.shot_dir = run_dir / "shots" if opts.shots and run_dir else None
     session.shot_prefix = slug(scenario.name)
     quiet, load1 = wait_for_quiet(opts)

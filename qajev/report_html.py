@@ -199,10 +199,10 @@ def _scenario(i, r, who="Jev"):
             f'<figure><a class="shot" href="{_e(e["path"])}"><img src="{_e(e["path"])}" loading="lazy" '
             f'alt="{_e(e["shot"])} at {_e(e["at_s"])} s"></a><figcaption>{_e(e["shot"])} at {_e(e["at_s"])} s'
             "</figcaption></figure>" for e in frames) + "</div>")
-    released = [e for e in r.get("react") or [] if "released" in e]
-    if released:
-        parts.append("<p>" + "; ".join(f"Released {_e(e['released'])} at {_e(e['at_s'])} s: {_e(e['why'])}"
-                                       for e in released) + "</p>")
+    notes = [f"Released {_e(e['released'])} at {_e(e['at_s'])} s: {_e(e['why'])}" if "released" in e
+             else f"At {_e(e['at_s'])} s: {_e(e['note'])}" for e in r.get("react") or [] if "released" in e or "note" in e]
+    if notes:
+        parts.append("<p>" + "; ".join(notes) + "</p>")
     if r.get("clients"):
         parts.append(_clients_html(r))
     elif r.get("shot"):

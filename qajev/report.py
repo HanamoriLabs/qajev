@@ -127,6 +127,7 @@ def _react_md(r):
                                     else f"{_cell(e['shot'], 40)} at {e['at_s']} s (not saved)" for e in frames)] \
         if frames else []
     out += [f"- Released {e['released']} at {e['at_s']} s: {e['why']}" for e in r.get("react") or [] if "released" in e]
+    out += [f"- At {e['at_s']} s: {e['note']}" for e in r.get("react") or [] if "note" in e]
     return out
 
 

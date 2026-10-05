@@ -714,7 +714,7 @@ class Session:
             raise HookFailed(str(e)) from None
         tick = REACT_JS.substitute(until=p["until"] or "false", js=p["js"])
         log = self.react_log = getattr(self, "react_log", [])
-        held, start = {}, time.monotonic()
+        held, start, shots, capped = {}, time.monotonic(), 0, False
         deadline = start + p["for_s"]
         try:
             while True:
@@ -723,16 +723,26 @@ class Session:
                     if p["until"]:
                         raise HookFailed(f"react: {p['until']!r} did not hold within {p['for_s']:g} s")
                     return
-                out = self.evaluate(tick) or {}
+                # a policy awaiting a promise that never settles must not outlast for_s
+                left_ms = int((deadline - began) * 1000)
+                out = self.evaluate(tick, timeout_ms=max(1, min(left_ms, max(4 * p["every_ms"], 1000)))) or {}
                 if out.get("error"):
                     raise HookFailed(f"react policy: {out['error']}"[:300])
                 if out.get("done"):
                     return
                 items = out.get("actions")
                 items = [x for x in (items if isinstance(items, list) else [items]) if x is not None]
-                for x in items:
-                    if isinstance(x, dict) and "shot" in x:
-                        log.append(self._react_shot(str(x["shot"]), began - start))
+                asked = [x for x in items if isinstance(x, dict) and "shot" in x]
+                for i, x in enumerate(asked):
+                    if i >= keys.MAX_SHOTS_TICK or shots >= keys.MAX_SHOTS_HOOK:
+                        if not capped:
+                            capped = True
+                            log.append({"note": f"frame cap reached ({keys.MAX_SHOTS_TICK} a tick, "
+                                                f"{keys.MAX_SHOTS_HOOK} a hook): later frames not kept",
+                                        "at_s": round(began - start, 2)})
+                        continue
+                    shots += 1
+                    log.append(self._react_shot(str(x["shot"]), began - start))
                 try:
                     todo = keys.actions([x for x in items if not (isinstance(x, dict) and "shot" in x)])
                 except ValueError as e:
@@ -755,15 +765,20 @@ class Session:
                                     "why": f"held {keys.MAX_HOLD_MS // 1000} s"})
                 time.sleep(max(0.0, p["every_ms"] / 1000 - (time.monotonic() - began)))
         finally:
-            for name in held:
-                self.call("Input.dispatchKeyEvent", type="keyUp",
-                          **{k: v for k, v in keys.spec(name).items() if k != "text"})
+            for name in held:  # each on its own: one failed keyUp must not leave the others down
+                with contextlib.suppress(Exception):
+                    self.call("Input.dispatchKeyEvent", type="keyUp",
+                              **{k: v for k, v in keys.spec(name).items() if k != "text"})
+            held.clear()
 
     def _react_shot(self, label, at_s):
-        """A frame a react policy asked for, saved next to the scenario's own screenshot when the run keeps shots."""
+        """A frame a react policy asked for, saved next to the scenario's own screenshot when the run keeps shots. Each
+        gets its own file (a number before the label): a policy labelling every round's cue the same keeps them all."""
         label = re.sub(r"[^A-Za-z0-9_.-]+", "-", label).strip("-")[:40] or "frame"
+        self.react_frames = getattr(self, "react_frames", 0) + 1
         where = getattr(self, "shot_dir", None)
-        path = self.screenshot(where / f"{getattr(self, 'shot_prefix', 'react')}-{label}.jpg") if where else None
+        name = f"{getattr(self, 'shot_prefix', 'react')}-{self.react_frames:03d}-{label}.jpg"
+        path = self.screenshot(where / name) if where else None
         return {"shot": label, "at_s": round(at_s, 2), "path": str(path) if path else None}
 
     def find(self, selector):

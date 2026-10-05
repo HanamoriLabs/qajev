@@ -91,6 +91,10 @@ def plan(value):
 
 MAX_REACT_S = 180
 MAX_ACTIONS = 10
+# Frames a react policy may ask for: per tick and per hook (each is a screenshot; a policy asking every tick would
+# otherwise take thousands).
+MAX_SHOTS_TICK = 2
+MAX_SHOTS_HOOK = 60
 
 
 def react_plan(value):
