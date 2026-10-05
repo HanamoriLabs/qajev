@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: a run with `--ephemeral` was reported as "QAJev-managed profile default", and `qajev browser status`
+  listed its Chrome as `default`, so a throwaway run looked like the shared profile. Both now say throwaway.
 - The smoke crawl measures each page's UX and adds a UX section to the report, free and never changing the gate:
   WCAG AA text contrast (text over images counted as not measured), keyboard reach, visible focus and traps (QAJev
   presses Tab through the page), 200% zoom (sideways scroll, text cut off), text cut off or overlapping, and open

@@ -193,6 +193,13 @@ def start(profile="default", *, headless=False, port=None, ephemeral=False, visi
         raise
 
 
+def run_record(owned):
+    """What a run's report says about the Chrome it started (or reused): a throwaway one is called that, not by the
+    profile name it was started under."""
+    return {"cdp_url": owned["cdp_url"], "managed": True, "profile": owned["profile"], "headless": owned["headless"],
+            "port": owned["port"], "ephemeral": bool(owned.get("ephemeral"))}
+
+
 def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait):
     args = [binary(), f"--user-data-dir={profile_dir}", f"--remote-debugging-port={port}", *flags()]
     if headless:
