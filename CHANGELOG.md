@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- `qajev plan FILE` (and `qa_plan` for agents) prints a suite's test plan without running it: each test's about
+  and its checks in plain words, and the tests that are NOT DESCRIBED. It reads website suites and game `steps:`
+  suites, costs nothing, and exits 2 while any test is NOT DESCRIBED, so it works as a lint before a run or a pull
+  request (SideGame1). ([CLI](docs/cli.md#qajev-plan))
 - Fixed: `visible` passed on words a person could not see. A first-run overlay covering the whole page, and a
   label cut to "Message to Or…" by its ellipsis box, both passed (FlockTab1). Visible now means drawn on top and
   whole: the words' own lines are checked for anything drawn over them, and against any `overflow` box that clips

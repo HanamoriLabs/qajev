@@ -178,6 +178,20 @@ qajev play path/to/game --suite session.yaml
 | `--name` | the test's name, shown with the game's in `qajev jobs` and `qajev top` |
 | `--max-actions`, `--max-seconds`, `--no-shots`, `--out`, `--cost-cap`, `--load-high`, `--load-ok`, `--load-wait`, `--json`, `--events`, `--quiet`, `--background` | as above |
 
+## `qajev plan`
+
+A suite's test plan, without running anything (no browser, no cost): each test's `about` and its checks in plain
+words, and the tests that are NOT DESCRIBED. Use it as a lint before you run a suite or send a pull request.
+
+```bash
+qajev plan shop.qajev.yaml            # a website suite (scenarios:)
+qajev plan qa/plans/boss.suite.yaml   # a game's steps suite (steps:)
+qajev plan shop.qajev.yaml --json     # {name, about, plan, not_described}
+```
+
+It exits `0` when every test says what it proves and `2` while any is NOT DESCRIBED (a run of it would be
+INCOMPLETE, never PASS). `qa_plan` is the same for agents.
+
 ## `qajev report`
 
 ```bash

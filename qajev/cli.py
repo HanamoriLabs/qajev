@@ -258,6 +258,11 @@ def build_parser():
     account.add_argument("--visible", action="store_true", help="sign in in a visible window (default: headless)")
     account.add_argument("--cdp-url", help="sign in in this already running Chrome instead of a throwaway one")
 
+    plan = sub.add_parser("plan", help="print a suite's test plan and the tests that do not say what they prove, "
+                                       "without running anything (exit 2 while any is NOT DESCRIBED)")
+    plan.add_argument("file", type=Path, help="a suite (scenarios:) or a game's steps suite (steps:)")
+    plan.add_argument("--json", action="store_true")
+
     doctor = sub.add_parser("doctor", help="check keys, Chrome, ports and load (never prints secrets)")
     doctor.add_argument("--env-file")
     doctor.add_argument("--offline", action="store_true", help="skip the free OpenRouter key validity check")
@@ -1346,6 +1351,39 @@ def _interrupt(_signum, _frame):
     raise KeyboardInterrupt
 
 
+def cmd_plan(args):
+    """A suite's test plan, without running anything: each test's about and its checks in plain words, and the tests
+    that are NOT DESCRIBED (a run of it would be INCOMPLETE, never PASS). Exit 0 when all are described, 2 if not."""
+    import yaml
+
+    from . import plan as plan_mod
+    from .suite import SuiteError, about, load
+
+    try:
+        spec = yaml.safe_load(args.file.read_text()) or {}
+        if isinstance(spec, dict) and spec.get("steps") and not spec.get("scenarios"):  # a game's steps suite
+            name, run_about = spec.get("name") or args.file.stem, about(spec.get("about"), "about")
+            items = plan_mod.from_steps(spec["steps"])
+        else:
+            suite = load(args.file)
+            name, run_about, items = suite.name, suite.about, plan_mod.from_suite(suite.scenarios)
+    except (OSError, yaml.YAMLError, SuiteError) as e:
+        return _fail(args, f"{args.file}: {e}", EXIT_CONFIG)
+    missing = plan_mod.not_described(items)
+    if args.json:
+        print(json.dumps({"name": name, "about": run_about, "plan": items, "not_described": missing}))
+    else:
+        print(f"Test plan: {name}" + (f" — {run_about}" if run_about else ""))
+        for it in items:
+            print(f"{it['n']}. {it['name']}: {it['about'] or 'NOT DESCRIBED (no about)'}")
+            for line in it["checks"]:
+                print(f"     - {line['words'] or 'NOT DESCRIBED: ' + str(line['check'])}")
+        described = len(items) - len(missing)
+        print(f"{described} of {len(items)} tests say what they prove"
+              + (f"; NOT DESCRIBED: {', '.join(missing)} (a run would be INCOMPLETE)" if missing else ""))
+    return 2 if missing else 0
+
+
 def _fail(args, message, code):
     _record({"error": message, "exit_code": code})
     if getattr(args, "json", False):
@@ -1373,7 +1411,7 @@ def main(argv=None):
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
                 "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
                 "top": cmd_top, "nightly": cmd_nightly, "rerun": cmd_rerun, "dashboard": cmd_dashboard,
-                "play": cmd_play}
+                "play": cmd_play, "plan": cmd_plan}
     code = 1  # a crash on the way out still leaves an exit code for `qajev jobs`
     try:
         code = handlers[args.command](args)
