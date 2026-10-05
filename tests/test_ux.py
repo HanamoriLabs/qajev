@@ -129,3 +129,63 @@ def test_the_report_has_a_ux_section_by_page_and_for_design_consistency(tmp_path
     assert "  - 'Faint' 2.1:1" in md and "### Design consistency (desktop)" in md
     assert "They never change the gate" in md and data["gate"] == "PASS"  # a UX note never turns the run red
     assert "<h2>UX</h2>" in html and "h2 style differs" in html and "(measured)" in html
+
+
+def test_jevs_own_run_says_how_findable_the_goal_was():
+    # José, 5 Oct: struggle signals from runs already made, free. Each is evidence, not a verdict.
+    history = [{"kind": "click", "action": "Products", "url": "http://h/"},
+               {"kind": "scroll", "action": "page", "url": "http://h/products"},
+               {"kind": "click", "action": "Home", "url": "http://h/products#top"},
+               {"kind": "click", "action": "Plans", "url": "http://h/"},
+               *[{"kind": "scroll", "action": "page", "url": "http://h/plans"} for _ in range(3)]]
+    screens = [{"step": 1, "next_step": "Products", "p": 0.9, "runner_up": "Plans", "runner_up_p": 0.05},
+               {"step": 4, "next_step": "Plans", "p": 0.48, "runner_up": "Pricing", "runner_up_p": 0.41}]
+    notes = {n["kind"]: n for n in ux.struggle(history, screens, "pass",
+                                               [{"after": "visible", "scrolled": 2, "found": True}])}
+    assert notes["findability"]["detail"] == ("reached in 7 action(s) over 4 page(s), 1 backtrack(s), 4 scroll(s), "
+                                              "1 unsure step(s), QAJev scrolled 2 more screen(s) to bring it on screen")
+    assert notes["unclear choice"]["samples"] == ["step 4: 'Plans' (0.48) vs 'Pricing' (0.41)"]
+    assert notes["backtracked"]["samples"] == ["http://h/"]  # home, left for /products, came back
+    assert set(notes) == {"findability", "unclear choice", "backtracked", "searched by scrolling", "below the fold"}
+    assert all(n["basis"] == "struggle" for n in notes.values())
+    smooth = ux.struggle([{"kind": "click", "action": "Pricing", "url": "http://h/"}],
+                         [{"step": 1, "next_step": "Pricing", "p": 0.95, "runner_up": "Docs", "runner_up_p": 0.02}],
+                         "stuck")
+    assert [n["kind"] for n in smooth] == ["findability"]
+    assert smooth[0]["detail"].startswith("not reached (stuck) in 1 action(s) over 1 page(s)")
+    assert ux.struggle([], [], "pass") == []
+
+
+def test_a_goal_scenarios_result_carries_its_struggle_signals(monkeypatch):
+    from qajev import runner, suite
+
+    history = [{"kind": "click", "action": "Pricing", "url": "http://127.0.0.1:8765/", "page_changed": True}]
+    state = {"status": "done", "history": history, "decisions": [], "text_calls": [], "elapsed_ms": 900}
+
+    class Page:
+        assists = []
+
+        def __init__(self):
+            self.agent = SimpleNamespace(state=state)
+            self.ledger = SimpleNamespace(spent=lambda: 0.0)
+
+        def set_device(self, device): pass
+        def arm(self, mode, speech=None): pass
+        def check_host(self, url): pass
+        def navigate(self, url): self.url = url
+        def reset_agent(self, task): pass
+        def why_failed(self, url): return None
+        def probe(self, expect): return {"url": "http://127.0.0.1:8765/pricing", "status": 200, "text": [True],
+                                         "probe": {}}
+
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda opts: (True, 1.0))
+    monkeypatch.setattr(runner, "drive", lambda *a, **k: ("done", None))
+    s = suite.parse({"scenarios": [{"name": "price", "url": "http://127.0.0.1:8765/", "goal": "Find the price.",
+                                    "expect": {"text": "$29"}}]})
+    result = runner.run_scenario(Page(), s.scenarios[0], opts=runner.Options(), hosts={"127.0.0.1"}, run_dir=None)
+    assert result["outcome"] == "pass"
+    assert result["ux"] == [{"basis": "struggle", "kind": "findability",
+                             "detail": "reached in 1 action(s) over 1 page(s), 0 backtrack(s), 0 scroll(s), "
+                                       "0 unsure step(s)",
+                             "rule": "Jev's own run: its actions, the pages it went through, and how sure each choice "
+                                     "was"}]

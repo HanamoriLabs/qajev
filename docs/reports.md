@@ -103,6 +103,18 @@ The keyboard walk and the zoom pass run on a desktop layout (a phone has no Tab 
 Known limit: a game is told apart from a page by its canvas size only. An ordinary page with a decorative full-screen
 canvas that cancels Tab reads "keyboard not measurable", not "keyboard blocked"; check such a page's keyboard by hand.
 
+A scenario with a goal adds **struggle signals**: what Jev's own run says about how findable the goal was. They are
+free (read from the run already made) and are evidence, not a verdict: a person may find a page Jev hesitated on, and
+the reverse.
+
+| Note | From |
+|---|---|
+| findability | always: reached or not, in how many actions over how many pages, with backtracks, scrolls and unsure steps |
+| unclear choice | a step where Jev's top choice was under 0.8 and the runner-up within 0.25: two options looked almost equally right (`'Plans' (0.48) vs 'Pricing' (0.41)`) |
+| backtracked | Jev went back to a page it had already left |
+| searched by scrolling | 4 or more scrolls: what Jev needed was not near the top |
+| below the fold | the expected text was further down than where Jev stopped, and QAJev scrolled to it as a person reading on would |
+
 ## Findings
 
 Findings are problems noticed along the way, separate from the outcome (a scenario can pass and still have

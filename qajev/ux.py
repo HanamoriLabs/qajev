@@ -249,3 +249,52 @@ def consistency(pages):
                         "rule": "the same kind of element looks the same on every page (computed styles compared)",
                         "samples": [f"'{u['example']}' ({u['path']})" for _, u in users[:3]]})
     return out
+
+
+UNSURE_P, UNSURE_GAP, SCROLLS = 0.8, 0.25, 4
+
+
+def _struggle(kind, detail, rule, samples=None):
+    return {"basis": "struggle", "kind": kind, "detail": detail, "rule": rule,
+            **({"samples": samples} if samples else {})}
+
+
+def struggle(history, screens, outcome, assists=()):
+    """What Jev's own run says about how findable the goal was (free: from the run already made). A struggle signal is
+    evidence, not a verdict: a person may find a page Jev hesitated on, and the reverse.
+    history: Jev's executed actions (kind, action, url); screens: verdict.screens() per decision; assists: QAJev's
+    scrolls after Jev stopped. -> notes."""
+    if not history:
+        return []
+    pages = []
+    for h in history:
+        url = (h.get("url") or "").split("#", 1)[0]
+        if url and (not pages or pages[-1] != url):
+            pages.append(url)
+    backs = [pages[i] for i in range(2, len(pages)) if pages[i] in pages[:i - 1]]  # back to a page left earlier
+    scrolls = sum(1 for h in history if h.get("kind") == "scroll")
+    unsure = [s for s in screens if s.get("p") is not None and s.get("runner_up_p") is not None
+              and s["p"] < UNSURE_P and s["p"] - s["runner_up_p"] <= UNSURE_GAP]
+    below = sum(a.get("scrolled", 0) for a in assists if a.get("after") == "visible")
+    reached = "reached" if outcome == "pass" else f"not reached ({outcome})"
+    parts = [f"{len(history)} action(s) over {len(pages)} page(s)", f"{len(backs)} backtrack(s)",
+             f"{scrolls} scroll(s)", f"{len(unsure)} unsure step(s)"]
+    if below:
+        parts.append(f"QAJev scrolled {below} more screen(s) to bring it on screen")
+    out = [_struggle("findability", f"{reached} in " + ", ".join(parts),
+                     "Jev's own run: its actions, the pages it went through, and how sure each choice was")]
+    if unsure:
+        out.append(_struggle("unclear choice", f"{len(unsure)} step(s) where two options looked almost equally right",
+                             f"Jev's top choice under {UNSURE_P} with the runner-up within {UNSURE_GAP}",
+                             [f"step {s['step']}: '{s['next_step']}' ({s['p']}) vs '{s['runner_up']}' "
+                              f"({s['runner_up_p']})" for s in unsure[:5]]))
+    if backs:
+        out.append(_struggle("backtracked", f"went back to {len(backs)} page(s) it had already left",
+                             "a page visited again after another page", backs[:5]))
+    if scrolls >= SCROLLS:
+        out.append(_struggle("searched by scrolling", f"{scrolls} scrolls before the run ended",
+                             f"{SCROLLS} or more scrolls: what Jev needed was not near the top"))
+    if below:
+        out.append(_struggle("below the fold", f"the expected text was {below} screen(s) below where Jev stopped",
+                             "QAJev scrolled for Jev, as a person reading on would"))
+    return out

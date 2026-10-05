@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import chrome, live, providers, verdict, vision
+from . import chrome, live, providers, ux, verdict, vision
 from .config import redact, redact_tree, secret_values
 from .ledger import CostCapReached, Ledger
 from .suite import has_checks
@@ -319,6 +319,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                        "reading on would" if a["found"] else
                        f"; the expected text is in the page but {a['scrolled']} screen(s) of scrolling did not bring "
                        "it on screen")
+    if scenario.goal and session.agent.state["history"]:  # how findable the goal was, from Jev's own run (free)
+        result["ux"] = [*result.get("ux", []), *ux.struggle(session.agent.state["history"], result.get("screens") or [],
+                                                             outcome, assists)]
     reason = verdict.with_guard_note(outcome, reason, result.get("guard_hidden_controls") or [])
     return _finish(result, outcome, reason, started)
 
