@@ -86,9 +86,11 @@ A smoke crawl also measures how easy each page is to use, and adds a **UX** sect
 |---|---|---|
 | low text contrast | each text's colour against the background it really sits on | WCAG 2.2 1.4.3: 4.5:1, or 3:1 for text from 24px (18.66px bold) |
 | contrast not measured | text over an image or a gradient, or faded: counted, never guessed | check those by eye |
-| text cut off | a box hides part of its own text (overflow hidden, no ellipsis) | |
-| text overlapping | two text boxes, neither inside the other, overlap by 4 px or more | |
+| text cut off | a box hides part of its own text (overflow hidden, no ellipsis); text hidden for screen readers only (a clipped 1x1 box) is no visible text and is skipped | |
+| text overlapping | two text boxes, neither inside the other, overlap by 4 px or more, and on screen nothing opaque lies between them (text under a full-screen splash is not seen overlapping) | |
 | not reachable by keyboard | QAJev presses Tab through the page; these controls never got focus | WCAG 2.2 2.1.1 |
+| keyboard not measurable | a game (a canvas filling half the screen or more) cancelled every Tab and focus never moved: it uses Tab as one of its keys, so reach, visible focus and traps are not measured; check its own keys by hand | |
+| keyboard blocked | an ordinary page cancelled every Tab and focus never moved: a keyboard user cannot reach its controls | WCAG 2.2 2.1.1 |
 | no visible focus | a control looks the same with and without keyboard focus | WCAG 2.2 2.4.7 |
 | keyboard trap | focus stays on one control for 3 Tab presses | WCAG 2.2 2.1.2 |
 | sideways scroll / text cut off at 200% zoom | the page laid out at half the width and twice the scale, as at 200% zoom | WCAG 2.2 1.4.10 and 1.4.4 |
@@ -97,6 +99,9 @@ A smoke crawl also measures how easy each page is to use, and adds a **UX** sect
 
 The keyboard walk and the zoom pass run on a desktop layout (a phone has no Tab key). `--no-ux` (or `ux: false` in
 `qa_smoke`) skips all of it.
+
+Known limit: a game is told apart from a page by its canvas size only. An ordinary page with a decorative full-screen
+canvas that cancels Tab reads "keyboard not measurable", not "keyboard blocked"; check such a page's keyboard by hand.
 
 ## Findings
 

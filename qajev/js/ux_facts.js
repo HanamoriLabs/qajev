@@ -40,6 +40,16 @@
     return layers.reverse().reduce((under, c) => over(c, under), [255, 255, 255, 1]);
   };
   const faded = (e) => { for (let n = e; n && n.nodeType === 1; n = n.parentElement) if (+getComputedStyle(n).opacity < 1) return true; return false; };
+  // Hidden on purpose for screen readers only (the "sr-only" pattern: a 1x1 box, clipped): no one sees it, so it is no
+  // visible text to measure. SideGame1, 5 Oct: a live region was reported as text cut off.
+  const srOnly = (e) => {
+    for (let n = e; n && n.nodeType === 1; n = n.parentElement) {
+      const cs = getComputedStyle(n), r = n.getBoundingClientRect();
+      if (/inset\(\s*(50|100)%/.test(cs.clipPath) || (cs.clip && cs.clip !== 'auto' && /absolute|fixed/.test(cs.position))) return true;
+      if (r.width <= 1 && r.height <= 1 && /hidden|clip/.test(cs.overflow)) return true;
+    }
+    return false;
+  };
 
   // ---- text: every element with its own visible text
   const texts = [];
@@ -51,7 +61,7 @@
     seen.add(e);
     if (!visible(e)) continue;
     const r = e.getBoundingClientRect();
-    if (r.width < 1 || r.height < 1) continue;
+    if (r.width < 1 || r.height < 1 || srOnly(e)) continue;
     texts.push(e);
   }
 
@@ -86,17 +96,31 @@
     }
   }
 
-  // ---- text boxes overlapping another text box (neither inside the other), by at least 4 px each way
+  // ---- text boxes overlapping another text box (neither inside the other), by at least 4 px each way, where a person
+  // sees both: at the overlap's middle, nothing opaque lies between the two. SideGame1, 5 Oct: a title screen's text
+  // under an opaque full-screen splash was reported. The hit test needs the point on screen; a pair off screen, or one
+  // that takes no hits (pointer-events: none), keeps the box test alone.
+  const covered = (a, b, x, y) => {
+    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return false;
+    const stack = document.elementsFromPoint(x, y);
+    const ia = stack.findIndex((n) => a.contains(n)), ib = stack.findIndex((n) => b.contains(n));
+    if (ia < 0 || ib < 0) return false;
+    return stack.slice(Math.min(ia, ib) + 1, Math.max(ia, ib)).some((n) => {
+      const cs = getComputedStyle(n), c = rgba(cs.backgroundColor);
+      return (c && c[3] >= 0.95) || (cs.backgroundImage && cs.backgroundImage !== 'none');
+    });
+  };
   const overlaps = [];
   const boxes = texts.slice(0, 600).map((e) => ({ e, r: e.getBoundingClientRect() }));
   for (let i = 0; i < boxes.length && overlaps.length < 10; i++) {
     for (let j = i + 1; j < boxes.length && overlaps.length < 10; j++) {
       const a = boxes[i], b = boxes[j];
       if (a.e.contains(b.e) || b.e.contains(a.e)) continue;
-      const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
-      const h = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
-      if (w >= 4 && h >= 4) overlaps.push({ a: short(a.e.textContent), b: short(b.e.textContent), aPath: path(a.e),
-                                            bPath: path(b.e), area: `${Math.round(w)}x${Math.round(h)}` });
+      const left = Math.max(a.r.left, b.r.left), top = Math.max(a.r.top, b.r.top);
+      const w = Math.min(a.r.right, b.r.right) - left, h = Math.min(a.r.bottom, b.r.bottom) - top;
+      if (w >= 4 && h >= 4 && !covered(a.e, b.e, left + w / 2, top + h / 2))
+        overlaps.push({ a: short(a.e.textContent), b: short(b.e.textContent), aPath: path(a.e),
+                        bPath: path(b.e), area: `${Math.round(w)}x${Math.round(h)}` });
     }
   }
 

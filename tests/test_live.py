@@ -426,6 +426,26 @@ def test_a_react_hook_answers_a_cue_at_human_speed_and_saves_the_frame(session, 
     assert session.react_log[0]["shot"] == "flash" and (tmp_path / "cue-flash.jpg").stat().st_size > 1000
 
 
+def test_ux_on_a_games_title_screen_raises_none_of_its_false_alarms(session, site):
+    # SideGame1, 5 Oct, on a real game's title screen: a hidden live region "cut off", text under an opaque splash
+    # "overlapping", a game that takes Tab "not reachable", and a hidden dev-menu h1 counted. None of those is real.
+    from qajev import smoke, ux
+
+    desktop = {"width": 1280, "height": 900, "mobile": False, "scale": 1}
+    session.navigate(site + "/ux-game.html")
+    notes = {n["kind"]: n for n in ux.notes(ux.measure(session, desktop))}
+    # Main also called the hidden live region low contrast and cut off at 200% zoom: the one honest note is this.
+    assert set(notes) == {"keyboard not measurable"}, notes
+    assert notes["keyboard not measurable"]["detail"].startswith("Tab is taken by the game: all ")
+    facts = session.evaluate(smoke.FACTS)
+    assert (facts["h1"], facts["h1_hidden"]) == (1, 1)
+    # An ordinary page that cancels Tab is no game: a keyboard user is locked out, and that is a real failure.
+    session.navigate(site + "/ux-tab-form.html")
+    form = {n["kind"]: n for n in ux.notes(ux.measure(session, desktop))}
+    assert "keyboard blocked" in form and "keyboard not measurable" not in form, form
+    assert form["keyboard blocked"]["rule"].startswith("WCAG 2.2 2.1.1")
+
+
 def test_ux_measures_each_fault_with_its_rule_and_compares_pages(session, site):
     # José, 5 Oct: QA should say whether a site is easy to use and consistent. Every note here is measured.
     from qajev import ux

@@ -66,7 +66,10 @@
     lang: document.documentElement.getAttribute('lang'),
     description: !!document.querySelector('meta[name=description][content]'),
     viewport_meta: !!document.querySelector('meta[name=viewport]'),
-    h1: document.querySelectorAll('h1').length,
+    // Headings a person or a screen reader gets: a display:none one (a dev build's hidden menu, SideGame1 5 Oct) is
+    // counted apart. A visually hidden (sr-only) h1 still counts: screen readers read it.
+    h1: [...document.querySelectorAll('h1')].filter((h) => !h.checkVisibility || h.checkVisibility({ checkVisibilityCSS: true })).length,
+    h1_hidden: [...document.querySelectorAll('h1')].filter((h) => h.checkVisibility && !h.checkVisibility({ checkVisibilityCSS: true })).length,
     text_chars: text.length,
     links: [...links],
     broken_images: imgs.filter((i) => i.complete && i.getAttribute('src') && i.naturalWidth === 0).map((i) => i.currentSrc || i.src).slice(0, 20),
