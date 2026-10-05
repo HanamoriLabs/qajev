@@ -1,0 +1,9 @@
+# Reviewed exceptions for gitleaks (CONTRIBUTING: "Fake secrets look fake"). One line per finding, each with why.
+# Never an inline allow, never a string split to get past the scanner.
+
+# fake fixture password for the loopback test site, not a credential (login-2fa.html's second-factor test user)
+2a0243ca454c1fe7b2a289a14fb054978d51c748:tests/fixtures/site/login-2fa.html:generic-api-key:23
+# fake fixture password for the loopback test site, not a credential (the seed fixture test_live.py writes)
+2a0243ca454c1fe7b2a289a14fb054978d51c748:tests/test_live.py:generic-api-key:956
+# fake fixture password for the loopback test site, not a credential (the seed fixture with another allowed host)
+2a0243ca454c1fe7b2a289a14fb054978d51c748:tests/test_live.py:generic-api-key:1004
