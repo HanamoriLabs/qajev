@@ -510,9 +510,20 @@ def make_server(port=8790, key=None):
 def serve(server):
     """Serve until interrupted, recorded in STATE so a second `qajev dashboard` points at this one."""
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(STATE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump({"pid": os.getpid(), "port": server.server_address[1], "key": server.RequestHandlerClass.key}, f)
+    # Written whole, then renamed into place: a record that exists but is still empty reads as no dashboard, and a
+    # second `qajev dashboard` then started serving itself.
+    for stale in STATE.parent.glob(f"{STATE.name}.*.tmp"):  # a dashboard killed mid-write left it, key and all
+        pid = stale.name[len(STATE.name) + 1:-len(".tmp")]
+        if not pid.isdigit() or not jobs.alive(int(pid)):
+            stale.unlink(missing_ok=True)
+    partial = STATE.with_name(f"{STATE.name}.{os.getpid()}.tmp")
+    try:
+        fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump({"pid": os.getpid(), "port": server.server_address[1], "key": server.RequestHandlerClass.key}, f)
+        os.replace(partial, STATE)
+    finally:
+        partial.unlink(missing_ok=True)  # gone already once renamed; removed here if the write failed
     try:
         server.serve_forever()
     finally:
