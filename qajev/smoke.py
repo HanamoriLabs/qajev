@@ -356,6 +356,9 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
             if "ux_styles" in r:  # raw styles stay out of the report: only the differences go in
                 by_device.setdefault(r.get("device") or names[0], []).append((r["name"], r.pop("ux_styles")))
         consistency = {d: ux.consistency(pages) for d, pages in by_device.items() if len(pages) > 1}
+    for r in results:  # a crawl's tests are QAJev's own: each says what it proves (the test plan, 6 Oct)
+        r.setdefault("about", "Every link found answers without an HTTP error." if r["name"].startswith("links")
+                     else "The page loads without an HTTP error or a script error.")
     suite = SimpleNamespace(name=name)
     built = report.build(suite, results, [ledger.summary()], browser=browser, started_at=started_at,
                          strict=opts.strict, interrupted=interrupted, run_dir=run_dir)

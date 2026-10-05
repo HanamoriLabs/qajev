@@ -388,6 +388,8 @@ import json, pathlib, sys, time
 emit = lambda **e: print(json.dumps(e), file=sys.stderr, flush=True)
 run = pathlib.Path("runs/live-run"); run.mkdir(parents=True, exist_ok=True)
 emit(event="run", suite="run HUD", run_dir=str(run), scenarios=1)
+emit(event="plan", items=[{"n": 1, "name": "16x9", "about": "The HUD fits a wide screen", "described": True,
+                           "state": "todo", "checks": [{"words": "the score shows", "check": "js 'hud.ok'"}]}])
 emit(event="start", scenario="16x9")
 emit(event="step", scenario="16x9", doing="reading the page and running its checks", at=time.time())
 time.sleep(60)
@@ -414,6 +416,14 @@ def test_a_running_run_shows_its_live_frame_and_what_it_is_doing(running):
     assert d["live"]["shot"].startswith(f"/files/{job_id}/live/frame.jpg?t=")
     assert d["activity"][-1]["doing"] == "reading the page and running its checks"
     assert live.frame(run)
+
+
+def test_a_running_run_shows_its_test_plan_before_its_tests_finish(running):
+    # José, 5 Oct: the dashboard shows the plan BEFORE the run and ticks it as each test finishes.
+    job_id, _ = running
+    plan = dashboard.detail(job_id)["plan"]
+    assert [(it["name"], it["state"]) for it in plan] == [("16x9", "todo")]
+    assert plan[0]["checks"][0]["words"] == "the score shows" and "ok" not in plan[0]["checks"][0]
 
 
 def test_the_stream_marks_the_run_watched_and_pushes_each_change(running, server):

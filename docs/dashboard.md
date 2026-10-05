@@ -50,13 +50,16 @@ and the project runs filed in a project's reports without a job behind them.
   PASS, FAIL, INCOMPLETE), the kind (games, checks, suites, smoke crawls) and the period. The filters stay in the
   address, so a view can be bookmarked.
 
-**A run**: what it is, the command and folder, a bar of the results, its **UX** when it has any (how many UX notes
+**A run**: what it is, the command and folder, its **test plan** (each test's `about` and its checks in plain words,
+with a box ticked as each test finishes; it shows before the first test runs, [Reports](reports.md#the-test-plan)),
+a bar of the results, its **UX** when it has any (how many UX notes
 its tests have, by what they rest on, and the design consistency per device), the screenshots in a strip (click one
 to enlarge; the arrows step through them), and its tests. "Not passed" shows only the tests to look at. Each test
 has:
 
 - **what it proves**: its `about`, under its name ([Writing tests](writing-tests.md) says how to give one);
-- **for people**: "What went wrong" (or "What it proved"): each check as a plain sentence, failed ones first, with
+- **for people**: "What went wrong" (or "What it proved"): each check in its `says` words or as a plain sentence
+  (a check without words says NOT DESCRIBED), failed ones first, with
   what was there instead (for a missing text, the closest text on the page), and the serious problems seen;
 - **UX notes**, when it has any: their count beside its name (`3 UX notes`), and in the test each note by what it
   rests on, with its rule and examples. A UX note is advice: it never changes the test's result or the gate
@@ -88,7 +91,7 @@ result gives:
 
 - `job`: the job id (open it as `#run=<job id>`; `qa_job` and `qa_jobs` show the same jobs);
 - `report_html` and `report_md`: the run's report files;
-- `about_missing`: the tests that do not say what they prove.
+- `about_missing`: the tests that do not say what they prove (no `about`, or a check without words).
 
 See [MCP](mcp.md).
 

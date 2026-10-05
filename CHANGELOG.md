@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- A test plan opens every report and the dashboard: one numbered item per test, its `about` and each check in plain
+  words, with a box ticked as the run goes (✓ passed, ✗ failed, ! stuck or harness). The dashboard shows it before
+  the first test runs. A check gets its words from the new `says` (on a suite's `expect`, `--says` with
+  `--expect-js`, `says` on `qa_check`); a test without an `about`, or a `js`, `url_regex`, `fetch` or `command`
+  check without words, is NOT DESCRIBED, and the gate is then INCOMPLETE, not PASS. The generic "The page's own
+  script check should come out true" is gone. ([Writing tests](docs/writing-tests.md), [Reports](docs/reports.md))
+
 ## 0.2.0: 6 Oct 2026
 
 - Fixed: a `js` check passed on any truthy value, so a check written as `cond || 'why it failed'` passed when

@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import jobs, live
+from . import jobs, live, plan
 
 PAGE = Path(__file__).with_name("dashboard.html")
 STATE = jobs.JOBS.parent / "dashboard.json"  # the running dashboard: pid, port and key (0600)
@@ -182,6 +182,7 @@ def detail(run_id):
         row = next(r for r in _report_rows(set(), 1000) if r["id"] == run_id)
         out.update(row)
         scenarios, decisions = (report or {}).get("scenarios") or [], []
+        out["plan"] = (report or {}).get("plan") or plan.from_results(scenarios)
     else:
         st = jobs.status(run_id, detail=True)
         meta = jobs._meta(run_id)
@@ -189,6 +190,8 @@ def detail(run_id):
         out.update({"command_line": "qajev " + shlex.join(meta.get("argv") or []), "cwd": meta.get("cwd")})
         scenarios = (report or {}).get("scenarios") or st.get("scenarios") or []
         decisions = jobs.decisions(run_id, limit=5000)
+        # the test plan: before the run, ticked as each test finishes; its report's plan once it has one
+        out["plan"] = (report or {}).get("plan") or st.get("plan") or plan.from_results(scenarios)
         if st["state"] not in FINISHED:
             out.update(_live(run_id, folder, st.get("current")))
     if report:

@@ -48,7 +48,39 @@ def page_checks(expect, observed):
     if expect.get("js"):
         ok, detail, value = js_result(observed.get("js"))
         checks.append({**_check(f"js {expect['js']!r}", ok, detail), "value": value})
+    says = expect.get("says") or {}  # the checks only their author can describe, in the author's words
+    for c in checks:
+        kind = "js" if c["check"].startswith("js ") else "url_regex" if c["check"].startswith("url matches ") else None
+        if kind and says.get(kind):
+            c["says"] = says[kind]
     return checks
+
+
+def planned(expect):
+    """The checks a scenario will run, named as page_checks, fetch_check, command_check and the across checks name
+    them, with the author's `says`: the test plan shown before the run (plan.py). -> [{check, says?}]"""
+    case = " (any case)" if expect.get("ignore_case") else ""
+    names = ([f"url contains {expect['url']!r}"] if expect.get("url") else []) \
+        + ([f"url matches /{expect['url_regex']}/"] if expect.get("url_regex") else []) \
+        + ([f"the page answered HTTP {expect['status']}"] if expect.get("status") else []) \
+        + [f"page shows {n!r}{case}" for n in expect.get("text", [])] \
+        + [f"page lacks {n!r}{case}" for n in expect.get("absent", [])] \
+        + [f"on screen: {n!r}{case}" for n in expect.get("visible", [])] \
+        + ([f"js {expect['js']!r}"] if expect.get("js") else [])
+    says = expect.get("says") or {}
+    out = []
+    for name in names:
+        kind = "js" if name.startswith("js ") else "url_regex" if name.startswith("url matches ") else None
+        out.append({"check": name, "says": says[kind]} if kind and says.get(kind) else {"check": name})
+    for probe in expect.get("fetch", []):
+        out.append({"check": f"fetch {probe.get('method', 'GET')} {probe['url']} -> {int(probe.get('status', 200))}",
+                    **({"says": says["fetch"]} if says.get("fetch") else {})})
+    if expect.get("command"):
+        out.append({"check": f"command {expect['command']['run']!r}",
+                    **({"says": says["command"]} if says.get("command") else {})})
+    for c in expect.get("across") or []:
+        out.append({"check": f"across: {c['check']}", **({"says": c["says"]} if c.get("says") else {})})
+    return out
 
 
 VALUE_KEEP = 200

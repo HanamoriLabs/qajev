@@ -14,6 +14,14 @@ The CLI prints the folder when the run ends. `qajev report <folder>` prints the 
 
 ![A report](images/report-overview.png)
 
+## The test plan
+
+The page opens with the plan: one numbered item per test, with its `about` and each of its checks in plain words,
+and a box: ✓ green passed, ✗ red failed, ! amber stuck or harness, empty not run. "What it proved" under a passed
+test is its `about` and the checks it ticked. A test or check its author did not describe says **NOT DESCRIBED**
+(the raw check stays under "For agents"), and makes the gate INCOMPLETE rather than PASS. `report.json` has the plan
+(`plan`) and the tests it flags (`not_described`); [Writing tests](writing-tests.md) says how to give the words.
+
 ## The gate
 
 At the top: the verdict for the whole run.
@@ -22,7 +30,7 @@ At the top: the verdict for the whole run.
 |---|---|---|
 | **PASS** | every scenario passed | `0` |
 | **FAIL** | at least one scenario failed: the product is wrong somewhere | `1` |
-| **INCOMPLETE** | nothing failed, but something could not be judged (stuck, harness, skipped...) | `2` |
+| **INCOMPLETE** | nothing failed, but something could not be judged (stuck, harness, skipped...), or a test is NOT DESCRIBED | `2` |
 
 The exit codes make QAJev easy to use in CI. Other exit codes: `3` a mistake in the suite or options, `4` no
 browser available, `130` stopped.

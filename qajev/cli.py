@@ -114,6 +114,8 @@ def build_parser():
     check.add_argument("--expect-url-regex", help="final URL must match this regex")
     check.add_argument("--expect-js", "-j", help="JS expression that must return exactly true (may use await); a "
                                                   "string it returns fails, as the reason")
+    check.add_argument("--says", help="what the --expect-js check proves, in plain words (the report's test plan); "
+                                      "without it the check is NOT DESCRIBED and the gate cannot be PASS")
     check.add_argument("--expect-looks", action="append", default=[], metavar="STATEMENT",
                        help="judged from the final screenshot, e.g. 'the Sign up button is not cut off' (repeatable; "
                             "needs Clef)")
@@ -149,6 +151,7 @@ def build_parser():
     proj.add_argument("--absent", "-a", action="append", default=[], help="for --objective: page must not show")
     proj.add_argument("--expect-url", "-u", help="for --objective: final URL must contain")
     proj.add_argument("--expect-js", "-j", help="for --objective: JS expression that must return exactly true")
+    proj.add_argument("--says", help="for --objective: what the --expect-js check proves, in plain words")
     run.add_argument("--jobs", type=int, default=1, help="parallel workers for independent chains (default 1)")
     run.add_argument("--allow-commands", action="store_true", help="let the suite run shell commands (hooks/checks)")
     _common(run)
@@ -472,6 +475,8 @@ def check_suite(args):
         expect["url_regex"] = args.expect_url_regex
     if args.expect_js:
         expect["js"] = args.expect_js
+        if args.says:
+            expect["says"] = {"js": args.says}
     if args.expect_looks:
         expect["looks"] = args.expect_looks
     if args.fetch:
@@ -566,6 +571,8 @@ def _run_project(args):
                        ("js", args.expect_js)):
         if value:
             expect[key] = value
+    if args.says and args.expect_js:
+        expect["says"] = {"js": args.says}
     if (expect or args.about) and not args.objective:
         raise project_mod.ProjectError("--expect-* and --about go with --objective (stored objectives carry their own)")
     env = args.env or proj.default_env
