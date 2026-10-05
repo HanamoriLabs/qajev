@@ -171,14 +171,14 @@ class Frames(threading.Thread):
                 self.send("Page.bringToFront", {})
 
     def run(self):
-        wait = self.interval
+        wait = 0.05  # the first look at once: a viewer already watching sees the test's first frame, not 2 s later
         while not self.halt.wait(wait):
             is_live = streaming(self.run_dir)
             wait = interval() if is_live else self.interval
             if not (is_live or watched(self.run_dir)):
                 continue
             try:
-                data = self.capture(live=is_live)
+                data = self.capture(live=True) if is_live else self.capture()
                 if is_live:
                     self.seconds_live += wait
                     parts = urlsplit(self.page_url())  # the page's origin and path only: a query can hold a token
