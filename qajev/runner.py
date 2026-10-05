@@ -619,8 +619,7 @@ def run(suite, opts):
     else:
         owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral)
         cdp_url = owned["cdp_url"]
-        browser = {"cdp_url": cdp_url, "managed": True, "profile": owned["profile"], "headless": owned["headless"],
-                   "port": owned["port"]}
+        browser = chrome.run_record(owned)
     _emit(opts, "run", suite=suite.name, run_dir=str(run_dir), browser=browser, scenarios=len(scenarios),
           decider=models.get("decider"))
 

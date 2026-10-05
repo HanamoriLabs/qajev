@@ -237,7 +237,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     else:
         owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral)
         cdp_url = owned["cdp_url"]
-        browser = {"cdp_url": cdp_url, "managed": True, "profile": owned["profile"], "headless": owned["headless"]}
+        browser = chrome.run_record(owned)
 
     def emit(event, **data):
         if callable(opts.emit):

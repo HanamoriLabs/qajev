@@ -36,7 +36,7 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | Option | Does |
 |---|---|
 | `--headless` | run Chrome with no window |
-| `--ephemeral` | a throwaway browser profile, deleted after the run |
+| `--ephemeral` | a throwaway browser profile, deleted after the run (the report says "throwaway profile") |
 | `--profile NAME` | a named QAJev browser profile (sign in to it once with `qajev browser login`) |
 | `--cdp-url URL` | attach to a Chrome you started yourself instead of QAJev's |
 | `--real-devices ios,android` | also run each website scenario in a real device browser (opt-in; see [Mobile](mobile.md)) |
@@ -267,7 +267,7 @@ QAJev's own Chrome.
 
 ```bash
 qajev browser login --profile shop --url https://shop.example/login   # a window opens: sign in yourself, once
-qajev browser status                                                 # QAJev's running Chromes
+qajev browser status                                                 # QAJev's running Chromes (a throwaway one is marked)
 qajev browser start --profile shop                                   # start one and leave it running
 qajev browser stop --profile shop
 qajev browser reap                                                   # clean up after runs that died

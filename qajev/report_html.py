@@ -271,6 +271,15 @@ def decider(data):
     return (data.get("models") or {}).get("decider") or "Jev"
 
 
+def browser_owner(browser):
+    """Whose Chrome a run used, for both reports: attached, a throwaway one, or a named QAJev profile's."""
+    if not browser.get("managed"):
+        return "attached"
+    if browser.get("ephemeral"):
+        return "QAJev throwaway profile (deleted after the run)"
+    return f"QAJev-managed profile {browser.get('profile')}"
+
+
 def decisions_cost(data):
     """What the decisions cost: Jev on TypeSafe is a flat estimate per call; Clef's is its own token count."""
     usd = data["cost"]["usd_typesafe_estimated"]
@@ -375,7 +384,7 @@ def render(data):
     out += [_scenario(i, r, decider(data)) for i, r in enumerate(data["scenarios"])]
 
     browser = data.get("browser") or {}
-    owner = f"QAJev-managed profile {browser.get('profile')}" if browser.get("managed") else "attached"
+    owner = browser_owner(browser)
     run = [("Native", _e(f"{browser.get('engine')} game {browser.get('project')} (adapter {browser.get('adapter')}"
                          f"{', headless' if browser.get('headless') else ', windowed'})"))
            if browser.get("surface") == "native" else

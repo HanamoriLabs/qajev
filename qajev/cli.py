@@ -898,7 +898,8 @@ def cmd_browser(args):
         if not out:
             print("no QAJev Chrome running")
         for r in out:
-            print(f"{r['profile']:<16} pid {r['pid']:<7} {r['cdp_url']}  tabs={r.get('tabs')}  "
+            name = f"{r['profile']} (throwaway)" if r.get("ephemeral") else r["profile"]
+            print(f"{name:<16} pid {r['pid']:<7} {r['cdp_url']}  tabs={r.get('tabs')}  "
                   f"{'headless' if r['headless'] else 'headed'}  {'alive' if r['alive'] else 'DEAD'}")
     else:
         for key, value in out.items():
