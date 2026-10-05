@@ -287,6 +287,31 @@ def signed_in(s):
     return f"as {s.get('email') or s['account']} (account {s['account']}), {how}"
 
 
+def _ux(data):
+    """The UX section (report.py's _ux_md): notes by page with their basis and rule, then design consistency."""
+    from .report import BASIS
+
+    ux = data.get("ux") or {}
+    pages = [(r["name"], r["ux"]) for r in data["scenarios"] if r.get("ux")]
+    if not pages and not ux.get("consistency"):
+        return ""
+    out = ["<h2>UX</h2>", '<p class="muted">Notes on how easy the pages are to use. They never change the gate; each '
+           "says what it rests on and the rule it was measured against.</p>"]
+    for name, notes in pages:
+        items = "".join(
+            f"<li><strong>{_e(n['kind'])}</strong> ({_e(BASIS.get(n['basis'], n['basis']))}): {_e(n['detail'])}"
+            + (f'<br><span class="muted">Rule: {_e(n["rule"])}</span>' if n.get("rule") else "")
+            + ("<ul>" + "".join(f"<li>{_e(s)}</li>" for s in n.get("samples") or []) + "</ul>" if n.get("samples")
+               else "") + "</li>" for n in notes)
+        out.append(f'<div class="card"><h3>{_e(name)}</h3><ul>{items}</ul></div>')
+    for device, notes in (ux.get("consistency") or {}).items():
+        items = "".join(f"<li><strong>{_e(n['kind'])}</strong>: {_e(n['detail'])}</li>" for n in notes)
+        none = '<p class="muted">No differences between pages.</p>'
+        out.append(f'<div class="card"><h3>Design consistency ({_e(device)})</h3>'
+                   + (f"<ul>{items}</ul>" if items else none) + "</div>")
+    return "".join(out)
+
+
 def render(data):
     c = data["counts"]
     cost = data["cost"]
@@ -332,6 +357,7 @@ def render(data):
                 _table(["Finding", "Where", "Owner's note"],
                        [[_e(f"{f['kind']}: {f['detail']}"), _link(f.get("url")), _e(f["known"])] for f in known])]
 
+    out.append(_ux(data))
     smoke = data.get("smoke")
     if smoke:
         facts = [("Start", _link(smoke.get("start_url"))), ("Pages", _e(smoke.get("pages"))),

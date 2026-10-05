@@ -176,6 +176,32 @@ def _changes_md(ch):
     return out
 
 
+BASIS = {"measured": "measured", "struggle": "struggle signal", "opinion": "model opinion"}
+
+
+def _ux_md(data):
+    """The UX section: each note with what it rests on (measured, a struggle signal, a model's opinion) and its rule.
+    It never changes the gate."""
+    ux = data.get("ux") or {}
+    pages = [(r["name"], r["ux"]) for r in data["scenarios"] if r.get("ux")]
+    if not pages and not ux.get("consistency"):
+        return []
+    out = ["", "## UX", "", "Notes on how easy the pages are to use. They never change the gate; each says what it "
+           "rests on and the rule it was measured against.", ""]
+    for name, notes in pages:
+        out.append(f"### {_cell(name, 80)}")
+        for n in notes:
+            out.append(f"- **{n['kind']}** ({BASIS.get(n['basis'], n['basis'])}): {_cell(n['detail'], 300)}"
+                       + (f". Rule: {_cell(n['rule'], 200)}" if n.get("rule") else ""))
+            out += [f"  - {_cell(s, 200)}" for s in n.get("samples") or []]
+        out.append("")
+    for device, notes in (ux.get("consistency") or {}).items():
+        out += [f"### Design consistency ({device})", ""]
+        out += [f"- **{n['kind']}**: {_cell(n['detail'], 400)}" for n in notes] or ["No differences between pages."]
+        out.append("")
+    return out
+
+
 def _needs_sign_in_md(wall):
     if not wall:
         return []
@@ -232,6 +258,7 @@ def markdown(data):
             lines.append(f"| {_cell(f['kind'], 40)}: {_cell(f['detail'], 60)} | {_cell(_where(f.get('url')), 60)} | "
                          f"{_cell(f['known'], 120)} |")
 
+    lines += _ux_md(data)
     lines += ["", "## Per scenario", ""]
     for r in data["scenarios"]:
         lines.append(f"### {r['name']} — {r['outcome']}")

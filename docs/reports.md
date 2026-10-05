@@ -76,6 +76,28 @@ A smoke crawl lists every page it visited, its outcome, and the findings per pag
 
 ![A smoke crawl's report](images/report-smoke.png)
 
+## UX
+
+A smoke crawl also measures how easy each page is to use, and adds a **UX** section to the report. It costs nothing
+(no model calls) and never changes the gate: a UX note is advice, not a failure. Each note says what it rests on
+(**measured** here) and the rule it was measured against, with examples:
+
+| Note | Measured how | Rule |
+|---|---|---|
+| low text contrast | each text's colour against the background it really sits on | WCAG 2.2 1.4.3: 4.5:1, or 3:1 for text from 24px (18.66px bold) |
+| contrast not measured | text over an image or a gradient, or faded: counted, never guessed | check those by eye |
+| text cut off | a box hides part of its own text (overflow hidden, no ellipsis) | |
+| text overlapping | two text boxes, neither inside the other, overlap by 4 px or more | |
+| not reachable by keyboard | QAJev presses Tab through the page; these controls never got focus | WCAG 2.2 2.1.1 |
+| no visible focus | a control looks the same with and without keyboard focus | WCAG 2.2 2.4.7 |
+| keyboard trap | focus stays on one control for 3 Tab presses | WCAG 2.2 2.1.2 |
+| sideways scroll / text cut off at 200% zoom | the page laid out at half the width and twice the scale, as at 200% zoom | WCAG 2.2 1.4.10 and 1.4.4 |
+| dialog | an open dialog without a name, not marked modal, not holding focus, or not closing on Escape | WAI-ARIA dialog pattern |
+| *kind* style differs | **design consistency**: the computed style of each kind of element (h1, h2, h3, body text, inline links, buttons, text fields) compared across pages, per device; each page that differs from the style most pages use is named with both values (`about: font-size 28px (vs 32px)`) | |
+
+The keyboard walk and the zoom pass run on a desktop layout (a phone has no Tab key). `--no-ux` (or `ux: false` in
+`qa_smoke`) skips all of it.
+
 ## Findings
 
 Findings are problems noticed along the way, separate from the outcome (a scenario can pass and still have

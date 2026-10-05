@@ -43,6 +43,7 @@ class Options:
     load_wait: float = 600.0
     only: list = field(default_factory=list)
     shots: bool = True
+    ux: bool = True  # smoke: measure each page's UX (contrast, keyboard, zoom, dialogs, design consistency): free
     motion: str | None = None  # overrides the suite's motion (reduce | full)
     emit: object = None
     load_waited: float = 0.0  # seconds already spent waiting; load_wait is a budget for the whole run

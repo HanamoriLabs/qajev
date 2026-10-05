@@ -1,0 +1,99 @@
+"""UX notes (ux.py), without a browser: what each measurement turns into, design consistency across pages, the
+keyboard walk, and the report's UX section. test_live.py measures a real page with one fault of each kind."""
+
+import time
+from types import SimpleNamespace
+
+from qajev import report, ux
+
+CLEAN = {"facts": {"contrast": {"measured": 40, "low": [], "low_count": 0, "skipped": {"image_or_gradient": 0,
+                                                                                       "faded": 0, "disabled": 2}},
+                   "clipped": [], "clipped_count": 0, "overlaps": [], "dialog": None, "styles": {}},
+         "keyboard": {"controls": 5, "reached": 5, "tabs": 6, "unreachable": [], "unreachable_count": 0,
+                      "no_focus_look": [], "no_focus_look_count": 0, "stuck": None},
+         "zoom": {"wide": False, "width": 640, "viewport": 640, "clipped": [], "clipped_count": 0}}
+
+
+def test_a_page_that_meets_every_rule_gets_no_ux_notes():
+    assert ux.notes(CLEAN) == []  # disabled controls are exempt from contrast (WCAG 1.4.3), so 2 skipped say nothing
+
+
+def test_each_shortfall_is_a_measured_note_with_its_rule_and_examples():
+    m = {"facts": {**CLEAN["facts"],
+                   "contrast": {"measured": 40, "low_count": 1, "skipped": {"image_or_gradient": 3},
+                                "low": [{"text": "Faint", "ratio": 2.1, "need": 4.5, "fg": "#aaaaaa", "bg": "#ffffff",
+                                         "size": 14, "path": "p.faint"}]},
+                   "clipped": [{"text": "Cut", "cut": "width", "box": "40x18", "content": "120x18", "path": "div.cut"}],
+                   "clipped_count": 1,
+                   "dialog": {"path": "div#modal", "named": False, "modal": True, "focus_inside": True,
+                              "text": "Subscribe"}},
+         "keyboard": {**CLEAN["keyboard"], "unreachable": [{"path": "div.fake", "said": "Buy"}], "unreachable_count": 1,
+                      "stuck": {"path": "input#trap", "said": "trap"}},
+         "zoom": {"wide": True, "width": 1000, "viewport": 640, "clipped": [], "clipped_count": 0},
+         "dialog_escape_closes": False}
+    notes = {n["kind"]: n for n in ux.notes(m)}
+    assert set(notes) == {"low text contrast", "contrast not measured", "text cut off", "not reachable by keyboard",
+                          "keyboard trap", "sideways scroll at 200% zoom", "dialog"}
+    assert all(n["basis"] == "measured" and n["rule"] for n in notes.values())
+    assert notes["low text contrast"]["samples"] == ["'Faint' 2.1:1 (needs 4.5:1; #aaaaaa on #ffffff, 14px; p.faint)"]
+    assert notes["low text contrast"]["rule"].startswith("WCAG 2.2 1.4.3: 4.5:1, or 3:1")
+    assert notes["contrast not measured"]["detail"] == "3 text(s) image or gradient (check those by eye)"
+    assert notes["dialog"]["detail"] == ("the open dialog 'Subscribe' (div#modal) has no accessible name, "
+                                         "does not close on Escape")
+    assert "1000 px wide in a 640 px viewport" in notes["sideways scroll at 200% zoom"]["detail"]
+
+
+def test_design_consistency_names_each_page_that_differs_and_both_values():
+    h2 = {"font-family": "Inter", "font-size": "32px", "font-weight": "700", "color": "rgb(0, 0, 0)"}
+    page = lambda style, text="Plans": {"h2": [{"style": style, "count": 2, "example": text, "path": "h2"}]}  # noqa
+    notes = ux.consistency([("home", page(h2)), ("pricing", page(h2)), ("docs", page(h2)),
+                            ("about", page({**h2, "font-size": "28px", "color": "rgb(51, 51, 51)"}, "Team"))])
+    assert notes == [{"basis": "measured", "kind": "h2 style differs",
+                      "detail": "about: color rgb(51, 51, 51) (vs rgb(0, 0, 0)); font-size 28px (vs 32px); 3 page(s) "
+                                "use the other",  # properties in a fixed (alphabetical) order
+                      "rule": "the same kind of element looks the same on every page (computed styles compared)",
+                      "samples": ["'Team' (h2)"]}]
+    assert ux.consistency([("home", page(h2)), ("pricing", page(h2))]) == []  # one style everywhere: nothing to say
+
+
+class Keys:
+    """A page for the keyboard walk: each Tab moves focus to the next id in `order` (None: the body)."""
+
+    def __init__(self, order, looks):
+        self.order, self.looks, self.at = list(order), looks, -1
+
+    def press(self, key):
+        assert key == "Tab"
+        self.at += 1
+
+    def evaluate(self, _expression):
+        cid = self.order[self.at % len(self.order)]
+        return {"id": cid, "changed": self.looks.get(cid)}
+
+
+def test_the_keyboard_walk_finds_unreachable_controls_missing_focus_and_a_trap():
+    controls = [{"id": f"c{i}", "path": f"button#b{i}", "said": f"B{i}"} for i in range(4)]
+    walk = ux.keyboard(Keys(["c0", "c1", None, "c3"], {"c0": True, "c1": False, "c3": True}), controls)
+    assert walk["reached"] == 3 and walk["unreachable"] == [{"path": "button#b2", "said": "B2"}]
+    assert walk["no_focus_look"] == [{"path": "button#b1", "said": "B1"}] and walk["stuck"] is None
+    trap = ux.keyboard(Keys(["c0", "c1", "c1", "c1", "c1"], {"c0": True, "c1": True}), controls)
+    assert trap["stuck"] == {"path": "button#b1", "said": "B1"}
+
+
+def test_the_report_has_a_ux_section_by_page_and_for_design_consistency(tmp_path):
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 0.0}
+    note = {"basis": "measured", "kind": "low text contrast", "detail": "1 of 40 text(s) below WCAG AA",
+            "rule": "WCAG 2.2 1.4.3", "samples": ["'Faint' 2.1:1"]}
+    result = {"name": "home", "url": "http://h/", "goal": None, "outcome": "pass", "reason": "loaded", "checks": [],
+              "findings": [], "screens": [], "ux": [note], "about": "x"}
+    data = report.build(SimpleNamespace(name="smoke h"), [result], [ledger], browser={}, started_at=time.time(),
+                        strict=False, interrupted=False, run_dir=tmp_path)
+    data["ux"] = {"consistency": {"desktop": [{"basis": "measured", "kind": "h2 style differs",
+                                               "detail": "about: font-size 28px (vs 32px)"}]}}
+    report.write(tmp_path, data)
+    md, html = (tmp_path / "report.md").read_text(), (tmp_path / "report.html").read_text()
+    assert "- **low text contrast** (measured): 1 of 40 text(s) below WCAG AA. Rule: WCAG 2.2 1.4.3" in md
+    assert "  - 'Faint' 2.1:1" in md and "### Design consistency (desktop)" in md
+    assert "They never change the gate" in md and data["gate"] == "PASS"  # a UX note never turns the run red
+    assert "<h2>UX</h2>" in html and "h2 style differs" in html and "(measured)" in html

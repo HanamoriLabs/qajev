@@ -426,6 +426,33 @@ def test_a_react_hook_answers_a_cue_at_human_speed_and_saves_the_frame(session, 
     assert session.react_log[0]["shot"] == "flash" and (tmp_path / "cue-flash.jpg").stat().st_size > 1000
 
 
+def test_ux_measures_each_fault_with_its_rule_and_compares_pages(session, site):
+    # José, 5 Oct: QA should say whether a site is easy to use and consistent. Every note here is measured.
+    from qajev import ux
+
+    desktop = {"width": 1280, "height": 900, "mobile": False, "scale": 1}
+    session.navigate(site + "/ux.html")
+    measured = ux.measure(session, desktop)
+    notes = {n["kind"]: n for n in ux.notes(measured)}
+    assert {"low text contrast", "contrast not measured", "text cut off", "text overlapping",
+            "not reachable by keyboard", "no visible focus", "sideways scroll at 200% zoom", "dialog"} <= set(notes)
+    assert any(x.startswith("'Faint words' 1.") for x in notes["low text contrast"]["samples"])  # #bbb on white
+    assert notes["contrast not measured"]["detail"].startswith("1 text(s) image or gradient")
+    assert any("'Cut off text here' (width" in x for x in notes["text cut off"]["samples"])
+    assert any("'Over A text' and 'Over B text'" in x for x in notes["text overlapping"]["samples"])
+    assert [x for x in notes["not reachable by keyboard"]["samples"] if "Fake button" in x]
+    assert [x for x in notes["no visible focus"]["samples"] if "'Bare'" in x]
+    assert not [x for x in notes["no visible focus"]["samples"] if "Fine link" in x]  # Chrome's focus ring counts
+    assert "has no accessible name, is not marked modal, does not hold focus, does not close on Escape" in (
+        notes["dialog"]["detail"])
+    assert session.evaluate("innerWidth") == 1280  # the 200% zoom pass put the device back
+    styles = (measured["facts"]["styles"])
+    session.navigate(site + "/ux2.html")
+    second = ux.measure(session, desktop)["facts"]["styles"]
+    differs = ux.consistency([("ux", styles), ("ux2", second)])
+    assert [n for n in differs if n["kind"] == "h2 style differs" and "font-size" in n["detail"]]
+
+
 def test_a_secret_fields_value_never_reaches_the_reason_or_the_reports(session, site, tmp_path):
     # Orchestrator's review of #26: a record's label joined an input's value, so a filled secret field leaked it into
     # the stuck reason and both reports. The page holds the values; nothing QAJev writes may.

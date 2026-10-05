@@ -158,6 +158,8 @@ def build_parser():
     smoke.add_argument("--max-pages", type=int, default=20)
     smoke.add_argument("--device", help="crawl on this device only (default: every device in --devices)")
     smoke.add_argument("--check-links", action="store_true", help="also HEAD-check discovered links not crawled")
+    smoke.add_argument("--no-ux", action="store_true",
+                       help="skip the UX measurements (contrast, keyboard, 200%% zoom, dialogs, design consistency)")
     smoke.add_argument("--delay", type=float,
                        help="seconds between page loads (default 1 for public hosts, 0 for loopback; "
                             "robots.txt crawl-delay wins if larger)")
@@ -421,6 +423,7 @@ def _options(args):
         allow_commands=getattr(args, "allow_commands", False), typesafe_usd_per_call=args.usd_per_call,
         cost_cap_usd=args.cost_cap, load_high=args.load_high or None, load_ok=args.load_ok,
         load_wait=args.load_wait, only=getattr(args, "only", []), shots=not args.no_shots, emit=_printer(args),
+        ux=not getattr(args, "no_ux", False),
         motion=args.motion,
     )
 

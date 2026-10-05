@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- The smoke crawl measures each page's UX and adds a UX section to the report, free and never changing the gate:
+  WCAG AA text contrast (text over images counted as not measured), keyboard reach, visible focus and traps (QAJev
+  presses Tab through the page), 200% zoom (sideways scroll, text cut off), text cut off or overlapping, and open
+  dialogs (named, modal, focus, Escape). Design consistency compares each kind of element's computed style across
+  pages and names each page that differs, with both values. `--no-ux` skips it. ([Reports](docs/reports.md#ux))
 - `key` hooks press any plain key (letters, digits, punctuation, Space, the arrows...), repeat a sequence
   (`{press: [f, j], repeat: 15, interval_ms: 30}`) and hold a key (`hold_ms`, up to 5 s), as trusted key events: real-key
   play-tests for web games. No modifiers or combinations. ([Writing tests](docs/writing-tests.md))
