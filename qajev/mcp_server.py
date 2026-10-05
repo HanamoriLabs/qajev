@@ -241,7 +241,8 @@ async def qa_check(
 
     goal: plain words, e.g. "Open the pricing page. Stop when plan prices are visible."
     expect_text / absent_text: case-sensitive substrings the page must / must not show.
-    expect_url: substring of the final URL. expect_js: JS expression that must be truthy.
+    expect_url: substring of the final URL. expect_js: JS expression that must return exactly true (a string it
+    returns fails, and is the reason).
     expect_looks: statements judged from the final screenshot ("the Sign up button is not cut off"); vision: the
     screenshot goes with every decision. Both need Clef as the decision model (Jev reads text only).
     fetch: in-page GET checks, "URL" or "URL=STATUS". mode: readonly (default) or mutate (loopback only).

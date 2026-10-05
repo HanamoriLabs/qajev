@@ -29,6 +29,22 @@ def test_js_must_be_exactly_true():
     assert not V.all_ok(V.page_checks({"js": "x"}, {"js": False}))
 
 
+def test_a_check_that_returns_its_reason_fails_with_that_reason():
+    # SideGame1, 5 Oct: `cond || 'why'` returned 'why' and was graded as passed. Only exactly true passes.
+    assert V.js_result({"value": True}) == (True, None, "true")
+    assert V.js_result({"value": "a flash did not become a steal"}) == (False, "a flash did not become a steal",
+                                                                          "a flash did not become a steal")
+    assert V.js_result({"value": False}) == (False, "returned false", "false")
+    assert V.js_result({"value": None}) == (False, "returned null", "null")
+    assert V.js_result({"value": 3}) == (False, "check must return true, got number", "3")
+    assert V.js_result({"value": {"ok": True}}) == (False, "check must return true, got object", '{"ok": true}')
+    assert V.js_result({"type": "element", "shown": "[object HTMLHeadingElement]"})[:2] == (
+        False, "check must return true, got element")
+    assert V.js_result({"error": "boom"}) == (False, "error: boom", None)
+    [check] = V.page_checks({"js": "x"}, {"js": {"value": "no verdict"}})
+    assert (check["ok"], check["detail"], check["value"]) == (False, "no verdict", "no verdict")
+
+
 @pytest.mark.skipif(not shutil.which("node"), reason="needs node to run the page-side JavaScript")
 def test_a_js_condition_is_judged_by_what_its_promise_settles_to():
     # SideGame1: `!!(promise)` was true while the promise was pending, so a wait_for (and a sign-in's signed_in.js)

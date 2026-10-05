@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: a `js` check passed on any truthy value, so a check written as `cond || 'why it failed'` passed when
+  it failed (its 'why' is a non-empty string). A check now passes only on exactly `true`; a string fails with that
+  string as the reason, `false` and `null` fail as such, and any other value fails as the wrong type. The value that
+  came back is kept on every check in report.json. Waits (`wait_for`, `until`) still hold on any truthy value.
 - The dashboard and `qajev top` show the UX notes, not only the reports. In the dashboard a test with notes says how
   many beside its name (`3 UX notes`); open, it lists each note by what it rests on, with its rule and examples, and
   the run has a UX section with the count and the design consistency per device. `qajev top` counts them

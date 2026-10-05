@@ -28,7 +28,7 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | `url` | `--expect-url`, `-u` | the final address contains this |
 | `url_regex` | `--expect-url-regex` | the final address matches this pattern |
 | `status` | suite only | the page answered with this HTTP status, such as 404 for a removed page (that status is then not also filed as a finding) |
-| `js` | `--expect-js`, `-j` | this JavaScript expression is true in the page (a Promise counts by what it resolves to, within 5 s; a throw, a rejection or no answer fails the check) |
+| `js` | `--expect-js`, `-j` | this JavaScript expression returns exactly `true` in the page (a Promise counts by what it resolves to, within 5 s). Anything else fails: a string fails with that string as the reason, so `cond || 'why it failed'` reads well in the report; `false` and `null` fail as such; any other value (a number, an object, an element) fails as the wrong type; a throw, a rejection or no answer fails with the error. What came back is kept in the report, pass or fail |
 | `fetch` | `--fetch URL[=STATUS]` | a request made from the page answers with that status (default 200) |
 | `command` | suite only | a shell command prints the expected output (needs `--allow-commands`) |
 | `looks` | `--expect-looks` | Clef, looking at the final screenshot, judges this statement true (needs Clef: see below) |
@@ -191,7 +191,7 @@ For long forms or setup, drive the page directly and let Jev do the decisions:
 ```
 
 Hooks: `js`, `click` (a CSS selector), `fill` (`{selector: text}`), `navigate`, `wait_for` (JavaScript that must turn
-true, up to 15 s; a Promise counts by what it resolves to), `key` (a real key press, below), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
+true, up to 15 s; a Promise counts by what it resolves to; a wait, unlike a check, holds on any truthy value), `key` (a real key press, below), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
 cookies and storage), and `command` (a shell command, only with `--allow-commands`). Hooks refuse to click dangerous controls or fill password fields on a real site.
 
 A `key` hook presses real keys, as a player does: the page gets trusted `keydown` and `keyup` events. Jev clicks and
