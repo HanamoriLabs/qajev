@@ -423,7 +423,12 @@ def test_a_react_hook_answers_a_cue_at_human_speed_and_saves_the_frame(session, 
     assert [(e["type"], e["code"], e["trusted"]) for e in log] == [("keydown", "Space", True), ("keyup", "Space", True)]
     assert 300 <= log[0]["at"] - cue < 450, log[0]["at"] - cue  # 0.3 s after the cue, within a poll or two
     assert 600 <= log[1]["at"] - log[0]["at"] < 800, log  # held as long as the policy said
-    assert session.react_log[0]["shot"] == "flash" and (tmp_path / "cue-flash.jpg").stat().st_size > 1000
+    # SideGame1, 5 Oct: the frame asked for in the same tick as the key-down was taken first and delayed the press.
+    # Keys go first now, and the log says when each was sent and how long the frame took.
+    down, shot, up = session.react_log
+    assert (down["down"], shot["shot"], up["up"]) == ("Space", "flash", "Space"), session.react_log
+    assert down["at_s"] <= shot["at_s"] <= up["at_s"] and shot["took_s"] >= 0, session.react_log
+    assert Path(shot["path"]).name == "cue-001-flash.jpg" and Path(shot["path"]).stat().st_size > 1000
 
 
 def test_a_js_check_passes_only_on_true_and_a_string_is_its_reason(session, site):

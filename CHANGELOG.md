@@ -8,6 +8,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   it failed (its 'why' is a non-empty string). A check now passes only on exactly `true`; a string fails with that
   string as the reason, `false` and `null` fail as such, and any other value fails as the wrong type. The value that
   came back is kept on every check in report.json. Waits (`wait_for`, `until`) still hold on any truthy value.
+- Fixed: a `react` hook took the frames a tick asked for before sending its keys, so a `{shot}` asked for
+  with a `{down}` delayed the press by a screenshot (SideGame1: inside a 0.6 s grip flash). Keys go first now, and the
+  report logs each held key's down and up times and each frame's start and duration.
 - The dashboard and `qajev top` show the UX notes, not only the reports. In the dashboard a test with notes says how
   many beside its name (`3 UX notes`); open, it lists each note by what it rests on, with its rule and examples, and
   the run has a UX section with the count and the design consistency per device. `qajev top` counts them

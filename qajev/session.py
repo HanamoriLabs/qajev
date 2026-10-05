@@ -741,6 +741,26 @@ class Session:
                 items = out.get("actions")
                 items = [x for x in (items if isinstance(items, list) else [items]) if x is not None]
                 asked = [x for x in items if isinstance(x, dict) and "shot" in x]
+                try:
+                    todo = keys.actions([x for x in items if not (isinstance(x, dict) and "shot" in x)])
+                except ValueError as e:
+                    raise HookFailed(f"react: {e}") from None
+                # Keys first, then the frames this tick asked for (SideGame1, 5 Oct: a frame taken first delayed the
+                # key-down a grip flash asked for, inside a 0.6 s window). A held key's down and up are logged with
+                # when they were sent; a plain press is not (a mashing policy sends seven a second).
+                for what, name in todo:
+                    spec = keys.spec(name)
+                    up = {k: v for k, v in spec.items() if k != "text"}
+                    if what in {"press", "down"} and name not in held:
+                        self.call("Input.dispatchKeyEvent", type="keyDown", **spec)
+                        held[name] = time.monotonic()
+                        if what == "down":
+                            log.append({"down": name, "at_s": round(held[name] - start, 3)})
+                    if what in {"press", "up"} and name in held:
+                        self.call("Input.dispatchKeyEvent", type="keyUp", **up)
+                        held.pop(name)
+                        if what == "up":
+                            log.append({"up": name, "at_s": round(time.monotonic() - start, 3)})
                 for i, x in enumerate(asked):
                     if i >= keys.MAX_SHOTS_TICK or shots >= keys.MAX_SHOTS_HOOK:
                         if not capped:
@@ -750,20 +770,7 @@ class Session:
                                         "at_s": round(began - start, 2)})
                         continue
                     shots += 1
-                    log.append(self._react_shot(str(x["shot"]), began - start))
-                try:
-                    todo = keys.actions([x for x in items if not (isinstance(x, dict) and "shot" in x)])
-                except ValueError as e:
-                    raise HookFailed(f"react: {e}") from None
-                for what, name in todo:
-                    spec = keys.spec(name)
-                    up = {k: v for k, v in spec.items() if k != "text"}
-                    if what in {"press", "down"} and name not in held:
-                        self.call("Input.dispatchKeyEvent", type="keyDown", **spec)
-                        held[name] = time.monotonic()
-                    if what in {"press", "up"} and name in held:
-                        self.call("Input.dispatchKeyEvent", type="keyUp", **up)
-                        held.pop(name)
+                    log.append(self._react_shot(str(x["shot"]), time.monotonic() - start, start))
                 for name, since in list(held.items()):  # a hold is bounded, as in a key hook
                     if time.monotonic() - since >= keys.MAX_HOLD_MS / 1000:
                         self.call("Input.dispatchKeyEvent", type="keyUp",
@@ -779,15 +786,17 @@ class Session:
                               **{k: v for k, v in keys.spec(name).items() if k != "text"})
             held.clear()
 
-    def _react_shot(self, label, at_s):
+    def _react_shot(self, label, at_s, start):
         """A frame a react policy asked for, saved next to the scenario's own screenshot when the run keeps shots. Each
-        gets its own file (a number before the label): a policy labelling every round's cue the same keeps them all."""
+        gets its own file (a number before the label): a policy labelling every round's cue the same keeps them all.
+        `at_s` is when the capture began and `took_s` how long it took, both from the hook's `start`."""
         label = re.sub(r"[^A-Za-z0-9_.-]+", "-", label).strip("-")[:40] or "frame"
         self.react_frames = getattr(self, "react_frames", 0) + 1
         where = getattr(self, "shot_dir", None)
         name = f"{getattr(self, 'shot_prefix', 'react')}-{self.react_frames:03d}-{label}.jpg"
         path = self.screenshot(where / name) if where else None
-        return {"shot": label, "at_s": round(at_s, 2), "path": str(path) if path else None}
+        return {"shot": label, "at_s": round(at_s, 3), "took_s": round(time.monotonic() - start - at_s, 3),
+                "path": str(path) if path else None}
 
     def find(self, selector):
         if self.guard_cfg is not None:

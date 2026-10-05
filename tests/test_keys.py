@@ -91,14 +91,17 @@ def test_a_react_hook_sends_what_its_policy_returns_and_ends_when_until_holds(mo
     f.page.react({"js": "policy()", "until": "over()", "every_ms": 50})
     assert f.log == [(0.05, "keyDown", "ArrowLeft"), (0.05, "keyUp", "ArrowLeft"), (0.05, "keyDown", "Space"),
                      (0.15, "keyUp", "Space")]  # pressed, then held two ticks
-    assert f.page.react_log == [{"shot": "grip-flash", "at_s": 0.1, "path": str(tmp_path / "arm-001-grip-flash.jpg")}]
+    assert f.page.react_log == [  # a held key is logged down and up; a frame with what it took (the fake: no time)
+        {"down": "Space", "at_s": 0.05},
+        {"shot": "grip-flash", "at_s": 0.1, "took_s": 0.0, "path": str(tmp_path / "arm-001-grip-flash.jpg")},
+        {"up": "Space", "at_s": 0.15}]
 
 
 def test_a_react_hook_releases_every_key_and_bounds_its_holds(monkeypatch):
     f = FakePage(monkeypatch, [{"actions": {"down": "s"}}] + [{"actions": None}] * 200, tick_s=0.5)
     f.page.react({"js": "hold()", "for_s": 8, "every_ms": 500})  # no until: runs its time, then ends cleanly
     assert [e for e in f.log if e[1] == "keyUp"][0][0] == 5.0  # held 5 s at most, then released
-    assert f.page.react_log == [{"released": "s", "at_s": 5.0, "why": "held 5 s"}]
+    assert f.page.react_log == [{"down": "s", "at_s": 0.0}, {"released": "s", "at_s": 5.0, "why": "held 5 s"}]
 
     f = FakePage(monkeypatch, [{"actions": {"down": "f"}}, {"error": "view is not a function"}])
     with pytest.raises(HookFailed, match="react policy: view is not a function"):
