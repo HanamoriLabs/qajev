@@ -30,7 +30,7 @@
   // Tap targets under 24 CSS px, as WCAG 2.5.8 counts them: a link inside a sentence is exempt (inline), and so is
   // an undersized target with room around it (spacing: a 24 px circle on its centre meets no other target and no
   // other undersized target's circle). Each counted one is named, never by an input's value.
-  const targets = [...document.querySelectorAll('a,button,[role=button],input,select')].filter(visible)
+  const targets = [...document.querySelectorAll('a,button,[role=button],input,select,textarea')].filter(visible)
     .map((e) => ({ e, r: e.getBoundingClientRect() })).filter(({ r }) => r.width > 0 && r.height > 0);
   const undersized = targets.filter(({ r }) => r.width < 24 || r.height < 24);
   const under = new Set(undersized);

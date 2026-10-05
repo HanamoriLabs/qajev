@@ -372,17 +372,21 @@ def test_tap_targets_are_counted_as_wcag_2_5_8_says_and_named(session, site):
 
     session.navigate(site + "/targets.html")
     facts = session.evaluate(smoke.FACTS)
-    assert facts["small_targets"] == 3  # the crowded pair and the field next to them
+    assert facts["small_targets"] == 5  # the crowded pair and the three fields next to them
     assert facts["small_targets_skipped"] == {"inline": 1, "spaced": 1}  # the link in a sentence; the lone "?"
     assert facts["small_target_samples"] == [
         {"tag": "button", "text": "Close", "size": "16x16", "path": "#tools button.t.close"},
         {"tag": "button", "text": "x", "size": "16x16", "path": "#tools button.t"},
         {"tag": "input", "text": "PIN", "size": "60x16", "path": "input#pin"},
+        {"tag": "select", "text": "size", "size": "60x16", "path": "select"},
+        {"tag": "textarea", "text": "Note", "size": "16x16", "path": "textarea"},
     ]
-    assert "hunter2" not in str(facts)  # a field is named by its label, never its value
+    for value in ("hunter2", "Medium-option-text", "typed-secret"):  # fields by their names, never what they hold
+        assert value not in str(facts)
     assert smoke.small_targets(facts) == (
-        "3 target(s): button 'Close' 16x16 (#tools button.t.close), button 'x' 16x16 (#tools button.t), "
-        "input 'PIN' 60x16 (input#pin); not counted (WCAG 2.5.8): 1 inline in a sentence, 1 with room around them")
+        "5 target(s): button 'Close' 16x16 (#tools button.t.close), button 'x' 16x16 (#tools button.t), "
+        "input 'PIN' 60x16 (input#pin), select 'size' 60x16 (select), textarea 'Note' 16x16 (textarea); "
+        "not counted (WCAG 2.5.8): 1 inline in a sentence, 1 with room around them")
 
 
 def test_a_secret_fields_value_never_reaches_the_reason_or_the_reports(session, site, tmp_path):
