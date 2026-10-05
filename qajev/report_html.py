@@ -200,7 +200,8 @@ def _scenario(i, r, who="Jev"):
             f'alt="{_e(e["shot"])} at {_e(e["at_s"])} s"></a><figcaption>{_e(e["shot"])} at {_e(e["at_s"])} s'
             "</figcaption></figure>" for e in frames) + "</div>")
     notes = [f"Released {_e(e['released'])} at {_e(e['at_s'])} s: {_e(e['why'])}" if "released" in e
-             else f"At {_e(e['at_s'])} s: {_e(e['note'])}" for e in r.get("react") or [] if "released" in e or "note" in e]
+             else f"At {_e(e['at_s'])} s: {_e(e['note'])}"
+             for e in r.get("react") or [] if "released" in e or "note" in e]
     if notes:
         parts.append("<p>" + "; ".join(notes) + "</p>")
     if r.get("clients"):
