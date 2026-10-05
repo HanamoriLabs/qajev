@@ -815,6 +815,43 @@ def test_visible_means_on_screen_not_just_in_the_page(session, site):
     assert session.probe({"visible": ["Deep footer note"]})["visible"] == [True]
 
 
+def test_visible_means_a_person_sees_it_not_covered_and_not_cut_short(session, site):
+    # FlockTab1, 6 Oct: two false passes. A first-run overlay covered the whole page, and a rail label showed
+    # "Message to Or…" in an ellipsis box; `visible:` passed on both. Visible now means drawn on top, whole.
+    from qajev import verdict
+
+    session.arm("readonly")
+    session.navigate(site + "/visible-covered.html")
+    words = ["Covered note under the first-run card", "Which agents do you run?"]
+    probe = session.probe({"visible": words})
+    assert probe["visible"] == [False, True], probe
+    (covered, shown) = verdict.page_checks({"visible": words}, probe)
+    assert not covered["ok"] and "covered by" in covered["detail"] and "#overlay" in covered["detail"], covered
+    assert shown["ok"]
+
+    session.evaluate("(overlay.remove(), true)")
+    full, start = "Message to Orchestrator (812 characters, not kept)", "Message to"
+    probe = session.probe({"visible": [words[0], full, start, "Text under a see-through badge"]})
+    assert probe["visible"] == [True, False, True, True], probe  # a pointer-events: none badge is not a cover
+    (_, cut, _, _) = verdict.page_checks({"visible": [words[0], full, start, "Text under a see-through badge"]},
+                                         probe)
+    assert "cut short" in cut["detail"], cut
+
+
+def test_a_click_hook_waits_for_its_target_to_be_on_top_and_says_what_covers_it(session, site):
+    # SideGame1, 6 Oct: "covered by another element" on a menu still settling ended a test as harness. A click waits
+    # (up to 2 s) until its target is on top and still; a target that stays covered names what covers it.
+    from qajev.session import HookFailed
+
+    session.arm("mutate")
+    session.navigate(site + "/click-late.html")
+    session.run_hook({"click": "#play"}, site + "/click-late.html")
+    assert session.evaluate("window.played === true") is True
+    session.navigate(site + "/visible-covered.html")
+    with pytest.raises(HookFailed, match=r"covered by div#overlay"):
+        session.run_hook({"click": "h1"}, site + "/visible-covered.html")
+
+
 def test_a_small_decorative_progress_bar_is_not_a_spinner(session, site):
     session.arm("readonly")
     session.navigate(site + "/")

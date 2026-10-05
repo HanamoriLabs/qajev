@@ -42,9 +42,10 @@ def page_checks(expect, observed):
         checks.append(_check(f"page shows {needle!r}{case}", bool(seen), None if seen else miss))
     for needle, seen in zip(expect.get("absent", []), observed.get("absent") or []):
         checks.append(_check(f"page lacks {needle!r}{case}", not seen, "still shown" if seen else None))
-    for needle, seen in zip(expect.get("visible", []), observed.get("visible") or []):
-        checks.append(_check(f"on screen: {needle!r}{case}", bool(seen),
-                             None if seen else "in the page but not visible in the viewport, or absent"))
+    whys = observed.get("visible_why") or []
+    for i, (needle, seen) in enumerate(zip(expect.get("visible", []), observed.get("visible") or [])):
+        why = whys[i] if i < len(whys) and whys[i] else "in the page but not visible in the viewport, or absent"
+        checks.append(_check(f"on screen: {needle!r}{case}", bool(seen), None if seen else why))
     if expect.get("js"):
         ok, detail, value = js_result(observed.get("js"))
         checks.append({**_check(f"js {expect['js']!r}", ok, detail), "value": value})

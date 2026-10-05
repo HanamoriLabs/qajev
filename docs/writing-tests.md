@@ -23,7 +23,7 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | Expectation | CLI flag | Passes when |
 |---|---|---|
 | `text` | `--expect-text`, `-t` | the page shows these words (anywhere in the page) |
-| `visible` | `--visible` | these words are on screen right now, not just somewhere below |
+| `visible` | `--visible` | a person sees these words right now: in the viewport, not covered by anything drawn over them (an overlay, a dialog), and not cut short by their box (an ellipsis, `overflow: hidden`); a failure says which |
 | `absent` | `--absent`, `-a` | the page does not show these words |
 | `url` | `--expect-url`, `-u` | the final address contains this |
 | `url_regex` | `--expect-url-regex` | the final address matches this pattern |
@@ -198,7 +198,9 @@ For long forms or setup, drive the page directly and let Jev do the decisions:
       - key: Escape
 ```
 
-Hooks: `js`, `click` (a CSS selector), `fill` (`{selector: text}`), `navigate`, `wait_for` (JavaScript that must turn
+Hooks: `js`, `click` (a CSS selector: scrolled into view, then clicked once it is on top and still, waiting up to
+2 s for a splash or a settling panel; a target still covered fails naming what covers it), `fill`
+(`{selector: text}`), `navigate`, `wait_for` (JavaScript that must turn
 true, up to 15 s; a Promise counts by what it resolves to; a wait, unlike a check, holds on any truthy value), `key` (a real key press, below), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
 cookies and storage), and `command` (a shell command, only with `--allow-commands`). Hooks refuse to click dangerous controls or fill password fields on a real site.
 
