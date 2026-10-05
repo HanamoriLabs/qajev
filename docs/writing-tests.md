@@ -231,7 +231,9 @@ player can see, waits a human reaction time, and answers.
 ```
 
 A policy returns nothing, or one action or a list of them: a key name or `{press: k}` (down and up), `{down: k}`,
-`{up: k}`, and `{shot: label}` for a screenshot of that moment (in the report as a frame, at its time). The keys are
+`{up: k}`, and `{shot: label}` for a screenshot of that moment (in the report as a frame, at its time). In a tick,
+the keys are sent first and the frames taken after, so a frame never delays a press; the report logs when each
+held key went down and up, and when each frame began and how long it took (`at_s`, `took_s`). The keys are
 the same allow-list as `key`, at most 10 actions a tick. A key held 5 s is released (and the report says so), and
 every key still down is released when the hook ends, fails or the policy throws. Keep the reaction delay in the
 policy, as above: then the test shows how fast a player had to be.
