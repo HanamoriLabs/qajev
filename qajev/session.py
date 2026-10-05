@@ -16,6 +16,7 @@ import time
 import uuid
 from string import Template
 from types import SimpleNamespace
+from typing import Any
 
 from . import chrome, netlog, providers
 from . import guard as guard_mod
@@ -283,9 +284,49 @@ KEYS = {
 }
 
 
+class Tab:
+    """What a Session uses of Jev's Browser (its tab, and calls into it), for a tab in a browser context of its own:
+    a multiplayer client's own cookies, storage, cache and service workers (clients.py). No Jev on it."""
+
+    def __init__(self, cdp, ensure_daemon):
+        self.cdp = cdp
+        # Jev's Browser starts the browser daemon itself; a Tab must too, or a run whose only scenarios have clients
+        # has no daemon to talk to (FileNotFoundError on its socket: the first live run of clients.py)
+        ensure_daemon()
+        self.context = cdp("Target.createBrowserContext")["browserContextId"]
+        self.target = self.session = None
+        try:
+            # QAJev's rules hold per browser context: the default context's settings do not reach a new one
+            cdp("Browser.setDownloadBehavior", behavior="deny", browserContextId=self.context)
+            for name in ("microphone", "camera"):
+                cdp("Browser.setPermission", permission={"name": name}, setting="denied",
+                    browserContextId=self.context)
+            self.target = cdp("Target.createTarget", url="about:blank", browserContextId=self.context,
+                              background=True)["targetId"]
+            self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
+            self.call("Emulation.setFocusEmulationEnabled", enabled=True)  # renders and runs rAF like a focused tab
+        except Exception:
+            self.close()
+            raise
+
+    def call(self, method, **params):
+        return self.cdp(method, session_id=self.session, **params)
+
+    def close(self):
+        if self.target:
+            with contextlib.suppress(RuntimeError, TimeoutError):
+                self.cdp("Target.closeTarget", targetId=self.target)
+            self.target = None
+        if self.context:
+            with contextlib.suppress(RuntimeError, TimeoutError):  # its cookies and storage go with it
+                self.cdp("Target.disposeBrowserContext", browserContextId=self.context)
+            self.context = None
+
+
 class Session:
     def __init__(self, ledger, *, headless=False, hosts=(), guard_opts=None, allow_commands=False, cwd=None,
-                 motion="reduce"):
+                 motion="reduce", isolated=False):
+        """isolated: a multiplayer client (clients.py): its own browser context and tab, and no Jev agent."""
         self.ledger = ledger
         self.jev = load(ledger)
         self.headless = headless
@@ -299,9 +340,16 @@ class Session:
         self.assists = []
         self.last_stale = None
         self.net = None
-        Agent = self.jev.agent.Agent
-        self.agent = Agent("about:blank", "Wait for instructions.")
-        self.browser = self.agent.browser
+        # Jev's agent and its Browser; a multiplayer client has a Tab and no agent (only Jev's own paths use one)
+        self.agent: Any
+        self.browser: Any
+        if isolated:
+            self.agent = None
+            self.browser = Tab(self.jev.cdp, self.jev.admin.ensure_daemon)
+        else:
+            Agent = self.jev.agent.Agent
+            self.agent = Agent("about:blank", "Wait for instructions.")
+            self.browser = self.agent.browser
         try:
             self.call("Page.enable")  # must precede addScriptToEvaluateOnNewDocument
             if motion == "reduce":  # before the first navigation, so the first paint already honours it
@@ -347,7 +395,7 @@ class Session:
         return "error" not in r and bool(r.get("value"))
 
     def minimize(self):
-        if self.headless:
+        if self.headless or self.agent is None:  # a client's window stays up: a minimised page stops rendering
             return
         try:
             window = self.jev.cdp("Browser.getWindowForTarget", targetId=self.browser.target)["windowId"]
@@ -359,8 +407,10 @@ class Session:
         """Re-asserted whenever the guard is armed: another CDP session in the same browser can undo either."""
         # No downloads, ever: a "Download for Mac" click must not pull installers onto this machine. (On Linux the
         # deny did not survive other sessions in the same browser, and Debian Chromium's default is to save.)
+        context = getattr(self.browser, "context", None)  # a multiplayer client's own browser context, if it has one
         try:
-            self.jev.cdp("Browser.setDownloadBehavior", behavior="deny")
+            self.jev.cdp("Browser.setDownloadBehavior", behavior="deny",
+                         **({"browserContextId": context} if context else {}))
         except (RuntimeError, TimeoutError):
             pass
         if self.headless:  # headless Linux Chromium gives a background tab no frames: every screenshot waited ~31 s
@@ -457,7 +507,22 @@ class Session:
         self.minimize()
         return None
 
+    def reload(self, timeout=30.0):
+        self.call("Page.reload")
+        time.sleep(0.1)  # the old document may still say "complete" for a moment
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with contextlib.suppress(RuntimeError):
+                if self.evaluate("document.readyState", timeout_ms=3000) == "complete":
+                    break
+            time.sleep(0.05)
+        if self.guard_cfg is not None:
+            with contextlib.suppress(RuntimeError):
+                self.guard_settled()
+
     def observe(self):
+        if self.agent is None:  # a multiplayer client: no Jev looks at it
+            return
         self.agent.state["page"] = self.browser.observe(screenshot=False)
 
     def probe(self, expect):
@@ -650,6 +715,8 @@ class Session:
                 if time.monotonic() > deadline:
                     raise HookFailed(f"wait_for {spec['js']!r} timed out")
                 time.sleep(0.25)
+        elif kind == "reload":  # the same page again, keeping the tab's cookies and storage (a player rejoining)
+            self.reload()
         elif kind == "key":
             self.press(value)
         elif kind == "sleep":
@@ -677,6 +744,9 @@ class Session:
         net, self.net = getattr(self, "net", None), None
         if net:
             net.stop()
+        if getattr(self, "agent", "jev") is None:  # a multiplayer client: its tab and its browser context
+            self.browser.close()
+            return
         try:
             self.agent.close()
         except Exception:

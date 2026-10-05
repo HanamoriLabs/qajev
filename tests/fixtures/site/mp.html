@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Room">
+<title>Room</title></head>
+<body>
+  <!-- A multiplayer room for QAJev's clients test (tests/test_live_clients.py): it joins the room server named by
+       ?ws=PORT as ?player, keeps its id in this browser context's localStorage (so a reload rejoins as the same
+       player, and five contexts that shared storage would all be one player), and shows the roster and the chat. -->
+  <h1 id="title">Room</h1>
+  <ul id="roster"></ul>
+  <ol id="chat"></ol>
+  <script>
+    const q = new URLSearchParams(location.search);
+    const id = localStorage.getItem('id') || (q.get('player') + '-' + Math.random().toString(36).slice(2, 8));
+    localStorage.setItem('id', id);
+    document.getElementById('title').textContent = 'Room ' + q.get('room');
+    const game = window.game = { ready: false, id, players: [], chat: [] };
+    const ws = new WebSocket(`ws://127.0.0.1:${q.get('ws')}/?room=${q.get('room')}&player=${id}&drop=${q.get('drop') || ''}`);
+    game.say = (text) => ws.send(JSON.stringify({ type: 'chat', text }));
+    ws.onmessage = (event) => {
+      const m = JSON.parse(event.data);
+      if (m.type === 'roster') {
+        game.players = m.players;
+        document.getElementById('roster').innerHTML = m.players.map((p) => `<li>${p}</li>`).join('');
+        game.ready = true;
+      } else if (m.type === 'chat') {
+        game.chat.push(m);
+        document.getElementById('chat').insertAdjacentHTML('beforeend', `<li>${m.from}: ${m.text}</li>`);
+      }
+    };
+  </script>
+</body>
+</html>
