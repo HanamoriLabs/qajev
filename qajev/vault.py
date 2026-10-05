@@ -56,7 +56,8 @@ def anchor(ref, folder):
     """A seed:FILE#KEY reference with FILE made absolute against `folder` (the suite's or project's); others as is."""
     if not isinstance(ref, str) or not ref.startswith("seed:") or folder is None:
         return ref
-    _, file, key = parse(ref)
+    file, _, key = ref.removeprefix("seed:").rpartition("#")
+    parse(ref)  # malformed: VaultError, as everywhere else
     return ref if os.path.isabs(file) else f"seed:{os.path.join(str(folder), file)}#{key}"
 
 
