@@ -446,6 +446,34 @@ def test_ux_on_a_games_title_screen_raises_none_of_its_false_alarms(session, sit
     assert form["keyboard blocked"]["rule"].startswith("WCAG 2.2 2.1.1")
 
 
+def test_ux_measures_where_text_is_drawn_not_where_its_box_is(session, site):
+    # FlockTab1 and verse1, 5 Oct, on real pages: a status word ran into the next card, an amount was clipped in a
+    # fixed row, a value was drawn over its label and stretched labels covered each other, with no note; while text
+    # wrapping in one paragraph, and a log's lines scrolled out of view, were called overlapping.
+    from qajev import ux
+
+    desktop = {"width": 1280, "height": 900, "mobile": False, "scale": 1}
+    session.navigate(site + "/ux-layout.html")
+    measured = ux.measure(session, desktop)
+    facts = measured["facts"]
+    pairs = {frozenset((x["a"], x["b"])) for x in facts["overlaps"]}
+    assert {frozenset(("CLOSED", "THE PROVIDER")), frozenset(("$8.75", "SPENT"))} <= pairs, pairs
+    assert pairs & {frozenset(p) for p in (("BUBBLE", "SPROUT"), ("SPROUT", "DOT"), ("BUBBLE", "DOT"))}, pairs
+    # the paragraph is named by its first 40 characters, its inline parts by their own
+    wrapped = {"bold lead-in that runs past the edge", "one code", "two code",
+               "A bold lead-in that runs past the edge o"}
+    assert not [p for p in pairs if len(p & wrapped) == 2], pairs  # one paragraph, wrapping: no overlap
+    assert not [p for p in pairs if "COMPARE RUNS" in p], pairs  # the log's hidden lines are not seen
+    cut = {x["text"] for x in facts["clipped"]}
+    assert "/ $50.00" in cut, facts["clipped"]
+    assert not cut & {"Slide two", "Slide three", "An ellipsis on purpose here"}, facts["clipped"]
+    spilled = {x["text"] for x in facts["spilled"]}  # out of the card a person sees it in; the badge sits on purpose
+    assert "CLOSED" in spilled and "NEW" not in spilled, facts["spilled"]
+    notes = {n["kind"]: n for n in ux.notes(measured)}
+    assert any(x.startswith("'CLOSED' (right by ") for x in notes["text overflows its box"]["samples"]), notes
+    assert any(x.startswith("'/ $50.00' (width: ") for x in notes["text cut off"]["samples"]), notes
+
+
 def test_ux_measures_each_fault_with_its_rule_and_compares_pages(session, site):
     # José, 5 Oct: QA should say whether a site is easy to use and consistent. Every note here is measured.
     from qajev import ux

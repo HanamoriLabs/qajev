@@ -215,6 +215,19 @@ def test_a_key_word_or_a_shared_word_alone_does_not_blame_the_tool_or_the_guard(
         "the goal needs a drag")
 
 
+def test_a_guard_phrase_counts_in_order_and_a_tapped_tab_is_no_key():
+    # Orchestrator's review of #35, 5 Oct (backlog): "sign in" has both words of a hidden "Sign out", and on FlockTab
+    # "Tap the tab" means the tab on screen, not the Tab key.
+    out = [{"label": "Sign out", "why": "danger", "match": "Sign out"}]
+    assert ux.blocked_by("Find out how to sign in with Google. Stop when the sign-in page shows.", "stuck", out) is None
+    assert ux.blocked_by("Sign out of the app. Stop when the login shows.", "stuck", out).startswith(
+        "blocked by the guard: it hid 'Sign out'")
+    assert ux.blocked_by("Signing out, find the goodbye note. Stop when it shows.", "stuck", out) is not None
+    assert ux.blocked_by("Tap the tab to open its details. Stop when they show.", "stuck", []) is None
+    assert ux.blocked_by("Press Tab to move to the next field. Stop when it has focus.", "stuck", []).startswith(
+        "the goal needs a key press (Tab)")
+
+
 def test_findability_counts_qajevs_recovery_scrolls_apart_from_jevs():
     history = [{"kind": "click", "action": "Play", "url": "http://h/"}]
     notes = ux.struggle(history, [], "stuck", [{"after": "BLOCKED", "scrolled": 2}])

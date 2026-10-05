@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Layout faults">
+<title>Layout faults</title>
+<style>
+  body { margin: 0; font: 16px/1.5 sans-serif; color: #111; background: #fff; }
+  main { display: grid; grid-template-columns: 600px 600px; gap: 40px; padding: 20px; }
+  section { margin-bottom: 36px; }
+  h2 { font-size: 14px; margin: 0 0 8px; color: #555; }
+
+  /* FlockTab1, 5 Oct (flocktab.com's money path at phone width, as it was): three cards squeezed into one row; the
+     middle card's header row puts CLOSED after the project name, and CLOSED runs out of its card into the next. */
+  .path { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 300px; }
+  /* bordered, not filled, as on the page: a filled next card would paint over the spilled word (grid items paint whole) */
+  .card { border: 1px solid #ccc; padding: 8px; }
+  .head { display: flex; gap: 6px; font-size: 11px; line-height: 16px; letter-spacing: 0.12em; }
+  .state { flex-shrink: 0; white-space: nowrap; font-size: 13px; font-weight: 700; color: #a33; }
+  .card h3 { margin: 0; font-size: 11px; line-height: 16px; letter-spacing: 0.12em; font-weight: 400; }
+  .card p { margin: 6px 0 0; font-size: 12px; }
+  /* An amount squeezed into a fixed row that clips: "$48.18of / $50.00", the last part cut. */
+  .amount { display: flex; width: 90px; overflow: hidden; white-space: nowrap; font-size: 20px; }
+
+  /* FlockTab1 (compare pane at phone width): a value in a row too short for it, drawn over its label. */
+  .stat { display: grid; grid-template-rows: 10px 10px; width: 120px; }
+  .stat .v { font-size: 28px; line-height: 1; }
+  .stat .l { font-size: 14px; }
+
+  /* verse1 (shoppc's clay page): another page's stylesheet stretched every figure label across the stage. */
+  .stage { position: relative; width: 500px; height: 160px; }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; background: #e8e2d8; }
+  .fig { position: absolute; left: 0; right: 0; bottom: 20px; text-align: center; font-size: 18px; font-weight: 700; }
+
+  /* Not faults. FlockTab1: inline text wrapping in one paragraph was called overlapping (the box of a wrapped
+     inline spans both lines). */
+  .wrap { width: 260px; margin: 0; }
+  /* FlockTab1: a log pinned to its bottom; the lines scrolled out above it were called overlapping its header. */
+  .pane h4 { margin: 0; font-size: 14px; line-height: 20px; }
+  .log { height: 60px; overflow-y: auto; font: 14px/20px monospace; background: #111; color: #eee; }
+  /* A carousel shows one slide; the others are out of view on purpose, not cut off. */
+  .track { width: 300px; overflow: hidden; white-space: nowrap; }
+  .slide { display: inline-block; width: 300px; }
+  /* An ellipsis on purpose, and a badge set over its card's corner on purpose. */
+  .ell { width: 80px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .badged { position: relative; width: 160px; border: 1px solid #ccc; padding: 8px; }
+  .badge { position: absolute; top: -10px; right: -18px; background: #c00; color: #fff; font-size: 12px; padding: 0 4px; }
+</style></head>
+<body>
+<main>
+  <div>
+    <section><h2>Money path</h2>
+      <div class="path">
+        <div class="card"><div class="head">YOUR AGENT</div><p>$ tab claude</p></div>
+        <div class="card"><div class="head"><span>FLOCKTAB</span><span class="state">CLOSED</span></div><p>$48.18</p></div>
+        <div class="card"><h3>THE PROVIDER</h3><p>Anthropic</p></div>
+      </div>
+      <div class="amount"><span>$48.18</span><span>of</span><span>/ $50.00</span></div>
+    </section>
+    <section><h2>Compare</h2>
+      <div class="stat"><div class="v">$8.75</div><div class="l">SPENT</div></div>
+    </section>
+    <section><h2>Clay figures</h2>
+      <div class="stage"><canvas></canvas>
+        <span class="fig">BUBBLE</span><span class="fig">SPROUT</span><span class="fig">DOT</span>
+      </div>
+    </section>
+  </div>
+  <div>
+    <section><h2>Wrapped inline text</h2>
+      <p class="wrap">A <b>bold lead-in that runs past the edge</b> <code>one code</code> then muted words and
+        <code>two code</code> to the end.</p>
+    </section>
+    <section class="pane"><h4>COMPARE RUNS</h4>
+      <div class="log" id="log"><div>$ python run.py</div><div>step 1</div><div>step 2</div><div>step 3</div>
+        <div>step 4</div><div>step 5</div><div>step 6</div><div>step 7</div><div>step 8</div><div>done</div></div>
+    </section>
+    <section><h2>Carousel</h2>
+      <div class="track"><div class="slide">Slide one</div><div class="slide">Slide two</div><div class="slide">Slide three</div></div>
+    </section>
+    <section><h2>On purpose</h2>
+      <div class="ell">An ellipsis on purpose here</div>
+      <div class="badged">Plan card <span class="badge">NEW</span></div>
+    </section>
+  </div>
+</main>
+<script>log.scrollTop = log.scrollHeight;</script>
+</body>
+</html>
