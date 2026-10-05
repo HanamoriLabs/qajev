@@ -80,6 +80,26 @@ def test_the_keyboard_walk_finds_unreachable_controls_missing_focus_and_a_trap()
     assert trap["stuck"] == {"path": "button#b1", "said": "B1"}
 
 
+def test_a_page_that_takes_tab_is_not_measurable_rather_than_unreachable():
+    # SideGame1, 5 Oct: a game binds Tab and cancels its keydown, so focus never moves. That says nothing about the
+    # page's keyboard reach; reporting "not reachable" (WCAG 2.1.1) was a false alarm.
+    class Taken(Keys):
+        def evaluate(self, expression):
+            return {"id": None, "cancelled": True} if "activeElement" in expression else True
+
+    controls = [{"id": "c0", "path": "button.title-press", "said": "PRESS ANY KEY"}]
+    walk = ux.keyboard(Taken([None], {}), controls)
+    assert walk["tab_taken"] is True and walk["tabs"] == 7
+    kinds = {n["kind"]: n for n in ux.notes({"keyboard": walk})}
+    assert set(kinds) == {"keyboard not measurable"}
+    assert kinds["keyboard not measurable"]["detail"] == ("Tab is taken by the page: all 7 Tab presses were cancelled "
+                                                          "(likely a game key) and focus never moved")
+    # Focus that never moves without the page cancelling Tab is still a real finding.
+    still = ux.keyboard(Keys([None], {}), controls)
+    assert still["tab_taken"] is False
+    assert "not reachable by keyboard" in {n["kind"] for n in ux.notes({"keyboard": still})}
+
+
 def test_the_report_has_a_ux_section_by_page_and_for_design_consistency(tmp_path):
     ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
               "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 0.0}

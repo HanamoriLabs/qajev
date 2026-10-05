@@ -55,7 +55,8 @@ def lint(facts, *, mobile, name):
     if facts.get("h1", 0) == 0:
         add("S3", "no <h1>")
     elif facts.get("h1", 0) > 1:
-        add("S3", "several <h1>", f"{facts['h1']}")
+        hidden = facts.get("h1_hidden")
+        add("S3", "several <h1>", f"{facts['h1']}" + (f" (and {hidden} hidden)" if hidden else ""))
     if not facts.get("viewport_meta"):
         add("S3", "missing viewport meta")
     if not facts.get("description"):

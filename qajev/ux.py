@@ -43,17 +43,30 @@ CONTROLS_JS = """(() => {
   return out;
 })()"""
 
-# After each Tab: which control has focus, and whether it looks any different from before it had it.
+# Before the walk: keep each Tab keydown, so the page's own handling of it can be read once it is dispatched. A game
+# binds Tab and cancels it (SideGame1, 5 Oct): then focus never moves, and that says nothing about keyboard reach.
+TAB_WATCH_JS = """(() => {
+  if (!window.__qajevTab) {
+    window.__qajevTab = { last: null };
+    addEventListener('keydown', (e) => { if (e.key === 'Tab') window.__qajevTab.last = e; }, true);
+  }
+  return true;
+})()"""
+
+# After each Tab: which control has focus, whether it looks any different from before it had it, and whether the
+# page cancelled that Tab.
 FOCUSED_JS = """(() => {
+  const t = window.__qajevTab, cancelled = !!(t && t.last && t.last.defaultPrevented);
+  if (t) t.last = null;
   const e = document.activeElement;
-  if (!e || e === document.body || e === document.documentElement) return { id: null };
+  if (!e || e === document.body || e === document.documentElement) return { id: null, cancelled };
   const s = getComputedStyle(e);
   const now = [s.outlineStyle, s.outlineWidth, s.outlineColor, s.boxShadow, s.borderColor, s.backgroundColor, s.color,
     s.textDecorationLine].join('|');
   const id = e.dataset ? e.dataset.qajevUx || null : null;
   const r = e.getBoundingClientRect();
   return { id, changed: id ? now !== window.__qajevUx.get(id) : null, tag: e.tagName.toLowerCase(),
-           onscreen: r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth };
+           onscreen: r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth, cancelled };
 })()"""
 
 OVERFLOW_JS = ("({ wide: document.documentElement.scrollWidth > innerWidth + 1, "
@@ -67,11 +80,14 @@ DIALOG_OPEN_JS = """(() => [...document.querySelectorAll(
 
 def keyboard(session, controls):
     """Tab through the page with real key presses: which controls a keyboard reaches, which show no change when
-    focused, and whether focus gets stuck. -> {reached, unreachable, no_focus_look, stuck, tabs}."""
-    order, looks, stuck, last, repeats = [], {}, None, None, 0
+    focused, and whether focus gets stuck. -> {reached, unreachable, no_focus_look, stuck, tabs, tab_taken}: tab_taken
+    when the page cancelled every Tab and focus never moved, so none of it could be measured."""
+    order, looks, stuck, last, repeats, cancelled = [], {}, None, None, 0, 0
+    session.evaluate(TAB_WATCH_JS)
     for tabs in range(1, min(MAX_TABS, 2 * len(controls) + 5) + 1):
         session.press("Tab")
         f = session.evaluate(FOCUSED_JS) or {}
+        cancelled += bool(f.get("cancelled"))
         cid = f.get("id")
         repeats = repeats + 1 if cid and cid == last else 0
         if repeats >= 3:
@@ -92,7 +108,8 @@ def keyboard(session, controls):
             "unreachable": pick(unreachable)[:10], "unreachable_count": len(unreachable),
             "no_focus_look": pick([i for i in order if looks.get(i) is False])[:10],
             "no_focus_look_count": sum(1 for i in order if looks.get(i) is False),
-            "stuck": pick([stuck])[0] if stuck else None}
+            "stuck": pick([stuck])[0] if stuck else None,
+            "tab_taken": bool(controls) and not order and cancelled == tabs}
 
 
 def zoomed(session, dev):
@@ -153,7 +170,12 @@ def notes(m):
                          [f"'{x['a']}' and '{x['b']}' ({x['area']} px; {x['aPath']} / {x['bPath']})"
                           for x in facts["overlaps"][:10]]))
     k = m.get("keyboard")
-    if k:
+    if k and k.get("tab_taken"):
+        out.append(_note("keyboard not measurable", f"Tab is taken by the page: all {k['tabs']} Tab presses were "
+                         "cancelled (likely a game key) and focus never moved",
+                         "WCAG 2.2 2.1.1, 2.4.7 and 2.1.2 not measured: the page handles Tab itself; check its own "
+                         "keys by hand"))
+    elif k:
         if k["unreachable_count"]:
             out.append(_note("not reachable by keyboard", f"{k['unreachable_count']} of {k['controls']} control(s) "
                              f"never got focus in {k['tabs']} Tab presses",
