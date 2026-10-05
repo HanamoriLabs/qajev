@@ -11,6 +11,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   127.0.0.1, `*.localhost` or `*.test`, the email is at a reserved test domain, and the fixture's `allowed_hosts`
   include the host. No secret or code is written anywhere; the report says "as seeded test user … on localhost;
   TOTP from seed: yes". ([Writing tests](docs/writing-tests.md#signed-in-areas), [Projects](docs/projects.md))
+## 0.3.0: 6 Oct 2026
+
 - A test plan opens every report and the dashboard: one numbered item per test, its `about` and each check in plain
   words, with a box ticked as the run goes (✓ passed, ✗ failed, ! stuck or harness). The dashboard shows it before
   the first test runs. A check gets its words from the new `says` (on a suite's `expect`, `--says` with
