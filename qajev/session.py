@@ -407,7 +407,8 @@ class Session:
         """Re-asserted whenever the guard is armed: another CDP session in the same browser can undo either."""
         # No downloads, ever: a "Download for Mac" click must not pull installers onto this machine. (On Linux the
         # deny did not survive other sessions in the same browser, and Debian Chromium's default is to save.)
-        context = getattr(self.browser, "context", None)  # a multiplayer client's own browser context, if it has one
+        # a multiplayer client's own browser context, if it has one (a stub Session may have no browser at all)
+        context = getattr(getattr(self, "browser", None), "context", None)
         try:
             self.jev.cdp("Browser.setDownloadBehavior", behavior="deny",
                          **({"browserContextId": context} if context else {}))
