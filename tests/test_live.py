@@ -436,9 +436,14 @@ def test_ux_on_a_games_title_screen_raises_none_of_its_false_alarms(session, sit
     notes = {n["kind"]: n for n in ux.notes(ux.measure(session, desktop))}
     # Main also called the hidden live region low contrast and cut off at 200% zoom: the one honest note is this.
     assert set(notes) == {"keyboard not measurable"}, notes
-    assert notes["keyboard not measurable"]["detail"].startswith("Tab is taken by the page: all ")
+    assert notes["keyboard not measurable"]["detail"].startswith("Tab is taken by the game: all ")
     facts = session.evaluate(smoke.FACTS)
     assert (facts["h1"], facts["h1_hidden"]) == (1, 1)
+    # An ordinary page that cancels Tab is no game: a keyboard user is locked out, and that is a real failure.
+    session.navigate(site + "/ux-tab-form.html")
+    form = {n["kind"]: n for n in ux.notes(ux.measure(session, desktop))}
+    assert "keyboard blocked" in form and "keyboard not measurable" not in form, form
+    assert form["keyboard blocked"]["rule"].startswith("WCAG 2.2 2.1.1")
 
 
 def test_ux_measures_each_fault_with_its_rule_and_compares_pages(session, site):

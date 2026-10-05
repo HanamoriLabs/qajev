@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="A sign-up form">
+<title>Sign up</title></head>
+<body>
+  <h1>Sign up</h1>
+  <!-- An ordinary page, no game, that cancels Tab: a keyboard user cannot move between the fields. A real failure. -->
+  <form>
+    <label>Name <input name="name"></label>
+    <label>Email <input name="email" type="email"></label>
+    <button type="button">Send</button>
+  </form>
+  <script>addEventListener('keydown', (e) => { if (e.key === 'Tab') e.preventDefault(); });</script>
+</body>
+</html>

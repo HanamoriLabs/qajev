@@ -12,7 +12,9 @@
   .splash .name { position: absolute; top: 120px; left: 80px; font-size: 20px; color: #e8e6e3; }
 </style></head>
 <body>
-  <h1>I'M HIM!</h1>
+  <!-- The game draws on a full-screen canvas; the title UI sits over it. -->
+  <canvas id="game" style="position: fixed; inset: 0; width: 100vw; height: 100vh"></canvas>
+  <h1 style="position: relative">I'M HIM!</h1>
   <div id="dev-menu" style="display:none"><h1>Dev menu</h1></div>
   <button id="title-press">PRESS ANY KEY</button>
   <div class="splash"><div class="name">Hanamori Labs</div><div class="sr-live" aria-live="polite">Hanamori Labs is loading</div></div>

@@ -53,6 +53,14 @@ TAB_WATCH_JS = """(() => {
   return true;
 })()"""
 
+# Whether the page is a game: a canvas covering half the viewport or more. A game may take Tab as one of its keys; an
+# ordinary page that cancels Tab locks keyboard users out (Orchestrator, 5 Oct).
+GAME_JS = """(() => [...document.querySelectorAll('canvas')].some((c) => {
+  const r = c.getBoundingClientRect();
+  return Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0))
+    * Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) >= innerWidth * innerHeight / 2;
+}))()"""
+
 # After each Tab: which control has focus, whether it looks any different from before it had it, and whether the
 # page cancelled that Tab.
 FOCUSED_JS = """(() => {
@@ -80,10 +88,11 @@ DIALOG_OPEN_JS = """(() => [...document.querySelectorAll(
 
 def keyboard(session, controls):
     """Tab through the page with real key presses: which controls a keyboard reaches, which show no change when
-    focused, and whether focus gets stuck. -> {reached, unreachable, no_focus_look, stuck, tabs, tab_taken}: tab_taken
-    when the page cancelled every Tab and focus never moved, so none of it could be measured."""
+    focused, and whether focus gets stuck. -> {reached, unreachable, no_focus_look, stuck, tabs, tab_taken, game}:
+    tab_taken when the page cancelled every Tab and focus never moved; game when a canvas fills the page."""
     order, looks, stuck, last, repeats, cancelled = [], {}, None, None, 0, 0
     session.evaluate(TAB_WATCH_JS)
+    game = bool(session.evaluate(GAME_JS))
     for tabs in range(1, min(MAX_TABS, 2 * len(controls) + 5) + 1):
         session.press("Tab")
         f = session.evaluate(FOCUSED_JS) or {}
@@ -109,7 +118,7 @@ def keyboard(session, controls):
             "no_focus_look": pick([i for i in order if looks.get(i) is False])[:10],
             "no_focus_look_count": sum(1 for i in order if looks.get(i) is False),
             "stuck": pick([stuck])[0] if stuck else None,
-            "tab_taken": bool(controls) and not order and cancelled == tabs}
+            "tab_taken": bool(controls) and not order and cancelled == tabs, "game": game}
 
 
 def zoomed(session, dev):
@@ -170,11 +179,16 @@ def notes(m):
                          [f"'{x['a']}' and '{x['b']}' ({x['area']} px; {x['aPath']} / {x['bPath']})"
                           for x in facts["overlaps"][:10]]))
     k = m.get("keyboard")
-    if k and k.get("tab_taken"):
-        out.append(_note("keyboard not measurable", f"Tab is taken by the page: all {k['tabs']} Tab presses were "
-                         "cancelled (likely a game key) and focus never moved",
-                         "WCAG 2.2 2.1.1, 2.4.7 and 2.1.2 not measured: the page handles Tab itself; check its own "
+    if k and k.get("tab_taken") and k.get("game"):
+        out.append(_note("keyboard not measurable", f"Tab is taken by the game: all {k['tabs']} Tab presses were "
+                         "cancelled and focus never moved",
+                         "WCAG 2.2 2.1.1, 2.4.7 and 2.1.2 not measured: the game handles Tab itself; check its own "
                          "keys by hand"))
+    elif k and k.get("tab_taken"):
+        out.append(_note("keyboard blocked", f"the page cancels Tab: all {k['tabs']} Tab presses were cancelled and "
+                         f"focus never moved, so a keyboard user cannot reach its {k['controls']} control(s)",
+                         "WCAG 2.2 2.1.1: everything works from a keyboard",
+                         [f"'{x['said']}' ({x['path']})" for x in k["unreachable"]]))
     elif k:
         if k["unreachable_count"]:
             out.append(_note("not reachable by keyboard", f"{k['unreachable_count']} of {k['controls']} control(s) "

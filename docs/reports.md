@@ -89,7 +89,8 @@ A smoke crawl also measures how easy each page is to use, and adds a **UX** sect
 | text cut off | a box hides part of its own text (overflow hidden, no ellipsis); text hidden for screen readers only (a clipped 1x1 box) is no visible text and is skipped | |
 | text overlapping | two text boxes, neither inside the other, overlap by 4 px or more, and on screen nothing opaque lies between them (text under a full-screen splash is not seen overlapping) | |
 | not reachable by keyboard | QAJev presses Tab through the page; these controls never got focus | WCAG 2.2 2.1.1 |
-| keyboard not measurable | the page cancelled every Tab and focus never moved (a game that uses Tab as a key): reach, visible focus and traps are not measured | |
+| keyboard not measurable | a game (a canvas filling half the screen or more) cancelled every Tab and focus never moved: it uses Tab as one of its keys, so reach, visible focus and traps are not measured; check its own keys by hand | |
+| keyboard blocked | an ordinary page cancelled every Tab and focus never moved: a keyboard user cannot reach its controls | WCAG 2.2 2.1.1 |
 | no visible focus | a control looks the same with and without keyboard focus | WCAG 2.2 2.4.7 |
 | keyboard trap | focus stays on one control for 3 Tab presses | WCAG 2.2 2.1.2 |
 | sideways scroll / text cut off at 200% zoom | the page laid out at half the width and twice the scale, as at 200% zoom | WCAG 2.2 1.4.10 and 1.4.4 |
