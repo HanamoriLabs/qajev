@@ -330,6 +330,7 @@ def markdown(data):
         *([f"- Models: {data['models'].get('decider') or 'Jev'} {data['models']['jev']}; text {data['models']['text']}"]
           if data.get("models") else []),
         *([f"- Motion: {MOTION[data['motion']]}"] if data.get("motion") in MOTION else []),
+        *([f"- Watched live: {data['watched_live_s']:.0f} s in the dashboard"] if data.get("watched_live_s") else []),
         *([f"- Sign-in: {report_html.signed_in(data['sign_in'])}"] if data.get("sign_in") else []),
         f"- QAJev {data['qajev']}",
         "",

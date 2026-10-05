@@ -445,6 +445,8 @@ def render(data):
     if data.get("motion") in ("reduce", "full"):
         run.append(("Motion", "reduced (pages were told the visitor prefers reduced motion)"
                     if data["motion"] == "reduce" else "full (as-is)"))
+    if data.get("watched_live_s"):
+        run.append(("Watched live", f"{data['watched_live_s']:.0f} s in the dashboard"))
     if data.get("sign_in"):
         run.append(("Sign-in", _e(signed_in(data["sign_in"]))))
     run += [("Legend", "<br>".join(f"{_pill(o)} {_e(t)}" for o, t in LEGEND.items())),

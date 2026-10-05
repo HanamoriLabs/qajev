@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- LIVE: **Watch live** in the dashboard shows a running test's screen as a moving picture (about 5 frames a
+  second, 1280 px; 2 when the machine is busy, 1 during real-time game steps). View only, at most 2 viewers a run,
+  behind the dashboard's key on 127.0.0.1. **Bring to front** raises the page in QAJev's own Chrome; **Open the
+  page** opens its origin and path only. The frame grabber may only take screenshots, read the page's address and
+  size, and bring its own page to the front; the report says how long the run was watched live.
+  ([The dashboard](docs/dashboard.md))
 - Fixed: `visible` passed on words a person could not see. A first-run overlay covering the whole page, and a
   label cut to "Message to Or…" by its ellipsis box, both passed (FlockTab1). Visible now means drawn on top and
   whole: the words' own lines are checked for anything drawn over them, and against any `overflow` box that clips

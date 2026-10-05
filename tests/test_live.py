@@ -852,6 +852,32 @@ def test_a_click_hook_waits_for_its_target_to_be_on_top_and_says_what_covers_it(
         session.run_hook({"click": "h1"}, site + "/visible-covered.html")
 
 
+def test_live_frames_from_the_real_page_are_jpegs_at_most_1280_wide_with_the_page_origin_and_path(
+        session, site, tmp_path):
+    # LIVE (José, 5 Oct): the run's own grabber, on its own debugger link, at the live rate while a viewer streams.
+    import struct
+
+    from qajev import live
+
+    session.arm("readonly")
+    session.navigate(site + "/pricing.html?token=abc#plans")
+    run = tmp_path / "run"
+    live.stream_touch(run)
+    with live.frames(run, session.page_socket()):
+        time.sleep(1.5)
+    data = (run / "live" / "frame.jpg").read_bytes()
+    assert data[:2] == b"\xff\xd8"
+    i, width = 2, None
+    while i < len(data) and width is None:  # the JPEG's frame header holds its size
+        marker, length = data[i + 1], struct.unpack(">H", data[i + 2:i + 4])[0]
+        if marker in (0xC0, 0xC2):
+            width = struct.unpack(">H", data[i + 7:i + 9])[0]
+        i += 2 + length
+    assert width and width <= live.WIDTH
+    assert json.loads((run / "live" / "page.json").read_text())["url"] == site + "/pricing.html"
+    assert live.watched_seconds(run) > 0
+
+
 def test_a_small_decorative_progress_bar_is_not_a_spinner(session, site):
     session.arm("readonly")
     session.navigate(site + "/")
