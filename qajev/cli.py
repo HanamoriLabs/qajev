@@ -112,7 +112,8 @@ def build_parser():
                        help="this text must be on screen (in the viewport), not just in the page (repeatable)")
     check.add_argument("--expect-url", "-u", help="final URL must contain this")
     check.add_argument("--expect-url-regex", help="final URL must match this regex")
-    check.add_argument("--expect-js", "-j", help="JS expression that must return exactly true (may use await); a string it returns fails, as the reason")
+    check.add_argument("--expect-js", "-j", help="JS expression that must return exactly true (may use await); a "
+                                                  "string it returns fails, as the reason")
     check.add_argument("--expect-looks", action="append", default=[], metavar="STATEMENT",
                        help="judged from the final screenshot, e.g. 'the Sign up button is not cut off' (repeatable; "
                             "needs Clef)")
