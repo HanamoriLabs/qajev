@@ -48,13 +48,18 @@ def wanted_devices(explicit=None):
     for name in names:
         _device(name, "devices")
     return names or list(DEFAULT_DEVICES)
-HOOK_KINDS = {"js", "fill", "click", "navigate", "wait_for", "key", "sleep", "command"}
+HOOK_KINDS = {"js", "fill", "click", "navigate", "wait_for", "key", "sleep", "command", "reload"}
 EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
-               "looks"}
+               "looks", "across"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
-    "persona", "speech", "vision", "about",
+    "persona", "speech", "vision", "about", "clients", "steps", "state", "seed",
 }
+# A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
+MAX_CLIENTS = 12
+CLIENT_EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "ignore_case", "across"}
+CLIENT_HOOK_KINDS = HOOK_KINDS - {"command"}  # a shell command is not a player's move
+STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout", "settle", "expect"}
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about",
@@ -91,6 +96,10 @@ class Scenario:
     speech: str | None
     vision: bool = False  # Clef sees the screenshot with every decision (vision.py)
     about: str | None = None  # what the test proves and why, in plain words, for the person reading the report
+    clients: list | None = None  # a multiplayer scenario: [{name, url}], one browser context each (clients.py)
+    steps: list = field(default_factory=list)  # its steps, in order (see _steps)
+    state: str | None = None  # JS read on every client for the across checks and snapshots
+    seed: int | None = None  # for `jitter`: the same seed gives the same offsets
 
     @property
     def task(self):
@@ -172,6 +181,7 @@ def _expect(value, where):
     out["absent"] = _list(value.get("absent"), f"{where}.absent")
     out["visible"] = _list(value.get("visible"), f"{where}.visible")
     out["looks"] = [str(s) for s in _list(value.get("looks"), f"{where}.looks")]  # judged from the screenshot
+    out["across"] = _across(value.get("across"), f"{where}.across")  # a multiplayer scenario's (clients.py)
     if "url_regex" in out:
         try:
             re.compile(out["url_regex"])
@@ -192,6 +202,86 @@ def _expect(value, where):
     return out
 
 
+def _across(value, where):
+    """Checks judged over every client's state: "js" or {check, js}. -> [{check, js}]."""
+    out = []
+    for i, item in enumerate(_list(value, where)):
+        if isinstance(item, str):
+            item = {"js": item}
+        if not isinstance(item, dict) or not isinstance(item.get("js"), str) or set(item) - {"check", "js"}:
+            raise SuiteError(f"{where}[{i}] must be a JS expression, or {{check: name, js: expression}}")
+        out.append({"check": str(item.get("check") or item["js"]), "js": item["js"]})
+    return out
+
+
+def _clients(value, url, where):
+    """clients: N, [names], or [{name, url}] -> [{name, url}] (url may hold {client}, {i}, {run})."""
+    if isinstance(value, bool) or not isinstance(value, (int, list)):
+        raise SuiteError(f"{where}.clients must be a number, a list of names, or a list of {{name, url}}")
+    items = [f"p{i}" for i in range(1, value + 1)] if isinstance(value, int) else value
+    if not 2 <= len(items) <= MAX_CLIENTS:
+        raise SuiteError(f"{where}.clients: from 2 to {MAX_CLIENTS} clients")
+    out = []
+    for i, item in enumerate(items):
+        item = {"name": item} if isinstance(item, str) else item
+        if not isinstance(item, dict) or set(item) - {"name", "url"} or not re.fullmatch(r"[\w-]{1,32}",
+                                                                                           str(item.get("name"))):
+            raise SuiteError(f"{where}.clients[{i}] must be a name (letters, digits, _ or -) or {{name, url}}")
+        out.append({"name": str(item["name"]), "url": item.get("url") or url})
+        if not out[-1]["url"]:
+            raise SuiteError(f"{where}.clients[{i}] needs a url (or give the scenario one)")
+    if len({c["name"] for c in out}) != len(out):
+        raise SuiteError(f"{where}.clients: names must be different")
+    return out
+
+
+def _steps(value, names, where):
+    """A multiplayer scenario's steps, each one of:
+    {all: hook, stagger?: ms, jitter?: ms}   every client, at the same instant (or staggered, or jittered)
+    {client: name | [names], <hook>: ...}    some clients
+    {snapshot: name, until?: js, timeout?: s, settle?: s, expect?: [across]}   every client's state, at once"""
+    steps = []
+    items: list[Any] = _list(value, where)
+    for i, step in enumerate(items):
+        at = f"{where}[{i}]"
+        if not isinstance(step, dict):
+            raise SuiteError(f"{at} must be a mapping")
+        hook_keys = [k for k in step if k in HOOK_KINDS]
+        _unknown(at, {k: v for k, v in step.items() if k not in HOOK_KINDS}, STEP_KEYS)
+        kinds = [k for k in ("all", "client", "snapshot") if k in step]
+        if len(kinds) != 1:
+            raise SuiteError(f"{at} needs exactly one of all, client or snapshot")
+        kind = kinds[0]
+        out: dict[str, Any] = {"kind": kind}
+        if kind == "snapshot":
+            if hook_keys or set(step) & {"stagger", "jitter"}:
+                raise SuiteError(f"{at}: a snapshot reads state; it takes until, timeout, settle and expect only")
+            if not re.fullmatch(r"[A-Za-z_]\w{0,31}", str(step["snapshot"])):
+                raise SuiteError(f"{at}.snapshot must be a name (letters, digits, _), used as snapshots.<name>")
+            out.update(name=str(step["snapshot"]), until=step.get("until"), timeout=float(step.get("timeout", 10)),
+                       settle=float(step.get("settle", 0)), expect=_across(step.get("expect"), f"{at}.expect"))
+        else:
+            hook = step["all"] if kind == "all" else {k: step[k] for k in hook_keys}
+            if kind == "client" and set(step) & {"stagger", "jitter"}:
+                raise SuiteError(f"{at}: stagger and jitter belong to an `all` step")
+            if kind == "all" and hook_keys:
+                raise SuiteError(f"{at}: put the hook under all: (all: {{js: ...}})")
+            if not isinstance(hook, dict) or len(hook) != 1 or next(iter(hook)) not in CLIENT_HOOK_KINDS:
+                raise SuiteError(f"{at} needs one hook, one of {sorted(CLIENT_HOOK_KINDS)}")
+            who = names if kind == "all" else _list(step["client"], f"{at}.client")
+            unknown = [w for w in who if w not in names]
+            if unknown:
+                raise SuiteError(f"{at}.client: no client named {unknown}; the clients are {names}")
+            for key in ("stagger", "jitter"):
+                if isinstance(step.get(key, 0), bool) or not isinstance(step.get(key, 0), (int, float)) \
+                        or step.get(key, 0) < 0:
+                    raise SuiteError(f"{at}.{key} must be milliseconds (0 or more)")
+            out.update(hook=hook, clients=list(who), stagger=float(step.get("stagger", 0)),
+                       jitter=float(step.get("jitter", 0)))
+        steps.append(out)
+    return steps
+
+
 def page_checks(expect):
     return bool(expect.get("url") or expect.get("url_regex") or expect.get("text") or expect.get("absent")
                 or expect.get("visible") or expect.get("js") or expect.get("status"))
@@ -199,7 +289,8 @@ def page_checks(expect):
 
 def has_checks(expect):
     # looks is not a page check: it costs a model call, so it is judged once, at the end, not while Jev moves.
-    return page_checks(expect) or bool(expect.get("fetch") or expect.get("command") or expect.get("looks"))
+    return page_checks(expect) or bool(expect.get("fetch") or expect.get("command") or expect.get("looks")
+                                       or expect.get("across"))
 
 
 def _account(raw, base):
@@ -278,7 +369,28 @@ def parse(data, path=None, devices=None):
             raise SuiteError(f"{where}: mode must be one of {MODES}")
         expect = _expect(item.get("expect"), f"{where}.expect")
         goal = item.get("goal")
-        if not goal and not has_checks(expect):
+        clients = None
+        if "clients" in item:
+            if goal or item.get("before") or item.get("after") or item.get("persona"):
+                raise SuiteError(f"{where}: a scenario with clients has steps, not a goal, persona or before/after "
+                                 "hooks")
+            if not item.get("url"):
+                raise SuiteError(f"{where}: a scenario with clients needs its own url (it does not continue a page)")
+            _unknown(f"{where}.expect", {k: v for k, v in (item.get("expect") or {}).items()}, CLIENT_EXPECT_KEYS)
+            clients = _clients(item["clients"], url, where)
+            if not item.get("steps") and not item.get("state") and not has_checks(expect):
+                raise SuiteError(f"{where}: give the clients steps and an expect block")
+        else:
+            for key in ("steps", "state", "seed"):
+                if key in item:
+                    raise SuiteError(f"{where}.{key} belongs to a scenario with clients")
+            if expect["across"]:
+                raise SuiteError(f"{where}.expect.across belongs to a scenario with clients")
+            if not url and scenarios and scenarios[-1].clients:
+                raise SuiteError(f"{where}: give it a url; the scenario before it ran in its own clients' tabs")
+        if expect["across"] and not item.get("state"):
+            raise SuiteError(f"{where}: expect.across reads each client's state: give state: <JS expression>")
+        if not goal and not has_checks(expect) and clients is None:
             raise SuiteError(f"{where}: give a goal, an expect block, or both")
         depends = _list(item.get("depends_on"), f"{where}.depends_on")
         if not url and not depends:
@@ -305,7 +417,13 @@ def parse(data, path=None, devices=None):
             speech=item.get("speech", data.get("speech")),
             vision=bool(item.get("vision", data.get("vision", False))),
             about=about(item.get("about"), f"{where}.about"),
+            clients=clients,
+            steps=_steps(item.get("steps"), [c["name"] for c in clients], f"{where}.steps") if clients else [],
+            state=item.get("state"),
+            seed=item.get("seed"),
         ))
+        if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
+            raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")
 
     copies = []
     for device in wanted[1:]:  # the same scenarios again on each further device, each with its own chain

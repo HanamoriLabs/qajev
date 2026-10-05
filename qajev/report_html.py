@@ -62,6 +62,8 @@ ul.checks { list-style:none; padding:0; margin:8px 0; }
 ul.checks li { padding:2px 0; }
 .ok { color:var(--pass); font-weight:700; } .no { color:var(--fail); font-weight:700; }
 .shot img { max-width:100%; max-height:360px; border:1px solid var(--line); border-radius:6px; margin-top:8px; }
+.clients { display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:10px; margin-top:8px; }
+.clients figure { margin:0; } .clients figcaption { font-size:13px; color:var(--muted); }
 details { margin-top:8px; } summary { cursor:pointer; color:var(--muted); }
 code { background:var(--code); padding:1px 5px; border-radius:4px; font-size:13px; overflow-wrap:anywhere; }
 a { color:inherit; }
@@ -191,11 +193,44 @@ def _scenario(i, r, who="Jev"):
                  _e(_where(h.get("url")))] for h in history]
         parts.append("<details><summary>Steps Jev took</summary>"
                      + _table(["Step", "Kind", "Action", "Typed", "Page"], rows) + "</details>")
-    if r.get("shot"):
+    if r.get("clients"):
+        parts.append(_clients_html(r))
+    elif r.get("shot"):
         parts.append(f'<a class="shot" href="{_e(r["shot"])}"><img src="{_e(r["shot"])}" loading="lazy" '
                      f'alt="Screenshot at the end of {_e(r["name"])}"></a>')
     parts.append("</section>")
     return "".join(parts)
+
+
+def _clients_html(r):
+    """A multiplayer scenario (clients.py): each client's screen, the steps with when each client acted, and every
+    snapshot with when each client got there (ms after the first)."""
+    figures = "".join(
+        f'<figure><a class="shot" href="{_e(c["shot"])}"><img src="{_e(c["shot"])}" loading="lazy" '
+        f'alt="{_e(c["name"])} at the end"></a><figcaption>{_e(c["name"])}</figcaption></figure>' if c.get("shot")
+        else f'<figure><figcaption>{_e(c["name"])} (no screenshot)</figcaption></figure>' for c in r["clients"])
+    out = [f'<div class="clients">{figures}</div>']
+    steps = [[_e(s.get("step")), _e(s.get("do") or f"snapshot {s.get('snapshot')}"),
+              _e(", ".join(s.get("clients") or [])),
+              _e(", ".join(str(x) for x in s["starts_ms"]) if s.get("starts_ms") else ""), _e(s.get("ms")),
+              _e("; ".join([*(f"timed out: {n}" for n in s.get("timed_out") or []), *(s.get("errors") or [])]))]
+             for s in r.get("steps") or []]
+    if steps:
+        out.append("<details><summary>Steps</summary>" + _table(
+            ["Step", "Do", "Clients", "Started (ms)", "Took (ms)", "Trouble"], steps) + "</details>")
+    rows = []
+    for name, snap in (r.get("snapshots") or {}).items():
+        first = min((x["at"] for x in snap if isinstance(x.get("at"), (int, float))), default=None)
+        for x in snap:
+            at = x.get("at")
+            rows.append([_e(name), _e(x.get("name")),
+                         _e(f"+{at - first:.0f}" if first is not None and isinstance(at, (int, float)) else
+                            "timed out" if x.get("timed_out") else "—"),
+                         _e((x.get("state") or x.get("error") or "")[:200])])
+    if rows:
+        out.append("<details><summary>Snapshots</summary>" + _table(["Snapshot", "Client", "At (ms)", "State"], rows)
+                   + "</details>")
+    return "".join(out)
 
 
 def _changes(ch):

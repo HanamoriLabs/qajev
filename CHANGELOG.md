@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Multiplayer scenarios: `clients: N` opens N players, each in a browser context of its own (own cookies, storage
+  and cache). `steps` drive them together (`all`, with `stagger` or `jitter`; `client` for some; `snapshot` reads
+  every player's `state` once `until` holds, and when), page checks hold on every player, and `expect.across` checks
+  are judged over all their states. The report shows each player's screen and timings. No model calls.
+  ([Writing tests](docs/writing-tests.md#multiplayer-several-players-at-once))
+- A `reload` hook: the same page again, keeping its cookies and storage.
 - A `stuck` or `harness` result names what the guard held back, and the words that made it ("guard hid: 'Shop Show
   clothes and gear you can buy' (danger: buy)"), and the report's note lists them, so a hidden control is no longer
   mistaken for a layout problem.

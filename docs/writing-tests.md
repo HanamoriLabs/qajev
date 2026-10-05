@@ -191,8 +191,8 @@ For long forms or setup, drive the page directly and let Jev do the decisions:
 ```
 
 Hooks: `js`, `click` (a CSS selector), `fill` (`{selector: text}`), `navigate`, `wait_for` (JavaScript that must turn
-true, up to 15 s; a Promise counts by what it resolves to), `key` (`Escape`, `Enter`, `Tab`), `sleep` (up to 30 s), and `command` (a shell command, only with
-`--allow-commands`). Hooks refuse to click dangerous controls or fill password fields on a real site.
+true, up to 15 s; a Promise counts by what it resolves to), `key` (`Escape`, `Enter`, `Tab`), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
+cookies and storage), and `command` (a shell command, only with `--allow-commands`). Hooks refuse to click dangerous controls or fill password fields on a real site.
 
 ## Guard options
 
@@ -210,6 +210,55 @@ guard:
   block_urls: ["*://*/logout*"]    # never load these addresses
   redact_emails: false             # hide e-mail addresses from Jev
 ```
+
+## Multiplayer: several players at once
+
+A scenario with `clients:` opens several players, each in a browser context of its own: its own cookies, storage,
+cache and service workers, as if on different machines. Steps drive them together, then the checks hold on every
+player and **across** them: same roster, same chat in the same order, a player who reloads comes back as itself. No
+Jev and no model calls: it costs nothing.
+
+```yaml
+device: desktop                    # one device: otherwise the whole room runs again on a phone
+scenarios:
+  - name: five players share one room
+    about: five players join one room and see the same roster and every chat once, in order
+    url: http://127.0.0.1:8765/play?room=qa-{run}&player={client}
+    clients: 5                     # p1..p5; or [host, guest]; or [{name: host, url: ...}, ...]
+    state: "({id: game.id, players: game.players, chat: game.chat})"
+    steps:
+      - all: {wait_for: {js: "game.ready", timeout: 20}}     # every player, at once: a barrier
+      - all: {js: "game.say('hello')"}
+        stagger: 100               # one after another, 100 ms apart (jitter: 50 adds ±50 ms at random)
+      - snapshot: chat             # every player's state, once `until` holds on each, and when it did
+        until: "game.chat.length >= 5"
+        timeout: 5
+        expect:
+          - check: every player got the same chat, in order
+            js: "clients.every(c => JSON.stringify(c.state.chat) === JSON.stringify(clients[0].state.chat))"
+      - client: p3                 # one player (or a list)
+        reload: true               # the same page again; its storage stays
+    expect:
+      text: ["Room qa-"]           # holds on every player, reported per player: "[p3] page shows ..."
+      across:                      # judged over every player's state, as `clients` and `snapshots`
+        - check: everyone sees the same roster
+          js: "clients.every(c => JSON.stringify(c.state.players) === JSON.stringify(clients[0].state.players))"
+    settle: 5                      # checks retry for up to 5 s, so the room can settle
+```
+
+- **The address**: `{client}` is the player's name, `{i}` its number (1 to N), `{run}` a token new for each run, so
+  each run gets a fresh room.
+- **Steps**: `all` acts on every player at the same instant, unless `stagger` or `jitter` spreads them out (in ms;
+  `seed:` on the scenario repeats a jitter). `client` acts on some. A step is a hook (`js`, `click`, `fill`, `key`,
+  `wait_for`, `sleep`, `navigate`, `reload`); a failed hook names its player and stops the scenario.
+- **`state`** is a JS expression read on every player. `across` checks and a snapshot's `expect` see `clients`,
+  one `{name, url, at, state}` per player (`at` is when it got there, in ms on the machine's clock), and
+  `snapshots.<name>` for every snapshot so far. Compare `at` across players to measure how long a move took to
+  reach everyone. They run in a blank tab of QAJev's own: the page cannot change them.
+- **The report** shows each player's screenshot, when each player acted in each step, and when each reached each
+  snapshot (ms after the first, or "timed out").
+- The guard is armed for every player as in any scenario: `mode: readonly` blocks writing requests (WebSockets pass);
+  `mode: mutate` works on localhost only. A scenario with clients has no goal, persona, or before/after hooks.
 
 ## Signed-in areas
 

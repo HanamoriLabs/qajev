@@ -426,6 +426,30 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None):
 # Groups and workers
 
 
+def run_clients(scenario, *, opts, suite_meta, run_dir, ledger):
+    """A scenario with clients (clients.py), on a quiet machine like any other; Ctrl-C stops it as any other."""
+    from . import clients
+
+    started = time.monotonic()
+    quiet, load1 = wait_for_quiet(opts)
+    base = {"name": scenario.name, "url": scenario.url, "goal": None, "mode": scenario.mode, "checks": [],
+            "findings": [], "screens": [], "load1": round(load1, 1)}
+    if not quiet:
+        return _finish(base, "skipped", f"machine busy (load1 {load1:.0f})", started)
+
+    def step(doing):
+        _emit(opts, "step", scenario=scenario.name, doing=doing, at=time.time())
+
+    try:
+        result = clients.run(scenario, ledger=ledger, hosts=set(suite_meta["hosts"]), run_dir=run_dir,
+                             suite_meta=suite_meta, step=step)
+    except KeyboardInterrupt:
+        return _finish({**base, "stop": "interrupted", "interrupted": True}, "harness",
+                       "interrupted: stopped by the operator", started)
+    result["load1"] = round(load1, 1)
+    return result
+
+
 def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=None):
     from . import session as session_mod
 
@@ -440,6 +464,10 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                 result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
                                   "mode": scenario.mode, "checks": [], "findings": [], "screens": []},
                                  "skipped", f"depends on {blocked_by} which did not pass", time.monotonic())
+            elif scenario.clients:  # a multiplayer scenario: its own clients' tabs, not this tab, and no Jev
+                _emit(opts, "start", scenario=scenario.name)
+                spent_before = ledger.spent()
+                result = run_clients(scenario, opts=opts, suite_meta=suite_meta, run_dir=run_dir, ledger=ledger)
             else:
                 if session is None:
                     session = session_mod.Session(

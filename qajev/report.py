@@ -105,6 +105,21 @@ def _cell(text, limit=160):
     return (text[: limit - 1] + "…" if len(text) > limit else text).replace("|", "\\|")
 
 
+def _clients_md(r):
+    """A multiplayer scenario (clients.py): each client's screenshot, and every snapshot with when each client got
+    there (ms after the first)."""
+    if not r.get("clients"):
+        return []
+    lines = ["- Clients: " + ", ".join(f"[{c['name']}]({c['shot']})" if c.get("shot") else c["name"]
+                                       for c in r["clients"])]
+    for name, snap in (r.get("snapshots") or {}).items():
+        first = min((x["at"] for x in snap if isinstance(x.get("at"), (int, float))), default=None)
+        when = [f"{x['name']} " + (f"+{x['at'] - first:.0f} ms" if first is not None and isinstance(x.get("at"), (
+            int, float)) else "timed out" if x.get("timed_out") else "—") for x in snap]
+        lines.append(f"- Snapshot {_cell(name, 40)}: " + ", ".join(when))
+    return lines
+
+
 def _play_md(r):
     """A real-time play step (Native): its numbers, the decisions made during play, and a sampled timeline."""
     st = r.get("stats")
@@ -242,6 +257,7 @@ def markdown(data):
                          "guard set (QAJev's doing, not the page's)")
             lines += [f"  - {_cell(d, 500)}" for d in r.get("guard_hydration_details") or []]
         lines += _play_md(r)
+        lines += _clients_md(r)
         screens = r.get("screens") or []
         if screens:
             lines += ["", f"| Step | {report_html.decider(data)}'s next step | p | Runner-up | p "
