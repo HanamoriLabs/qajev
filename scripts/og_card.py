@@ -75,15 +75,16 @@ def card():
     d.rounded_rectangle((w - pad - pw, 64, w - pad, 104), radius=20, outline=PALE, width=2)
     d.text((w - pad - pw + 18, 73), pill, font=pf, fill=PALE)
     # headline, as on the page: "a person" in the highlight colour
-    hf, lh, y = sans(86), 84, 172
-    text(d, (pad - 4, y), "Test your website", hf, WHITE, -0.02)
-    x = text(d, (pad - 4, y + lh), "the way ", hf, WHITE, -0.02)
-    text(d, (x, y + lh), "a person", hf, HI, -0.02)
-    text(d, (pad - 4, y + 2 * lh), "uses it.", hf, WHITE, -0.02)
+    hf, lh, y = sans(72), 70, 156
+    text(d, (pad - 4, y), "Test your website,", hf, WHITE, -0.02)
+    text(d, (pad - 4, y + lh), "game or app", hf, WHITE, -0.02)
+    x = text(d, (pad - 4, y + 2 * lh), "the way ", hf, WHITE, -0.02)
+    text(d, (x, y + 2 * lh), "a person", hf, HI, -0.02)
+    text(d, (pad - 4, y + 3 * lh), "uses it.", hf, WHITE, -0.02)
     # what it is
     sf = mono(24)
-    d.text((pad, 488), "Plain-English goals · a real Chrome", font=sf, fill=PALE)
-    d.text((pad, 524), "desktop and phone · CLI and MCP server", font=sf, fill=PALE)
+    d.text((pad, 488), "Plain-English goals · Chrome, games,", font=sf, fill=PALE)
+    d.text((pad, 524), "iOS and Android · CLI and MCP server", font=sf, fill=PALE)
     # the verdict card, like the hero's gate
     cx0, cy0, cx1, cy1 = 822, 172, w - pad, 452
     d.rounded_rectangle((cx0, cy0, cx1, cy1), radius=22, fill=NAVY)
