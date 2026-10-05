@@ -318,7 +318,8 @@ def reap():
             reaped.append(f"game {record['pid']} ({Path(record['project']).name})")
         if not record["alive"] or not record["owner_alive"]:
             path.unlink(missing_ok=True)
-            shutil.rmtree(record.get("user_dir") or "/nonexistent", ignore_errors=True)
+            if not (record.get("profile") or {}).get("kept"):  # a kept test profile outlives its run (game_profile)
+                shutil.rmtree(record.get("user_dir") or "/nonexistent", ignore_errors=True)
     from . import mobile  # clones whose run died before it could write a record
 
     return reaped + [r for r in mobile.reap_clones() if r.split(" (")[0] not in {x.split(" (")[0] for x in reaped}]

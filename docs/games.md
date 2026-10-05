@@ -208,6 +208,28 @@ refused); its files are copied into `user://` once, on the first launch, after Q
 the throwaway folder. A `relaunch` step restarts the game on the same throwaway folder, then runs its own goal and
 checks, if it has any; it also brings back a game an earlier step closed.
 
+### A save kept between runs (Electron)
+
+By default an Electron game gets a throwaway save folder, deleted when the run ends. To prove that a save survives
+from one run to the next (a setting kept, a long plan run in parts), name a kept **test** profile:
+
+```bash
+qajev play games/mygame/desktop --game-profile plan-71          # ~/.qajev/game-profiles/plan-71, kept
+qajev play games/mygame/desktop --game-profile plan-71 --reset-game-profile   # start that profile empty
+```
+
+In a suite, `game_profile: plan-71` (and `reset_game_profile: true`) does the same; `qa_play` takes `game_profile`
+and `reset_game_profile`. A suite's own `--profile=` or `--user-data-dir=` switch in `args:` is used as the kept
+folder too (for both switches), if it is allowed. A kept profile lives in one of two places only:
+
+- `~/.qajev/game-profiles/<name>`: the name is lowercase letters, digits and `-`, up to 40;
+- a folder inside the game's own repo that git ignores (`git check-ignore`), so a test save is never committed.
+
+Anything else is refused before anything is created: a folder under `~/Library` or any Application Support folder
+(where real saves live; Steam syncs them), a path with `..`, or a symlink anywhere on the path. QAJev never deletes
+a kept profile (`--reset-game-profile` empties it, after the same checks), and the report says which folder was used
+and that it was kept.
+
 ## Adapters
 
 Games built from standard UI controls (Godot `Button`s and `Label`s, HTML buttons) work without an adapter: the

@@ -172,6 +172,8 @@ qajev play path/to/game --suite session.yaml
 | `--hide LABEL` | never offer this exact label to Jev (repeatable) |
 | `--game-env KEY=VALUE` | an environment setting for the game (repeatable) |
 | `--game-arg ARG` | a switch for an Electron app, e.g. `--game-arg=--fullscreen` (repeatable) |
+| `--game-profile NAME` | keep an Electron game's save folder between runs, in `~/.qajev/game-profiles/NAME` (a test profile; [Games](games.md#a-save-kept-between-runs-electron)) |
+| `--reset-game-profile` | empty that kept profile before this run |
 | `--device NAME` | mobile: the iOS simulator to clone, or the Android virtual device to boot |
 | `--install FILE` | mobile: an `.apk` or simulator `.app` to install on the throwaway device first |
 | `--headless` | Godot: no window, fastest, no screenshots. Electron apps always open a window and keep their screenshots |

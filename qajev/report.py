@@ -325,6 +325,7 @@ def markdown(data):
         "## Run",
         "",
         where,
+        *([f"- Game profile: {report_html.game_profile(browser)}"] if report_html.game_profile(browser) else []),
         f"- Cost: {report_html.decisions_cost(data)}, text model "
         f"${cost['usd_text']:.4f}" + ("" if cost["text_cost_reported"] else " (provider did not report cost)"),
         *([f"- Models: {data['models'].get('decider') or 'Jev'} {data['models']['jev']}; text {data['models']['text']}"]

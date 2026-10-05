@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- An Electron game can keep its save folder between runs, so a test proves a save survives into the next run
+  (SideGame1: a setting kept; a long plan run in parts). `--game-profile NAME` (suite `game_profile:`, `qa_play`
+  `game_profile`) keeps it in `~/.qajev/game-profiles/NAME`; a suite's own `--profile=` switch may name a git-ignored
+  folder in the game's repo instead. Nothing else is allowed: `~/Library` and Application Support folders (real,
+  Steam-synced saves), `..` and symlinks are refused before anything is created. A kept profile is never deleted
+  (`--reset-game-profile` empties it), and the report says which folder was used and that it was kept. Before, a
+  suite's `--profile=` was silently ignored. ([Games](docs/games.md#a-save-kept-between-runs-electron))
 - Fixed: `visible` passed on words a person could not see. A first-run overlay covering the whole page, and a
   label cut to "Message to Or…" by its ellipsis box, both passed (FlockTab1). Visible now means drawn on top and
   whole: the words' own lines are checked for anything drawn over them, and against any `overflow` box that clips

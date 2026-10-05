@@ -317,6 +317,14 @@ def decider(data):
     return (data.get("models") or {}).get("decider") or "Jev"
 
 
+def game_profile(browser):
+    """A game's save folder, in one line: kept (a test profile, game_profile.py) or a throwaway. Or None."""
+    p = browser.get("game_profile")
+    if not p:
+        return None
+    return f"{p.get('folder')} (kept for the next run)" if p.get("kept") else "a throwaway, deleted at close"
+
+
 def browser_owner(browser):
     """Whose Chrome a run used, for both reports: attached, a throwaway one, or a named QAJev profile's."""
     if not browser.get("managed"):
@@ -436,6 +444,7 @@ def render(data):
                          f"{', headless' if browser.get('headless') else ', windowed'})"))
            if browser.get("surface") == "native" else
            ("Browser", _e(f"{browser.get('cdp_url')} ({owner}{', headless' if browser.get('headless') else ''})")),
+           *([("Game profile", _e(game_profile(browser)))] if game_profile(browser) else []),
            ("Cost", _e(f"{decisions_cost(data)}, text model "
                        f"${cost['usd_text']:.4f}" + ("" if cost["text_cost_reported"]
                                                      else " (provider did not report cost)")))]

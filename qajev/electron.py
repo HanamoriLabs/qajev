@@ -23,6 +23,7 @@ from pathlib import Path
 
 from websockets.exceptions import ConnectionClosed
 
+from . import game_profile
 from .config import HOME
 from .native import STATE, NativeError, NoAnswer, free_port, with_lists
 
@@ -161,15 +162,31 @@ class ElectronGame:
     engine = "electron"
 
     def __init__(self, app, *, adapter=None, args=(), headless=False, size=(1280, 800), start_wait=60.0, env=None,
-                 hide=None, allow=None):
+                 hide=None, allow=None, profile=None, reset_profile=False):
         self.project = Path(app).expanduser().resolve()
         if not self.project.exists():
             raise NativeError(f"no app at {self.project}")
         self.adapter = adapter_path(adapter)
         self.hide, self.allow = list(hide or []), list(allow or [])  # a suite's own labels (native.with_lists)
         # "--game-dir=~/x" from a suite: ~ is the home folder (no shell expands it here)
-        self.args = [f"{a.partition('=')[0]}={os.path.expanduser(a.partition('=')[2])}" if "=~" in a else a
-                     for a in map(str, args)]
+        args = [f"{a.partition('=')[0]}={os.path.expanduser(a.partition('=')[2])}" if "=~" in a else a
+                for a in map(str, args)]
+        # A kept TEST profile (game_profile.py): a suite's own --profile=/--user-data-dir= folder, or a named one.
+        # QAJev passes it as both flags and before nothing of its own, and never deletes it. Else a throwaway.
+        given = {a.partition("=")[2] for a in args if a.startswith(("--profile=", "--user-data-dir="))}
+        self.args = [a for a in args if not a.startswith(("--profile=", "--user-data-dir="))]
+        try:
+            if len(given) > 1 or (given and profile):
+                raise game_profile.ProfileError("give one kept profile: --game-profile NAME, or the same folder in "
+                                                "--profile= and --user-data-dir=")
+            self.kept = game_profile.named(profile) if profile else (
+                game_profile.check(given.pop(), self.project) if given else None)
+            if reset_profile:
+                if self.kept is None:
+                    raise game_profile.ProfileError("--reset-game-profile empties a kept profile: name one")
+                game_profile.reset(self.kept, self.project)
+        except game_profile.ProfileError as e:
+            raise NativeError(str(e)) from None
         self.headless, self.size, self.start_wait = headless, size, start_wait
         self.env = dict(env or {})
         self.proc = self.ws = None
@@ -193,7 +210,8 @@ class ElectronGame:
         self.port = free_port()
         STATE.mkdir(parents=True, exist_ok=True)
         (HOME / "tmp").mkdir(parents=True, exist_ok=True)
-        self.user_dir = tempfile.mkdtemp(prefix=f"qajev-native-{os.getpid()}-", dir=HOME / "tmp")
+        self.user_dir = str(self.kept) if self.kept else tempfile.mkdtemp(prefix=f"qajev-native-{os.getpid()}-",
+                                                                          dir=HOME / "tmp")
         cmd = [*command_for(self.project), f"--profile={self.user_dir}", f"--user-data-dir={self.user_dir}",
                f"--remote-debugging-port={self.port}", "--remote-debugging-address=127.0.0.1", *self.args]
         self.proc = subprocess.Popen(cmd, env={**os.environ, **self.env}, stdout=subprocess.PIPE,
@@ -202,7 +220,8 @@ class ElectronGame:
         threading.Thread(target=self._read_output, daemon=True).start()
         self.record = {"pid": self.proc.pid, "owner_pid": os.getpid(), "engine": "electron",
                        "project": str(self.project), "adapter": self.adapter.stem if self.adapter else None,
-                       "port": self.port, "headless": False, "started_at": time.time(), "user_dir": self.user_dir}
+                       "port": self.port, "headless": False, "started_at": time.time(), "user_dir": self.user_dir,
+                       "profile": {"folder": self.user_dir, "kept": self.kept is not None}}
         (STATE / f"{self.proc.pid}.json").write_text(json.dumps(self.record))
         page = None
         while time.monotonic() - started < self.start_wait:
@@ -384,5 +403,5 @@ class ElectronGame:
                     continue
         if self.proc is not None:
             (STATE / f"{self.proc.pid}.json").unlink(missing_ok=True)
-        if self.user_dir:
+        if self.user_dir and self.kept is None:  # a kept test profile stays: the next plan starts from its saves
             shutil.rmtree(self.user_dir, ignore_errors=True)
