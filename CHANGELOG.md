@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.3.0: 6 Oct 2026
+
 - A test plan opens every report and the dashboard: one numbered item per test, its `about` and each check in plain
   words, with a box ticked as the run goes (✓ passed, ✗ failed, ! stuck or harness). The dashboard shows it before
   the first test runs. A check gets its words from the new `says` (on a suite's `expect`, `--says` with
