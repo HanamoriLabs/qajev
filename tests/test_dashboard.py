@@ -198,6 +198,31 @@ def test_a_second_dashboard_points_at_the_one_running(tmp_path, monkeypatch, cap
     assert Path(dashboard.PAGE).is_file()
 
 
+def test_the_dashboards_record_never_exists_half_written(tmp_path, monkeypatch):
+    # CI, 5 Oct: test_a_second_dashboard_points_at_the_one_running hung for 120 s. The record existed but was still
+    # empty, so the second `qajev dashboard` took the first for gone and started serving itself.
+    state = tmp_path / "dashboard.json"
+    monkeypatch.setattr(dashboard, "STATE", state)
+    seen, dump = [], json.dump
+
+    def watched(obj, f, *a, **k):  # what any other process reading the record would find at this moment
+        seen.append(state.read_text() if state.exists() else None)
+        return dump(obj, f, *a, **k)
+
+    monkeypatch.setattr(dashboard.json, "dump", watched)
+    srv = dashboard.make_server(0)
+    thread = threading.Thread(target=dashboard.serve, args=(srv,), daemon=True)
+    thread.start()
+    try:
+        info = wait_for(lambda: state.exists() and json.loads(state.read_text()))
+        assert info["pid"] == os.getpid() and oct(state.stat().st_mode & 0o777) == "0o600"
+        assert seen == [None]  # not there at all while it was being written
+    finally:
+        srv.shutdown()
+        thread.join(5)
+    assert not state.exists()
+
+
 def test_a_background_dashboard_outlives_its_command_and_stops_on_request(capsys):
     # José, 3 Oct: the dashboard died with the terminal (session) that started it.
     from qajev.cli import main
