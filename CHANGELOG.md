@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: a game goal step passed on checks that already held before it began. It ended as soon as its `expect` held,
+  so a check true from the start passed after 0 actions (SideGame1: "lesson 1" passed on "still in training"). Such a
+  step is now unverified, never passed. A new step option `stop: end` plays the goal to DONE or its budget before the
+  checks judge, for a step whose check comes true early. ([Games](docs/games.md))
 - Fixed: `visible` passed on words a person could not see. A first-run overlay covering the whole page, and a
   label cut to "Message to Or…" by its ellipsis box, both passed (FlockTab1). Visible now means drawn on top and
   whole: the words' own lines are checked for anything drawn over them, and against any `overflow` box that clips
