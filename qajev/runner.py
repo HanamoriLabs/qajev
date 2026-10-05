@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import chrome, live, providers, verdict, vision
+from . import chrome, live, providers, ux, verdict, vision
 from .config import redact, redact_tree, secret_values
 from .ledger import CostCapReached, Ledger
 from .suite import has_checks
@@ -319,7 +319,17 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                        "reading on would" if a["found"] else
                        f"; the expected text is in the page but {a['scrolled']} screen(s) of scrolling did not bring "
                        "it on screen")
-    reason = verdict.with_guard_note(outcome, reason, result.get("guard_hidden_controls") or [])
+    hidden = result.get("guard_hidden_controls") or []
+    # Before blaming the page: was it the guard, or an action Jev does not have? Then harness, and no struggle notes.
+    blame = ux.blocked_by(scenario.goal, outcome, hidden) if scenario.goal else None
+    if blame:
+        outcome, reason = "harness", f"{blame}; {reason}"
+    elif scenario.goal and session.agent.state["history"]:  # how findable the goal was, from Jev's own run (free)
+        result["ux"] = [*result.get("ux", []), *ux.struggle(session.agent.state["history"], result.get("screens") or [],
+                                                             outcome, assists,
+                                                             jev_done=session.agent.state.get("status") == "done")]
+    if not (blame or "").startswith("blocked by the guard"):  # the blame already names what the guard hid
+        reason = verdict.with_guard_note(outcome, reason, hidden)
     return _finish(result, outcome, reason, started)
 
 

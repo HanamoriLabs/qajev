@@ -129,3 +129,165 @@ def test_the_report_has_a_ux_section_by_page_and_for_design_consistency(tmp_path
     assert "  - 'Faint' 2.1:1" in md and "### Design consistency (desktop)" in md
     assert "They never change the gate" in md and data["gate"] == "PASS"  # a UX note never turns the run red
     assert "<h2>UX</h2>" in html and "h2 style differs" in html and "(measured)" in html
+
+
+def test_jevs_own_run_says_how_findable_the_goal_was():
+    # José, 5 Oct: struggle signals from runs already made, free. Each is evidence, not a verdict.
+    history = [{"kind": "click", "action": "Products", "url": "http://h/"},
+               {"kind": "scroll", "action": "page", "url": "http://h/products"},
+               {"kind": "click", "action": "Home", "url": "http://h/products#top"},
+               {"kind": "click", "action": "Plans", "url": "http://h/"},
+               *[{"kind": "scroll", "action": "page", "url": "http://h/plans"} for _ in range(3)]]
+    screens = [{"step": 1, "next_step": "Products", "p": 0.9, "runner_up": "Plans", "runner_up_p": 0.05},
+               {"step": 4, "next_step": "Plans", "p": 0.48, "runner_up": "Pricing", "runner_up_p": 0.41}]
+    notes = {n["kind"]: n for n in ux.struggle(history, screens, "pass",
+                                               [{"after": "visible", "scrolled": 2, "found": True}])}
+    assert notes["findability"]["detail"] == ("reached in 7 action(s) over 4 page(s), 1 backtrack(s), 4 scroll(s), "
+                                              "1 unsure step(s), QAJev scrolled 2 more screen(s) to bring it on screen")
+    assert notes["unclear choice"]["samples"] == ["step 4: 'Plans' (0.48) vs 'Pricing' (0.41)"]
+    assert notes["backtracked"]["samples"] == ["http://h/"]  # home, left for /products, came back
+    assert set(notes) == {"findability", "unclear choice", "backtracked", "searched by scrolling", "below the fold"}
+    assert all(n["basis"] == "struggle" for n in notes.values())
+    smooth = ux.struggle([{"kind": "click", "action": "Pricing", "url": "http://h/"}],
+                         [{"step": 1, "next_step": "Pricing", "p": 0.95, "runner_up": "Docs", "runner_up_p": 0.02}],
+                         "stuck")
+    assert [n["kind"] for n in smooth] == ["findability"]
+    assert smooth[0]["detail"].startswith("not reached (stuck) in 1 action(s) over 1 page(s)")
+    assert ux.struggle([], [], "pass") == []
+
+
+def test_a_goal_not_reached_is_blamed_on_the_guard_or_the_tool_before_the_page():
+    # 5 Oct testers: Marketing's goal needed foleyapp.com, which the guard hid (no --host); SideGame1's needed the
+    # backquote key, which Jev cannot press. Both were reported as the page's findability. Neither says anything
+    # about the page.
+    hidden = [{"label": "Open on the web", "why": "off-site link", "match": "my.foleyapp.com"},
+              {"label": "Sign out", "why": "danger", "match": "sign out"}]
+    goal = "Find where to download Foley for your Mac. Stop when the download page shows."
+    assert ux.blocked_by(goal, "stuck", hidden) == (
+        "blocked by the guard: it hid 'Open on the web' (off-site link: my.foleyapp.com), which the goal needs; "
+        "add --host my.foleyapp.com to let Jev follow it")
+    assert ux.blocked_by(goal, "harness", hidden).startswith("blocked by the guard")  # same cause, same words
+    assert ux.blocked_by(goal, "pass", hidden) is None and ux.blocked_by(goal, "fail", hidden) is None
+    assert ux.blocked_by("Find the price. Stop when it shows.", "stuck", hidden) is None  # nothing it needed
+    key = "Open the game's developer menu (the backquote key, `, opens it) and press Play now."
+    assert ux.blocked_by(key, "stuck", []) == (
+        "the goal needs a key press (backquote); Jev can only click, type, choose and scroll: press it with a "
+        "`key` hook before the goal")
+    assert ux.blocked_by("Drag the slider to 50. Stop when it shows 50.", "stuck", []).startswith(
+        "the goal needs a drag")
+    assert ux.blocked_by("Find the price. Stop when $29 shows.", "stuck", []) is None  # a real struggle: the page's
+
+
+def test_a_key_word_or_a_shared_word_alone_does_not_blame_the_tool_or_the_guard():
+    # Orchestrator's review of #35, 5 Oct: a backtick around code, a product's "key" or "tab", or one word shared with
+    # a hidden danger control turned the page's real struggle into harness. On FlockTab, keys and tabs are the product.
+    page_s = ["Run `tab claude` and find the spend. Stop when the spend shows.",
+              "Press Create, then copy the new key. Stop when the key shows.",
+              "Tap Settings and find your API key. Stop when it shows.",
+              "Hit the tab's Close button. Stop when the tab is gone.",
+              "Find out what happens when you hit the tab cap. Stop when the limit shows."]
+    for goal in page_s:
+        assert ux.blocked_by(goal, "stuck", []) is None, goal
+    danger = [{"label": "Delete account", "why": "danger", "match": "Delete"},
+              {"label": "Buy Pro plan", "why": "danger", "match": "Buy"}]
+    for goal in ["Find your account settings. Stop when they show.",
+                 "Find the price of the Pro plan. Stop when it shows."]:
+        assert ux.blocked_by(goal, "stuck", danger) is None, goal
+    # Still QAJev's own: a danger control the goal asks for by its action, and the keys named as keys.
+    assert ux.blocked_by("Delete the test account. Stop when it is gone.", "stuck", danger).startswith(
+        "blocked by the guard: it hid 'Delete account' (danger: Delete)")
+    assert ux.blocked_by("Buy the Pro plan. Stop when the receipt shows.", "stuck", danger).startswith(
+        "blocked by the guard: it hid 'Buy Pro plan'")
+    offsite = [{"label": "Get the desktop app", "why": "off-site link", "match": "downloads.example.org"}]
+    assert ux.blocked_by("Find where to download the desktop app. Stop when the download page shows.", "stuck",
+                         offsite).startswith("blocked by the guard: it hid 'Get the desktop app'")
+    fixture = "Open the menu with the backquote key (`) and press Start. Stop when Started shows."
+    for goal, key in [(fixture, "backquote"),
+                      ("Press the backquote key to open the console. Stop when it shows.", "backquote"),
+                      ("Press Escape to close the dialog. Stop when it is closed.", "Escape"),
+                      ("Press the Tab key until Pricing has focus. Stop when it does.", "Tab"),
+                      ("Press Tab twice, then Enter. Stop when the form is sent.", "Tab"),
+                      ("Hold the W key to run. Stop when the player moves.", "a key")]:
+        assert ux.blocked_by(goal, "stuck", []) == (
+            f"the goal needs a key press ({key}); Jev can only click, type, choose and scroll: press it with a "
+            "`key` hook before the goal"), goal
+    assert ux.blocked_by("Drag the slider to 50. Stop when it shows 50.", "stuck", []).startswith(
+        "the goal needs a drag")
+
+
+def test_findability_counts_qajevs_recovery_scrolls_apart_from_jevs():
+    history = [{"kind": "click", "action": "Play", "url": "http://h/"}]
+    notes = ux.struggle(history, [], "stuck", [{"after": "BLOCKED", "scrolled": 2}])
+    assert notes[0]["detail"] == ("not reached (stuck) in 1 action(s) over 1 page(s), 0 backtrack(s), 0 scroll(s), "
+                                  "0 unsure step(s), QAJev's own recovery scrolls: 2")
+    # FlockTab1: Jev said DONE and was right; the tester's expectation failed. That is no findability struggle.
+    done = ux.struggle(history, [], "fail", [], jev_done=True)
+    assert done[0]["detail"].startswith("Jev finished, but the checks failed in 1 action(s)")
+
+
+def test_a_goal_the_guard_blocked_is_harness_with_no_struggle_signals(monkeypatch):
+    from qajev import runner, suite
+
+    history = [{"kind": "scroll", "action": "Scroll down", "url": "https://h/"}] * 6
+    state = {"status": "blocked", "history": history, "decisions": [], "text_calls": [], "elapsed_ms": 900}
+    hidden = [{"label": "Open on the web", "why": "off-site link", "match": "my.foleyapp.com"}]
+
+    class Page:
+        assists = []
+
+        def __init__(self):
+            self.agent = SimpleNamespace(state=state)
+            self.ledger = SimpleNamespace(spent=lambda: 0.0)
+
+        def set_device(self, device): pass
+        def arm(self, mode, speech=None): pass
+        def check_host(self, url): pass
+        def navigate(self, url): self.url = url
+        def reset_agent(self, task): pass
+        def why_failed(self, url): return None
+        def probe(self, expect): return {"url": "https://h/", "status": 200, "text": [False],
+                                         "probe": {"hidden": 1, "hidden_controls": hidden}}
+
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda opts: (True, 1.0))
+    monkeypatch.setattr(runner, "drive", lambda *a, **k: ("blocked", "no way forward"))
+    s = suite.parse({"scenarios": [{"name": "download", "url": "https://h/", "goal": "Find where to download Foley.",
+                                    "expect": {"text": "All downloads"}}]})
+    result = runner.run_scenario(Page(), s.scenarios[0], opts=runner.Options(), hosts={"h"}, run_dir=None)
+    assert result["outcome"] == "harness"
+    assert "blocked by the guard: it hid 'Open on the web'" in result["reason"]
+    assert not [n for n in result.get("ux") or [] if n["basis"] == "struggle"]  # the page is not to blame
+
+
+def test_a_goal_scenarios_result_carries_its_struggle_signals(monkeypatch):
+    from qajev import runner, suite
+
+    history = [{"kind": "click", "action": "Pricing", "url": "http://127.0.0.1:8765/", "page_changed": True}]
+    state = {"status": "done", "history": history, "decisions": [], "text_calls": [], "elapsed_ms": 900}
+
+    class Page:
+        assists = []
+
+        def __init__(self):
+            self.agent = SimpleNamespace(state=state)
+            self.ledger = SimpleNamespace(spent=lambda: 0.0)
+
+        def set_device(self, device): pass
+        def arm(self, mode, speech=None): pass
+        def check_host(self, url): pass
+        def navigate(self, url): self.url = url
+        def reset_agent(self, task): pass
+        def why_failed(self, url): return None
+        def probe(self, expect): return {"url": "http://127.0.0.1:8765/pricing", "status": 200, "text": [True],
+                                         "probe": {}}
+
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda opts: (True, 1.0))
+    monkeypatch.setattr(runner, "drive", lambda *a, **k: ("done", None))
+    s = suite.parse({"scenarios": [{"name": "price", "url": "http://127.0.0.1:8765/", "goal": "Find the price.",
+                                    "expect": {"text": "$29"}}]})
+    result = runner.run_scenario(Page(), s.scenarios[0], opts=runner.Options(), hosts={"127.0.0.1"}, run_dir=None)
+    assert result["outcome"] == "pass"
+    assert result["ux"] == [{"basis": "struggle", "kind": "findability",
+                             "detail": "reached in 1 action(s) over 1 page(s), 0 backtrack(s), 0 scroll(s), "
+                                       "0 unsure step(s)",
+                             "rule": "Jev's own run: its actions, the pages it went through, and how sure each choice "
+                                     "was"}]

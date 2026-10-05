@@ -103,6 +103,32 @@ The keyboard walk and the zoom pass run on a desktop layout (a phone has no Tab 
 Known limit: a game is told apart from a page by its canvas size only. An ordinary page with a decorative full-screen
 canvas that cancels Tab reads "keyboard not measurable", not "keyboard blocked"; check such a page's keyboard by hand.
 
+A scenario with a goal adds **struggle signals**: what Jev's own run says about how findable the goal was. They cost
+nothing on top of the goal run they are read from (that run itself calls Jev, so it is paid), and they are evidence,
+not a verdict: a person may find a page Jev hesitated on, and the reverse.
+
+Before blaming the page, QAJev asks whether the reason was its own. A goal not reached because the read-only guard hid
+a control the goal needs (an off-site link without `--host`: "blocked by the guard: it hid 'Open on the web'
+(off-site link: my.foleyapp.com), which the goal needs; add --host my.foleyapp.com"), or because the goal needs a key
+press or a drag (Jev clicks, types, chooses and scrolls; a key is a `key` hook's job), is **harness** with that reason,
+and gets no struggle signals: it says nothing about the page.
+
+Both tests are strict, so that a real struggle stays the page's:
+- A key counts only as a key press: "press Escape", "hold Space to charge", "press Tab twice", "the backquote key",
+  "the W key". A backtick around code (`` Run `tab claude` ``), a product's key ("copy the new key") or a tab ("the
+  tab's Close button", "the tab cap") is not a key press.
+- A danger or read-only control counts only when the goal asks for its action: the guard's word as the goal's verb,
+  and the control's object when it names one. "Delete the test account" needs a hidden "Delete account"; "Find your
+  account settings" does not. An off-site link counts when the goal shares a word with its label or its host.
+
+| Note | From |
+|---|---|
+| findability | always: reached or not (or "Jev finished, but the checks failed"), in how many actions over how many pages, with backtracks, scrolls and unsure steps, and QAJev's own recovery scrolls apart |
+| unclear choice | a step where Jev's top choice was under 0.8 and the runner-up within 0.25: two options looked almost equally right (`'Plans' (0.48) vs 'Pricing' (0.41)`) |
+| backtracked | Jev went back to a page it had already left |
+| searched by scrolling | 4 or more scrolls: what Jev needed was not near the top |
+| below the fold | the expected text was further down than where Jev stopped, and QAJev scrolled to it as a person reading on would |
+
 ## Findings
 
 Findings are problems noticed along the way, separate from the outcome (a scenario can pass and still have
