@@ -71,7 +71,7 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   `background`, and with Clef `expect_looks` (statements judged from the final screenshot) and `vision` (Clef sees
   the screen with every decision).
 - `qa_run_suite`: `suite_path` or `suite_yaml`, `only`, `jobs`, `cost_cap`, `profile`, `background`.
-- `qa_smoke`: `url` (required), `max_pages`, `device`, `check_links`.
+- `qa_smoke`: `url` (required), `max_pages`, `device`, `check_links`, `ux` (default true: measured UX notes and design consistency, free).
 - `qa_project_run`: `project` (required), `suite` (a tag), `names`, `env`, or an ad-hoc `objective` with `url`,
   `expect_text`, `expect_url`, `about`.
 - `qa_rerun`: `job` (required), `failed` (default true: only the tests that did not pass), `background`.

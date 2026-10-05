@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="UX">
+<title>UX faults</title>
+<style>
+  body { margin: 0; font: 16px/1.4 sans-serif; color: #111; background: #fff; }
+  h2 { font-size: 32px; font-weight: 700; }
+  .bare:focus, .bare:focus-visible { outline: none; box-shadow: none; }
+  .over { position: absolute; top: 300px; left: 20px; font-size: 18px; }
+</style></head>
+<body>
+  <!-- One measured UX fault of each kind, for ux.py (tests/test_live.py): faint text, text cut off by its box, two
+       text boxes overlapping, a "button" a keyboard cannot reach, a button with no focus look, a block too wide for
+       200% zoom, a dialog with no name that ignores Escape, and text on a gradient (not measurable: said so). -->
+  <h2>Plans</h2>
+  <p class="faint" style="color: #bbbbbb">Faint words</p>
+  <div class="cut" style="width: 40px; overflow: hidden; white-space: nowrap">Cut off text here</div>
+  <span class="over">Over A text</span><span class="over" style="left: 30px">Over B text</span>
+  <div role="button" class="fake">Fake button</div>
+  <button class="bare">Bare</button>
+  <a href="#fine" class="fine">Fine link</a>
+  <div class="wide" style="width: 1000px">Wide block</div>
+  <div style="background-image: linear-gradient(#123, #456); color: #fff"><span>On a gradient</span></div>
+  <div role="dialog" id="modal" style="position: fixed; right: 10px; bottom: 10px; padding: 8px; border: 1px solid">
+    Newsletter sign-up</div>
+</body>
+</html>

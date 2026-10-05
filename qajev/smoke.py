@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
-from . import chrome, verdict
+from . import chrome, ux, verdict
 from .config import is_loopback, redact_tree, secret_values
 from .ledger import Ledger
 from .runner import ConfigError, slug, wait_for_quiet
@@ -204,6 +204,10 @@ def _examine(session, result, page, dev, *, settle, host, opts, run_dir):
     if opts.shots:
         shot = session.screenshot(run_dir / "shots" / f"{slug(page)}.jpg")
         result["shot"] = str(shot.relative_to(run_dir)) if shot else None
+    if opts.ux:  # after the screenshot: the keyboard walk and Escape change the page
+        measured = ux.measure(session, dev)
+        result["ux"] = ux.notes(measured)
+        result["ux_styles"] = (measured.get("facts") or {}).get("styles") or {}
     return facts
 
 
@@ -344,10 +348,19 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
         if owned and owned.get("ephemeral"):
             chrome.stop(owned["state_key"])
 
+    consistency = None
+    if opts.ux:  # the same kind of element compared across pages, per device (a phone's layout is its own)
+        by_device = {}
+        for r in results:
+            if "ux_styles" in r:  # raw styles stay out of the report: only the differences go in
+                by_device.setdefault(r.get("device") or names[0], []).append((r["name"], r.pop("ux_styles")))
+        consistency = {d: ux.consistency(pages) for d, pages in by_device.items() if len(pages) > 1}
     suite = SimpleNamespace(name=name)
     built = report.build(suite, results, [ledger.summary()], browser=browser, started_at=started_at,
                          strict=opts.strict, interrupted=interrupted, run_dir=run_dir)
     built["motion"] = opts.motion or "reduce"
+    if consistency is not None:
+        built["ux"] = {"consistency": consistency}
     built["smoke"] = {"start_url": start_url, "pages": len(results), "discovered_links": len(discovered),
                       "max_pages": max_pages, "delay_s": delay, "robots_txt": robots is not None,
                       "robots_disallowed": sorted(disallowed)[:50]}

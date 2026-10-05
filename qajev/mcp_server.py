@@ -348,16 +348,21 @@ async def qa_smoke(
     background: bool = False,
     devices: list[str] | None = None,
     motion: str | None = None,
+    ux: bool = True,
 ) -> dict:
     """Crawl same-origin pages from `url` with NO model calls and lint each one: HTTP status, script
     errors, failed requests, CSP blocks and report-only violations, broken images, unlabeled fields,
-    unnamed buttons, overflow, SEO basics.
+    unnamed buttons, overflow, SEO basics. ux (default on, free): measured UX notes per page (WCAG AA
+    contrast, keyboard reach and visible focus, 200% zoom, cut-off or overlapping text, open dialogs) and
+    a design-consistency comparison across pages; they never change the gate.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop)."""
     args = ["smoke", url, "--max-pages", str(max_pages), *(["--device", device] if device else []),
             "--out", out_dir or str(DEFAULT_OUT),
             *_browser_args(profile, cdp_url, headless)]
     if check_links:
         args.append("--check-links")
+    if not ux:
+        args.append("--no-ux")
     args += _motion_args(motion)
     args += _devices_args(devices)
     return _trim(await _run_report(args, ctx, background), verbose)

@@ -89,6 +89,7 @@ qajev smoke --project shop            # a project's site, from its smoke_start p
 | `--device NAME` | `desktop`, `tall`, `phone`, `tablet` or `WIDTHxHEIGHT` |
 | `--delay SECONDS` | between pages (default 1 on public sites, 0 on your own machine; robots.txt may ask for more) |
 | `--project`, `--env` | crawl a project's environment |
+| `--no-ux` | skip the UX measurements (on by default and free; see [Reports](reports.md#ux)) |
 
 ## `qajev check`
 
