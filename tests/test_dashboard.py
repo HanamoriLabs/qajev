@@ -223,6 +223,30 @@ def test_the_dashboards_record_never_exists_half_written(tmp_path, monkeypatch):
     assert not state.exists()
 
 
+def test_a_start_removes_a_half_written_record_left_by_a_dead_dashboard(tmp_path, monkeypatch):
+    # A dashboard killed between writing its record and renaming it leaves the .tmp behind, with its key in it.
+    import subprocess
+
+    state = tmp_path / "dashboard.json"
+    monkeypatch.setattr(dashboard, "STATE", state)
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    live = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    dead_tmp, live_tmp = tmp_path / f"dashboard.json.{gone.pid}.tmp", tmp_path / f"dashboard.json.{live.pid}.tmp"
+    dead_tmp.write_text('{"key": "old"}')
+    live_tmp.write_text('{"key": "starting"}')  # another dashboard writing right now: not ours to touch
+    srv = dashboard.make_server(0)
+    thread = threading.Thread(target=dashboard.serve, args=(srv,), daemon=True)
+    thread.start()
+    try:
+        wait_for(lambda: state.exists())
+        assert not dead_tmp.exists() and live_tmp.exists()
+    finally:
+        srv.shutdown()
+        thread.join(5)
+        live.kill()
+
+
 def test_a_background_dashboard_outlives_its_command_and_stops_on_request(capsys):
     # José, 3 Oct: the dashboard died with the terminal (session) that started it.
     from qajev.cli import main

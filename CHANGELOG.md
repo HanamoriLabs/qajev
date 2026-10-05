@@ -13,7 +13,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   start right after failed ("another dashboard holds the lock but is not serving"). It now waits for the lock too,
   and fails with an error (exit 3) if the dashboard has not stopped within 15 s.
 - Fixed: a `qajev dashboard` that looked while another was writing its record found it empty, took that one for
-  gone and started serving too. The record is now written whole, then renamed into place.
+  gone and started serving too. The record is now written whole, then renamed into place; a start removes a
+  half-written one that a killed dashboard left behind.
 - `key` hooks press any plain key (letters, digits, punctuation, Space, the arrows...), repeat a sequence
   (`{press: [f, j], repeat: 15, interval_ms: 30}`) and hold a key (`hold_ms`, up to 5 s), as trusted key events: real-key
   play-tests for web games. No modifiers or combinations. ([Writing tests](docs/writing-tests.md))
