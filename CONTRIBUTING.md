@@ -57,7 +57,8 @@ The demo site: `python3 tests/fixtures/serve.py` serves it on `http://127.0.0.1:
   tests use.
 - **Fake secrets look fake.** A fixture password has the obviously fake `fixture-pass-*` form, and a test key comes
   from where it is published (an RFC's test vector, derived in the code). When the secret scanner (gitleaks) flags
-  one, add a reviewed entry with a comment to `.gitleaksignore` in the same pull request: never an inline allow,
+  one, add a reviewed exception to `.gitleaks.toml` in the same pull request (the files it covers and the exact
+  fake value, with why), never an inline allow,
   never a string split to get past it.
 - **Plain docs.** If a user can see the change, update the docs in the same pull request. Write for someone who
   has never used QAJev.

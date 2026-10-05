@@ -1029,6 +1029,9 @@ account:
                             ("cookie", by_cookie, "session cookie from seed: yes")):
         got, p = run(text, name)
         assert got["sign_in"]["ok"], got["sign_in"]
+        events = "".join(f.read_text() for f in (tmp_path / name).rglob("*.jsonl"))
+        if name == "totp":  # an email read from the seed is a reference: not in the result, events or stderr
+            assert "email" not in got["sign_in"] and "tester@example.test" not in p.stderr + events
         assert got["scenarios"][0]["outcome"] == "pass", got["scenarios"][0]
         (md,) = (tmp_path / name).rglob("report.md")
         said = md.read_text()  # an email read from a seed or env reference is a vault value: redacted like the rest
@@ -1042,6 +1045,34 @@ account:
     got, _ = run(two_step, "elsewhere")  # the seed allows another host only: no code is computed here
     assert not got["sign_in"]["ok"]
     assert "the seed fixture allows ['dash.test'], not 127.0.0.1" in got["sign_in"]["reason"]
+
+
+def test_a_postcode_or_coupon_code_field_is_not_a_one_time_code(site, browser, tmp_path):
+    # The review of #47: `name*=code` matched postcode and coupon_code, so a password-only sign-in stopped at a
+    # "one-time code" step it did not have (and with totp, would type the code into the postcode).
+    import subprocess
+    import sys
+
+    suite = tmp_path / "postcode.yaml"
+    suite.write_text(f"""
+name: postcode
+base_url: {site}
+devices: [desktop]
+account:
+  email: tester@example.test
+  password: env:QAJEV_FIXTURE_PASS
+  login: {{url: /login-postcode.html}}
+scenarios:
+  - name: the account page knows who is signed in
+    about: a signed-in page proves the sign-in
+    url: /account.html
+    expect: {{text: ["Signed in as tester@example.test"]}}
+""")
+    p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--cdp-url", browser["cdp_url"], "--out",
+                        str(tmp_path / "out"), "--json", "--quiet", "--load-high", "0"], capture_output=True, text=True,
+                       timeout=180, env={**os.environ, "QAJEV_FIXTURE_PASS": "fixture-pass-123"})
+    got = json.loads(p.stdout)
+    assert got["sign_in"]["ok"] and "test_signin" not in got["sign_in"], got["sign_in"]
 
 
 def test_a_run_sent_to_a_sign_in_page_says_it_needs_sign_in_and_what_to_do(site, browser, session, tmp_path):

@@ -362,6 +362,10 @@ def _account(raw, base, folder=None):
                          "unencrypted")
     if raw.get("totp") is not None or cookie is not None:  # a seeded TEST user on a local dev host, nothing else
         what = "account.totp" if raw.get("totp") is not None else "account.cookie"
+        for ref in (raw.get("totp"), (cookie or {}).get("value")):
+            if ref is not None and not str(ref).startswith("seed:"):
+                raise SuiteError(f"{what} comes only from the app's seed fixture: seed:FILE#KEY, a JSON fixture that "
+                                 "says \"test_account\": true and lists its allowed_hosts")
         if not is_local_dev(url):
             raise SuiteError(f"{what} is for a seeded test account on a local dev host (localhost, 127.0.0.1, *.test), "
                              f"not {urlsplit(url).hostname}")
