@@ -352,6 +352,47 @@ def test_top_details_say_why_a_scenario_failed():
     assert [t for t, s in lines if s == "pass"] == ["    pass       pricing  (1 check(s) passed)"]
 
 
+UX_NOTES = [{"basis": "measured", "kind": "low text contrast", "detail": "2 of 40 text(s) below WCAG AA"},
+            {"basis": "opinion", "kind": "primary action unclear", "detail": "Clef answered no"},
+            {"basis": "measured", "kind": "no visible focus", "detail": "3 control(s)"}]
+
+
+def test_top_counts_a_tests_ux_notes_by_what_they_rest_on():
+    # José, 5 Oct: the UX notes were only in the reports, not in qajev top.
+    from qajev import top
+
+    lines = []
+    top.explain([{"name": "/", "outcome": "pass", "checks": [], "findings": [], "ux": UX_NOTES},
+                 {"name": "/about", "outcome": "fail", "reason": "HTTP 500", "ux": UX_NOTES[:1]},
+                 {"name": "/blog", "outcome": "pass", "checks": [], "findings": []}], lines.append, 120)
+    ux = [t.strip() for t, _ in lines if "UX" in t]
+    assert ux == ["UX 2 measured · 1 model opinion", "UX 1 measured"]  # the report's words; /blog has none
+
+
+def test_top_shows_a_runs_ux_count_from_its_report():
+    from qajev import top
+
+    report = {"gate": "PASS", "run_dir": "/tmp/smoke-ux-run", "counts": {"pass": 2},
+              "scenarios": [{"name": "/", "outcome": "pass", "ux": UX_NOTES}, {"name": "/about", "outcome": "pass"}],
+              "ux": {"consistency": {"desktop": [{"basis": "measured", "kind": "h1 style differs", "detail": "x"}]}}}
+    events = "".join(f"print({json.dumps({'event': 'scenario', 'result': s})!r}, file=sys.stderr)\n"
+                     for s in report["scenarios"])
+    job = jobs.start(["smoke", "https://shop.example/"],
+                     command=[sys.executable, "-c", f"import sys\n{events}print({json.dumps(report)!r})"])
+    wait_for(lambda: jobs.status(job["id"])["state"] == "done")
+    snap = top.snapshot()
+    recent = next(r for r in snap["recent"] if r.get("job") == job["id"])
+    assert recent["ux"] == {"measured": 3, "opinion": 1}  # every test's notes, and the run's design consistency
+    text = top.plain(snap, width=200)
+    rows = [line for line in text.splitlines() if "smoke" in line and "UX 3 measured · 1 model opinion" in line]
+    assert len(rows) == 2  # the job's row and its report's row
+    detail = [t.strip() for t, _ in top.render(snap, width=200, detail=("job", job["id"]))]
+    assert "design consistency (desktop): 1 difference(s): h1 style differs" in detail
+    assert "UX 2 measured · 1 model opinion" in detail  # the test's own notes, under it
+    plain ={**report, "scenarios": [{"name": "/", "outcome": "pass"}], "ux": {}}
+    assert "UX" not in top.plain({**snap, "jobs": [], "recent": [{**recent, "ux": top.ux_counts(plain)}]})
+
+
 def test_a_foreground_run_is_a_job_too(capsys):
     code = main(["check", "http://127.0.0.1:9/", "--cdp-url", "http://127.0.0.1:9", "--expect-text", "x", "--quiet"])
     assert code == 3  # nothing listens there

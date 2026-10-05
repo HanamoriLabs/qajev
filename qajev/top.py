@@ -55,6 +55,7 @@ def snapshot(limit=30):
         final = jobs.result(j["id"]) if j["state"] in ("done", "stopped") else None
         if final and final.get("run_dir"):
             j["cost_usd"] = (final.get("cost") or {}).get("usd")
+            j["ux"] = ux_counts(final)
             runs[final["run_dir"]] = {
                 "when": _when(j["started_at"]),
                 "title": j["title"],
@@ -63,6 +64,7 @@ def snapshot(limit=30):
                 "html": str(Path(final["run_dir"]) / "report.html"),
                 "outcomes": final.get("counts") or {},
                 "changes": final.get("changes"),
+                "ux": j["ux"],
                 "job": j["id"],
             }
     try:
@@ -90,6 +92,9 @@ def snapshot(limit=30):
         if not entry.get("changes"):  # a run seen first as a job: the index row carries its comparison too
             entry["changes"] = r.get("changes")
     recent = sorted(runs.values(), key=lambda x: x["when"], reverse=True)[:limit]
+    for r in recent:
+        if "ux" not in r:  # a project run filed without a job: its report.json has its notes
+            r["ux"] = _report_ux(Path(r["html"]).parent)
     today = time.strftime("%Y-%m-%d")
     todays = [r for r in recent if time.strftime("%Y-%m-%d", time.localtime(r["when"])) == today]
     try:
@@ -137,6 +142,59 @@ def _report(folder):
         return None
 
 
+_ux = {}  # report.json path -> (mtime, UX counts): counted once, without keeping the whole report
+
+
+def _report_ux(folder):
+    path = Path(folder) / "report.json"
+    try:
+        mtime = path.stat().st_mtime
+        if _ux.get(path, (None,))[0] != mtime:
+            _ux[path] = (mtime, ux_counts(json.loads(path.read_text())))
+        return _ux[path][1]
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _tally(notes):
+    counts = {}
+    for n in notes:
+        counts[n.get("basis")] = counts.get(n.get("basis"), 0) + 1
+    return counts
+
+
+def ux_counts(report):
+    """A run's UX notes counted by what each rests on ({"measured": 3, "opinion": 1}): every test's notes and the
+    run's design consistency."""
+    consistency = (report.get("ux") or {}).get("consistency") or {}
+    return _tally([n for r in report.get("scenarios") or [] for n in r.get("ux") or []]
+                  + [n for notes in consistency.values() for n in notes])
+
+
+def ux_line(counts):
+    """ "UX 3 measured · 1 model opinion" (each basis in the report's words), or "" without notes."""
+    from .report import BASIS
+
+    order = [*BASIS, "heuristic"]
+    ranked = sorted(counts.items(), key=lambda kv: order.index(kv[0]) if kv[0] in order else len(order))
+    return "UX " + " · ".join(f"{n} {BASIS.get(b, b)}" for b, n in ranked) if counts else ""
+
+
+def _ux_run(ux, add, width):
+    """A run's own UX: its design consistency per device and its AI design review (report.py's words)."""
+    ux = ux or {}
+    for device, notes in (ux.get("consistency") or {}).items():
+        said = (f"{len(notes)} difference(s): " + "; ".join(n.get("kind", "?") for n in notes) if notes
+                else "no differences between pages")
+        add((f"    design consistency ({device}): {said}"[:width], None))
+    rv = ux.get("review")
+    if rv:
+        est = rv.get("estimate") or {}
+        add(((f"    AI design review: {rv.get('screens', 0)} of {est.get('screens', '?')} screen(s) reviewed by Clef, "
+             f"${rv.get('usd') or 0:.4f} (estimate ${est.get('usd') or 0:.4f}, cap ${rv.get('cap_usd') or 0:g})"
+             + (f"; stopped: {rv['stopped']}" if rv.get("stopped") else ""))[:width], "dim"))
+
+
 def _where(url):
     parts = urlsplit(url or "")
     return f"{parts.netloc}{parts.path}" if parts.netloc else ""
@@ -171,9 +229,12 @@ def explain(scenarios, add, width, indent=4):
                  f"{jev['actions']} Jev action(s)" if jev.get("actions") is not None else "",
                  f"${r['cost_usd']:.4f}" if r.get("cost_usd") else ""]
         facts = " · ".join(f for f in facts if f)
+        ux = ux_line(_tally(r.get("ux") or []))  # advice, never the outcome: a count here, the notes in the report
         if r["outcome"] == "pass" and not findings:
             add((f"{pad}{'pass':<10} {r['name']}  ({len(checks)} check(s) passed{', ' + facts if facts else ''})"
                  [:width], "pass"))
+            if ux:
+                say(ux, None)
             continue
         add((f"{pad}{r['outcome']:<10} {r['name']}"[:width], r["outcome"]))
         if r.get("reason"):
@@ -194,6 +255,8 @@ def explain(scenarios, add, width, indent=4):
             times = f" ×{len(same)}" if len(same) > 1 else ""
             say(f"{sev} {kind}{times}: {_clip(same[-1].get('detail'), 140)}" + (f" ({where})" if where else ""),
                 "stuck")
+        if ux:
+            say(ux, None)
         if r["outcome"] in ("fail", "stuck", "harness"):
             if r.get("end_url"):
                 say(f"ended at: {_where(r['end_url'])}", "dim")
@@ -270,7 +333,7 @@ def render(snap, *, width=120, selected=0, detail=None, message=None):
             if j["state"] == "queued"
             else f"▸ {j['current']}"
             if j.get("current")
-            else j.get("gate") or j.get("error") or ""
+            else " · ".join(x for x in (j.get("gate") or j.get("error"), ux_line(j.get("ux") or {})) if x)
         )
         cost = f"${j['cost_usd']:.4f}" if isinstance(j.get("cost_usd"), (int, float)) else ""
         lead = (f"{'›' if i == selected else ' '} {j['state']:<8} {_bar(p['done'], p.get('total'))} {count:>5}  "
@@ -291,6 +354,7 @@ def render(snap, *, width=120, selected=0, detail=None, message=None):
             add((f"    job {j['id']} · pid {j['pid']} · started {j['started_at']}", "dim"))
             if full.get("run_dir"):
                 add((f"    run folder {full['run_dir']}", "dim"))
+            _ux_run((full.get("report") or {}).get("ux"), add, width)
             explain(full["scenarios"], add, width)
             if full.get("error"):
                 add((f"    error: {full['error']}"[:width], "fail"))
@@ -336,6 +400,9 @@ def render(snap, *, width=120, selected=0, detail=None, message=None):
             f"{'›' if i == selected else ' '} {when}  {(r['gate'] or '?'):<10} {r['title'][:36]:<36} "
             f"{cost:>8}  {outcomes}"
         )
+        ux = ux_line(r.get("ux") or {})
+        if ux:
+            text += f"  {ux}"
         ch = r.get("changes") or {}
         if ch.get("changed"):
             text += f"  Δ {ch['summary']}"
@@ -351,6 +418,7 @@ def render(snap, *, width=120, selected=0, detail=None, message=None):
                 summary = ", ".join(f"{n} {k}" for k, n in sorted(sev.items())) or "no findings"
                 add((f"    {data.get('gate')} · {summary}" + (f" · {known} known" if known else "")
                      + f" · {data.get('seconds', 0):.0f} s", "dim"))
+                _ux_run(data.get("ux"), add, width)
                 ch = data.get("changes")
                 if ch:
                     add((f"    since the previous run: {ch['summary']}"[:width], "stuck" if ch["changed"] else "dim"))
