@@ -22,6 +22,18 @@ def sleeper(*argv):
     return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", *argv])
 
 
+@pytest.fixture
+def owner(monkeypatch):
+    """An owner pid alive to every other reaper on the machine and dead only to this test's own reap. A QAJev run
+    starting elsewhere, or a second suite, reaps machine-wide: with a truly dead owner it could stop this test's
+    orphan first and leave this test's reap nothing to report."""
+    proc = sleeper()
+    alive = chrome.alive
+    monkeypatch.setattr(chrome, "alive", lambda pid: pid != proc.pid and alive(pid))
+    yield proc.pid
+    proc.kill()
+
+
 def wait_gone(proc, seconds=10):
     deadline = time.monotonic() + seconds
     while proc.poll() is None and time.monotonic() < deadline:
@@ -29,8 +41,7 @@ def wait_gone(proc, seconds=10):
     return proc.poll() is not None
 
 
-def test_reap_stops_an_orphaned_ephemeral_chrome_and_deletes_its_profile(tmp_path):
-    owner = dead_pid()
+def test_reap_stops_an_orphaned_ephemeral_chrome_and_deletes_its_profile(tmp_path, owner):
     profile = tmp_path / f"qajev-default-{owner}-abc123"
     profile.mkdir()
     orphan = sleeper(f"--user-data-dir={profile}", "--remote-debugging-port=9399")
@@ -96,12 +107,12 @@ def test_progress_to_a_closed_pipe_is_dropped_not_fatal():
     assert len(calls) == 1
 
 
-def test_reap_removes_a_stray_temp_profile_of_a_dead_run():
+def test_reap_removes_a_stray_temp_profile_of_a_dead_run(owner):
     import tempfile
     from pathlib import Path
 
     chrome.EPHEMERAL_ROOT.mkdir(parents=True, exist_ok=True)
-    folder = Path(tempfile.mkdtemp(prefix=f"qajev-default-{dead_pid()}-", dir=chrome.EPHEMERAL_ROOT))
+    folder = Path(tempfile.mkdtemp(prefix=f"qajev-default-{owner}-", dir=chrome.EPHEMERAL_ROOT))
     reaped = chrome.reap()
     assert not folder.exists() and any(folder.name in r for r in reaped)
 
@@ -124,10 +135,10 @@ def test_stopping_our_own_child_returns_as_soon_as_it_exits():
     assert chrome.reaped(child.pid)
 
 
-def test_reap_stops_an_orphaned_daemon_whose_pid_file_is_gone(tmp_path, monkeypatch):
+def test_reap_stops_an_orphaned_daemon_whose_pid_file_is_gone(tmp_path, monkeypatch, owner):
     # Seen for real: a daemon outlived its run and its runtime files, so only its process was left to find.
     monkeypatch.setenv("BH_RUNTIME_DIR", str(tmp_path))  # empty: no pid file to go by
-    env = {**os.environ, "BU_NAME": f"qajev-{dead_pid()}-d4e5f6"}
+    env = {**os.environ, "BU_NAME": f"qajev-{owner}-d4e5f6"}
     ours = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "-m", "browser_harness.daemon"],
                             env=env)
     theirs = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "-m", "browser_harness.daemon"],

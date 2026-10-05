@@ -11,7 +11,8 @@ objectives.
 qajev dashboard --background --open   # start it (it outlives the terminal) and open it in the browser
 qajev dashboard --open                # already running: open it (prints the address too)
 qajev dashboard                       # run it in this terminal; Ctrl-C stops it
-qajev dashboard --stop                # stop the one running (it returns once the dashboard has exited)
+qajev dashboard --stop                # stop the one running (it returns once the dashboard has exited and freed
+                                      # its lock; after 15 s, an error)
 ```
 
 | Option | Does |
