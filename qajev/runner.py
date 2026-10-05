@@ -277,6 +277,10 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     result["findings"] = verdict.dedupe(findings)
     result["stop"] = stop
     outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail)
+    idle = verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
+                                 session.agent.state["history"]) if scenario.goal else None
+    if outcome in {"fail", "stuck"} and idle:
+        outcome, reason = "harness", f"{idle}; {reason}"
     wall = verdict.sign_in_wall(scenario.url, observed, account=opts.account,
                                 profile=None if opts.ephemeral or opts.profile == "default" else opts.profile)
     if outcome not in {"pass", "skipped"} and wall:

@@ -249,7 +249,8 @@ scenarios:
 - **The address**: `{client}` is the player's name, `{i}` its number (1 to N), `{run}` a token new for each run, so
   each run gets a fresh room.
 - **Steps**: `all` acts on every player at the same instant, unless `stagger` or `jitter` spreads them out (in ms;
-  `seed:` on the scenario repeats a jitter). `client` acts on some. A step is a hook (`js`, `click`, `fill`, `key`,
+  `seed:` on the scenario repeats a jitter). An offset is the earliest a player acts: on a busy machine a player can
+  start late (tens of ms, more under heavy load), never early, so measure delays with snapshots, not offsets. `client` acts on some. A step is a hook (`js`, `click`, `fill`, `key`,
   `wait_for`, `sleep`, `navigate`, `reload`); a failed hook names its player and stops the scenario.
 - **`state`** is a JS expression read on every player. `across` checks and a snapshot's `expect` see `clients`,
   one `{name, url, at, state}` per player (`at` is when it got there, in ms on the machine's clock), and

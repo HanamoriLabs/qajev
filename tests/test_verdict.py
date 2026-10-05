@@ -200,3 +200,26 @@ def test_a_stuck_or_harness_result_names_what_the_guard_held_back():
     assert harness == "action budget spent; guard hid: 'Shop Show clothes and gear you can buy' (danger: buy)"
     assert V.with_guard_note("pass", "ok", held) == "ok" and V.with_guard_note("fail", "no", held) == "no"
     assert V.with_guard_note("stuck", "Jev found no way forward", []) == "Jev found no way forward"
+
+
+def test_jev_never_setting_off_for_the_page_the_checks_need_is_harness_not_a_product_failure():
+    # FlockTab's nightly, 5 Oct: "enterprise", "leaderboard", "changelog" and phone "pricing" scrolled the home page
+    # 14-15 times and said DONE there (on the phone the menu was never opened); live, the pages are fine.
+    scrolls = [{"kind": "scroll"}] * 15
+    reason = V.never_set_off("https://flocktab.com/", "https://flocktab.com/#top", {"url": "/enterprise"}, scrolls)
+    assert reason.startswith("Jev never left the start page: it scrolled 15 time(s) and clicked nothing, so it never "
+                             "reached /enterprise. This says nothing about the product")
+    assert V.never_set_off("https://flocktab.com", "https://flocktab.com/",
+                           {"url_regex": "^https://console\\.flocktab\\.com/login"}, []).endswith(
+        'a goal that names the way there ("open the menu, then ...") helps')
+    # a product failure stays one
+    clicked = scrolls + [{"kind": "click"}]  # Jev did look for a way (a missing link, a dead menu): not harness
+    assert V.never_set_off("https://flocktab.com/", "https://flocktab.com/", {"url": "/enterprise"}, clicked) is None
+    assert V.never_set_off("https://flocktab.com/", "https://flocktab.com/pricing", {"url": "/enterprise"},
+                           scrolls) is None  # it left the start page
+    assert V.never_set_off("https://flocktab.com/pricing", "https://flocktab.com/pricing", {"url": "/pricing"},
+                           scrolls) is None  # it began on the page the checks want
+    assert V.never_set_off("https://flocktab.com/", "https://flocktab.com/", {"text": ["Team"]}, scrolls) is None
+    # a site whose navigation is truly gone also only gets scrolled, and grades harness: never a PASS
+    assert V.gate(["pass", "harness"]) == "INCOMPLETE" and V.gate(["harness"], strict=True) == "INCOMPLETE"
+    assert V.gate(["harness", "fail"]) == "FAIL" and V.EXIT_CODES["INCOMPLETE"] != 0

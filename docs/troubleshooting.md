@@ -24,6 +24,9 @@ That is QAJev's side, not your product:
   'Score 42'"); each stale decision says it in the dashboard and in `qajev top --decisions`. Keep `--motion reduce`
   (the default) and start the scenario on a calmer page, or close what covers the target with a `before:` hook.
 - *action or time budget spent*: split the goal, or start closer to the target with `url`.
+- *Jev never left the start page*: the checks need another page, and Jev only scrolled where it began and clicked
+  nothing (often a phone menu it never opened). Say the way there in the goal ("open the menu, then the pricing
+  page"). Jev clicking around and not arriving is still a failure: the way may really be missing.
 - *cost cap reached*: raise `--cost-cap`, or narrow the goals.
 
 **"sign-in failed: ..." and every scenario is `harness`**

@@ -4,6 +4,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- A scenario whose checks need another page, where Jev only scrolled the start page and clicked nothing, is
+  `harness` ("Jev never left the start page"), not `fail`: it says nothing about the product. Jev clicking around
+  and not arriving still fails.
 - Multiplayer scenarios: `clients: N` opens N players, each in a browser context of its own (own cookies, storage
   and cache). `steps` drive them together (`all`, with `stagger` or `jitter`; `client` for some; `snapshot` reads
   every player's `state` once `until` holds, and when), page checks hold on every player, and `expect.across` checks

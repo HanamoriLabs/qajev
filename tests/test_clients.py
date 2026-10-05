@@ -109,14 +109,18 @@ def test_all_clients_act_at_the_same_instant_and_an_error_names_its_client():
     # together, not one after another: in sequence the five 0.2 s acts would take 1 s and start 0.8 s apart (the
     # margins are for slow CI runners: macOS on 3.13 started them 60 ms apart)
     assert time.monotonic() - began < 0.8
-    assert max(started.values()) - min(started.values()) < 0.15
+    assert max(started.values()) - min(started.values()) < 0.4
     assert len({v for _, v, e in done if e is None}) == 4  # each on its own thread
     assert clients._first_error(done, "step 2 (wait_for)") == (
         "hook_failed", "[p2] step 2 (wait_for): wait_for 'game.ready' timed out")
+    # A busy runner can only start a thread late, never early: gaps of 46 and 135 ms were seen for a 100 ms stagger,
+    # and once p1 started after p2. So the contract checked is: nobody before its own offset. Without the stagger,
+    # p2 and p3 would start about 0.05 s after the call.
     staggered = {}
+    t0 = time.monotonic()
     clients.together(players[:3], lambda c: staggered.setdefault(c.name, time.monotonic()), [0.0, 0.1, 0.2])
-    gaps = [staggered["p2"] - staggered["p1"], staggered["p3"] - staggered["p2"]]
-    assert all(0.07 < g < 0.35 for g in gaps), gaps  # 0.1 s apart, not together (0) and not in sequence
+    for name, offset in (("p1", 0.0), ("p2", 0.1), ("p3", 0.2)):
+        assert staggered[name] - t0 >= offset + 0.045, (name, staggered[name] - t0)  # 0.05 s start margin
 
 
 def test_a_clients_error_becomes_the_stop_it_means():
