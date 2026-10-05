@@ -20,6 +20,19 @@ pipx install git+https://github.com/hanamorilabs/qajev
 Either one puts a `qajev` command on your PATH. Python 3.12 or newer is needed; uv installs it for you if it is
 missing.
 
+**A machine shared by several people or agents** should run a released version, not someone's working copy. Keep
+a clean checkout at the latest release tag and install from it; move it to each new tag, and check the version:
+
+```bash
+git clone https://github.com/hanamorilabs/qajev qajev-live && git -C qajev-live checkout --detach v0.2.0
+uv tool install --force --editable ./qajev-live
+qajev --version                                            # the tag's version
+git -C qajev-live fetch --tags && git -C qajev-live checkout --detach vX.Y.Z   # a new release; restart MCP servers
+```
+
+To go back, check out the previous tag (or reinstall from the earlier copy). A running QAJev MCP server keeps the
+code it started with until it restarts.
+
 QAJev looks for Chrome in the usual places (`/Applications/Google Chrome.app` on a Mac, `google-chrome` or
 `chromium` on Linux). If yours lives elsewhere, set `QAJEV_CHROME` to its path. In Docker, or on a CI runner where Chrome
 stops with "No usable sandbox!", set `QAJEV_CHROME_FLAGS=--no-sandbox`.
