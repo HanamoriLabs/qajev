@@ -223,3 +223,48 @@ def test_jev_never_setting_off_for_the_page_the_checks_need_is_harness_not_a_pro
     # a site whose navigation is truly gone also only gets scrolled, and grades harness: never a PASS
     assert V.gate(["pass", "harness"]) == "INCOMPLETE" and V.gate(["harness"], strict=True) == "INCOMPLETE"
     assert V.gate(["harness", "fail"]) == "FAIL" and V.EXIT_CODES["INCOMPLETE"] != 0
+
+
+@pytest.mark.parametrize("stop, not_run, outcome", [
+    ("browser_error", (), "harness"),       # the run broke: what did run cannot make it a pass
+    ("hook_failed", (), "harness"),
+    ("guard_missing", (), "harness"),
+    ("budget_actions", (), "pass"),         # Jev wandered, but the page was judged in full
+    ("budget_actions", ("expect.fetch",), "harness"),  # ...unless a check never ran
+    ("checked", ("step 5 (js)",), "harness"),
+])
+def test_a_run_that_stopped_before_its_checks_ran_is_never_a_pass(stop, not_run, outcome):
+    got, reason = V.classify(stop, OK, has_checks=True, stop_detail="step 4 (snapshot walking): RuntimeError: x",
+                             not_run=not_run)
+    assert got == outcome
+    if outcome == "harness" and stop != "checked":
+        assert "step 4 (snapshot walking): RuntimeError: x" in reason
+    if not_run:
+        assert reason.endswith(f"not run: {', '.join(not_run)}")
+    assert V.gate([got]) == ("PASS" if outcome == "pass" else "INCOMPLETE")
+
+
+def test_an_after_hook_that_fails_leaves_the_scenario_incomplete_and_names_what_never_ran(monkeypatch):
+    from qajev import runner, suite
+    from qajev.session import HookFailed
+
+    class Page:
+        def set_device(self, device): pass
+        def arm(self, mode, speech=None): pass
+        def check_host(self, url): pass
+        def navigate(self, url): self.url = url
+        def probe(self, expect): return {"url": self.url, "status": 200, "text": [True], "probe": {}}
+        def why_failed(self, url): return None
+        def fetch(self, probe): raise AssertionError("fetch must not run after a failed hook")
+
+        def run_hook(self, hook, url):
+            raise HookFailed("js 'cart.empty()' returned false")
+
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda opts: (True, 1.0))
+    s = suite.parse({"scenarios": [{"name": "cart", "url": "http://127.0.0.1:8765/cart",
+                                    "after": [{"js": "cart.empty()"}],
+                                    "expect": {"text": "Cart", "fetch": [{"url": "/api/cart", "status": 200}]}}]})
+    result = runner.run_scenario(Page(), s.scenarios[0], opts=runner.Options(), hosts={"127.0.0.1"}, run_dir=None)
+    assert result["outcome"] == "harness", result["reason"]
+    assert "hook failed: js 'cart.empty()' returned false" in result["reason"]
+    assert result["reason"].endswith("not run: expect.fetch")

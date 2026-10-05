@@ -18,6 +18,8 @@ from .suite import page_checks as has_page_checks
 
 MODEL_ERROR = re.compile(r"model|typesafe|text helper|text_model|provider", re.I)
 STALE_LIMIT = 8  # decisions without an executed action before we call the page churning
+# The expectations a run that stopped early may never reach, as its reason names them.
+NOT_RUN = {"looks": "expect.looks", "after": "the after hooks", "fetch": "expect.fetch", "command": "expect.command"}
 
 
 class ConfigError(RuntimeError):
@@ -216,6 +218,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         stop, detail = "browser_error", f"{type(e).__name__}: {e}"
 
     checks = []
+    ran = set()  # the expectations beyond the page's own that did run
     if stop not in {"unreachable", "interrupted"}:
         try:
             if stop != "reached" and has_page_checks(scenario.expect):
@@ -239,16 +242,20 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                 try:
                     checks += vision.look(session.jev.model.post_json, image, scenario.expect["looks"],
                                           {"page": {"url": observed.get("url"), "title": observed.get("title")}})
+                    ran.add("looks")
                 except (RuntimeError, ValueError) as e:  # Clef failed, not the browser
                     stop, detail = "model_error", f"while judging looks: {e}"
             if stop not in verdict.HARNESS_STOPS:
+                ran.add("after")  # a hook that fails is named by the stop itself, not as never run
                 for hook in scenario.after:
                     session.run_hook(hook, observed.get("url") or scenario.url)
                 for probe in scenario.expect.get("fetch", []):
                     checks.append(verdict.fetch_check(probe, session.fetch(probe) or {}))
+                ran.add("fetch")
                 if scenario.expect.get("command"):
                     spec = scenario.expect["command"]
                     checks.append(verdict.command_check(spec, session.command(spec["run"], observed.get("url"))))
+                ran.add("command")
         except HookFailed as e:
             stop, detail = "hook_failed", str(e)
         except (RuntimeError, ValueError, TimeoutError, OSError) as e:
@@ -276,7 +283,12 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     findings += verdict.blank_finding(result.get("blank_ms", 0), scenario=scenario.name, url=observed.get("url"))
     result["findings"] = verdict.dedupe(findings)
     result["stop"] = stop
-    outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail)
+    wanted = {"looks": scenario.expect.get("looks"), "after": scenario.after, "fetch": scenario.expect.get("fetch"),
+              "command": scenario.expect.get("command")}
+    not_run = [NOT_RUN[k] for k, v in wanted.items() if v and k not in ran]
+    outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail,
+                                       not_run=not_run)
+    result.update({k: v for k, v in (("stop_detail", detail), ("not_run", not_run)) if v})
     idle = verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
                                  session.agent.state["history"]) if scenario.goal else None
     if outcome in {"fail", "stuck"} and idle:

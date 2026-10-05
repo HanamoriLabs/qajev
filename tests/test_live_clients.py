@@ -1,6 +1,7 @@
 """Multiplayer scenarios (clients.py) end to end: `qajev run` drives five isolated clients in QAJev's own throwaway
 headless Chrome against a local WebSocket room. One scenario passes; in another the room withholds the chat from one
-player, and the across check must fail on it. No model calls.
+player, and the across check must fail on it; a third carries states far over the browser daemon's 64 KB per command
+to the judge. No model calls.
 
 QAJEV_LIVE=1 to run (starts a local Chrome). Its own file: `qajev run` stops the browser daemon a run used.
 """
@@ -108,7 +109,7 @@ scenarios:
     clients: 5
     state: "({{id: game.id, players: game.players, chat: game.chat.map(m => m.seq + ':' + m.text)}})"
     steps:
-      - all: {{wait_for: {{js: "game.ready && game.players.length === 5", timeout: 15}}}}
+      - all: {{wait_for: {{js: "game.ready && game.players.length === 5", timeout: 45}}}}
       - all: {{js: "game.say('hello from ' + game.id)"}}
         stagger: 100
       - snapshot: chat
@@ -122,7 +123,7 @@ scenarios:
       - client: p3
         reload: true
       - client: p3
-        wait_for: {{js: "game.ready && game.players.length === 5", timeout: 15}}
+        wait_for: {{js: "game.ready && game.players.length === 5", timeout: 45}}
     expect:
       text: ["Room qa-"]
       across:
@@ -139,7 +140,7 @@ scenarios:
     clients: 5
     state: "({{id: game.id, chat: game.chat.map(m => m.seq + ':' + m.text)}})"
     steps:
-      - all: {{wait_for: {{js: "game.ready && game.players.length === 5", timeout: 15}}}}
+      - all: {{wait_for: {{js: "game.ready && game.players.length === 5", timeout: 45}}}}
       - all: {{js: "game.say('hi')"}}
         jitter: 50
       - snapshot: chat
@@ -148,6 +149,30 @@ scenarios:
         expect:
           - check: every player got all five chats
             js: "clients.every(c => c.state && c.state.chat.length === 5)"
+
+  - name: five large game states
+    about: >-
+      each player's state is 20,000 characters of non-ASCII text, over two snapshots: about 1.8 MB for the judge,
+      far over the browser daemon's 64 KB per command (verse1's Verse run broke there), and every check sees it whole
+    url: {site}/mp.html?room=qa-{{run}}&player={{client}}&ws={ws}
+    clients: 5
+    state: "({{id: game.id, pad: 'é✓'.repeat(10000)}})"
+    steps:
+      - all: {{wait_for: {{js: "game.ready && game.players.length === 5", timeout: 45}}}}
+      - snapshot: first
+        expect:
+          - check: every state arrived whole
+            js: "clients.every(c => c.state.pad.length === 20000 && c.state.pad.endsWith('é✓'))"
+      - snapshot: second
+        expect:
+          - check: a check that reverses the clients
+            js: "clients.reverse().length === 5"
+          - check: the next check still sees them in order, and both snapshots whole
+            js: >-
+              clients[0].name === 'p1' && snapshots.first.length === 5
+              && snapshots.second.every(c => c.state.pad.length === 20000)
+      - client: p2
+        js: "game.ready"
 """
 
 
@@ -177,3 +202,7 @@ def test_five_isolated_players_and_a_missed_message(site, room, browser, tmp_pat
     assert late["timed_out"] == ["p4"]  # p4 never saw the chats arrive
     p4 = next(r for r in missed["snapshots"]["chat"] if r["name"] == "p4")
     assert json.loads(p4["state"])["chat"] == []
+
+    big = by["five large game states"]
+    assert big["outcome"] == "pass" and big["stop"] == "checked", (big["reason"], big.get("stop_detail"))
+    assert len(big["checks"]) == 3 and not big.get("not_run")  # the three snapshot checks (no page expectations)

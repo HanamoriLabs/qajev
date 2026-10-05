@@ -14,6 +14,9 @@ HARNESS_STOPS = {
     "left_site", "hook_failed", "interrupted", "machine_busy",
 }
 PRODUCT_STOPS = {"done", "reached", "checked", "unreachable"}
+# Stops that mean the run broke before it finished: the checks that did run can never make it a pass. A budget or a
+# stale page is different: Jev wandered, but the page was then judged in full, so its checks still decide.
+BROKEN_STOPS = {"browser_error", "hook_failed", "guard_missing", "left_site", "interrupted"}
 SEVERITY_ORDER = {"S1": 0, "S2": 1, "S3": 2}
 BLANK_MS = 10_000
 
@@ -76,8 +79,8 @@ def all_ok(checks):
     return bool(checks) and all(c["ok"] for c in checks)
 
 
-def classify(stop, checks, *, has_checks, stop_detail=None) -> tuple[str, str]:
-    """-> (outcome, reason)."""
+def classify(stop, checks, *, has_checks, stop_detail=None, not_run=()) -> tuple[str, str]:
+    """not_run: the expectations or steps that never ran (the run stopped first). -> (outcome, reason)."""
     failed = [c for c in checks if not c["ok"]]
     why = "; ".join(f"{c['check']}" + (f" ({c['detail']})" if c.get("detail") else "") for c in failed)
     if stop == "skipped":
@@ -88,6 +91,9 @@ def classify(stop, checks, *, has_checks, stop_detail=None) -> tuple[str, str]:
         if stop in HARNESS_STOPS:
             return "harness", _stop_text(stop, stop_detail)
         return "unverified", f"no expectations to check; Jev ended with {stop}"
+    if all_ok(checks) and (stop in BROKEN_STOPS or not_run):
+        missing = f"; not run: {', '.join(not_run)}" if not_run else ""
+        return "harness", f"{_stop_text(stop, stop_detail)}; {len(checks)} check(s) ran and passed{missing}"
     if all_ok(checks):
         tail = f" (Jev ended with {stop})" if stop not in {"reached", "checked"} else ""
         return "pass", f"all {len(checks)} check(s) passed{tail}"
@@ -99,7 +105,9 @@ def classify(stop, checks, *, has_checks, stop_detail=None) -> tuple[str, str]:
         return "fail", why
     if stop == "blocked":
         return "stuck", f"Jev found no way forward; unmet: {why}"
-    return "harness", f"{_stop_text(stop, stop_detail)}; unmet: {why}"
+    missing = f"; not run: {', '.join(not_run)}" if not_run else ""
+    unmet = f"; unmet: {why}" if why else ""
+    return "harness", f"{_stop_text(stop, stop_detail)}{unmet}{missing}"
 
 
 def _same_page(a, b):

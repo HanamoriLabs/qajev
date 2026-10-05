@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- A run that broke before it finished (browser error, failed hook, missing guard), or that never ran some of its
+  checks or steps, is `harness` (gate INCOMPLETE), never `pass` on the checks that did run. The reason names where it
+  stopped and what never ran; `report.json` and the MCP results carry `stop_detail` and `not_run`. A five-player
+  scenario had graded PASS after two of its checks.
+- Multiplayer: the checks over every player's state no longer break once those states pass 64 KB (the browser
+  daemon's limit per command); a command over that limit now says so, with its size.
 - A scenario whose checks need another page, where Jev only scrolled the start page and clicked nothing, is
   `harness` ("Jev never left the start page"), not `fail`: it says nothing about the product. Jev clicking around
   and not arriving still fails.
