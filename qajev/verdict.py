@@ -114,6 +114,9 @@ def never_set_off(start_url, end_url, expect, history):
     on, and Jev clicked nothing (it only scrolled or waited). That is Jev not navigating, not the product failing
     (FlockTab's nightly, 5 Oct: "find the enterprise page" scrolled the home page 15 times and said DONE there).
     A product with no way to the page still fails: there Jev clicks around and does not arrive.
+    Edge: a site whose navigation is truly gone (nothing to click) can also leave Jev only scrolling, and grades
+    harness here. That is acceptable only because harness never passes: it makes the gate INCOMPLETE (exit 2),
+    never PASS (gate(), and the test of this rule, hold that).
     -> the harness reason, or None."""
     wants = expect.get("url") or (f"/{expect['url_regex']}/" if expect.get("url_regex") else None)
     if not wants or not start_url or not _same_page(start_url, end_url):

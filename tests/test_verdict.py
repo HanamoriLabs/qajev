@@ -220,3 +220,6 @@ def test_jev_never_setting_off_for_the_page_the_checks_need_is_harness_not_a_pro
     assert V.never_set_off("https://flocktab.com/pricing", "https://flocktab.com/pricing", {"url": "/pricing"},
                            scrolls) is None  # it began on the page the checks want
     assert V.never_set_off("https://flocktab.com/", "https://flocktab.com/", {"text": ["Team"]}, scrolls) is None
+    # a site whose navigation is truly gone also only gets scrolled, and grades harness: never a PASS
+    assert V.gate(["pass", "harness"]) == "INCOMPLETE" and V.gate(["harness"], strict=True) == "INCOMPLETE"
+    assert V.gate(["harness", "fail"]) == "FAIL" and V.EXIT_CODES["INCOMPLETE"] != 0
