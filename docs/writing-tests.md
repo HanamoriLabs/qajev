@@ -347,6 +347,7 @@ instead of leaving Jev at a sign-in page.
 | `keychain:SERVICE/ACCOUNT` | the macOS Keychain (on Linux, the secret service via `secret-tool`) | `qajev secret set keychain:qajev/shop-tester` (the Keychain prompts for it) |
 | `op://VAULT/ITEM/FIELD` | 1Password, read with its `op` command-line tool (Touch ID) | make the item in 1Password; install `op` and turn on its app integration |
 | `env:NAME` | an environment variable, e.g. a CI secret | set it in CI or your `.env` |
+| `seed:FILE#KEY` | a key of your app's own JSON test-user fixture, which must say `"test_account": true` (see "A seeded test user" below) | your seed writes it |
 
 `qajev secret check REF` says whether QAJev can read it (the length, never the value). Use a test account made
 for this, never a real person's.
@@ -372,7 +373,45 @@ qajev browser login --profile shop --url https://shop.example/login   # a window
 qajev run account.yaml --profile shop
 ```
 
-This is the way for sign-ins QAJev cannot do by itself: one-time codes, passkeys, "Sign in with Google".
+This is the way for sign-ins QAJev cannot do by itself on a real site: one-time codes, passkeys, "Sign in with
+Google".
+
+**A seeded test user on a local dev host** signs in by itself, second factor included. Your app's seed creates the
+user and writes its secrets to a JSON fixture that marks itself as a test account:
+
+```json
+{"test_account": true, "allowed_hosts": ["localhost", "127.0.0.1"], "email": "qa-test@example.test",
+ "password": "...", "totp_secret_base32": "...", "session": "..."}
+```
+
+```yaml
+account:
+  name: qa-test
+  email: seed:dev_support/qa_test_user.json#email          # FILE#KEY, relative to this suite (or the project's repo)
+  password: seed:dev_support/qa_test_user.json#password
+  totp: seed:dev_support/qa_test_user.json#totp_secret_base32  # the code after the password: TOTP, SHA1, 6 digits, 30 s
+  login: {url: /login}
+```
+
+Or skip the form with a session cookie the seed minted (no password needed):
+
+```yaml
+account:
+  email: qa-test@example.test
+  cookie: {name: app-session, value: "seed:dev_support/qa_test_user.json#session"}  # http_only: true by default
+  login: {url: /dashboard, signed_in: {text: ["Your orders"]}}  # a page that shows the user is signed in
+```
+
+`totp` and `cookie` take any secret reference (`seed:`, `env:`, `keychain:`, `op://`). QAJev refuses them unless
+all of these hold:
+
+- the sign-in page is a local dev host: localhost, 127.0.0.1, `*.localhost` or `*.test`;
+- the email is at a reserved test domain: `example.test`, `*.test`, `example.com`, `*.example`;
+- a `seed:` fixture says `"test_account": true`, and its `allowed_hosts`, when present, include the host.
+
+QAJev types the code into the page's one-time code field (`login.code_field` and `login.code_submit` when the
+defaults do not find them). No secret or code is written anywhere. The report says only how it signed in:
+"as seeded test user … on localhost …; TOTP from seed: yes".
 
 **When a run meets a sign-in page anyway** (a page that sends signed-out visitors to `/login`, a profile whose
 sign-in expired), the scenario ends `harness` with "needs sign-in: ...", not as a product failure, and the report

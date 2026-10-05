@@ -1,6 +1,6 @@
 [project]
 name = "qajev"
-version = "0.3.0"
+version = "0.2.0"
 description = "Test websites, mobile apps and games the way a person uses them: plain-language goals, verdicts from the page. A CLI and an MCP server for people and AI agents."
 readme = "README.md"
 license = "MIT"

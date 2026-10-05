@@ -6,8 +6,11 @@ from everything QAJev writes).
     keychain:SERVICE/ACCOUNT   macOS: security find-generic-password; Linux: secret-tool lookup
     op://VAULT/ITEM/FIELD      1Password: op read (the 1Password CLI, signed in)
     env:NAME                   an environment variable (CI secrets)
+    seed:FILE#KEY              a key of a project's own JSON test-user fixture (a seeded TEST account only: the file
+                               says "test_account": true; FILE is relative to the suite or project file)
 """
 
+import json
 import os
 import re
 import shutil
@@ -16,7 +19,7 @@ import sys
 
 from . import config
 
-REF_HELP = '"keychain:SERVICE/ACCOUNT", "op://VAULT/ITEM/FIELD" or "env:NAME"'
+REF_HELP = '"keychain:SERVICE/ACCOUNT", "op://VAULT/ITEM/FIELD", "env:NAME" or "seed:FILE#KEY"'
 
 
 class VaultError(ValueError):
@@ -24,7 +27,7 @@ class VaultError(ValueError):
 
 
 def parse(ref):
-    """-> ("keychain", service, account) | ("op", ref) | ("env", name)."""
+    """-> ("keychain", service, account) | ("op", ref) | ("env", name) | ("seed", file, key)."""
     if not isinstance(ref, str):
         raise VaultError(f"a secret reference must be text: {REF_HELP}")
     if ref.startswith("keychain:"):
@@ -41,7 +44,32 @@ def parse(ref):
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
             raise VaultError(f"{ref!r}: env references are env:NAME")
         return ("env", name)
+    if ref.startswith("seed:"):
+        file, _, key = ref.removeprefix("seed:").rpartition("#")
+        if not file.strip() or not key.strip():
+            raise VaultError(f"{ref!r}: seed references are seed:FILE#KEY")
+        return ("seed", file, key)
     raise VaultError(f"not a secret reference (use {REF_HELP}, never the value itself)")
+
+
+def anchor(ref, folder):
+    """A seed:FILE#KEY reference with FILE made absolute against `folder` (the suite's or project's); others as is."""
+    if not isinstance(ref, str) or not ref.startswith("seed:") or folder is None:
+        return ref
+    _, file, key = parse(ref)
+    return ref if os.path.isabs(file) else f"seed:{os.path.join(str(folder), file)}#{key}"
+
+
+def seed(file):
+    """A project's test-user fixture (seed:FILE#KEY): a JSON object that marks itself "test_account": true. Anything
+    else is refused, so a seed reference can never read a real account's secrets."""
+    try:
+        data = json.loads(open(file, encoding="utf-8").read())
+    except (OSError, ValueError) as e:
+        raise VaultError(f"seed:{file}: cannot read it as JSON ({type(e).__name__})") from None
+    if not isinstance(data, dict) or data.get("test_account") is not True:
+        raise VaultError(f"seed:{file}: not a test-user fixture (it must say \"test_account\": true)")
+    return data
 
 
 def is_ref(value):
@@ -89,6 +117,10 @@ def resolve(ref):
             raise VaultError(f"{ref}: ${rest[0]} is not set")
     elif kind == "keychain":
         value = _run(_keychain_cmd(*rest), ref).removesuffix("\n")
+    elif kind == "seed":
+        value = seed(rest[0]).get(rest[1])
+        if not isinstance(value, str):
+            raise VaultError(f"{ref}: the fixture has no text value for {rest[1]!r}")
     else:
         value = _run(["op", "read", "--no-newline", rest[0]], ref)
     if not value:
