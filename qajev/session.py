@@ -8,6 +8,7 @@ Order matters and every step here was learned from an incident or a measured mis
 """
 
 import contextlib
+import functools
 import json
 import os
 import re
@@ -350,6 +351,48 @@ def _items(names, before, after):
     return out
 
 
+_DIGITS = re.compile(r"\d+")
+
+
+def _ticked(value):
+    """Words as a person reads them, with each run of digits as one mark: a clock, a countdown or a video timer that
+    ticks reads the same."""
+    return _DIGITS.sub("#", value) if isinstance(value, str) else value
+
+
+def _marker_read(marker):
+    """Jev's page marker [timeOrigin, href, scrollX, scrollY, innerWidth, innerHeight, title, text, actions, inputs]
+    with its words ticked (title, text, the actions' labels); the rest stays exact."""
+    if not isinstance(marker, list) or len(marker) != 10:
+        return marker
+    actions = [{k: _ticked(v) if k in ("label", "current_value") else v for k, v in a.items()}
+               if isinstance(a, dict) else a for a in marker[8] or []]
+    return [*marker[:6], _ticked(marker[6]), _ticked(marker[7]), actions, marker[9]]
+
+
+def _guard_read(guard):
+    """Jev's target guard with its name and the text of its card ticked; its state and href stay exact."""
+    if not isinstance(guard, list) or len(guard) < 3:
+        return guard
+    return [*guard[:2], _ticked(guard[2]), *guard[3:-1], _ticked(guard[-1])]
+
+
+def fresh_past_ticks(browser, marker_js, page, action=None):
+    """Jev's Browser.fresh, but digits ticking in what a person reads are not a change (verse2, 6 Oct: a video timer
+    in the HUD, "0:03 / 188:26", made every move stale before it acted). New words, the address, a reload, the scroll,
+    an input's value and a link's href still are: the decision is then made again."""
+    if action is not None and action["kind"] in {"click", "select"}:
+        node = action["node"]
+        if type(node) is not int:
+            return False
+        now = browser.evaluate("(() => { const c=window.__jevFast; "
+                               f"return c ? [c.pageKey(),c.guard(c.nodes.get({node}))] : null; }})()")
+        if not now:
+            return False
+        return now[0] == page["page_key"] and _guard_read(now[1]) == _guard_read(page["guards"].get(str(node)))
+    return _marker_read(browser.evaluate(marker_js)) == _marker_read(page["marker"])
+
+
 def page_changes(before, after, now=None, node=None):
     """What changed between the page Jev decided on (`before`) and the page now (`after`, a new observation; `now`,
     Jev's freshness keys read before it): words, at most six."""
@@ -445,6 +488,8 @@ class Session:
             Agent = self.jev.agent.Agent
             self.agent = Agent("about:blank", "Wait for instructions.")
             self.browser = self.agent.browser
+            # every freshness check Jev makes (before choosing, before typing, before input) goes through this
+            self.browser.fresh = functools.partial(fresh_past_ticks, self.browser, self.jev.browser.MARKER)
         try:
             self.call("Page.enable")  # must precede addScriptToEvaluateOnNewDocument
             if motion == "reduce":  # before the first navigation, so the first paint already honours it

@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: a page with a ticking number (a video timer in a game's HUD, a countdown, a clock) made every one of Jev's
+  moves go stale before it acted, so goals there ended as harness (verse2, FiGGYZ Verse). A change only in digits,
+  in the page's words, a control's label or the text around the target, is no longer a change. New words, another
+  address, a reload, the scroll, an input's value or a link's address still make Jev decide again.
 - Fixed: `visible` passed on words a person could not see. A first-run overlay covering the whole page, and a
   label cut to "Message to Or…" by its ellipsis box, both passed (FlockTab1). Visible now means drawn on top and
   whole: the words' own lines are checked for anything drawn over them, and against any `overflow` box that clips

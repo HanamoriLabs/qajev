@@ -852,6 +852,26 @@ def test_a_click_hook_waits_for_its_target_to_be_on_top_and_says_what_covers_it(
         session.run_hook({"click": "h1"}, site + "/visible-covered.html")
 
 
+def test_a_ticking_timer_does_not_make_jevs_moves_stale_but_a_real_change_does(session, site):
+    # verse2, 6 Oct: a video timer in the HUD ("0:03 / 188:26") changed the page text every second, so each of Jev's
+    # moves went stale before it acted. Digits ticking in free text, a label or the target's card are not a change;
+    # new words, another address or a reload still are. Jev's own snapshot code, no model call.
+    session.arm("readonly")
+    session.navigate(site + "/ticking.html")
+    page = session.browser.observe(screenshot=False)
+    enter = next(a for a in page["actions"] if a["label"].startswith("Enter the hall"))
+    time.sleep(1.0)  # four ticks: the clock and the countdown beside the button have changed
+    assert session.evaluate("document.getElementById('clock').textContent") not in page["text"]
+    assert session.browser.fresh(page) is True  # a key press, a wait or a scroll
+    assert session.browser.fresh(page, enter) is True  # a click: its card holds the countdown
+    session.evaluate("(document.getElementById('status').textContent = 'The hall is closed.', true)")
+    assert session.browser.fresh(page) is False  # new words are a change
+    page = session.browser.observe(screenshot=False)
+    session.evaluate("(location.reload(), true)")
+    time.sleep(0.5)
+    assert session.browser.fresh(page) is False  # a reload is a new page
+
+
 def test_a_small_decorative_progress_bar_is_not_a_spinner(session, site):
     session.arm("readonly")
     session.navigate(site + "/")

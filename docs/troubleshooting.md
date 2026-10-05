@@ -19,10 +19,12 @@ Another QAJev run has the browser; yours starts when it ends. See who with `qaje
 **Many scenarios come out `harness`**
 That is QAJev's side, not your product:
 
-- *decisions went stale*: the page kept changing (a live counter, a video, an animation). The reason ends with the
-  last stale move's own: what was over its target ("covered by div#toast") or what changed ("text: 'Score 41' →
-  'Score 42'"); each stale decision says it in the dashboard and in `qajev top --decisions`. Keep `--motion reduce`
-  (the default) and start the scenario on a calmer page, or close what covers the target with a `before:` hook.
+- *decisions went stale*: the page kept changing (new words, a list that moved, an animation). Numbers that only
+  tick (a clock, a countdown, a video's "0:03 / 188:26", a score) do not count: a move whose page changed only in
+  its digits goes ahead. The reason ends with the last stale move's own: what was over its target ("covered by
+  div#toast") or what changed; each stale decision says it in the dashboard and in `qajev top --decisions`. Keep
+  `--motion reduce` (the default) and start the scenario on a calmer page, or close what covers the target with a
+  `before:` hook.
 - *action or time budget spent*: split the goal, or start closer to the target with `url`.
 - *Jev never left the start page*: the checks need another page, and Jev only scrolled where it began and clicked
   nothing (often a phone menu it never opened). Say the way there in the goal ("open the menu, then the pricing
