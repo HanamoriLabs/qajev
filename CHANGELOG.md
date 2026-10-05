@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.2.0: 6 Oct 2026
+
 - Fixed: a `js` check passed on any truthy value, so a check written as `cond || 'why it failed'` passed when
   it failed (its 'why' is a non-empty string). A check now passes only on exactly `true`; a string fails with that
   string as the reason, `false` and `null` fail as such, and any other value fails as the wrong type. The value that
