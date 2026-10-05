@@ -102,6 +102,35 @@ def classify(stop, checks, *, has_checks, stop_detail=None) -> tuple[str, str]:
     return "harness", f"{_stop_text(stop, stop_detail)}; unmet: {why}"
 
 
+def _same_page(a, b):
+    """Two addresses for the same page: the fragment and a trailing slash do not count."""
+    def bare(u):
+        return str(u or "").split("#", 1)[0].rstrip("/")
+    return bare(a) == bare(b)
+
+
+def never_set_off(start_url, end_url, expect, history):
+    """Jev never set off for the page the checks need: they want another address, the run ended on the page it began
+    on, and Jev clicked nothing (it only scrolled or waited). That is Jev not navigating, not the product failing
+    (FlockTab's nightly, 5 Oct: "find the enterprise page" scrolled the home page 15 times and said DONE there).
+    A product with no way to the page still fails: there Jev clicks around and does not arrive.
+    -> the harness reason, or None."""
+    wants = expect.get("url") or (f"/{expect['url_regex']}/" if expect.get("url_regex") else None)
+    if not wants or not start_url or not _same_page(start_url, end_url):
+        return None
+    if expect.get("url") and expect["url"] in start_url:
+        return None  # the start page already is the page the checks want
+    if expect.get("url_regex") and re.search(expect["url_regex"], start_url):
+        return None
+    moves = [h.get("kind") for h in history or []]
+    if any(k not in {"scroll", "wait"} for k in moves):
+        return None
+    scrolls = moves.count("scroll")
+    return (f"Jev never left the start page: it scrolled {scrolls} time(s) and clicked nothing, so it never reached "
+            f"{wants}. This says nothing about the product; a goal that names the way there (\"open the menu, then "
+            "...\") helps")
+
+
 def sign_in_wall(start_url, observed, *, account=None, profile=None):
     """The page a scenario ended on asks to sign in, and it is not the page the scenario set out to test (a scenario
     that starts on /login tests the sign-in page itself). -> {"url", "reason", "account"?, "profile"?} or None.
