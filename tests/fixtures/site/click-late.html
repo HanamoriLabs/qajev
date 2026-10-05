@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Late">
+<title>Play</title>
+<style>
+  body { font: 16px system-ui, sans-serif; margin: 24px; }
+  #splash { position: fixed; inset: 0; z-index: 10; background: #222; color: #fff; display: grid; place-items: center; }
+</style>
+</head>
+<body>
+  <!-- SideGame1, 6 Oct: a click hook failed "covered by another element" on a menu still settling. Here a splash
+       covers the button for 0.4 s after load, as a fade or a loading card does. -->
+  <button id="play" onclick="window.played = true">Play now</button>
+  <div id="splash">Loading…</div>
+  <script>setTimeout(() => splash.remove(), 400);</script>
+</body>
+</html>

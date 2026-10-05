@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Covered">
+<title>Agents</title>
+<style>
+  body { font: 16px system-ui, sans-serif; margin: 24px; }
+  .rail { width: 140px; border: 1px solid #ccc; padding: 6px; }
+  .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #overlay { position: fixed; inset: 0; z-index: 10; background: #fff; display: grid; place-items: center; }
+  .ghost { position: absolute; top: 140px; left: 24px; pointer-events: none; opacity: .9; background: #ffe;
+           padding: 4px 8px; }
+</style>
+</head>
+<body>
+  <!-- FlockTab1, 6 Oct: a first-run overlay covered the page while visible: passed; a truncated rail label showed
+       "Message to Or…" while visible: passed on its full text. -->
+  <h1>Your agents</h1>
+  <p>Covered note under the first-run card</p>
+  <div class="rail"><div class="truncate" title="Message to Orchestrator (812 characters, not kept)">Message to
+    Orchestrator (812 characters, not kept)</div></div>
+  <p id="under-ghost">Text under a see-through badge</p>
+  <div class="ghost" id="ghost">Badge</div>
+  <div id="overlay"><div><h2>Which agents do you run?</h2><button onclick="overlay.remove()">Skip</button></div></div>
+</body>
+</html>

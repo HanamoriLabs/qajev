@@ -164,17 +164,76 @@ PROBE_JS = Template("""(async () => {
   const fold = (s) => spec.ci ? s.toLowerCase() : s;
   const page = fold(body);
   const has = (t) => page.includes(fold(norm(t)));
-  // On screen: the smallest elements holding the text, visible and inside the viewport right now.
+  // On screen, as a person sees it (FlockTab1, 6 Oct): the smallest elements holding the text, visible, inside the
+  // viewport, drawn on top (no overlay over its lines) and whole (not clipped by an overflow box, as an ellipsis
+  // does). -> {ok, why}: why says what a person sees instead.
+  const name = (e) => e.tagName.toLowerCase() + (e.id ? '#' + e.id : e.classList.length ? '.' + e.classList[0] : '');
+  const inView = (r) => r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight
+    && r.left < innerWidth;
+  // The range of the wanted words inside e (whitespace as a person reads it), or null when it cannot be placed.
+  const wordsIn = (e, want) => {
+    const nodes = [], walk = document.createTreeWalker(e, NodeFilter.SHOW_TEXT);
+    let raw = '';
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) { nodes.push([n, raw.length]); raw += n.data; }
+    const pattern = want.split(' ').map(w => w.replace(/[.*+?^$${}()|[\\]\\\\]/g, '\\\\$$&')).join('\\\\s+');
+    const m = new RegExp(pattern, spec.ci ? 'i' : '').exec(raw);
+    if (!m) return null;
+    const at = (i) => {
+      let k = nodes.length - 1;
+      while (k > 0 && nodes[k][1] > i) k--;
+      return [nodes[k][0], i - nodes[k][1]];
+    };
+    const range = document.createRange();
+    range.setStart(...at(m.index)); range.setEnd(...at(m.index + m[0].length));
+    return range;
+  };
+  // What is drawn over e's words instead of them, or null when they are on top somewhere.
+  // SHORTCUT: elementFromPoint skips `pointer-events: none`, so an OPAQUE cover that lets clicks through is missed
+  // (a see-through badge rightly is). Upgrade to elementsFromPoint plus each layer's paint (opacity, background) when
+  // an agent reports such a cover.
+  const coveredBy = (e, rects) => {
+    let over = null;
+    for (const r of rects) {
+      if (!inView(r)) continue;
+      const hit = document.elementFromPoint(Math.min(r.left + r.width / 2, innerWidth - 1),
+                                            Math.min(r.top + r.height / 2, innerHeight - 1));
+      if (!hit || hit === e || e.contains(hit) || hit.contains(e)) return null;
+      over = hit;
+    }
+    return over;
+  };
+  // The overflow box that clips the words, when they run past its edge.
+  const clippedBy = (e, rects) => {
+    for (let a = e; a && a !== document.body; a = a.parentElement) {
+      const s = getComputedStyle(a);
+      if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+      const box = a.getBoundingClientRect();
+      if (rects.some(r => r.right > box.right + 1 || r.bottom > box.bottom + 1 || r.left < box.left - 1)) return a;
+    }
+    return null;
+  };
   const onScreen = (t) => {
     const want = fold(norm(t));
     const holders = [...document.querySelectorAll('body *')].filter(e => fold(norm(e.textContent)).includes(want));
     const smallest = holders.filter(e => ![...e.children].some(c => fold(norm(c.textContent)).includes(want)));
-    return smallest.some(e => {
-      if (!(e.checkVisibility ? e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) : true)) return false;
-      if (!fold(norm(e.innerText)).includes(want)) return false;
-      const r = e.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
-    });
+    let why = 'not in the page';
+    for (const e of smallest) {
+      if (!(e.checkVisibility ? e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) : true)
+          || !fold(norm(e.innerText)).includes(want)) { why = 'in the page but hidden'; continue; }
+      if (!inView(e.getBoundingClientRect())) { why = 'in the page but not in the viewport'; continue; }
+      const range = wordsIn(e, norm(t));
+      const rects = range ? [...range.getClientRects()].filter(r => r.width > 0 && r.height > 0) : [];
+      const lines = rects.length ? rects : [e.getBoundingClientRect()];
+      const over = coveredBy(e, lines);
+      if (over) { why = 'covered by ' + name(over) + ': "' + norm(over.innerText).slice(0, 60) + '"'; continue; }
+      const clip = range && clippedBy(e, lines);
+      if (clip) {
+        why = 'cut short: ' + name(clip) + ' shows "' + norm(clip.innerText).slice(0, 60) + '" (clipped)';
+        continue;
+      }
+      return { ok: true, why: null };
+    }
+    return { ok: false, why };
   };
   // A missing text's closest match: the longest start of it (4 characters at least) that the page has, with the
   // words around it, so a failed check shows "overlapFrames=5" next to the "overlapFrames=0" it wanted.
@@ -206,8 +265,10 @@ PROBE_JS = Template("""(async () => {
   }
   let status = null;
   try { status = performance.getEntriesByType('navigation')[0].responseStatus || null; } catch (e) {}
+  const seen = spec.visible.map(onScreen);
   return { probe, url: location.href, title: document.title, status,
-    text: spec.text.map(t => has(t)), absent: spec.absent.map(t => has(t)), visible: spec.visible.map(onScreen),
+    text: spec.text.map(t => has(t)), absent: spec.absent.map(t => has(t)), visible: seen.map(s => s.ok),
+    visible_why: seen.map(s => s.why),
     near: spec.text.map(t => has(t) ? null : nearest(t)), js, says: body.slice(0, 400) };
 })()""")
 
@@ -221,7 +282,10 @@ FIND_JS = Template("""(() => {
   const r = el.getBoundingClientRect();
   const x = r.x + r.width / 2, y = r.y + r.height / 2;
   const hit = document.elementFromPoint(x, y);
-  return { x, y, secret, covered: !(hit && (el === hit || el.contains(hit))), tag: el.tagName };
+  const covered = !(hit && (el === hit || el.contains(hit)));
+  const over = covered && hit ? hit.tagName.toLowerCase() + (hit.id ? '#' + hit.id : hit.classList.length ?
+    '.' + hit.classList[0] : '') : null;
+  return { x, y, secret, covered, over, tag: el.tagName };
 })()""")
 
 # Why a decision went stale, read before Jev looks again: Jev's freshness keys now (its pageKey and the target's
@@ -806,6 +870,23 @@ class Session:
             raise HookFailed((found or {}).get("error") or f"cannot locate {selector!r}")
         return found
 
+    def settled(self, selector, timeout=2.0):
+        """A click target scrolled into view, on top, and at the same spot two looks in a row: a fading splash, a
+        panel still scrolling or growing as its images arrive moves or covers it for a moment (SideGame1, 6 Oct).
+        -> find()'s result. A target still covered after `timeout` fails naming what covers it."""
+        deadline = time.monotonic() + timeout
+        last = None
+        while True:
+            found = self.find(selector)
+            if not found["covered"] and last is not None and (found["x"], found["y"]) == (last["x"], last["y"]):
+                return found
+            last = None if found["covered"] else found
+            if time.monotonic() > deadline:
+                if found["covered"]:
+                    raise HookFailed(f"{selector!r} is covered by {found.get('over') or 'another element'}")
+                return found
+            time.sleep(0.05)
+
     def type_into(self, found, text):
         """Click a field located by find() and replace its value with `text`, as typed input."""
         self.trusted_click(found["x"], found["y"])
@@ -819,9 +900,7 @@ class Session:
         if kind == "js":
             self.evaluate(value)
         elif kind == "click":
-            found = self.find(value)
-            if found["covered"]:
-                raise HookFailed(f"{value!r} is covered by another element")
+            found = self.settled(value)
             self.trusted_click(found["x"], found["y"])
         elif kind == "fill":
             for selector, text in value.items():

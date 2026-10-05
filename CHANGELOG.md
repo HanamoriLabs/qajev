@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: `visible` passed on words a person could not see. A first-run overlay covering the whole page, and a
+  label cut to "Message to Or…" by its ellipsis box, both passed (FlockTab1). Visible now means drawn on top and
+  whole: the words' own lines are checked for anything drawn over them, and against any `overflow` box that clips
+  them. A failure says what a person sees instead: "covered by div#overlay: …" or "cut short: div.truncate shows …".
+  An element that lets clicks through (`pointer-events: none`), such as a badge, does not count as covering.
+- A `click` hook waits up to 2 s for its target to be on top and still before it clicks, so a splash that fades
+  or a menu panel still settling no longer ends a test as harness (SideGame1). A target that stays covered fails
+  naming what covers it.
 ## 0.3.0: 6 Oct 2026
 
 - A test plan opens every report and the dashboard: one numbered item per test, its `about` and each check in plain
