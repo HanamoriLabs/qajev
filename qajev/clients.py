@@ -125,13 +125,8 @@ def judge(tab, checks, clients_state, snapshots):
     for check in checks:
         r = _evaluate(tab, awaited(f"(({{clients, snapshots}}) => ({check['js']}))"
                                    "(JSON.parse(window.__qajevStates))"))
-        value = (r.get("result") or {}).get("value") or {}
-        if "error" in value:
-            out.append({"check": check["check"], "ok": False, "detail": f"error: {value['error']}"[:300]})
-            continue
-        ok = value.get("value") is True
-        out.append({"check": check["check"], "ok": ok,
-                    "detail": None if ok else f"returned {value.get('value')!r}"[:300]})
+        ok, detail, value = verdict.js_result((r.get("result") or {}).get("value") or {"value": None})
+        out.append({"check": check["check"], "ok": ok, "detail": detail, "value": value})
     return out
 
 

@@ -194,7 +194,15 @@ PROBE_JS = Template("""(async () => {
   let js = null;
   if (spec.js) {
     const r = await $js;
-    js = 'error' in r ? 'error: ' + r.error : (r.value === true || r.value === false ? r.value : !!r.value);
+    // What came back, as is: verdict.js_result passes only exactly true. A value that is not plain data (an element,
+    // a function) is sent as its type, since it cannot cross to Python.
+    const v = r.value, plain = v === null || ['boolean', 'string', 'number'].includes(typeof v);
+    let data = plain;
+    if (!plain && typeof v === 'object' && !(v instanceof Node)) {
+      try { JSON.stringify(v); data = true; } catch (e) {}
+    }
+    const kind = v instanceof Element ? 'element' : v instanceof Node ? 'node' : typeof v;
+    js = 'error' in r ? { error: r.error } : data ? { value: v } : { type: kind, shown: String(v).slice(0, 200) };
   }
   let status = null;
   try { status = performance.getEntriesByType('navigation')[0].responseStatus || null; } catch (e) {}

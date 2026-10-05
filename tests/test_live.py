@@ -426,6 +426,32 @@ def test_a_react_hook_answers_a_cue_at_human_speed_and_saves_the_frame(session, 
     assert session.react_log[0]["shot"] == "flash" and (tmp_path / "cue-flash.jpg").stat().st_size > 1000
 
 
+def test_a_js_check_passes_only_on_true_and_a_string_is_its_reason(session, site):
+    # SideGame1 and the Orchestrator, 5 Oct: the six-game suite's checks return `cond || 'why'`, and the page probe
+    # turned the 'why' into true, so a failed check was reported as passed. Only exactly true passes.
+    from qajev import verdict
+
+    session.navigate(site + "/index.html")
+    cases = {
+        "true": (True, None),
+        "1 === 2 || 'the totals differ'": (False, "the totals differ"),
+        "Promise.resolve('decided later')": (False, "decided later"),
+        "false": (False, "returned false"),
+        "null": (False, "returned null"),
+        "42": (False, "check must return true, got number"),
+        "document.querySelector('h1')": (False, "check must return true, got element"),
+        "({ ok: true })": (False, "check must return true, got object"),
+    }
+    got = {}
+    for expr in cases:
+        [check] = verdict.page_checks({"js": expr}, session.probe({"js": expr}))
+        got[expr] = check
+    assert {e: (c["ok"], c["detail"]) for e, c in got.items()} == cases
+    assert all("value" in c for c in got.values()), got  # what came back is kept, pass or fail
+    [thrown] = verdict.page_checks({"js": "nope()"}, session.probe({"js": "nope()"}))
+    assert not thrown["ok"] and thrown["detail"].startswith("error: "), thrown
+
+
 def test_ux_on_a_games_title_screen_raises_none_of_its_false_alarms(session, site):
     # SideGame1, 5 Oct, on a real game's title screen: a hidden live region "cut off", text under an opaque splash
     # "overlapping", a game that takes Tab "not reachable", and a hidden dev-menu h1 counted. None of those is real.

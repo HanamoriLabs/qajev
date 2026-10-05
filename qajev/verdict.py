@@ -4,6 +4,7 @@ Jev's DONE / BLOCKED is a hint, never the verdict. The page and side-effect chec
 only says who is to blame when they fail (the product, or the harness).
 """
 
+import json
 import re
 from urllib.parse import urlsplit
 
@@ -45,10 +46,36 @@ def page_checks(expect, observed):
         checks.append(_check(f"on screen: {needle!r}{case}", bool(seen),
                              None if seen else "in the page but not visible in the viewport, or absent"))
     if expect.get("js"):
-        value = observed.get("js")
-        ok = value is True
-        checks.append(_check(f"js {expect['js']!r}", ok, None if ok else f"returned {value!r}"))
+        ok, detail, value = js_result(observed.get("js"))
+        checks.append({**_check(f"js {expect['js']!r}", ok, detail), "value": value})
     return checks
+
+
+VALUE_KEEP = 200
+
+
+def js_result(r):
+    """A check's JavaScript passes only when it returns exactly true (SideGame1 and the Orchestrator, 5 Oct: `cond ||
+    'why'` returned its 'why', which was graded truthy, so a failed check read as passed). A string fails with that
+    string as the reason; false and null say so; any other value fails as the wrong type, so nothing leans on
+    truthiness again. `r` is the page's {value} | {error} | {type, shown}, or a bare value. Waits (wait_for, until)
+    are not checks: they stay truthy. -> (ok, detail, value): value is what came back, cut to VALUE_KEEP characters."""
+    if not isinstance(r, dict):
+        r = {"error": r[len("error: "):]} if isinstance(r, str) and r.startswith("error: ") else {"value": r}
+    if "error" in r:
+        return False, f"error: {r['error']}"[:300], None
+    if "type" in r:
+        return False, f"check must return true, got {r['type']}", str(r.get("shown") or r["type"])[:VALUE_KEEP]
+    value = r.get("value")
+    if value is True:
+        return True, None, "true"
+    if isinstance(value, str):
+        return False, value[:300] or "returned an empty string", value[:VALUE_KEEP]
+    if value is False or value is None:
+        said = json.dumps(value)
+        return False, f"returned {said}", said
+    kind = "number" if isinstance(value, (int, float)) else "array" if isinstance(value, list) else "object"
+    return False, f"check must return true, got {kind}", json.dumps(value)[:VALUE_KEEP]
 
 
 def _check(name, ok, detail=None):

@@ -112,7 +112,7 @@ def build_parser():
                        help="this text must be on screen (in the viewport), not just in the page (repeatable)")
     check.add_argument("--expect-url", "-u", help="final URL must contain this")
     check.add_argument("--expect-url-regex", help="final URL must match this regex")
-    check.add_argument("--expect-js", "-j", help="JS expression that must be truthy (may use await)")
+    check.add_argument("--expect-js", "-j", help="JS expression that must return exactly true (may use await); a string it returns fails, as the reason")
     check.add_argument("--expect-looks", action="append", default=[], metavar="STATEMENT",
                        help="judged from the final screenshot, e.g. 'the Sign up button is not cut off' (repeatable; "
                             "needs Clef)")
@@ -147,7 +147,7 @@ def build_parser():
     proj.add_argument("--expect-text", "-t", action="append", default=[], help="for --objective: page must show")
     proj.add_argument("--absent", "-a", action="append", default=[], help="for --objective: page must not show")
     proj.add_argument("--expect-url", "-u", help="for --objective: final URL must contain")
-    proj.add_argument("--expect-js", "-j", help="for --objective: JS expression that must be truthy")
+    proj.add_argument("--expect-js", "-j", help="for --objective: JS expression that must return exactly true")
     run.add_argument("--jobs", type=int, default=1, help="parallel workers for independent chains (default 1)")
     run.add_argument("--allow-commands", action="store_true", help="let the suite run shell commands (hooks/checks)")
     _common(run)
