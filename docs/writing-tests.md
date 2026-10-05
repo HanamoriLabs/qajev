@@ -402,16 +402,20 @@ account:
   login: {url: /dashboard, signed_in: {text: ["Your orders"]}}  # a page that shows the user is signed in
 ```
 
-`totp` and `cookie` take any secret reference (`seed:`, `env:`, `keychain:`, `op://`). QAJev refuses them unless
-all of these hold:
+`totp` and `cookie` take only a `seed:` reference: the secret comes from the app's own fixture, never from a person's
+keychain, 1Password or environment. QAJev refuses them unless all of these hold:
 
-- the sign-in page is a local dev host: localhost, 127.0.0.1, `*.localhost` or `*.test`;
+- the sign-in page is a local dev host: localhost, 127.0.0.1, `*.localhost` or `*.test`, written plainly (an
+  address a browser could read as another host, with a backslash, `user@` or control characters, is refused);
 - the email is at a reserved test domain: `example.test`, `*.test`, `example.com`, `*.example`;
-- a `seed:` fixture says `"test_account": true`, and its `allowed_hosts`, when present, include the host.
+- the fixture says `"test_account": true` and its `allowed_hosts` list names the host (the list is required).
 
-QAJev types the code into the page's one-time code field (`login.code_field` and `login.code_submit` when the
-defaults do not find them). No secret or code is written anywhere. The report says only how it signed in:
-"as seeded test user … on localhost …; TOTP from seed: yes".
+The page must still be on that host when the code is typed, or after the cookie's page loads. QAJev types the code
+into the page's one-time code field: `autocomplete="one-time-code"`, a `000000` placeholder, or a field named exactly
+`otp`, `totp`, `code`, `mfa_code`, `verification_code` and the like (never `postcode` or `coupon_code`);
+`login.code_field` and `login.code_submit` when these do not find it. No secret or code is written anywhere, and an
+email read by reference is left out of the results. The report says only how it signed in: "as seeded test user …
+on localhost …; TOTP from seed: yes".
 
 **When a run meets a sign-in page anyway** (a page that sends signed-out visitors to `/login`, a profile whose
 sign-in expired), the scenario ends `harness` with "needs sign-in: ...", not as a product failure, and the report
