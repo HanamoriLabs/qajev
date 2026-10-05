@@ -11,6 +11,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   game key was called "not reachable by keyboard" (now "keyboard not measurable" on a game, while an ordinary page
   that cancels Tab is "keyboard blocked", a WCAG 2.1.1 failure); and a hidden `display:none`
   h1 counted towards "several <h1>" (hidden ones are now named apart).
+- Fixed: the UX layout notes measured element boxes, not the text drawn in them. A status word running out of its
+  card into the next one, and a value drawn over its label, got no note; a wrapped inline (its box spans both lines)
+  and a log's lines scrolled out of view were called overlapping. Text is now measured line by line where it is
+  drawn, cut down to what scrolling or clipping boxes show. New note: "text overflows its box". "Text cut off" also
+  counts text partly clipped by a box it sits in (not a carousel's or a ticker's parts out of view).
 - The smoke crawl measures each page's UX and adds a UX section to the report, free and never changing the gate:
   WCAG AA text contrast (text over images counted as not measured), keyboard reach, visible focus and traps (QAJev
   presses Tab through the page), 200% zoom (sideways scroll, text cut off), text cut off or overlapping, and open

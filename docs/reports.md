@@ -86,8 +86,9 @@ A smoke crawl also measures how easy each page is to use, and adds a **UX** sect
 |---|---|---|
 | low text contrast | each text's colour against the background it really sits on | WCAG 2.2 1.4.3: 4.5:1, or 3:1 for text from 24px (18.66px bold) |
 | contrast not measured | text over an image or a gradient, or faded: counted, never guessed | check those by eye |
-| text cut off | a box hides part of its own text (overflow hidden, no ellipsis); text hidden for screen readers only (a clipped 1x1 box) is no visible text and is skipped | |
-| text overlapping | two text boxes, neither inside the other, overlap by 4 px or more, and on screen nothing opaque lies between them (text under a full-screen splash is not seen overlapping) | |
+| text cut off | a box hides part of the text in it: its own box (overflow hidden, no ellipsis or line clamp), or part of the text by a box it sits in. Text wholly out of view (a carousel's other slides) or on a moving track (a ticker) is not counted; text hidden for screen readers only (a clipped 1x1 box) is no visible text and is skipped | |
+| text overflows its box | text drawn outside the box a person sees it in (the nearest with a border, a background or a shadow, such as a card or a button), with nothing clipping it, by 4 px and half its font size or more: it runs into what is next to it | |
+| text overlapping | the words of two texts, neither inside the other, drawn over each other by 4 px or more, line by line as shown (a wrapped inline is its lines, not one box; lines scrolled or clipped out of view do not count), and on screen nothing opaque lies between them (text under a full-screen splash is not seen overlapping) | |
 | not reachable by keyboard | QAJev presses Tab through the page; these controls never got focus | WCAG 2.2 2.1.1 |
 | keyboard not measurable | a game (a canvas filling half the screen or more) cancelled every Tab and focus never moved: it uses Tab as one of its keys, so reach, visible focus and traps are not measured; check its own keys by hand | |
 | keyboard blocked | an ordinary page cancelled every Tab and focus never moved: a keyboard user cannot reach its controls | WCAG 2.2 2.1.1 |
@@ -102,6 +103,8 @@ The keyboard walk and the zoom pass run on a desktop layout (a phone has no Tab 
 
 Known limit: a game is told apart from a page by its canvas size only. An ordinary page with a decorative full-screen
 canvas that cancels Tab reads "keyboard not measurable", not "keyboard blocked"; check such a page's keyboard by hand.
+And the overlap test compares text with text: a box that covers text (a floating button over a paragraph) is not
+reported.
 
 A scenario with a goal adds **struggle signals**: what Jev's own run says about how findable the goal was. They cost
 nothing on top of the goal run they are read from (that run itself calls Jev, so it is paid), and they are evidence,
@@ -116,10 +119,11 @@ and gets no struggle signals: it says nothing about the page.
 Both tests are strict, so that a real struggle stays the page's:
 - A key counts only as a key press: "press Escape", "hold Space to charge", "press Tab twice", "the backquote key",
   "the W key". A backtick around code (`` Run `tab claude` ``), a product's key ("copy the new key") or a tab ("the
-  tab's Close button", "the tab cap") is not a key press.
-- A danger or read-only control counts only when the goal asks for its action: the guard's word as the goal's verb,
-  and the control's object when it names one. "Delete the test account" needs a hidden "Delete account"; "Find your
-  account settings" does not. An off-site link counts when the goal shares a word with its label or its host.
+  tab's Close button", "the tab cap", "tap the tab to open it") is not a key press.
+- A danger or read-only control counts only when the goal asks for its action: the guard's words as one phrase in the
+  goal, in order, and the control's object when it names one. "Delete the test account" needs a hidden "Delete
+  account"; "Find your account settings" does not, and "sign in" never asks for "Sign out". An off-site link counts
+  when the goal shares a word with its label or its host.
 
 | Note | From |
 |---|---|

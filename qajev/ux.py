@@ -170,13 +170,21 @@ def notes(m):
                     "detail": ", ".join(f"{v} text(s) {k.replace('_', ' ')}" for k, v in not_measured.items())
                     + " (check those by eye)"})
     if facts.get("clipped_count"):
-        out.append(_note("text cut off", f"{facts['clipped_count']} text(s) cut off by their own box",
-                         "the box hides part of its own text (overflow hidden, no ellipsis)",
+        out.append(_note("text cut off", f"{facts['clipped_count']} text(s) cut off by their own box or the box they "
+                         "sit in", "a box hides part of the text in it (overflow hidden, no ellipsis); text wholly out "
+                         "of view, such as a carousel's other slides, is not counted",
                          [f"'{x['text']}' ({x['cut']}: box {x['box']}, text {x['content']}; {x['path']})"
                           for x in facts.get("clipped", [])[:10]]))
+    if facts.get("spilled_count"):
+        out.append(_note("text overflows its box", f"{facts['spilled_count']} text(s) drawn outside their own box",
+                         "the text is wider or taller than its box and nothing clips it, so it runs over what is "
+                         "next to it (by 4 px and half its font size or more)",
+                         [f"'{x['text']}' ({x['side']} by {x['by']} px: box {x['box']}, text {x['content']}; "
+                          f"{x['path']})" for x in facts.get("spilled", [])[:10]]))
     if facts.get("overlaps"):
-        out.append(_note("text overlapping", f"{len(facts['overlaps'])} pair(s) of text boxes overlap",
-                         "two text boxes, neither inside the other, overlap by 4 px or more each way",
+        out.append(_note("text overlapping", f"{len(facts['overlaps'])} pair(s) of texts drawn over each other",
+                         "the words of two texts, neither inside the other, overlap by 4 px or more each way, line by "
+                         "line as shown (lines scrolled or clipped out of view do not count)",
                          [f"'{x['a']}' and '{x['b']}' ({x['area']} px; {x['aPath']} / {x['bPath']})"
                           for x in facts["overlaps"][:10]]))
     k = m.get("keyboard")
@@ -211,7 +219,8 @@ def notes(m):
                              f"the page is {z['width']} px wide in a {z['viewport']} px viewport",
                              "WCAG 2.2 1.4.10: content reflows without scrolling sideways"))
         if z.get("clipped_count"):
-            out.append(_note("text cut off at 200% zoom", f"{z['clipped_count']} text(s) cut off by their own box",
+            out.append(_note("text cut off at 200% zoom", f"{z['clipped_count']} text(s) cut off by their own box or "
+                             "the box they sit in",
                              "WCAG 2.2 1.4.4: text resizes to 200% without losing content",
                              [f"'{x['text']}' ({x['path']})" for x in z["clipped"]]))
     d = facts.get("dialog")
@@ -265,7 +274,8 @@ KEYS = [("backquote", rf"{_PRESS}(?:`|back ?quote|backtick)(?![\w`])|\b(?:back ?
         ("Escape", rf"{_PRESS}esc(?:ape)?{_ENDS}|\besc(?:ape)?\s+key\b"),
         ("Enter", rf"{_PRESS}(?:enter|return){_ENDS}|\b(?:enter|return)\s+key\b"),
         ("Space", rf"{_PRESS}space(?:bar)?{_ENDS}|\bspace(?:bar)?\s+key\b"),
-        ("Tab", rf"{_PRESS}tab{_ENDS}|\btab\s+key\b"),
+        # "tap the tab" is a tab on screen (FlockTab's product), never the key
+        ("Tab", rf"\b(?:press|hit|hold)\s+(?:the\s+)?tab{_ENDS}|\btab\s+key\b"),
         ("an arrow key", rf"{_PRESS}(?:left|right|up|down)(?:\s+arrow)?{_ENDS}|\barrow\s+keys?\b"),
         ("a key", rf"{_PRESS}any\s+key\b|\b(?:{_PRESS[2:]}|the\s+)(?:[a-z0-9]|f(?:[1-9]|1[0-2])|shift|ctrl|control"
                   r"|alt|option|cmd|command|backspace|delete|home|end|page\s?(?:up|down))\s+key\b")]
@@ -292,10 +302,14 @@ def _asks_for(task, h):
     if h.get("why") not in {"danger", "read-only"}:
         host = str(h.get("match") or "") if h.get("why") == "off-site link" else ""
         return bool(want & _words(h.get("label"))) or any(w in host.lower() for w in want)
-    said = set(re.findall(r"[a-z]+", task.lower()))
     verbs = [w for w in re.findall(r"[a-z]+", str(h.get("match") or "").lower()) if w not in _NOT_VERBS]
+    if not verbs:
+        return False
+    # the guard's words as one phrase, in order ("sign in" never asks for "Sign out")
+    phrase = (r"\b(?:" + "|".join(sorted(_forms(verbs[0]))) + ")" + "".join(rf"\s+{re.escape(w)}" for w in verbs[1:])
+              + r"\b")
     thing = _words(h.get("label")) - set(verbs)
-    return bool(verbs) and all(_forms(v) & said for v in verbs) and (not thing or bool(thing & want))
+    return bool(re.search(phrase, task.lower())) and (not thing or bool(thing & want))
 
 
 def blocked_by(goal, outcome, hidden):
