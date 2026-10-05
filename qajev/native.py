@@ -190,7 +190,8 @@ class GodotGame:
         threading.Thread(target=self._read_output, daemon=True).start()
         self.record = {"pid": self.proc.pid, "owner_pid": os.getpid(), "engine": "godot", "project": str(self.project),
                        "adapter": self.adapter.stem if self.adapter else None, "port": self.port,
-                       "headless": self.headless, "started_at": time.time(), "user_dir": self.user_dir}
+                       "headless": self.headless, "started_at": time.time(), "user_dir": self.user_dir,
+                       "identity": chrome.identity(self.proc.pid)}  # the reaper kills only this very process
         (STATE / f"{self.proc.pid}.json").write_text(json.dumps(self.record))
         deadline = time.monotonic() + self.start_wait
         while time.monotonic() < deadline:
@@ -313,9 +314,12 @@ def reap():
                     subprocess.run(["xcrun", "simctl", verb, record["udid"]], capture_output=True, timeout=60)
             reaped.append(f"ios simulator clone {record['udid']} ({record.get('project')})")
         elif record["alive"] and not record["owner_alive"]:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(record["pid"], signal.SIGKILL)
-            reaped.append(f"game {record['pid']} ({Path(record['project']).name})")
+            if chrome.still(record["pid"], record.get("identity")):
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.killpg(record["pid"], signal.SIGKILL)
+                reaped.append(f"game {record['pid']} ({Path(record['project']).name})")
+            else:  # the pid now belongs to another process (or this record never said whose it was): never kill it
+                reaped.append(f"stale pid {record['pid']}, not ours: left alone")
         if not record["alive"] or not record["owner_alive"]:
             path.unlink(missing_ok=True)
             if not (record.get("profile") or {}).get("kept"):  # a kept test profile outlives its run (game_profile)

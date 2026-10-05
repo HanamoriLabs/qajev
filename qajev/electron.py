@@ -23,7 +23,7 @@ from pathlib import Path
 
 from websockets.exceptions import ConnectionClosed
 
-from . import game_profile
+from . import chrome, game_profile
 from .config import HOME
 from .native import STATE, NativeError, NoAnswer, free_port, with_lists
 
@@ -221,7 +221,8 @@ class ElectronGame:
         self.record = {"pid": self.proc.pid, "owner_pid": os.getpid(), "engine": "electron",
                        "project": str(self.project), "adapter": self.adapter.stem if self.adapter else None,
                        "port": self.port, "headless": False, "started_at": time.time(), "user_dir": self.user_dir,
-                       "profile": {"folder": self.user_dir, "kept": self.kept is not None}}
+                       "profile": {"folder": self.user_dir, "kept": self.kept is not None},
+                       "identity": chrome.identity(self.proc.pid)}  # the reaper kills only this very process
         (STATE / f"{self.proc.pid}.json").write_text(json.dumps(self.record))
         page = None
         while time.monotonic() - started < self.start_wait:

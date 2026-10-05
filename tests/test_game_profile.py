@@ -80,6 +80,38 @@ def test_a_dead_runs_kept_profile_outlives_the_reaper_and_its_throwaway_does_not
     assert (tmp_path / "kept" / "save.json").is_file() and not (tmp_path / "throwaway").exists()
 
 
+def test_the_reaper_kills_only_the_very_game_it_started_never_a_reused_pid(tmp_path, monkeypatch):
+    # The Orchestrator, 6 Oct: a dead run's record holds a pid; by the time the reaper reads it, that pid can belong
+    # to another process. It is killed only when its start time and command still match the record.
+    import json
+
+    from qajev import chrome, native
+
+    monkeypatch.setattr(native, "STATE", tmp_path / "native")
+    native.STATE.mkdir()
+    owner = subprocess.Popen(["true"])  # the run that started the game: gone
+    owner.wait()
+    unrelated = subprocess.Popen(["sleep", "30"], start_new_session=True)  # now holds a recorded pid
+    ours = subprocess.Popen(["sleep", "31"], start_new_session=True)  # a game the dead run really started
+    legacy = subprocess.Popen(["sleep", "32"], start_new_session=True)  # a record from before identities
+    try:
+        records = {unrelated.pid: {"proc_start": "Mon Jan  1 00:00:00 2024", "command": "/Applications/Game.app"},
+                   ours.pid: chrome.identity(ours.pid), legacy.pid: None}
+        for pid, known in records.items():
+            (native.STATE / f"{pid}.json").write_text(json.dumps(
+                {"pid": pid, "owner_pid": owner.pid, "project": str(tmp_path), "user_dir": str(tmp_path / str(pid)),
+                 **({"identity": known} if known else {})}))
+        said = native.reap()
+        assert ours.wait(timeout=5) is not None  # the real orphan is stopped
+        assert unrelated.poll() is None and legacy.poll() is None  # the others live on
+        assert f"stale pid {unrelated.pid}, not ours: left alone" in said
+        assert f"stale pid {legacy.pid}, not ours: left alone" in said
+    finally:
+        for p in (unrelated, ours, legacy):
+            p.kill()
+            p.wait()
+
+
 def test_reset_empties_only_an_allowed_folder(home, game):
     folder = gp.named("plan-71")
     (folder / "save.json").write_text("{}")

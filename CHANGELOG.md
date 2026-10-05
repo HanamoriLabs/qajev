@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: the cleanup after a dead run killed the process group of a game pid it had recorded, and `qajev stop`
+  signalled a job's recorded pid, without checking that the pid still belonged to that process. A pid reused by
+  another program could have been killed. Each launch now records its process's start time and command; the reaper
+  and `qajev stop` act only when both still match, and say "stale pid, not ours: left alone" otherwise.
 - An Electron game can keep its save folder between runs, so a test proves a save survives into the next run
   (SideGame1: a setting kept; a long plan run in parts). `--game-profile NAME` (suite `game_profile:`, `qa_play`
   `game_profile`) keeps it in `~/.qajev/game-profiles/NAME`; a suite's own `--profile=` switch may name a git-ignored

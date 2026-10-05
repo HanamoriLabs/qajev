@@ -25,7 +25,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from . import plan
+from . import chrome, plan
 from .config import HOME
 
 JOBS = HOME / "jobs"
@@ -335,7 +335,7 @@ def register(argv, title=None, *, rerun=None):
     rerun: {"of": job id, "failed": bool} when it reruns a job (its title says so)."""
     folder = _new_folder()
     meta = {"id": folder.name, "title": title or describe_argv(argv), "auto_title": title is None, "argv": argv,
-            "pid": os.getpid(),
+            "pid": os.getpid(), "identity": chrome.identity(os.getpid()),
             "started_at": time.time(), "cwd": os.getcwd(), "started_by": os.getppid(), "foreground": True,
             **({"rerun": rerun} if rerun else {})}
     (folder / "job.json").write_text(json.dumps(meta, indent=2))
@@ -354,7 +354,7 @@ def start(argv, title=None, *, command=None, cwd=None, rerun=None):
                             start_new_session=True)
     _children[job_id] = proc
     meta = {"id": job_id, "title": title or describe_argv(argv), "auto_title": title is None, "argv": argv,
-            "pid": proc.pid,
+            "pid": proc.pid, "identity": chrome.identity(proc.pid),  # a stop signals only this very process
             "started_at": time.time(), "cwd": cwd or os.getcwd(), "started_by": os.getpid(),
             **({"rerun": rerun} if rerun else {})}
     (folder / "job.json").write_text(json.dumps(meta, indent=2))
@@ -603,8 +603,8 @@ def stop(job_id, wait=20.0):
     """Ask a job to stop (SIGTERM to the run, through its wrapper for background jobs; the run cleans up after
     itself as for Ctrl-C), then force it if needed."""
     meta = _meta(job_id)
-    if not alive(meta["pid"]):
-        return status(job_id)
+    if not alive(meta["pid"]) or (meta.get("identity") and not chrome.still(meta["pid"], meta["identity"])):
+        return status(job_id)  # gone, or its pid now belongs to another process: nothing of ours to stop
     meta["stop_requested"] = time.time()
     (_folder(job_id) / "job.json").write_text(json.dumps(meta, indent=2))
     with contextlib.suppress(ProcessLookupError):

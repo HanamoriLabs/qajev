@@ -209,6 +209,26 @@ def test_stopping_a_job_lets_the_run_finish_its_cleanup():
     assert not jobs.alive(stopped["pid"])
 
 
+def test_stopping_a_job_never_signals_a_process_that_took_its_pid():
+    # The Orchestrator, 6 Oct: a job's recorded pid can belong to another process by the time someone stops it.
+    import subprocess
+
+    job = jobs.start(["run", "suite.yaml"], command=fake(60))
+    wait_for(lambda: jobs.status(job["id"])["progress"]["done"] == 1)
+    path = jobs.JOBS / job["id"] / "job.json"
+    meta = json.loads(path.read_text())
+    stranger = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    try:
+        path.write_text(json.dumps({**meta, "pid": stranger.pid}))  # the recorded pid now names someone else
+        jobs.stop(job["id"], wait=2)
+        assert stranger.poll() is None  # not signalled: its start and command are not the job's
+    finally:
+        stranger.kill()
+        stranger.wait()
+        path.write_text(json.dumps(meta))
+        jobs.stop(job["id"], wait=10)
+
+
 def test_a_job_whose_command_fails_is_failed_with_its_error():
     job = jobs.start(["smoke", "x"], command=[sys.executable, "-c", "import sys; print('boom', file=sys.stderr); "
                                                                      "sys.exit(3)"])
