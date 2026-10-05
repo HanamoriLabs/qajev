@@ -30,6 +30,11 @@ qajev check https://shop.example \
 - **Verdicts you can trust.** Jev saying "done" is never proof: your expectations decide. And a problem with the
   product (**fail**) is never mixed up with a problem on the tool's side (**harness**) or a visitor getting lost
   (**stuck**, often a real usability issue).
+- **Is it easy to use?** The smoke crawl also measures each page's usability, free and as advice that never
+  changes a result: text contrast (WCAG AA), whether a keyboard reaches every control and shows where it is, 200%
+  zoom, text cut off, overflowing its box or drawn over other text, open dialogs, and whether the same kind of
+  element looks the same on every page. A goal run adds how findable the goal was, and never blames the page for
+  QAJev's own limits. [More](docs/reports.md#ux).
 - **Desktop and phone, always.** Every website test also runs in a phone view (a phone's screen size, touch and
   user agent, like a browser's device mode), unless you pin one device. [More](docs/writing-tests.md#desktop-and-phone).
 - **Fast and cheap.** A decision takes about a quarter of a second and costs a fraction of a cent. The smoke crawl
@@ -68,6 +73,7 @@ Every run writes `report.html` (open it in a browser), `report.md` and `report.j
 | | |
 |---|---|
 | **Crawl a site for free** | `qajev smoke URL`: HTTP errors, script errors, broken images and links, accessibility and SEO basics |
+| **Check usability** | the same `qajev smoke URL` measures contrast, keyboard reach, 200% zoom, text layout and design consistency, free; `--no-ux` skips it ([UX notes](docs/reports.md#ux)) |
 | **Check one thing** | `qajev check URL --goal ... --expect-text ...` |
 | **Run a suite** | `qajev run suite.yaml`: several scenarios, on desktop, phone or tablet, with personas ([Writing tests](docs/writing-tests.md)) |
 | **Prove a product works** | store its objectives once, run them any time, see what changed since last time ([Projects](docs/projects.md)) |
@@ -112,6 +118,10 @@ Jev reads pages as text and works with standard controls. Shadow DOM, iframes, c
 uploads, pop-up windows and custom keyboard widgets are out of its reach today, and it does not scroll far on its
 own (start a scenario close to its target). Pages that never stop changing make its decisions go stale; those
 come out as **harness**, never as a product failure.
+
+The UX notes are measurements, not a usability study: they tell a game from a page by its canvas size only, and
+they compare text with text, so a box covering text (a floating button over a paragraph) is not reported. Their
+known limits are listed in [Reading a report](docs/reports.md#ux).
 
 On the iOS Simulator, QAJev tests native apps, but cannot yet read a web page inside Safari (its accessibility reader
 sees only Safari's own controls), so `--real-devices ios` comes out **harness** with that reason. Android Chrome works.

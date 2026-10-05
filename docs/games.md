@@ -276,6 +276,26 @@ window.__qajevAdapter = {
 
 Electron apps get switches with `--game-arg` (or `args:` in a suite), e.g. `--game-arg=--query=autoplay=1`.
 
+## Web games in the browser: real keys at human speed
+
+A web game played in its own page needs no bridge: test it with an ordinary suite (`qajev run`) on its URL, and
+play it with [hooks](writing-tests.md#hooks-direct-steps-before-or-after-jev).
+
+- A `key` hook presses real keys, as a player does: the page gets trusted key events. It can repeat a sequence
+  (button mashing) or hold a key.
+- A `react` hook plays in real time: every 50 ms it runs a small policy in the page that looks only at what a
+  player can see, waits a human reaction time (0.3 s, say), and answers with key presses. So a pass means a person
+  could do it, not a bot with perfect timing.
+- **A throwaway profile is a first visit.** Every `--ephemeral` run starts with an empty browser profile, so a game
+  shows whatever it shows on a first launch (a tutorial offer, a cookie banner) over its menu. To test as a
+  returning player, set the game's own "already seen" flag in a `js` hook, then `reload`.
+- **Real time, or no verdict.** A machine under load, or a headless browser drawing without a GPU, can run a game
+  slower than real time, and a timing test then says nothing about the game. Measure it in the page (frames per
+  second, and game time against real time), and end with a `js` hook that throws when either falls short (for
+  example under 50 fps, or game time under 0.95 of real time). A hook that throws makes the test **harness** with
+  your numbers in the reason: never a pass or a fail. Then rerun the timed tests in a visible browser (no
+  `--headless`), which draws with the GPU.
+
 ## Tips
 
 - Give the game a **test hook** if you can: one function that returns the state as plain values (screen,
