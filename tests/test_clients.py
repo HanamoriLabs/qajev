@@ -106,15 +106,17 @@ def test_all_clients_act_at_the_same_instant_and_an_error_names_its_client():
     players = [clients.Client(f"p{i}", "u", None) for i in range(1, 6)]
     began = time.monotonic()
     done = clients.together(players, act)
-    assert time.monotonic() - began < 0.6  # five 0.2 s acts together, not one after another (1 s)
-    assert max(started.values()) - min(started.values()) < 0.05
+    # together, not one after another: in sequence the five 0.2 s acts would take 1 s and start 0.8 s apart (the
+    # margins are for slow CI runners: macOS on 3.13 started them 60 ms apart)
+    assert time.monotonic() - began < 0.8
+    assert max(started.values()) - min(started.values()) < 0.15
     assert len({v for _, v, e in done if e is None}) == 4  # each on its own thread
     assert clients._first_error(done, "step 2 (wait_for)") == (
         "hook_failed", "[p2] step 2 (wait_for): wait_for 'game.ready' timed out")
     staggered = {}
     clients.together(players[:3], lambda c: staggered.setdefault(c.name, time.monotonic()), [0.0, 0.1, 0.2])
     gaps = [staggered["p2"] - staggered["p1"], staggered["p3"] - staggered["p2"]]
-    assert all(0.07 < g < 0.2 for g in gaps), gaps
+    assert all(0.07 < g < 0.35 for g in gaps), gaps  # 0.1 s apart, not together (0) and not in sequence
 
 
 def test_a_clients_error_becomes_the_stop_it_means():
