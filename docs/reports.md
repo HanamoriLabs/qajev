@@ -113,6 +113,14 @@ a control the goal needs (an off-site link without `--host`: "blocked by the gua
 press or a drag (Jev clicks, types, chooses and scrolls; a key is a `key` hook's job), is **harness** with that reason,
 and gets no struggle signals: it says nothing about the page.
 
+Both tests are strict, so that a real struggle stays the page's:
+- A key counts only as a key press: "press Escape", "hold Space to charge", "press Tab twice", "the backquote key",
+  "the W key". A backtick around code (`` Run `tab claude` ``), a product's key ("copy the new key") or a tab ("the
+  tab's Close button", "the tab cap") is not a key press.
+- A danger or read-only control counts only when the goal asks for its action: the guard's word as the goal's verb,
+  and the control's object when it names one. "Delete the test account" needs a hidden "Delete account"; "Find your
+  account settings" does not. An off-site link counts when the goal shares a word with its label or its host.
+
 | Note | From |
 |---|---|
 | findability | always: reached or not (or "Jev finished, but the checks failed"), in how many actions over how many pages, with backtracks, scrolls and unsure steps, and QAJev's own recovery scrolls apart |

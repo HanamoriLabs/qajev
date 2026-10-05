@@ -257,17 +257,45 @@ UNSURE_P, UNSURE_GAP, SCROLLS = 0.8, 0.25, 4
 # A goal not reached for a reason that is not the page's (5 Oct testers): the guard hid what it needed (Marketing:
 # an off-site link, no --host), or it needed an action Jev does not have (SideGame1: the backquote key). Jev clicks,
 # types, chooses and scrolls; a key or a drag is a hook's job.
-KEYS = [("backquote", r"`|\bback ?quote\b|\bbacktick\b"), ("Escape", r"\b(?:press|hit)\s+(?:the\s+)?esc(?:ape)?\b"),
-        ("Enter", r"\b(?:press|hit)\s+(?:the\s+)?(?:enter|return)\b"),
-        ("Space", r"\b(?:press|hit|hold)\s+(?:the\s+)?space(?:bar)?\b"),
-        ("Tab", r"\b(?:press|hit)\s+(?:the\s+)?tab\b"), ("a key", r"\b(?:press|hit|hold|tap)\b[^.]{0,30}?\bkey\b")]
+# A key counts only as a key press: "press/hit/hold/tap (the) X" with nothing that makes X a noun after it, or "the X
+# key" (Orchestrator, 5 Oct: a backtick around code, "copy the new key" and "the tab's Close button" are not keys).
+_PRESS = r"\b(?:press|hit|hold|tap)\s+(?:the\s+)?"
+_ENDS = r"(?![\w'\u2019])(?=\s*(?:$|[.,;:!?()]|(?:to|and|then|until|twice|again|once|so|or|key|keys|\d+\s+times)\b))"
+KEYS = [("backquote", rf"{_PRESS}(?:`|back ?quote|backtick)(?![\w`])|\b(?:back ?quote|backtick)\s+key\b"),
+        ("Escape", rf"{_PRESS}esc(?:ape)?{_ENDS}|\besc(?:ape)?\s+key\b"),
+        ("Enter", rf"{_PRESS}(?:enter|return){_ENDS}|\b(?:enter|return)\s+key\b"),
+        ("Space", rf"{_PRESS}space(?:bar)?{_ENDS}|\bspace(?:bar)?\s+key\b"),
+        ("Tab", rf"{_PRESS}tab{_ENDS}|\btab\s+key\b"),
+        ("an arrow key", rf"{_PRESS}(?:left|right|up|down)(?:\s+arrow)?{_ENDS}|\barrow\s+keys?\b"),
+        ("a key", rf"{_PRESS}any\s+key\b|\b(?:{_PRESS[2:]}|the\s+)(?:[a-z0-9]|f(?:[1-9]|1[0-2])|shift|ctrl|control"
+                  r"|alt|option|cmd|command|backspace|delete|home|end|page\s?(?:up|down))\s+key\b")]
 DRAG = r"\b(?:drag|swipe)\b"
+_NOT_VERBS = {"all", "the", "a", "an", "my", "your", "now", "this", "it"}
 COMMON = {"find", "where", "what", "when", "then", "there", "your", "with", "that", "this", "from", "into", "page",
           "open", "click", "show", "shows", "stop", "goal", "until", "after", "before", "have", "they", "them", "some"}
 
 
 def _words(text):
     return {w for w in re.findall(r"[a-z0-9]+", str(text).lower()) if len(w) >= 4 and w not in COMMON}
+
+
+def _forms(verb):
+    stem = verb[:-1] if verb.endswith("e") else verb
+    return {verb, verb + "s", verb + "es", verb + "ed", stem + "ed", stem + "ing"}
+
+
+def _asks_for(task, h):
+    """Whether the goal needs this hidden control. An off-site link: a word of its label or its host. A danger or
+    read-only control: only when the goal asks for its action, the guard's word as the goal's verb and the control's
+    object when it names one ("Find your account settings" never needs "Delete account")."""
+    want = _words(task)
+    if h.get("why") not in {"danger", "read-only"}:
+        host = str(h.get("match") or "") if h.get("why") == "off-site link" else ""
+        return bool(want & _words(h.get("label"))) or any(w in host.lower() for w in want)
+    said = set(re.findall(r"[a-z]+", task.lower()))
+    verbs = [w for w in re.findall(r"[a-z]+", str(h.get("match") or "").lower()) if w not in _NOT_VERBS]
+    thing = _words(h.get("label")) - set(verbs)
+    return bool(verbs) and all(_forms(v) & said for v in verbs) and (not thing or bool(thing & want))
 
 
 def blocked_by(goal, outcome, hidden):
@@ -277,10 +305,9 @@ def blocked_by(goal, outcome, hidden):
     if outcome not in {"stuck", "harness"} or not goal:
         return None
     task = re.split(r"(?i)\bstop when\b", goal)[0]
-    want = _words(task)
     for h in hidden:
         host = str(h.get("match") or "") if h.get("why") == "off-site link" else ""
-        if want & _words(h.get("label")) or any(w in host.lower() for w in want):
+        if _asks_for(task, h):
             match = f": {h['match']}" if h.get("match") else ""
             held = f"{str(h.get('label') or '?')[:60]!r} ({h.get('why')}{match})"
             fix = (f"add --host {host} to let Jev follow it" if host else

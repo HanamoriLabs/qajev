@@ -178,6 +178,43 @@ def test_a_goal_not_reached_is_blamed_on_the_guard_or_the_tool_before_the_page()
     assert ux.blocked_by("Find the price. Stop when $29 shows.", "stuck", []) is None  # a real struggle: the page's
 
 
+def test_a_key_word_or_a_shared_word_alone_does_not_blame_the_tool_or_the_guard():
+    # Orchestrator's review of #35, 5 Oct: a backtick around code, a product's "key" or "tab", or one word shared with
+    # a hidden danger control turned the page's real struggle into harness. On FlockTab, keys and tabs are the product.
+    page_s = ["Run `tab claude` and find the spend. Stop when the spend shows.",
+              "Press Create, then copy the new key. Stop when the key shows.",
+              "Tap Settings and find your API key. Stop when it shows.",
+              "Hit the tab's Close button. Stop when the tab is gone.",
+              "Find out what happens when you hit the tab cap. Stop when the limit shows."]
+    for goal in page_s:
+        assert ux.blocked_by(goal, "stuck", []) is None, goal
+    danger = [{"label": "Delete account", "why": "danger", "match": "Delete"},
+              {"label": "Buy Pro plan", "why": "danger", "match": "Buy"}]
+    for goal in ["Find your account settings. Stop when they show.",
+                 "Find the price of the Pro plan. Stop when it shows."]:
+        assert ux.blocked_by(goal, "stuck", danger) is None, goal
+    # Still QAJev's own: a danger control the goal asks for by its action, and the keys named as keys.
+    assert ux.blocked_by("Delete the test account. Stop when it is gone.", "stuck", danger).startswith(
+        "blocked by the guard: it hid 'Delete account' (danger: Delete)")
+    assert ux.blocked_by("Buy the Pro plan. Stop when the receipt shows.", "stuck", danger).startswith(
+        "blocked by the guard: it hid 'Buy Pro plan'")
+    offsite = [{"label": "Get the desktop app", "why": "off-site link", "match": "downloads.example.org"}]
+    assert ux.blocked_by("Find where to download the desktop app. Stop when the download page shows.", "stuck",
+                         offsite).startswith("blocked by the guard: it hid 'Get the desktop app'")
+    fixture = "Open the menu with the backquote key (`) and press Start. Stop when Started shows."
+    for goal, key in [(fixture, "backquote"),
+                      ("Press the backquote key to open the console. Stop when it shows.", "backquote"),
+                      ("Press Escape to close the dialog. Stop when it is closed.", "Escape"),
+                      ("Press the Tab key until Pricing has focus. Stop when it does.", "Tab"),
+                      ("Press Tab twice, then Enter. Stop when the form is sent.", "Tab"),
+                      ("Hold the W key to run. Stop when the player moves.", "a key")]:
+        assert ux.blocked_by(goal, "stuck", []) == (
+            f"the goal needs a key press ({key}); Jev can only click, type, choose and scroll: press it with a "
+            "`key` hook before the goal"), goal
+    assert ux.blocked_by("Drag the slider to 50. Stop when it shows 50.", "stuck", []).startswith(
+        "the goal needs a drag")
+
+
 def test_findability_counts_qajevs_recovery_scrolls_apart_from_jevs():
     history = [{"kind": "click", "action": "Play", "url": "http://h/"}]
     notes = ux.struggle(history, [], "stuck", [{"after": "BLOCKED", "scrolled": 2}])
