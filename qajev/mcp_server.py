@@ -181,8 +181,8 @@ def _trim(report, verbose):
     """Keep tool results small enough for a model's context; the full report stays on disk."""
     if verbose or "scenarios" not in report:
         return report
-    keep = ("name", "about", "outcome", "reason", "stop", "seconds", "cost_usd", "end_url", "checks", "findings",
-            "shot", "jev", "blocked_writes", "page_says", "needs_sign_in")
+    keep = ("name", "about", "outcome", "reason", "stop", "stop_detail", "not_run", "seconds", "cost_usd", "end_url",
+            "checks", "findings", "shot", "jev", "blocked_writes", "page_says", "needs_sign_in")
     out = {k: v for k, v in report.items() if k != "scenarios"}
     out["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [], {})} for r in report["scenarios"]]
     for r in out["scenarios"]:

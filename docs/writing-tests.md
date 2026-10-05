@@ -251,11 +251,13 @@ scenarios:
 - **Steps**: `all` acts on every player at the same instant, unless `stagger` or `jitter` spreads them out (in ms;
   `seed:` on the scenario repeats a jitter). An offset is the earliest a player acts: on a busy machine a player can
   start late (tens of ms, more under heavy load), never early, so measure delays with snapshots, not offsets. `client` acts on some. A step is a hook (`js`, `click`, `fill`, `key`,
-  `wait_for`, `sleep`, `navigate`, `reload`); a failed hook names its player and stops the scenario.
+  `wait_for`, `sleep`, `navigate`, `reload`); a failed hook names its player and stops the scenario
+  (`harness`, naming the steps that never ran: a scenario that stopped early never passes).
 - **`state`** is a JS expression read on every player. `across` checks and a snapshot's `expect` see `clients`,
   one `{name, url, at, state}` per player (`at` is when it got there, in ms on the machine's clock), and
   `snapshots.<name>` for every snapshot so far. Compare `at` across players to measure how long a move took to
-  reach everyone. They run in a blank tab of QAJev's own: the page cannot change them.
+  reach everyone. They run in a blank tab of QAJev's own: the page cannot change them. Each check gets its own copy
+  (one that sorts `clients` does not change what the next one sees), whatever the states' size.
 - **The report** shows each player's screenshot, when each player acted in each step, and when each reached each
   snapshot (ms after the first, or "timed out").
 - The guard is armed for every player as in any scenario: `mode: readonly` blocks writing requests (WebSockets pass);

@@ -34,14 +34,21 @@ the test tool are kept apart.**
 
 | Outcome | Means | What to do |
 |---|---|---|
-| **pass** | every expectation held | nothing |
+| **pass** | every expectation held, and every one of them ran | nothing |
 | **fail** | the product is wrong: a check failed, or the page did not load | read the reason and the failed checks |
 | **stuck** | Jev looked for a way forward and found none (QAJev also scrolls and looks again, twice) | look at the screenshot: often a real usability problem |
-| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error | says nothing about the product; retry or narrow the goal |
+| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error, a browser error or a failed hook | says nothing about the product; retry or narrow the goal |
 | **unverified** | the scenario had no expectations | add some |
 | **skipped** | a scenario it depends on did not pass, or the machine was too busy | fix that first |
 
 `--strict` counts **stuck** as a failure.
+
+A run that broke before it finished (a browser error, a failed hook, a guard that went missing) is never a
+**pass**, even when every check that ran passed, and neither is a run that stopped before some of its checks or steps
+ran. It is **harness**, and the reason says where it stopped and what never ran: "browser/daemon error: step 4
+(snapshot walking): RuntimeError: ...; 2 check(s) ran and passed; not run: step 5 (js), the final checks".
+`report.json` has the same as `stop_detail` and `not_run`. An action or time budget is different: Jev wandered,
+but the page was still judged in full, so its checks decide.
 
 A run with a stored test account says who signed in, under **Run** ("Sign-in: as qa+shop@example.com (account
 shop-tester), in 3.1 s"). When the sign-in fails, that line gives the site's reason and every scenario is

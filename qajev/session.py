@@ -50,6 +50,20 @@ def configure_env(cdp_url, name=None):
     return os.environ["BU_NAME"]
 
 
+DAEMON_LINE = 65536  # browser_harness's daemon reads each command as one line of at most 64 KiB (asyncio's default)
+
+
+def too_long(method, params, error):
+    """A command over the daemon's line limit, said plainly with its size, or None for any other error. The daemon
+    answers a command a little over it with "Separator is found, but chunk is longer than limit", and closes the
+    socket on a far larger one while it is still being sent (BrokenPipeError: 1.8 MB, 5 Oct)."""
+    size = len(json.dumps(params, default=str))
+    if size <= DAEMON_LINE and "than limit" not in str(error) and "exceed the limit" not in str(error):
+        return None
+    return (f"{method}: a {size / 1024:.0f} KB command is over the browser daemon's {DAEMON_LINE // 1024} KB limit "
+            f"per command ({error})")
+
+
 def load(ledger):
     """Import jev once per process and apply QAJev's patches. Returns a namespace of the modules."""
     global _jev
@@ -70,9 +84,15 @@ def load(ledger):
         # The 5 s default is bound as a default argument; under load it failed ~1 call in 8.
         params.pop("_response_timeout", None)
         try:
-            return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
-        except TimeoutError:
-            return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+            try:
+                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+            except TimeoutError:
+                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+        except (RuntimeError, OSError) as e:
+            said = too_long(method, params, e)
+            if said:
+                raise RuntimeError(said) from e
+            raise
 
     jev_browser.cdp = patient_cdp
 

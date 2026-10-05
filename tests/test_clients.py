@@ -1,6 +1,7 @@
 """Multiplayer scenarios (clients.py), without a browser: the suite format, when each client acts, and the report.
 test_live_clients.py runs five real clients against a local room."""
 
+import json
 import random
 import threading
 import time
@@ -174,3 +175,106 @@ def test_a_client_tab_starts_the_browser_daemon_and_keeps_qajevs_rules_in_its_ow
     assert ("Target.createTarget", "ctx1") in calls  # the tab lives in its own context
     tab.close()
     assert calls[-2:] == [("Target.closeTarget", None), ("Target.disposeBrowserContext", "ctx1")]
+
+
+DAEMON_LINE = 65536  # browser_harness's daemon reads a command as one line, at most 64 KiB (asyncio's default limit)
+
+
+class FakePlayer:
+    """A client's page: every hook works, and its state is `size` characters (a game's roster, gear and events)."""
+
+    def __init__(self, size):
+        self.size, self.jev = size, SimpleNamespace(cdp=None, admin=SimpleNamespace(ensure_daemon=lambda: None))
+
+    def arm(self, mode): pass
+    def set_device(self, device): pass
+    def navigate(self, url): self.url = url
+    def probe(self, expect): return {"url": self.url, "status": 200, "text": [True], "probe": {}}
+    def why_failed(self, url): return None
+    def run_hook(self, hook, url): return True
+    def evaluate(self, expression, timeout_ms=15000): return {"at": 1, "state": {"blob": "x" * self.size}}
+    def screenshot(self, path): return None
+    def close(self): pass
+
+
+class FakeJudge:
+    """QAJev's judge tab, behind the daemon: a command longer than its line limit is refused with the daemon's own
+    words, and `fail_on` (the nth across-check evaluation) raises as a crashed target would."""
+
+    def __init__(self, cdp=None, ensure_daemon=None, fail_on=None):
+        self.lines, self.judged, self.fail_on = [], 0, fail_on
+
+    def call(self, method, **params):
+        line = len(json.dumps({"method": method, "params": params, "session_id": "s" * 32})) + 1
+        self.lines.append(line)
+        if line > DAEMON_LINE:
+            raise RuntimeError("Separator is found, but chunk is longer than limit")
+        if "clients, snapshots" in params.get("expression", ""):
+            self.judged += 1
+            if self.judged == self.fail_on:
+                raise RuntimeError("Target crashed")
+        return {"result": {"value": {"value": True}}}
+
+    def close(self): pass
+
+
+def run_players(monkeypatch, tmp_path, size, fail_on=None):
+    from qajev import session
+
+    judge = FakeJudge(fail_on=fail_on)
+    monkeypatch.setattr(session, "Session", lambda *a, **k: FakePlayer(size))
+    monkeypatch.setattr(session, "Tab", lambda *a, **k: judge)
+    s = suite(steps=[{"all": {"js": "game.join()"}},
+                     {"snapshot": "joined", "expect": ["clients.length === 5"]},
+                     {"all": {"js": "game.walk()"}, "stagger": 10},
+                     {"snapshot": "walking", "expect": ["clients.every((c) => c.state.blob)"]},
+                     {"client": "p1", "js": "game.chat('hi')"}],
+              clients=5, expect={"text": "Room", "across": "clients.length === 5"}).scenarios[0]
+    result = clients.run(s, ledger=None, hosts={"127.0.0.1"}, run_dir=tmp_path,
+                         suite_meta={"headless": True, "guard": {}})
+    return result, judge
+
+
+def test_large_client_states_reach_the_judge_in_commands_the_daemon_accepts(monkeypatch, tmp_path):
+    # verse1's five Verse players (5 Oct, 2 runs of 2): each check carried every client's state of every snapshot
+    # inline, so the "walking" check was the first command over the daemon's 64 KiB line, and the run broke there.
+    result, judge = run_players(monkeypatch, tmp_path, size=8000)
+    assert result["stop"] == "checked", result["reason"]
+    assert [st.get("snapshot") or st["do"] for st in result["steps"]] == ["js", "joined", "js", "walking", "js"]
+    assert max(judge.lines) <= DAEMON_LINE
+    assert result["outcome"] == "pass" and len(result["checks"]) == 2 + 5 + 1  # snapshots, each client, across
+
+
+def test_a_run_that_breaks_mid_scenario_is_never_a_pass_and_says_where_and_why(monkeypatch, tmp_path):
+    from qajev import verdict
+
+    result, _ = run_players(monkeypatch, tmp_path, size=10, fail_on=2)  # the "walking" check's evaluation
+    assert result["outcome"] == "harness", result["reason"]
+    assert verdict.gate([result["outcome"]]) == "INCOMPLETE"
+    assert "step 4 (snapshot walking)" in result["reason"] and "Target crashed" in result["reason"]
+    assert "not run: step 5 (js), the final checks" in result["reason"]
+    assert result["not_run"] == ["step 5 (js)", "the final checks"]
+    assert result["stop_detail"] == "step 4 (snapshot walking): RuntimeError: Target crashed"
+    from qajev.mcp_server import _trim  # what qa_job and qa_run_suite hand an agent
+
+    kept = _trim({"scenarios": [result], "run_dir": str(tmp_path)}, verbose=False)["scenarios"][0]
+    assert kept["stop_detail"] == result["stop_detail"] and kept["not_run"] == result["not_run"]
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
+    data = report.build(SimpleNamespace(name="mp"), [{**result, "about": "x"}], [ledger], browser={},
+                        started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+    report.write(tmp_path, data)
+    assert "Target crashed" in (tmp_path / "report.html").read_text()
+    assert data["gate"] == "INCOMPLETE"
+
+
+def test_a_command_over_the_daemons_limit_says_so_in_plain_words():
+    from qajev.session import too_long
+
+    error = RuntimeError("Separator is found, but chunk is longer than limit")
+    said = too_long("Runtime.evaluate", {"expression": "x" * 70000}, error)
+    assert said.startswith("Runtime.evaluate: a 68 KB command is over the browser daemon's 64 KB limit per command")
+    assert "chunk is longer than limit" in said  # the daemon's own words stay, for a search
+    assert too_long("Page.navigate", {}, RuntimeError("Target closed")) is None  # raised as it was
+    huge = too_long("Runtime.evaluate", {"expression": "x" * 2_000_000}, BrokenPipeError(32, "Broken pipe"))
+    assert huge.startswith("Runtime.evaluate: a 1953 KB command is over the browser daemon's 64 KB limit")

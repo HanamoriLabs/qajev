@@ -9,6 +9,7 @@ checks are judged over all their states in a blank tab of QAJev's own, where pag
 calls: $0.
 """
 
+import base64
 import json
 import random
 import re
@@ -23,6 +24,10 @@ from .suite import page_checks as wants_page_checks
 
 SETTLE_POLL = 0.5
 STATE_KEEP = 2000  # characters of each client's state kept in the report (the checks see all of it)
+# The browser daemon reads each command as one line of at most 64 KiB (asyncio's default), and refuses a longer one
+# ("Separator is found, but chunk is longer than limit"). Five game states over two snapshots passed that (verse1,
+# 5 Oct), so the judge tab gets them in pieces of this many base64 characters (base64: nothing to escape on the way).
+UPLOAD_CHUNK = 32 * 1024
 
 # Every client's `state` at one moment: after `until` holds in that page (polled every 10 ms, in the page), its time
 # (Date.now(), the same clock for every client on this machine) and its state, or the error reading it.
@@ -95,18 +100,39 @@ def snapshot(clients, state, until=None, timeout=10.0):
     return out
 
 
-def judge(tab, check, clients_state, snapshots):
-    """One across check, judged over every client's state in QAJev's own blank tab. -> a check."""
+def _evaluate(tab, expression):
+    r = tab.call("Runtime.evaluate", expression=expression, returnByValue=True, awaitPromise=True, timeout=10000)
+    if r.get("exceptionDetails"):
+        raise RuntimeError(f"judge tab: {(r['exceptionDetails'].get('exception') or {}).get('description')}"[:300])
+    return r
+
+
+def judge(tab, checks, clients_state, snapshots):
+    """Across checks, judged over every client's state in QAJev's own blank tab. The states go there first, in
+    pieces under the daemon's line limit; each check then parses its own copy (a check that sorts or edits them
+    cannot change what the next one sees). -> the checks."""
     from .session import awaited
 
-    expression = awaited(f"((clients, snapshots) => ({check['js']}))({json.dumps(clients_state)}, "
-                         f"{json.dumps(snapshots)})")
-    r = tab.call("Runtime.evaluate", expression=expression, returnByValue=True, awaitPromise=True, timeout=10000)
-    value = (r.get("result") or {}).get("value") or {}
-    if "error" in value:
-        return {"check": check["check"], "ok": False, "detail": f"error: {value['error']}"[:300]}
-    ok = value.get("value") is True
-    return {"check": check["check"], "ok": ok, "detail": None if ok else f"returned {value.get('value')!r}"[:300]}
+    if not checks:
+        return []
+    text = base64.b64encode(json.dumps({"clients": clients_state, "snapshots": snapshots}).encode()).decode()
+    _evaluate(tab, "window.__qajevIn = []")
+    for i in range(0, len(text), UPLOAD_CHUNK):
+        _evaluate(tab, f"window.__qajevIn.push('{text[i:i + UPLOAD_CHUNK]}')")
+    _evaluate(tab, "window.__qajevStates = new TextDecoder().decode(Uint8Array.from(atob(window.__qajevIn.join('')),"
+                   " (c) => c.charCodeAt(0))); delete window.__qajevIn; true")
+    out = []
+    for check in checks:
+        r = _evaluate(tab, awaited(f"(({{clients, snapshots}}) => ({check['js']}))"
+                                   "(JSON.parse(window.__qajevStates))"))
+        value = (r.get("result") or {}).get("value") or {}
+        if "error" in value:
+            out.append({"check": check["check"], "ok": False, "detail": f"error: {value['error']}"[:300]})
+            continue
+        ok = value.get("value") is True
+        out.append({"check": check["check"], "ok": ok,
+                    "detail": None if ok else f"returned {value.get('value')!r}"[:300]})
+    return out
 
 
 def _trim(snaps):
@@ -152,6 +178,7 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
     stop, detail = "checked", None
     clients = []
     tab = None
+    where, at, final_done = "opening", 0, False  # the part running now; the steps before step `at` + 1 are over
 
     def absorb(client, observed):
         probe = (observed or {}).get("probe") or {}
@@ -189,6 +216,7 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
 
         for n, s in enumerate(scenario.steps if stop == "checked" else [], 1):
             began = time.monotonic()
+            where, at = _label(n, s), n
             if s["kind"] == "snapshot":
                 step(f"snapshot {s['name']}" + (f": waiting for {s['until']}" if s["until"] else ""))
                 deadline = time.monotonic() + s["settle"]
@@ -196,7 +224,7 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
                     rows = snapshot(clients, scenario.state, s["until"], s["timeout"])
                     snaps[s["name"]] = rows
                     states = [{k: r.get(k) for k in ("name", "url", "at", "state", "error")} for r in rows]
-                    got = [judge(tab, c, states, snaps) for c in s["expect"]]
+                    got = judge(tab, s["expect"], states, snaps)
                     if verdict.all_ok(got) or not got or time.monotonic() >= deadline:
                         break
                     time.sleep(SETTLE_POLL)
@@ -222,6 +250,7 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
                 break
 
         if stop == "checked" or stop == "hook_failed":
+            where = "the final checks"
             step(f"checking every client and across them (settling up to {scenario.settle:.0f} s)")
             deadline = time.monotonic() + scenario.settle
             while True:
@@ -237,17 +266,18 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
                     result["final_state"] = _trim({"final": rows})["final"]  # not a snapshot: no name to collide with
                     states = [{k: r.get(k) for k in ("name", "url", "at", "state", "error")} for r in rows]
                     across = [{**c, "check": f"across: {c['check']}"}
-                              for c in (judge(tab, a, states, snaps) for a in scenario.expect["across"])]
+                              for c in judge(tab, scenario.expect["across"], states, snaps)]
                 final = per_client + across
                 if stop != "checked" or verdict.all_ok(final) or time.monotonic() >= deadline:
                     break
                 time.sleep(SETTLE_POLL)
             checks += final
+            final_done = True
     except Exception as e:  # noqa: BLE001 (a client that cannot even open is the run's trouble, not the product's)
         from .session import GuardMissing
 
         stop = "guard_missing" if isinstance(e, GuardMissing) else "browser_error"
-        detail = f"{type(e).__name__}: {e}"[:500]
+        detail = f"{where}: {type(e).__name__}: {e}"[:500]
     finally:
         if run_dir:
             for c in clients:
@@ -266,9 +296,19 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
     result["stop"] = stop
     has = wants_page_checks(page_expect) or bool(scenario.expect.get("across")) or any(
         s["kind"] == "snapshot" and s["expect"] for s in scenario.steps)
-    outcome, reason = verdict.classify(stop, checks, has_checks=has, stop_detail=detail)
-    result.update(outcome=outcome, reason=reason, seconds=round(time.monotonic() - started, 2))
+    # A run that broke stops before its last steps: what never ran is named, and the run can never pass on the
+    # checks that did (verse1, 5 Oct: two snapshot checks passed, then a browser error, graded PASS).
+    not_run = [] if stop == "checked" else [_label(n, s) for n, s in enumerate(scenario.steps, 1) if n > at]
+    not_run += [] if final_done else ["the final checks"]
+    outcome, reason = verdict.classify(stop, checks, has_checks=has, stop_detail=detail, not_run=not_run)
+    result.update(outcome=outcome, reason=reason, stop_detail=detail, not_run=not_run,
+                  seconds=round(time.monotonic() - started, 2))
     return result
+
+
+def _label(n, s):
+    """A step as the report names it: "step 4 (snapshot walking)", "step 3 (js)"."""
+    return f"step {n} (" + (f"snapshot {s['name']}" if s["kind"] == "snapshot" else next(iter(s["hook"]))) + ")"
 
 
 def _slug(name):
