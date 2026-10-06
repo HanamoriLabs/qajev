@@ -51,9 +51,9 @@ the test tool are kept apart.**
 | Outcome | Means | What to do |
 |---|---|---|
 | **pass** | every expectation held, and every one of them ran | nothing |
-| **fail** | the product is wrong: a check failed, or the page did not load | read the reason and the failed checks |
+| **fail** | the product is wrong: a check failed, or the page did not load (a production server that is not answering included: the site is down) | read the reason and the failed checks |
 | **stuck** | Jev looked for a way forward and found none (QAJev also scrolls and looks again, twice) | look at the screenshot: often a real usability problem |
-| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error, a browser error, a failed hook, or Jev saying DONE without taking a single action while a check fails | says nothing about the product; retry or narrow the goal |
+| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error, a browser error, a failed hook, Jev saying DONE without taking a single action while a check fails, a local dev server that is not answering ("the server at ... is not answering": start the app), or a `js` check whose own code broke ("the check failed to run: TypeError ...": fix the check) | says nothing about the product; retry or narrow the goal |
 | **unverified** | the scenario had no expectations | add some |
 | **skipped** | a scenario it depends on did not pass, or the machine was too busy | fix that first |
 

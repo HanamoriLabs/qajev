@@ -101,3 +101,12 @@ def test_config_is_versioned_and_embedded_as_json():
     assert json.dumps(a) in source
     with pytest.raises(ValueError):
         guard.build_config(mode="yolo")
+
+
+@pytest.mark.parametrize("label, hidden", [
+    ("Roll", False), ("Roll dice", False), ("Roll call", False), ("Rolls", False),
+    ("Roll back", True), ("Rollback release", True), ("roll back deploy", True), ("Roll-back", True),
+])
+def test_only_a_rollback_is_denied_not_a_dice_roll(label, hidden):
+    # run 20261007-035805-c494: backgammon's "Roll" was hidden as danger, and 4 scenarios went harness
+    assert matches(guard.DENY, label) is hidden, label

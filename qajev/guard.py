@@ -20,7 +20,8 @@ DENY = [
     r"(account|profile|everything|all\b|data|workspace|organi[sz]ation|org\b|team|project|flock)",
     r"\bclear\s+(all|data|everything|history|cache)\b",
     r"\breset\s+(everything|all|password|data)\b",
-    r"\b(revoke|rotate|regenerate|roll)\b",
+    r"\b(revoke|rotate|regenerate)\b",
+    r"\broll(\s*-?\s*back|back)\b",  # a rollback, never a dice "Roll" (run 20261007-035805-c494: backgammon hid)
     r"\b(remove|delete)\s+(key|token|passkey|member|user)",
     r"\bchange\s+(password|unlock|email)\b",
     r"\b(disconnect|unlink|transfer\s+ownership|leave\s+(team|workspace|organi[sz]ation|org|flock|group))\b",

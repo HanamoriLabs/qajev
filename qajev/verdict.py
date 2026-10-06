@@ -20,6 +20,15 @@ PRODUCT_STOPS = {"done", "reached", "checked", "unreachable"}
 BROKEN_STOPS = {"browser_error", "hook_failed", "guard_missing", "left_site", "interrupted"}
 SEVERITY_ORDER = {"S1": 0, "S2": 1, "S3": 2}
 BLANK_MS = 10_000
+# Chrome's errors for a server it never reached: nothing listens (a local app not started), the name does not
+# resolve, or the connection dropped. On a local dev host that is the test's setup, not the product (job
+# 20261007-015517-7910: five "fails", nobody had started the app); on production it means the site is down.
+NOT_ANSWERING = ("ERR_CONNECTION_REFUSED", "ERR_CONNECTION_RESET", "ERR_CONNECTION_CLOSED", "ERR_CONNECTION_TIMED_OUT",
+                 "ERR_NAME_NOT_RESOLVED", "ERR_NAME_RESOLUTION_FAILED", "ERR_ADDRESS_UNREACHABLE",
+                 "ERR_INTERNET_DISCONNECTED")
+# A check whose own code broke before it read anything (verse3, 7 Oct: 36 "fails", all `x.toFixed is not a
+# function`). A check that throws on purpose (`throw new Error("no score")`) ran, and its answer is no.
+CHECK_BROKE = re.compile(r"^(?:Uncaught )?(TypeError|ReferenceError|SyntaxError)\b")
 
 
 def page_checks(expect, observed):
@@ -48,7 +57,8 @@ def page_checks(expect, observed):
         checks.append(_check(f"on screen: {needle!r}{case}", bool(seen), None if seen else why))
     if expect.get("js"):
         ok, detail, value = js_result(observed.get("js"))
-        checks.append({**_check(f"js {expect['js']!r}", ok, detail), "value": value})
+        checks.append({**_check(f"js {expect['js']!r}", ok, detail), "value": value,
+                       **({"broke": True} if check_broke(observed.get("js")) else {})})
     says = expect.get("says") or {}  # the checks only their author can describe, in the author's words
     for c in checks:
         kind = "js" if c["check"].startswith("js ") else "url_regex" if c["check"].startswith("url matches ") else None
@@ -139,15 +149,33 @@ def all_ok(checks):
     return bool(checks) and all(c["ok"] for c in checks)
 
 
-def classify(stop, checks, *, has_checks, stop_detail=None, not_run=(), actions=None) -> tuple[str, str]:
+def check_broke(r):
+    """A js check's page result is its own code breaking (TypeError, ReferenceError, SyntaxError), not an answer."""
+    error = r.get("error") if isinstance(r, dict) else r[len("error: "):] if isinstance(r, str) and \
+        r.startswith("error: ") else None
+    return bool(error) and bool(CHECK_BROKE.match(str(error)))
+
+
+def unreachable(url, error):
+    """A page that did not load. -> (outcome, reason): a local dev server that is not answering is harness (the
+    app was not started); everything else, production down included, is the product's fail."""
+    from .config import is_local_dev
+
+    if any(code in str(error or "") for code in NOT_ANSWERING):
+        reason = f"the server at {url} is not answering ({error})"
+        return ("harness", reason) if url and is_local_dev(url) else ("fail", reason)
+    return "fail", f"page did not load: {error}"
+
+
+def classify(stop, checks, *, has_checks, stop_detail=None, not_run=(), actions=None, url=None) -> tuple[str, str]:
     """not_run: the expectations or steps that never ran (the run stopped first). actions: how many Jev took, when it
-    pursued a goal. -> (outcome, reason)."""
+    pursued a goal. url: the page it tried to load (for a page that did not). -> (outcome, reason)."""
     failed = [c for c in checks if not c["ok"]]
     why = "; ".join(f"{c['check']}" + (f" ({c['detail']})" if c.get("detail") else "") for c in failed)
     if stop == "skipped":
         return "skipped", stop_detail or "skipped"
     if stop == "unreachable":
-        return "fail", f"page did not load: {stop_detail}"
+        return unreachable(url, stop_detail)
     if not has_checks:
         if stop in HARNESS_STOPS:
             return "harness", _stop_text(stop, stop_detail)
@@ -158,6 +186,9 @@ def classify(stop, checks, *, has_checks, stop_detail=None, not_run=(), actions=
     if all_ok(checks):
         tail = f" (Jev ended with {stop})" if stop not in {"reached", "checked"} else ""
         return "pass", f"all {len(checks)} check(s) passed{tail}"
+    if failed and all(c.get("broke") for c in failed):  # only checks whose own code broke: nothing was judged
+        return "harness", "; ".join(f"the check failed to run: {str(c.get('detail') or '').removeprefix('error: ')}"
+                                    for c in failed)
     if stop == "done" and actions == 0:
         # it declared victory on a page it never tried: says nothing about the page (audit, 6 Oct: 52% of these
         # FAILs were wrong)

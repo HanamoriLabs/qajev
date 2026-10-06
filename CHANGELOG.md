@@ -4,6 +4,16 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: three ways a run blamed the product for its own setup.
+  - A local dev server that is not answering (connection refused, reset or closed, a name that does not resolve) is
+    **harness**: "the server at URL is not answering". Before, every scenario of a run whose app was not started was
+    a product **fail** (job 20261007-015517-7910). On a production host it stays a fail with the same reason: the
+    site is down.
+  - A `js` check whose own code breaks (TypeError, ReferenceError, SyntaxError) is **harness**: "the check failed to
+    run: ...". A check that returns false, or throws on purpose, still fails (verse3: 36 "fails", all
+    `x.toFixed is not a function`).
+  - The guard hid a dice "Roll" button as dangerous; it now hides only a rollback ("Roll back", "Rollback release").
+  In CI such runs now exit 2 (INCOMPLETE) instead of 1. ([Reports](docs/reports.md#outcomes))
 ## 0.4.0: 7 Oct 2026
 
 - Docs: every surface says what 0.4.0 does.

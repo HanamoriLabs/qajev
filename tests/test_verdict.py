@@ -296,3 +296,37 @@ def test_done_without_a_single_action_and_a_failed_check_is_harness_not_a_produc
     assert V.classify("done", failed, has_checks=True)[0] == "fail"  # no count given: as before
     passed = [{"check": "text 'Score' on the page", "ok": True}]
     assert V.classify("done", passed, has_checks=True, actions=0)[0] == "pass"  # already there: still a pass
+
+
+@pytest.mark.parametrize("url, error", [("http://localhost:3000/", "net::ERR_CONNECTION_REFUSED"),
+                                        ("http://shop.test/cart", "net::ERR_NAME_NOT_RESOLVED"),
+                                        ("http://127.0.0.1:4031/", "net::ERR_CONNECTION_RESET")])
+def test_a_local_server_that_is_not_answering_is_harness_not_a_product_fail(url, error):
+    # job 20261007-015517-7910: 5 product fails, all ERR_CONNECTION_REFUSED on a local host nobody had started
+    outcome, reason = V.classify("unreachable", [], has_checks=True, stop_detail=error, url=url)
+    assert outcome == "harness", reason
+    assert reason.startswith(f"the server at {url} is not answering") and error in reason
+
+
+def test_a_production_server_that_is_not_answering_is_still_a_fail_and_says_so():
+    url = "https://shop.example.com/"
+    outcome, reason = V.classify("unreachable", [], has_checks=True, stop_detail="net::ERR_CONNECTION_REFUSED", url=url)
+    assert outcome == "fail" and reason.startswith(f"the server at {url} is not answering")  # the site is down
+    outcome, reason = V.classify("unreachable", [], has_checks=True, stop_detail="net::ERR_ABORTED",
+                                 url="http://localhost:3000/")
+    assert outcome == "fail" and reason == "page did not load: net::ERR_ABORTED"  # it answered, and failed
+
+
+def test_a_js_check_that_throws_did_not_run_and_says_nothing_about_the_page():
+    # verse3's run 20261007-024905-a918: 36 product FAILs, every one the check's own code throwing
+    thrown = {"error": "TypeError: r.memory.usedMB.toFixed is not a function"}
+    checks = V.page_checks({"js": "r.memory.usedMB.toFixed(1) > 0"}, {"url": "http://x/", "js": thrown})
+    assert checks[0]["ok"] is False
+    outcome, reason = V.classify("checked", checks, has_checks=True)
+    assert outcome == "harness", reason
+    assert reason == "the check failed to run: TypeError: r.memory.usedMB.toFixed is not a function"
+    for js in ({"error": "Error: no score yet"}, {"value": False}, {"value": "no score"}):  # it ran and said no
+        ran = V.page_checks({"js": "x"}, {"url": "http://x/", "js": js})
+        assert V.classify("checked", ran, has_checks=True)[0] == "fail", js
+    both = V.page_checks({"js": "x", "text": ["Score"]}, {"url": "http://x/", "js": thrown, "text": [False]})
+    assert V.classify("checked", both, has_checks=True)[0] == "fail"  # a real miss beside a broken check
