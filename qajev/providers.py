@@ -163,4 +163,6 @@ def describe(resolved):
     jev = f"{resolved['jev']} ({resolved['jev_model']}, {resolved['jev_key_name']})" if resolved["jev"] else "none"
     text = f"{resolved['text_model']} via {resolved['text_base_url']} ({resolved['text_key_name']})" \
         if resolved["text"] else "none"
-    return {"jev": jev, "text": text, "decider": resolved.get("decider")}
+    from .config import key_sources
+
+    return {"jev": jev, "text": text, "decider": resolved.get("decider"), "keys": key_sources()}

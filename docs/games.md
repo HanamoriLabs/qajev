@@ -39,7 +39,10 @@ qajev play MyGame.app --adapter my-game.js --goal "Open the settings. Stop when 
 
 A **suite** plays one game session in steps, in order. Each step is either:
 
-- a **goal** step: Jev works the menus, as above;
+- a **goal** step: Jev works the menus, as above. It ends as soon as its `expect` holds; with `stop: end` Jev plays
+  the goal to DONE or its budget first, and the checks judge only then (for "open OUTFITS and browse five", whose
+  check comes true at the first click). Checks that already held before the goal's first action prove nothing about
+  it: the step is unverified, never passed. Check a state the goal changes;
 - a **play** step: the game is played in real time for a while. The adapter's **pilot** steers (usually the
   game's own bot or autopilot), and Jev makes every **decision** the game stops for (level-up cards, dialogue
   choices, which item to wear...). QAJev samples frames per second, frame time, memory and the game's state every
@@ -207,6 +210,30 @@ steps:
 refused); its files are copied into `user://` once, on the first launch, after QAJev has checked that `user://` is
 the throwaway folder. A `relaunch` step restarts the game on the same throwaway folder, then runs its own goal and
 checks, if it has any; it also brings back a game an earlier step closed.
+
+### A save kept between runs (Electron)
+
+By default an Electron game gets a throwaway save folder, deleted when the run ends. To prove that a save survives
+from one run to the next (a setting kept, a long plan run in parts), name a kept **test** profile:
+
+```bash
+qajev play games/mygame/desktop --game-profile plan-71          # ~/.qajev/game-profiles/plan-71, kept
+qajev play games/mygame/desktop --game-profile plan-71 --reset-game-profile   # start that profile empty
+```
+
+In a suite, `game_profile: plan-71` (and `reset_game_profile: true`) does the same; `qa_play` takes `game_profile`
+and `reset_game_profile`. A suite's own `--profile=` or `--user-data-dir=` switch in `args:` is used as the kept
+folder too (for both switches), if it is allowed. A kept profile lives in one of two places only:
+
+- `~/.qajev/game-profiles/<name>`: the name is lowercase letters, digits and `-`, up to 40;
+- a folder inside the game's own repo that git ignores (`git check-ignore`), so a test save is never committed.
+
+Anything else is refused before anything is created: a folder under `~/Library` or any Application Support folder
+(where real saves live; Steam syncs them), a path with `..`, or a symlink anywhere on the path. QAJev also marks
+each folder it keeps (a `.qajev-game-profile` file, written on first use) and refuses a folder that already holds
+files without that mark: naming a git-ignored `node_modules/left-pad` never uses or empties it. Name an empty or new
+folder. QAJev never deletes a kept profile (`--reset-game-profile` empties it, after the same checks, and keeps the
+mark), and the report says which folder was used and that it was kept.
 
 ## Adapters
 

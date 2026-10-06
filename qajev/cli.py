@@ -190,6 +190,11 @@ def build_parser():
     play.add_argument("--game-arg", action="append", default=[], metavar="ARG",
                       help="a command-line switch for an Electron app, e.g. --game-arg=--query=autoplay=bot "
                            "(repeatable)")
+    play.add_argument("--game-profile", metavar="NAME",
+                      help="Electron: keep the game's save folder between runs in ~/.qajev/game-profiles/NAME "
+                           "(a test profile, never a real save); default: a throwaway deleted at close")
+    play.add_argument("--reset-game-profile", action="store_true",
+                      help="empty the kept game profile before this run starts")
     play.add_argument("--goal", "-g", help="what a player wants, in plain words; end with 'Stop when ...'")
     play.add_argument("--about", help="what this test proves and why, in plain words (with --suite: the whole run)")
     play.add_argument("--expect-screen", help="the screen the game must be on at the end (from the bridge)")
@@ -809,6 +814,12 @@ def cmd_play(args):
                                "run it without --headless (MCP: headless=false)", EXIT_CONFIG)
     game_env.update(dict(item.split("=", 1) for item in args.game_env if "=" in item))
     game_args += args.game_arg
+    # A kept TEST profile (game_profile.py): --game-profile NAME, or the suite's game_profile:; Electron only
+    game_profile_name = args.game_profile or (spec.get("game_profile") if args.suite else None)
+    reset_profile = args.reset_game_profile or bool(spec.get("reset_game_profile") if args.suite else False)
+    if (game_profile_name or reset_profile) and not electron.is_electron(args.project):
+        return _fail(args, "--game-profile keeps an Electron game's save folder; this game is not Electron (a Godot "
+                           "game's saves come from seed:)", EXIT_CONFIG)
     name = args.name or (spec.get("name") if args.suite else None) or (
         args.project if mobile.is_mobile(args.project) else Path(args.project).expanduser().resolve().name)
     emit = _printer(args) or (lambda _event: None)
@@ -832,7 +843,8 @@ def cmd_play(args):
             elif electron.is_electron(args.project):  # a web game in Electron (I'm Him's desktop build)
                 game_cm = electron.ElectronGame(args.project, adapter=adapter, args=game_args, env=game_env,
                                                 hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
-                                                allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow])
+                                                allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow],
+                                                profile=game_profile_name, reset_profile=reset_profile)
             else:
                 game_cm = native.GodotGame(args.project, adapter=adapter, headless=headless, env=game_env,
                                             hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
@@ -843,6 +855,8 @@ def cmd_play(args):
                            "project": str(game.project), "adapter": game.adapter.stem if game.adapter else None,
                            "headless": headless, "env": game_env, "args": game_args,
                            "managed": True, "pid": game.proc.pid if game.proc else None, "vision": sees}
+                if getattr(game, "record", None) and game.record.get("profile"):  # the save folder, kept or not
+                    browser["game_profile"] = game.record["profile"]
                 emit({"event": "run", "suite": f"play {name}", "run_dir": str(run_dir), "browser": browser,
                       "scenarios": len(session_steps) if session_steps else 1,
                       "decider": providers.describe(providers.resolve()).get("decider")})
@@ -994,7 +1008,7 @@ def cmd_account(args):
 
 def cmd_doctor(args):
     from . import chrome, providers
-    from .config import DEFAULTS, env_files, load_env
+    from .config import DEFAULTS, env_files, key_sources, load_env
 
     try:
         loaded = load_env(args.env_file)
@@ -1009,6 +1023,8 @@ def cmd_doctor(args):
         f"none found; looked in {', '.join(str(p) for p in env_files(args.env_file))}")
     for key in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "CLOUDFLARE_API_TOKEN", "TEXT_MODEL_API_KEY"):
         add(key, True, "set" if os.environ.get(key) else "not set")
+    for line in key_sources():  # where QAJev's own keys came from: names only (Foley1, 6 Oct)
+        add("key source", True, line)
     try:
         resolved = providers.resolve()
         models = providers.describe(resolved)
@@ -1164,6 +1180,8 @@ def cmd_stop(args):
         job = jobs.stop(args.job)
     except jobs.NoSuchJob:
         return _fail(args, f"no job {args.job}", EXIT_CONFIG)
+    except jobs.NotOurs as e:
+        return _fail(args, str(e), EXIT_CONFIG)
     print(json.dumps(job, indent=2, default=str) if args.json else _job_line(job))
     return 0
 

@@ -59,7 +59,7 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | Option | Does |
 |---|---|
 | `--cost-cap USD` | a hard cap for the whole run (default: the suite's, else $1) |
-| `--env-file FILE` | where your keys are (default `./.env`, then `~/.qajev/.env`) |
+| `--env-file FILE` | where your keys are (default `$QAJEV_ENV_FILE`, then `~/.qajev/.env`; never the current folder's `.env`) |
 | `--jev-provider auto\|typesafe\|openrouter\|cloudflare` | who makes the decisions: Jev (TypeSafe, OpenRouter) or Clef (Cloudflare; see [Configuration](configuration.md)) |
 | `--usd-per-call USD` | the estimated TypeSafe cost per decision, for the ledger |
 | `--strict` | count `stuck` scenarios as failures |
@@ -172,6 +172,8 @@ qajev play path/to/game --suite session.yaml
 | `--hide LABEL` | never offer this exact label to Jev (repeatable) |
 | `--game-env KEY=VALUE` | an environment setting for the game (repeatable) |
 | `--game-arg ARG` | a switch for an Electron app, e.g. `--game-arg=--fullscreen` (repeatable) |
+| `--game-profile NAME` | keep an Electron game's save folder between runs, in `~/.qajev/game-profiles/NAME` (a test profile; [Games](games.md#a-save-kept-between-runs-electron)) |
+| `--reset-game-profile` | empty that kept profile before this run |
 | `--device NAME` | mobile: the iOS simulator to clone, or the Android virtual device to boot |
 | `--install FILE` | mobile: an `.apk` or simulator `.app` to install on the throwaway device first |
 | `--headless` | Godot: no window, fastest, no screenshots. Electron apps always open a window and keep their screenshots |

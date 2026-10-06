@@ -99,7 +99,9 @@ take turns, one at a time per machine; never start a second copy of a queued run
 Rules: never type, ask for or write down passwords, one-time codes or payment details (for a signed-in test,
 the person signs in once with `qa_browser(action="login", profile=NAME, url=LOGIN_URL)`, or the suite names a
 stored test account by reference, `account: {email: ..., password: keychain:SERVICE/ACCOUNT | op://... | env:NAME,
-login: {url: /login}}`, and QAJev signs in by itself). A result with `needs_sign_in` means runs met a sign-in
+login: {url: /login}}`, and QAJev signs in by itself; a seeded TEST user on a local dev host can also give
+`totp: seed:FILE#KEY` for its one-time code, or `cookie: {name, value: seed:FILE#KEY}`, from a fixture that says
+`"test_account": true` and lists the host in `allowed_hosts`). A result with `needs_sign_in` means runs met a sign-in
 page (harness, not a bug): ask the person to sign in once, or to run `qajev account add NAME --email EMAIL
 --login-url URL` in their own terminal (the Keychain asks them for the password), as its `next_step` says. Production is read-only; tests that change data
 run only against localhost. Dangerous buttons are hidden from Jev on purpose; do not work around that. Keep the
