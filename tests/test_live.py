@@ -389,6 +389,17 @@ def test_tap_targets_are_counted_as_wcag_2_5_8_says_and_named(session, site):
         "not counted (WCAG 2.5.8): 1 inline in a sentence, 1 with room around them")
 
 
+def test_a_key_hook_presses_a_chord_with_its_modifiers(session, site):
+    # verse1, 6 Oct: the Verse town editor opens on Shift+A; a page reads event.shiftKey and the key.
+    session.navigate(site + "/keys.html")
+    session.evaluate("(window.modLog.splice(0), true)")
+    session.run_hook({"key": "Shift+A"}, site)
+    session.run_hook({"key": "Ctrl+KeyK"}, site)
+    got = [(e["type"], e["key"], e["shift"], e["ctrl"]) for e in session.evaluate("window.modLog.splice(0)")]
+    assert got == [("keydown", "A", True, False), ("keyup", "A", True, False),
+                   ("keydown", "k", False, True), ("keyup", "k", False, True)], got
+
+
 def test_key_hooks_press_real_keys_repeat_them_and_hold_them(session, site):
     # Real-key play-tests for every game change (Orchestrator, 5 Oct): Jev cannot press a game's keys, so hooks do.
     session.navigate(site + "/keys.html")

@@ -9,9 +9,11 @@
   <p id="last">no key yet</p>
   <script>
     window.keyLog = [];
+    window.modLog = [];  // chords (Shift+A...): which modifiers each event carried
     for (const type of ['keydown', 'keyup']) {
       window.addEventListener(type, (e) => {
         window.keyLog.push({ type, key: e.key, code: e.code, trusted: e.isTrusted, at: performance.now() });
+        window.modLog.push({ type, key: e.key, shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey });
         document.getElementById('last').textContent = type + ' ' + e.code;
       });
     }
