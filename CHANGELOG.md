@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- **Breaking:** QAJev types a password only for a seeded test account on a local dev host (José, 6 Oct: "local test
+  accounts only"). The password comes only from `seed:FILE#KEY`, a fixture that says `"test_account": true` and lists
+  the host in `allowed_hosts`, checked when the suite loads and again where the browser is just before it types. A
+  `keychain:`, `op://` or `env:` password (and a project's `password_env`) is refused on every host, before a key is
+  pressed. For any other account, sign in once yourself in QAJev's window (`qajev browser login --url <sign-in
+  page>`); the profile keeps that session. `qajev account add` and `qajev secret set` are refused; `qajev secret
+  check` and `qajev account check` stay. ([Signed-in areas](docs/writing-tests.md#signed-in-areas))
 - Key and react hooks press chords: Shift, Ctrl, Alt or Meta with one key (`key: Shift+A`), sent as trusted key events
   with the modifiers set (`event.shiftKey`), so a test can open the FiGGYZ Verse town editor with a real Shift+A
   (verse1). With Ctrl or Meta, the browser's and the system's own shortcuts (quit, close, reload, a new tab or window,

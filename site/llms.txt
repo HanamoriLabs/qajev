@@ -102,8 +102,8 @@ stored test account by reference, `account: {email: ..., password: keychain:SERV
 login: {url: /login}}`, and QAJev signs in by itself; a seeded TEST user on a local dev host can also give
 `totp: seed:FILE#KEY` for its one-time code, or `cookie: {name, value: seed:FILE#KEY}`, from a fixture that says
 `"test_account": true` and lists the host in `allowed_hosts`). A result with `needs_sign_in` means runs met a sign-in
-page (harness, not a bug): ask the person to sign in once, or to run `qajev account add NAME --email EMAIL
---login-url URL` in their own terminal (the Keychain asks them for the password), as its `next_step` says. Production is read-only; tests that change data
+page (harness, not a bug): ask the person to sign in once in QAJev's window (`qajev browser login --url URL`), as its `next_step`
+says; never ask for a password. Production is read-only; tests that change data
 run only against localhost. Dangerous buttons are hidden from Jev on purpose; do not work around that. Keep the
 cost cap low for exploratory runs (`cost_cap: 0.10`). A game's QUIT is hidden too; to test a normal quit pass
 `allow: ["QUIT"]` and `expect_closed: true`.

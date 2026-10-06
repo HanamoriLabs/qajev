@@ -242,13 +242,15 @@ def build_parser():
 
     secret = sub.add_parser("secret", help="store or check a test account's password reference (never prints it)")
     secret.add_argument("action", choices=["set", "check"],
-                        help="set: save a keychain: password (its store prompts for it); check: can QAJev read it")
+                        help="check: can QAJev read a reference; set: refused since 0.4.0 (QAJev types a password only "
+                             "for a seeded local test account; sign in to others once with qajev browser login)")
     secret.add_argument("ref", help="keychain:SERVICE/ACCOUNT, op://VAULT/ITEM/FIELD or env:NAME")
 
     account = sub.add_parser("account", help="set up a stored test account: QAJev signs in with it, Jev never sees "
                              "the password (run it yourself: the Keychain asks you for it)")
     account.add_argument("action", choices=["add", "check"],
-                         help="add: save the password, write the account, sign in once to prove it; check: sign in")
+                         help="check: sign in with a project's account; add: refused since 0.4.0 (QAJev saves no "
+                              "password; sign in once with qajev browser login)")
     account.add_argument("name", help="the account's name (letters, digits, - and _), e.g. shop-tester")
     account.add_argument("--email", help="add: the test account's email or user name")
     account.add_argument("--login-url", help="add: the sign-in page (https; with --project it may be a path)")
@@ -938,9 +940,12 @@ def cmd_secret(args):
     from . import vault
 
     try:
-        if args.action == "set":
-            vault.store(args.ref)
-            print(f"saved {args.ref}")
+        if args.action == "set":  # José, 6 Oct: no stored password QAJev types; check still reads a reference
+            from .signin import BROWSER_LOGIN
+
+            print(f"qajev: refused: QAJev no longer stores a password. {BROWSER_LOGIN.format(url='<sign-in page>')}",
+                  file=sys.stderr)
+            return 2
         value = vault.resolve(args.ref)
     except vault.VaultError as e:
         print(f"qajev: {e}", file=sys.stderr)
@@ -963,6 +968,12 @@ def cmd_account(args):
         if not account_mod.NAME.match(name):
             raise account_mod.AccountError("the name takes letters, digits, - and _ (e.g. shop-tester)")
         proj = project_mod.load(args.project) if args.project else None
+        if args.action == "add":  # José, 6 Oct: QAJev saves and types no person's password
+            from .signin import BROWSER_LOGIN
+
+            raise account_mod.AccountError("refused: QAJev no longer saves an account's password. A seeded local "
+                                           "test account goes in the suite or project as password: seed:FILE#KEY. "
+                                           + BROWSER_LOGIN.format(url=args.login_url or "<sign-in page>"))
         if args.action == "add":
             if not (args.email and args.login_url):
                 raise account_mod.AccountError("add needs --email and --login-url")

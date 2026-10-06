@@ -86,13 +86,13 @@ and say what they are waiting for. Never start a second copy of a run because th
 - **Never type, ask for or write down passwords, one-time codes or payment details.** QAJev disables those fields
   anyway. If a test needs a signed-in account, either ask the person to sign in once:
   `qa_browser(action="login", profile=NAME, url=LOGIN_URL)` / `qajev browser login --profile NAME --url LOGIN_URL`,
-  then run with that `profile`; or, if they keep a test account in the Keychain, 1Password or an environment
-  variable, put an `account:` block in the suite with its reference (`password: keychain:qajev/shop-tester`) and
-  QAJev signs in by itself. Only ever the reference, never the value.
+  then run with that `profile`. Only on a local dev site (localhost, 127.0.0.1, *.test) can a seeded test account
+  sign in by itself: an `account:` block with `password: seed:FILE#KEY`, from the app's fixture that says
+  `"test_account": true` and lists the host in `allowed_hosts`. A `keychain:`, `op://` or `env:` password is refused.
 - **A result with `needs_sign_in` means runs met a sign-in page**, not that the product failed (those scenarios are
-  `harness`). Ask the person how QAJev should get in, as its `next_step` says: they sign in once (above), or they
-  run `qajev account add NAME --email EMAIL --login-url LOGIN_URL [--project PROJECT]` in their own terminal (in
-  Claude Code, after a `!`). The Keychain asks them for the password and QAJev proves the sign-in. Then run again.
+  `harness`). Ask the person how QAJev should get in, as its `next_step` says: they sign in once (above); on a
+  local dev site a seeded test account (`password: seed:FILE#KEY`) can sign in by itself. Never ask for a password.
+  Then run again.
 - **Production is read-only.** QAJev blocks writes (form posts, deletes) on any site that is not your own
   machine. Tests that change data (`mode: mutate`) only run against `localhost` / `127.0.0.1`.
 - **Dangerous buttons are hidden from Jev** (sign out, delete, pay, billing, "close all"...). Do not try to work
