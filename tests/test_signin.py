@@ -89,13 +89,16 @@ class FormPage:
     """A sign-in page at `href` with an email and a password field. It records what is typed; Enter signs in when
     `lets_in`, and `moves_to` is where the page goes once the email is typed (a two-step sign-in)."""
 
-    def __init__(self, href, lets_in=True, moves_to=None):
+    def __init__(self, href, lets_in=True, moves_to=None, unreadable=False):
         self.href, self.lets_in, self.moves_to, self.typed, self.pw = href, lets_in, moves_to, [], True
+        self.unreadable, self.dark = unreadable, False  # dark: its state cannot be read (a getter that throws)
 
     def navigate(self, _url):
         return None
 
     def evaluate(self, js):
+        if js == signin.STATE_JS and self.dark:
+            raise RuntimeError("Uncaught TypeError: innerText getter threw")
         if js == signin.STATE_JS:
             from urllib.parse import urlsplit
 
@@ -109,7 +112,7 @@ class FormPage:
     def type_into(self, field, text):
         self.typed.append(text)
         if self.moves_to and not field["secret"]:
-            self.href = self.moves_to
+            self.href, self.dark = self.moves_to, self.unreadable
 
     def check_host(self, _url):
         pass
@@ -154,6 +157,22 @@ def test_a_password_is_typed_only_for_a_seeded_test_account_on_a_local_dev_host(
     assert "fixture-pass-local" not in page.typed
     with pytest.raises(SuiteError, match="reserved test domain"):
         _account({**local, "email": "someone@gmail.com"}, None)
+
+
+@pytest.mark.parametrize("moves_to", ["https://idp.example.com/pw", "http://127.0.0.1:5556/pw"])
+def test_a_page_that_cannot_be_read_never_gets_the_password(tmp_path, moves_to):
+    # #57 review (SideGame3), fail-open: after the email the page moved to another host and its state could not be
+    # read, so "where the browser is" fell back to the configured sign-in URL and the password was typed there. A page
+    # QAJev cannot read is not a page it can vouch for: nothing is typed.
+    fixture = tmp_path / "qa_test_user.json"
+    fixture.write_text(json.dumps({"test_account": True, "allowed_hosts": ["127.0.0.1"],
+                                   "password": "fixture-pass-local"}))
+    local = {"name": "qa", "email": "qa-test@example.test", "password": f"seed:{fixture}#password",
+             "login": {"url": "http://127.0.0.1:4000/login"}}
+    page = FormPage("http://127.0.0.1:4000/login", moves_to=moves_to, unreadable=True)
+    with pytest.raises(signin.SignInFailed):
+        signin.sign_in(page, local, timeout=1)
+    assert page.typed == ["qa-test@example.test"]  # the email only
 
 
 def test_a_seed_reference_reads_only_a_fixture_that_says_it_is_a_test_account(tmp_path):

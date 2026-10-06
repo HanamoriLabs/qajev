@@ -37,12 +37,12 @@ smoke_start = "/products"        # where `qajev smoke --project` starts (default
 base_url = "http://localhost:3000"
 mode = "mutate"
 
-[accounts.tester]                # references only, never passwords
-email = "qa+shop@example.com"
-password = "keychain:qajev/shop-tester"   # or "op://QA/Shop tester/password", or "env:SHOP_TESTER_PASS"
-login = { url = "/login" }       # QAJev signs in with it before the objectives (see Writing tests)
+[accounts.tester]                # a seeded TEST account, local dev hosts only; references only, never passwords
+email = "qa-test@example.test"
+password = "seed:dev_support/qa_test_user.json#password"   # the fixture says "test_account": true, allowed_hosts
+login = { url = "http://localhost:3000/login" }   # QAJev signs in with it before the objectives (see Writing tests)
 seed = "scripts/seed-test-user.sh"
-profile = "shop-local"           # or: a QAJev browser profile you signed in to once
+profile = "shop-local"           # or, for a real site: a QAJev browser profile you signed in to once
 
 [accounts.qa-test]               # a seeded TEST user on a local dev host: second factor included
 email = "seed:dev_support/qa_test_user.json#email"            # FILE#KEY, relative to the project's repo

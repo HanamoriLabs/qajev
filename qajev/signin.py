@@ -180,7 +180,7 @@ def sign_in(session, account, *, timeout=20.0):
     email = vault.resolve(account["email"]) if vault.is_ref(account["email"]) else account["email"]
     if not vault.is_ref(account["email"]):  # an email kept by reference stays out of events, logs and reports
         out["email"] = email
-    _password_ok(account, first.get("href") or login["url"], email)  # before a key is pressed
+    _password_ok(account, first.get("href") or "", email)  # before a key is pressed; an unread page is no host
     field = _pick(session, login.get("email_field") or EMAIL_FIELDS, "email")
     if not field:
         raise SignInFailed(f"no email or username field on {login['url']}; set account.login.email_field")
@@ -201,9 +201,12 @@ def sign_in(session, account, *, timeout=20.0):
     if not field or not field.get("secret"):
         raise SignInFailed("refused: the password goes only into a password field, and none was found "
                            f"({password_field!r})")
-    here = _state(session).get("href", login["url"])
-    session.check_host(here)  # still on a host the suite allows
-    _password_ok(account, here, email)  # and still a local dev host its seed fixture allows
+    # Where the browser is, read from the page itself: never the configured URL (#57 review: a page whose state could
+    # not be read fell back to it, and the password went to whatever host the browser was on). A navigation still
+    # settling gets 2 s; a page that stays unreadable is no host, and nothing is typed.
+    here = (_wait(session, lambda s: s.get("href"), 2) or {}).get("href") or ""
+    _password_ok(account, here, email)  # a local dev host its seed fixture allows
+    session.check_host(here)  # and a host the suite allows
     password = vault.resolve(account["password"])
     remember_secret(password)  # never in an error, a log or a report
     session.type_into(field, password)
