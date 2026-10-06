@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.0: 7 Oct 2026
+
 - Docs: every surface says what 0.4.0 does.
   - `qajev --help`: `--env-file` never reads the current folder's `.env`; `secret` and `account` describe seeded
     test accounts only; `--visible` and `doctor` say what they check.
