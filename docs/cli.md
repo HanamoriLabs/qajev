@@ -329,8 +329,9 @@ made in 1Password. Exit code 2 when the reference cannot be read, with the store
 
 ## `qajev doctor`
 
-Checks your keys (present and valid, never printed), Chrome, a free port and the machine's load. `--offline`
-skips the key validity check.
+Checks your keys (present and valid, never printed), Chrome, a free port and the machine's load, and prints the
+QAJev version with the commit it runs from (`+dirty` when its code has uncommitted changes). `--offline` skips the
+key validity check.
 
 ## `qajev init`
 

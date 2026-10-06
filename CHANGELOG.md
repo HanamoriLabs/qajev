@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Every report names the QAJev commit that judged it: `qajev_commit` in `report.json`, beside the version in
+  `report.md` and `report.html`, and in `qajev doctor` (`+dirty` when QAJev's own code had uncommitted changes;
+  absent for an installed package). The audit of past verdicts could not tell which rules judged a run.
+  ([Reports](docs/reports.md))
 - Key and react hooks press chords: Shift, Ctrl, Alt or Meta with one key (`key: Shift+A`), sent as trusted key events
   with the modifiers set (`event.shiftKey`), so a test can open the FiGGYZ Verse town editor with a real Shift+A
   (verse1). With Ctrl or Meta, the browser's and the system's own shortcuts (quit, close, reload, a new tab or window,
