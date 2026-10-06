@@ -49,7 +49,12 @@ def test_watching_live_is_counted_and_written_for_the_report(tmp_path, monkeypat
     run = tmp_path / "run"
     live.stream_touch(run)
     grabber = live.Frames(run, "ws://unused", interval=0.05)
-    monkeypatch.setattr(grabber, "capture", lambda **_: b"\xff\xd8\xff\xe0jpg")
+
+    def slow_capture(**_):  # a real capture takes time: the seconds watched are still the real ones
+        time.sleep(0.1)
+        return b"\xff\xd8\xff\xe0jpg"
+
+    monkeypatch.setattr(grabber, "capture", slow_capture)
     monkeypatch.setattr(grabber, "page_url", lambda: "http://127.0.0.1:5173/shop/cart?token=abc#pay")
     monkeypatch.setattr(live, "interval", lambda **_: 0.05)
     with grabber:
