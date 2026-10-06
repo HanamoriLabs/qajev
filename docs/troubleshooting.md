@@ -19,9 +19,10 @@ Another QAJev run has the browser; yours starts when it ends. See who with `qaje
 **Many scenarios come out `harness`**
 That is QAJev's side, not your product:
 
-- *decisions went stale*: the page kept changing (new words, a list that moved, an animation). Numbers that only
-  tick (a clock, a countdown, a video's "0:03 / 188:26", a score) do not count: a move whose page changed only in
-  its digits goes ahead. The reason ends with the last stale move's own: what was over its target ("covered by
+- *decisions went stale*: the page kept changing (new words, a list that moved, an animation). A clock time or a
+  countdown that ticks (a video's "0:03 / 188:26", "Doors close in 59 s", "5 min") does not count: a move whose page
+  changed only there goes ahead. Other numbers are read exactly: a step, a count, a price or a score that changes is
+  a change. The reason ends with the last stale move's own: what was over its target ("covered by
   div#toast") or what changed; each stale decision says it in the dashboard and in `qajev top --decisions`. Keep
   `--motion reduce` (the default) and start the scenario on a calmer page, or close what covers the target with a
   `before:` hook.

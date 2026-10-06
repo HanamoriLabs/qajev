@@ -49,3 +49,20 @@ def test_new_words_a_reload_the_address_an_input_or_a_link_still_are():
     scrolled = [[1.0, "http://127.0.0.1/t", 0, 560], guard("Enter the hall Doors close in 55 s")]
     assert not fresh_past_ticks(FakeBrowser(scrolled), "", PAGE, CLICK)
     assert not fresh_past_ticks(FakeBrowser(None), "", PAGE, CLICK)
+
+
+def test_counts_steps_prices_and_labels_are_read_exactly():
+    # 0.4.0 review (SideGame3): only time-like digits tick. A step, a count, a price or a button's own number that
+    # changes is the page moving on, so the decision is made again.
+    def fresh(before, after, **kw):
+        return fresh_past_ticks(FakeBrowser(marker(after, **kw)), "", {**PAGE, "marker": marker(before, **kw)})
+
+    assert not fresh("Step 1 of 3", "Step 2 of 3")
+    assert not fresh_past_ticks(FakeBrowser(marker("x", label="Cart (2)")), "",
+                                {**PAGE, "marker": marker("x", label="Cart (1)")})
+    assert not fresh("Total $5", "Total $500")
+    buy = {**PAGE, "guards": {"3": guard("Buy 1", name="Buy 1")}}
+    assert not fresh_past_ticks(FakeBrowser([[1.0, "http://127.0.0.1/t", 0, 0], guard("Buy 100", name="Buy 100")]),
+                                "", buy, CLICK)
+    assert fresh("Round ends in 1:05:09", "Round ends in 1:04:58")  # hours too
+    assert fresh("Retry in 30 sec", "Retry in 9 sec") and fresh("Closes in 5 min", "Closes in 4 min")
