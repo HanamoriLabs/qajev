@@ -131,9 +131,37 @@ def redact_tree(obj: Any, secrets=None) -> Any:
     return redact(obj, secrets)
 
 
+def plain_host(url):
+    """The host a browser would also read, or "" when it might read another (the review of #47: Chrome takes "\\" for
+    "/" so `http://evil.com\\@localhost/` goes to evil.com while urlsplit says localhost). No backslash, control
+    character, whitespace or "@" may come before the path."""
+    text = str(url)
+    if any(ord(c) < 33 or c == "\\" for c in text):
+        return ""
+    head = text.split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    if "@" in head or "%" in head:
+        return ""
+    return (urlsplit(text).hostname or "").lower()
+
+
 def is_loopback(url):
-    host = urlsplit(url).hostname or ""
-    return bool(LOOPBACK.match(host))
+    return bool(LOOPBACK.match(plain_host(url)))
+
+
+def is_local_dev(url):
+    """A local development host: loopback, or a name under .localhost or .test (RFC 6761: never on the internet)."""
+    host = plain_host(url)
+    return bool(host) and (is_loopback(url) or host.endswith((".test", ".localhost")))
+
+
+# Reserved for testing and examples (RFC 2606, RFC 6761): no real person signs in with an address here.
+TEST_EMAIL_DOMAINS = ("example.com", "example.net", "example.org")
+TEST_EMAIL_SUFFIXES = (".test", ".example", ".invalid", ".localhost")
+
+
+def is_test_email(email):
+    domain = str(email).rpartition("@")[2].strip().lower()
+    return domain in TEST_EMAIL_DOMAINS or domain.endswith(TEST_EMAIL_SUFFIXES) or domain in ("test", "localhost")
 
 
 def host_of(url):

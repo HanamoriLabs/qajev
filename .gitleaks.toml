@@ -1,0 +1,12 @@
+# gitleaks: the default rules, plus one reviewed exception (CONTRIBUTING: "Fake secrets look fake"). An exception
+# names the files it covers and the exact fake value, so a real secret in those files is still found. Never an inline
+# allow, never a string split to get past the scanner.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "fake fixture password for the loopback test site, not a credential"
+condition = "AND"
+paths = ['''^tests/fixtures/site/login(-2fa|-postcode)?\.html$''', '''^tests/test_live\.py$''']
+regexes = ['''^fixture-pass-123$''']

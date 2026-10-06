@@ -8,6 +8,20 @@ def parse(scenarios, **top):
     return S.parse({"name": "t", "scenarios": scenarios, **top})
 
 
+def test_a_waits_timeout_is_seconds_and_bounded():
+    # verse2, 6 Oct: `timeout: 60000` meant 60 s and read as 60,000 s (almost 17 hours).
+    ok = parse([{"url": "http://localhost/", "before": [{"wait_for": {"js": "window.ready", "timeout": 60}}],
+                 "expect": {"text": "Hi"}}])
+    assert ok.scenarios[0].before[0]["wait_for"]["timeout"] == 60
+    with pytest.raises(S.SuiteError, match="looks like milliseconds \\(write 60\\)"):
+        parse([{"url": "http://localhost/", "before": [{"wait_for": {"js": "x", "timeout": 60000}}],
+                "expect": {"text": "Hi"}}])
+    for bad in (0, -1, "ten", True, 301):
+        with pytest.raises(S.SuiteError, match="wait_for.timeout"):
+            parse([{"url": "http://localhost/", "before": [{"wait_for": {"js": "x", "timeout": bad}}],
+                    "expect": {"text": "Hi"}}])
+
+
 def test_relative_urls_resolve_against_base_url():
     s = parse([{"url": "/pricing", "expect": {"text": "Pro"}}], base_url="http://localhost:3000/app/")
     assert s.scenarios[0].url == "http://localhost:3000/pricing"
