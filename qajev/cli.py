@@ -1003,7 +1003,7 @@ def cmd_account(args):
 
 def cmd_doctor(args):
     from . import chrome, providers
-    from .config import DEFAULTS, env_files, load_env
+    from .config import DEFAULTS, env_files, key_sources, load_env
 
     try:
         loaded = load_env(args.env_file)
@@ -1018,6 +1018,8 @@ def cmd_doctor(args):
         f"none found; looked in {', '.join(str(p) for p in env_files(args.env_file))}")
     for key in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "CLOUDFLARE_API_TOKEN", "TEXT_MODEL_API_KEY"):
         add(key, True, "set" if os.environ.get(key) else "not set")
+    for line in key_sources():  # where QAJev's own keys came from: names only (Foley1, 6 Oct)
+        add("key source", True, line)
     try:
         resolved = providers.resolve()
         models = providers.describe(resolved)

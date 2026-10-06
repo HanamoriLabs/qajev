@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Late">
+<title>Loading</title></head>
+<body>
+  <!-- verse2, 6 Oct: a game page that is ready a moment after it loads; a suite waits for it with before: wait_for -->
+  <p id="state">Preparing…</p>
+  <script>setTimeout(() => { window.ready = true; state.textContent = 'Ready'; document.title = 'Ready'; }, 1000);</script>
+</body>
+</html>

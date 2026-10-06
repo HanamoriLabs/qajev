@@ -347,6 +347,11 @@ def signed_in(s):
     if not s.get("ok"):
         return f"account {s['account']} failed: {s.get('reason')}"
     how = "already signed in" if s.get("already") else f"in {s.get('seconds')} s"
+    test = s.get("test_signin")
+    if test:  # a seeded test user signed in without a person: say so, and how (never the secret)
+        via = "TOTP from seed: yes" if test.get("totp") else "session cookie from seed: yes"
+        who = s.get("email") or s["account"]
+        return f"as seeded test user {who} on {test.get('host')} (account {s['account']}), {how}; {via}"
     return f"as {s.get('email') or s['account']} (account {s['account']}), {how}"
 
 
@@ -451,6 +456,8 @@ def render(data):
     if data.get("models"):
         run.append(("Models", _e(f"{data['models'].get('decider') or 'Jev'} {data['models']['jev']}; "
                                  f"text {data['models']['text']}")))
+        if data["models"].get("keys"):  # where QAJev's own keys came from: names only
+            run.append(("Keys", _e("; ".join(data["models"]["keys"]))))
     if data.get("motion") in ("reduce", "full"):
         run.append(("Motion", "reduced (pages were told the visitor prefers reduced motion)"
                     if data["motion"] == "reduce" else "full (as-is)"))

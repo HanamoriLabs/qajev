@@ -40,7 +40,7 @@ ENV_KEYS = {"base_url", "hosts", "mode", "device", "devices", "real_devices", "p
 OBJECTIVE_KEYS = {"name", "env", "url", "goal", "expect", "tags", "before", "after", "budget", "device", "persona",
                   "mode", "settle", "depends_on", "speech", "vision", "about"}
 # email and password are vault references (vault.py) or, for email, the plain address; never a password value.
-ACCOUNT_KEYS = {"email", "password", "login", "email_env", "password_env", "seed", "profile", "note"}
+ACCOUNT_KEYS = {"email", "password", "login", "email_env", "password_env", "seed", "profile", "note", "totp", "cookie"}
 
 
 class ProjectError(ValueError):
@@ -142,11 +142,16 @@ def load(ref):
         # secrets in the file.
         if set(account) - ACCOUNT_KEYS:
             raise ProjectError(f"{path}: accounts.{name}: only {sorted(ACCOUNT_KEYS)} (names, never values)")
-        if "password" in account:
+        refs = {"password": account.get("password"), "totp": account.get("totp"),
+                "cookie.value": (account.get("cookie") or {}).get("value") if isinstance(account.get("cookie"), dict)
+                else account.get("cookie")}
+        for key, ref in refs.items():
+            if ref is None:
+                continue
             try:
-                vault.parse(account["password"])
+                vault.parse(ref)
             except vault.VaultError as e:
-                raise ProjectError(f"{path}: accounts.{name}.password: {e} (names, never values)") from None
+                raise ProjectError(f"{path}: accounts.{name}.{key}: {e} (names, never values)") from None
         if "login" in account and not (isinstance(account["login"], dict) and account["login"].get("url")):
             raise ProjectError(f'{path}: accounts.{name}: write login = {{ url = "/login" }} (the sign-in page)')
     for where, chosen in [("account", data.get("account"))] + [(f"env.{n}.account", e.get("account"))
@@ -226,13 +231,23 @@ def suite_data(project, *, env=None, tags=(), names=(), objective=None, url=None
 
 def sign_in_account(project, name):
     """A project account as a suite's account block (the older email_env/password_env become env: references)."""
+    from . import vault
+
     acct = project.accounts[name]
+    folder = project.repo or (project.config_path.parent if project.config_path else None)  # seed:FILE#KEY base
     email = acct.get("email") or (f"env:{acct['email_env']}" if acct.get("email_env") else None)
     password = acct.get("password") or (f"env:{acct['password_env']}" if acct.get("password_env") else None)
-    if not (email and password and acct.get("login")):
-        raise ProjectError(f"{project.name}: accounts.{name} needs email, password and login = {{ url = ... }} to "
-                           "sign in")
-    return {"name": name, "email": email, "password": password, "login": dict(acct["login"])}
+    if not (email and (password or acct.get("cookie")) and acct.get("login")):
+        raise ProjectError(f"{project.name}: accounts.{name} needs email, password (or cookie) and login = "
+                           "{ url = ... } to sign in")
+    out = {"name": name, "email": vault.anchor(email, folder), "login": dict(acct["login"])}
+    if password:
+        out["password"] = vault.anchor(password, folder)
+    if acct.get("totp"):
+        out["totp"] = vault.anchor(acct["totp"], folder)
+    if acct.get("cookie"):
+        out["cookie"] = {**acct["cookie"], "value": vault.anchor(acct["cookie"].get("value"), folder)}
+    return out
 
 
 def run_dir_parent(project):
