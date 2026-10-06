@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Destructive controls (fixture)</title></head>
+<body>
+  <!-- Every way a page can destroy something, for "Production is read-only. Destructive is never." (0.4.0). Served
+       as a production host (shop.example.com, mapped to 127.0.0.1 by QAJev's own Chrome) and as 127.0.0.1. -->
+  <h1>Your items</h1>
+  <p>Item 1: a saved draft that a visitor may delete.</p>
+  <button id="del">Delete</button>
+  <button id="delacct">Delete account</button>
+  <button id="refund">Refund</button>
+  <button id="archive">Archive</button>
+  <button id="save">Save</button>
+  <!-- a harmless reset, clear or cancel stays; one that names what matters, or carries another destructive word, goes -->
+  <button id="rf">Reset filters</button>
+  <button id="cs">Cancel search</button>
+  <button id="ce">Cancel edit</button>
+  <button id="co">Cancel order</button>
+  <button id="raf">Reset account filters</button>
+  <button id="mix">Clear search and delete item</button>
+  <dialog id="modal"><p>Discard this draft?</p><button id="cancel">Cancel</button></dialog>
+  <a id="more" href="/index.html">More items</a>
+  <form id="f" method="post" action="/api/form"><input name="q" value="x"><button type="submit" id="go">Go</button></form>
+  <input id="name" type="text" value="abc">
+  <script>
+    window.sent = {};
+    const call = (name, run) => run().then(() => { window.sent[name] = 'sent'; }, () => { window.sent[name] = 'blocked'; });
+    window.tryAll = () => Promise.all([
+      call('DELETE', () => fetch('/api/item/1', { method: 'DELETE' })),
+      call('PUT', () => fetch('/api/item/1', { method: 'PUT', body: '{}' })),
+      call('PATCH', () => new Promise((ok, fail) => {
+        const x = new XMLHttpRequest(); x.open('PATCH', '/api/item/1');
+        x.onload = ok; x.onerror = fail;
+        try { x.send('{}'); } catch (e) { fail(e); }
+      })),
+      call('POST', () => fetch('/api/search', { method: 'POST', body: '{"q":"x"}' })),
+    ]).then(() => JSON.stringify(window.sent));
+    window.asked = {};
+    window.ask = () => setTimeout(() => {
+      window.asked.confirm = String(confirm('Really delete item 1?'));
+      window.asked.prompt = String(prompt('Type DELETE to confirm'));
+    }, 0);
+    window.keys = [];
+    addEventListener('keydown', (e) => window.keys.push(e.key + '@' + (e.target.id || e.target.tagName)));
+    addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = 'You have unsaved changes'; });
+  </script>
+</body>
+</html>

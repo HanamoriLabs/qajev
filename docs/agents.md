@@ -55,13 +55,16 @@ A person can watch all of it live with [`qajev top`](jobs-and-top.md).
 QAJev enforces these, whatever the agent asks:
 
 - no typing of passwords, one-time codes or payment details (the fields are disabled);
-- no writes on real sites: form posts and deletes are blocked unless the site is on the same machine
-  (`localhost`);
-- no dangerous buttons: sign out, delete, pay, billing, "close all" and similar are hidden from Jev;
+- production is read-only: form posts and deletes are blocked unless the site is a local dev host (`localhost`,
+  `127.0.0.1`, `[::1]`, `*.localhost`, `*.test`), and a run that would change any other host is refused before it
+  starts (exit 5, outcome `refused`);
+- destructive is never: delete, remove, refund, cancel, archive, reset and similar are hidden on every host
+  (`--allow-destructive` shows them on a local dev host only), and so are sign out, pay, billing, "close all";
 - no downloads;
 - no spending past the cost cap.
 
 Signing in is the person's job: `qa_browser(action="login")` opens a window for them, once, and the profile
-remembers it. Or the suite or project names a stored test account (`account:` with a `keychain:`, `op://` or
-`env:` password reference) and QAJev signs in by itself before the scenarios. An agent never handles the password:
-it never asks for one, never puts one in a suite, and passes only the reference. See [Safety](safety.md).
+remembers it. Only on a local dev host can the suite or project name a seeded test account (`account:` with
+`password: seed:FILE#KEY`, from the app's fixture that says `"test_account": true`), and QAJev signs in by itself
+before the scenarios; `keychain:`, `op://` and `env:` passwords are refused. An agent never handles the password: it
+never asks for one, never puts one in a suite, and passes only the reference. See [Safety](safety.md).

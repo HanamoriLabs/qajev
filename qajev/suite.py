@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 from . import keys
-from .config import host_of, is_local_dev, is_loopback, is_test_email
+from .config import host_of, is_local_dev, is_loopback, is_test_email, plain_host
 from .guard import MODES
 
 DEVICES = {
@@ -65,7 +65,7 @@ CLIENT_HOOK_KINDS = HOOK_KINDS - {"command"}  # a shell command is not a player'
 STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout", "settle", "expect"}
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
-    "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about",
+    "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
 }
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
@@ -81,6 +81,14 @@ DEFAULT_BUDGET = {"actions": 20, "seconds": 90}
 
 class SuiteError(ValueError):
     """The suite is malformed or asks for something QAJev refuses to do."""
+
+
+class Refused(SuiteError):
+    """A run that would change a production site: stopped before Chrome starts, with no override (exit 5)."""
+
+
+def refusal(host):
+    return Refused(f"QAJev never changes a production site: {host} is not a local dev host.")
 
 
 @dataclass
@@ -378,18 +386,23 @@ def _account(raw, base, folder=None):
     if scheme != "https" and not (scheme == "http" and is_loopback(url)):
         raise SuiteError("account.login.url must be https (http only on localhost): a password never travels "
                          "unencrypted")
-    if raw.get("totp") is not None or cookie is not None:  # a seeded TEST user on a local dev host, nothing else
-        what = "account.totp" if raw.get("totp") is not None else "account.cookie"
-        for ref in (raw.get("totp"), (cookie or {}).get("value")):
-            if ref is not None and not str(ref).startswith("seed:"):
-                raise SuiteError(f"{what} comes only from the app's seed fixture: seed:FILE#KEY, a JSON fixture that "
-                                 "says \"test_account\": true and lists its allowed_hosts")
+    secrets = {k: v for k, v in (("account.password", raw.get("password")), ("account.totp", raw.get("totp")),
+                                 ("account.cookie", (cookie or {}).get("value"))) if v is not None}
+    if secrets:  # a seeded TEST user on a local dev host, nothing else (passwords too: José, 6 Oct)
+        from .signin import BROWSER_LOGIN
+
+        later = f". {BROWSER_LOGIN.format(url=url)}" if "account.password" in secrets else ""
+        what = next(iter(secrets))
+        for key, ref in secrets.items():
+            if not str(ref).startswith("seed:"):
+                raise SuiteError(f"{key} comes only from the app's seed fixture: seed:FILE#KEY, a JSON fixture that "
+                                 f"says \"test_account\": true and lists its allowed_hosts{later}")
         if not is_local_dev(url):
             raise SuiteError(f"{what} is for a seeded test account on a local dev host (localhost, 127.0.0.1, *.test), "
-                             f"not {urlsplit(url).hostname}")
+                             f"not {urlsplit(url).hostname}{later}")
         if not vault.is_ref(raw["email"]) and not is_test_email(raw["email"]):
             raise SuiteError(f"{what} is for a seeded test account at a reserved test domain (example.test, *.test, "
-                             f"example.com...), not {raw['email']}")
+                             f"example.com...), not {raw['email']}{later}")
     out = {"name": str(raw.get("name") or raw["email"]), "email": vault.anchor(raw["email"], folder),
            "password": vault.anchor(raw.get("password"), folder), "login": {**login, "url": url}}
     if raw.get("totp") is not None:
@@ -408,6 +421,10 @@ def parse(data, path=None, devices=None):
         raise SuiteError("base_url must be http(s)")
     guard = data.get("guard") or {}
     _unknown("guard", guard, GUARD_KEYS)
+    if data.get("allow_destructive") not in (None, False, True):
+        raise SuiteError("allow_destructive must be true or false")
+    if data.get("allow_destructive"):  # a local dev host's delete, remove, refund... (check_safety refuses the rest)
+        guard = {**guard, "allow_destructive": True}
     suite_mode = data.get("mode", "readonly")
     motion = data.get("motion", "reduce")
     if motion not in MOTIONS:
@@ -549,16 +566,12 @@ def about(value, where):
 
 
 def check_safety(suite):
-    """Mutating runs are loopback-only, with no exceptions and no override flag."""
-    for s in suite.scenarios:
-        if s.mode != "mutate":
-            continue
-        remote = [h for h in suite.hosts if not is_loopback(f"http://{h}")]
-        if remote:
-            raise SuiteError(
-                f"scenario {s.name!r} is mode: mutate, but the suite reaches non-loopback host(s) {remote}. "
-                "Mutating runs go against localhost and a throwaway database only."
-            )
+    """Production is read-only, destructive is never: a mutating run, or one that shows destructive controls, goes
+    against local dev hosts only (config.is_local_dev). No exceptions and no override flag."""
+    if any(s.mode == "mutate" for s in suite.scenarios) or suite.guard.get("allow_destructive"):
+        for h in sorted(suite.hosts):
+            if not is_local_dev(f"http://{h}"):
+                raise refusal(plain_host(f"http://{h}") or h)
     if suite.guard.get("allow_secret_fields") and any(not is_loopback(f"http://{h}") for h in suite.hosts):
         raise SuiteError("guard.allow_secret_fields is only allowed when every host is loopback")
 

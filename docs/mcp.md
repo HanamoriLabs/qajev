@@ -68,13 +68,18 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 ### Main parameters
 
 - `qa_check`: `url` (required), `goal`, `expect_text`, `absent_text`, `expect_url`, `expect_js`, `fetch`, `mode`
-  (`readonly` or `mutate`), `device`, `persona`, `about`, `max_actions`, `max_seconds`, `cost_cap`, `profile`, `headless`,
+  (`readonly` or `mutate`: a local dev host only), `allow_destructive`, `device`, `persona`, `about`, `max_actions`, `max_seconds`, `cost_cap`, `profile`, `headless`,
   `background`, and with Clef `expect_looks` (statements judged from the final screenshot) and `vision` (Clef sees
   the screen with every decision).
-- `qa_run_suite`: `suite_path` or `suite_yaml`, `only`, `jobs`, `cost_cap`, `profile`, `background`.
+- `qa_run_suite`: `suite_path` or `suite_yaml`, `only`, `jobs`, `cost_cap`, `profile`, `allow_destructive`,
+  `background`.
 - `qa_smoke`: `url` (required), `max_pages`, `device`, `check_links`, `ux` (default true: measured UX notes and design consistency, free).
 - `qa_project_run`: `project` (required), `suite` (a tag), `names`, `env`, or an ad-hoc `objective` with `url`,
-  `expect_text`, `expect_url`, `about`.
+  `expect_text`, `expect_url`, `about`, and `allow_destructive`.
+- **Refused runs.** A run that would change a production site (`mode: mutate` or `allow_destructive` where a host is
+  not a local dev host: `localhost`, `127.0.0.1`, `[::1]`, `*.localhost`, `*.test`) starts nothing and returns
+  `{"outcome": "refused", "reason": "QAJev never changes a production site: HOST is not a local dev host."}`.
+  It is not an error to work around: tell the person, and run it read-only or against a local copy.
 - `qa_rerun`: `job` (required), `failed` (default true: only the tests that did not pass), `background`.
 - `qa_play`: `project` (the game, or `ios:...` / `android:...`), `goal`, `adapter`, `suite`, `only` (steps of the
   suite, with their `depends_on` and `setup: true` steps), `game_env`,
@@ -103,9 +108,9 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   `qa_stop(job)`.
 - Runs from MCP use a **headless, throwaway Chrome** by default: nothing appears on the person's screen and
   nothing is left behind. Pass `profile` for a signed-in run (the person signs in once with
-  `qa_browser(action="login", profile=..., url=...)`), or give the suite or project a stored test account
-  (`account:`, a password *reference* such as `keychain:qajev/shop-tester`): QAJev then signs in by itself before
-  the scenarios, also headless, and the password never reaches the agent or Jev
+  `qa_browser(action="login", profile=..., url=...)`). On a local dev host only, the suite or project can name a
+  seeded test account (`account:` with `password: seed:FILE#KEY`; `keychain:`, `op://` and `env:` are refused):
+  QAJev then signs in by itself before the scenarios, also headless, and the password never reaches the agent or Jev
   ([Writing tests](writing-tests.md#signed-in-areas)).
 - Runs queue one at a time per machine, shared with the CLI and every other agent. `qa_jobs` shows the queue.
   Each job's title says what it is about: the project or site and the goal for website runs (`check foley /pricing
@@ -119,7 +124,7 @@ The result is trimmed to fit a model's context; the full report stays on disk.
 |---|---|
 | `gate`, `exit_code`, `counts` | PASS / FAIL / INCOMPLETE, and how many scenarios had each outcome |
 | `findings` | problems seen along the way (S1 to S3), with where; `known_findings` for a project's known ones |
-| `needs_sign_in` | only when runs met a sign-in page: `pages`, and a `next_step` to follow (ask the person to sign in once, or to run `qajev account add`; never ask for the password) |
+| `needs_sign_in` | only when runs met a sign-in page: `pages`, and a `next_step` to follow (ask the person to sign in once with qa_browser login; never ask for the password) |
 | `scenarios[]` | per scenario: `outcome`, `reason`, `checks` (each with `ok` and what was found), `findings`, `end_url`, `page_says` (what the page said), `jev` (actions, decisions), `shot` (screenshot path), `seconds`, `cost_usd` |
 | `cost` | money spent, Jev decisions, text calls, the cap |
 | `run_dir`, `report_html`, `report_md`, `job` | where the full report is (give `report_html` to the person), and the job id |

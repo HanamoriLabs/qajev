@@ -28,21 +28,22 @@ the repository, its name is enough.
 name = "shop"
 default_env = "prod"
 
-[env.prod]                       # production is always read-only
+[env.prod]                       # production is always read-only: mode = "mutate" here is refused (exit 5)
 base_url = "https://shop.example"
 hosts = ["cdn.shop.example"]     # other hosts Jev may visit
 smoke_start = "/products"        # where `qajev smoke --project` starts (default /)
 
-[env.local]                      # changes are allowed on your own machine only
+[env.local]                      # changes are allowed on a local dev host only (localhost, *.test...)
 base_url = "http://localhost:3000"
 mode = "mutate"
+allow_destructive = true         # also show delete, remove, refund... (local only; red report banner)
 
-[accounts.tester]                # references only, never passwords
-email = "qa+shop@example.com"
-password = "keychain:qajev/shop-tester"   # or "op://QA/Shop tester/password", or "env:SHOP_TESTER_PASS"
-login = { url = "/login" }       # QAJev signs in with it before the objectives (see Writing tests)
+[accounts.tester]                # a seeded TEST account, local dev hosts only; references only, never passwords
+email = "qa-test@example.test"
+password = "seed:dev_support/qa_test_user.json#password"   # the fixture says "test_account": true, allowed_hosts
+login = { url = "http://localhost:3000/login" }   # QAJev signs in with it before the objectives (see Writing tests)
 seed = "scripts/seed-test-user.sh"
-profile = "shop-local"           # or: a QAJev browser profile you signed in to once
+profile = "shop-local"           # or, for a real site: a QAJev browser profile you signed in to once
 
 [accounts.qa-test]               # a seeded TEST user on a local dev host: second factor included
 email = "seed:dev_support/qa_test_user.json#email"            # FILE#KEY, relative to the project's repo
@@ -81,10 +82,10 @@ Objectives use the same goals, expectations and `about` as any scenario (see [Wr
 
 To run an environment's objectives signed in, name the account: `account = "tester"` under `[env.prod]` (or at
 the top of the file, for every environment). QAJev signs in with it once before the objectives; the password is
-read from its reference at that moment and never written anywhere. The older `email_env` / `password_env` keys
-still work, as `env:` references. `qajev account add tester --email ... --login-url /login --project NAME --default`
-writes the `[accounts.tester]` table and the top-level `account` for you, after saving the password at the
-Keychain's prompt, and signs in once to prove it ([`qajev account`](cli.md#qajev-account)).
+read from its reference at that moment and never written anywhere. Since 0.4.0 that is only a seeded test account on
+a local dev host (`password = "seed:FILE#KEY"`); `keychain:`, `op://`, `env:` and the older `password_env` are
+refused. For a real site, sign in once with `qajev browser login --profile NAME --url LOGIN_URL` and run with that
+profile ([Signed-in areas](writing-tests.md#signed-in-areas)).
 
 ## Running it
 

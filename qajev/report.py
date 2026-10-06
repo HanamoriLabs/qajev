@@ -73,6 +73,7 @@ def build(suite, results, ledgers, *, browser, started_at, strict, interrupted, 
         "plan": the_plan,
         **({"not_described": missing} if missing else {}),
         **({"needs_sign_in": verdict.sign_in_next_step(walls)} if walls else {}),
+        **({"allow_destructive": True} if (getattr(suite, "guard", None) or {}).get("allow_destructive") else {}),
         "qajev": __version__,
         "qajev_commit": config.qajev_commit(),  # which rules judged this run
         "suite": suite.name,
@@ -228,6 +229,7 @@ def markdown(data):
         *([data["about"], ""] if data.get("about") else []),
         f"**Gate: {data['gate']}**" + (" (interrupted)" if data.get("interrupted") else ""),
         "",
+        *([f"> **{report_html.DESTRUCTIVE}**", ""] if data.get("allow_destructive") else []),
         f"{c['pass']} pass · {c['fail']} fail · {c['stuck']} stuck · {c['harness']} harness · "
         f"{c['unverified']} unverified · {c['skipped']} skipped · {data['seconds']:.0f} s · "
         f"${cost['usd']:.4f} of ${cost['cap_usd'] or 0:.2f} cap "
@@ -286,6 +288,11 @@ def markdown(data):
             first = r["blocked_writes"][0]
             lines.append(f"- Read-only guard blocked {len(r['blocked_writes'])} write request(s), e.g. "
                          f"{_cell(first.get('method'))} {_cell(_where(first.get('url')))}")
+        for w in r.get("allowed_writes") or []:  # every write production let through (allow_requests) is listed
+            lines.append(f"- Allowed write: {_cell(w.get('method'))} {_cell(_where(w.get('url')))}")
+        for d in r.get("dialogs") or []:
+            said = f": {_cell(d['message'], 120)}" if d.get("message") else ""
+            lines.append(f"- Dismissed {_cell(d.get('kind'))}{said}")
         blocked = [a for a in r.get("assists") or [] if a.get("after", "BLOCKED") == "BLOCKED"]
         if blocked:
             moved = sum(1 for a in blocked if a["scrolled"])

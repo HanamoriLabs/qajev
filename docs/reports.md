@@ -37,7 +37,11 @@ At the top: the verdict for the whole run.
 | **INCOMPLETE** | nothing failed, but something could not be judged (stuck, harness, skipped...), or a test is NOT DESCRIBED | `2` |
 
 The exit codes make QAJev easy to use in CI. Other exit codes: `3` a mistake in the suite or options, `4` no
-browser available, `130` stopped.
+browser available, `5` refused (the run would have changed a production site; nothing was started), `130` stopped.
+
+Each scenario lists what the guard did on the page: writes it blocked, every write it let through because
+`guard.allow_requests` named it ("Allowed write: POST ..."), and each `confirm`, `prompt` or `beforeunload` it
+dismissed. A run with `allow_destructive` opens with a red banner saying destructive controls were shown.
 
 ## Outcomes
 

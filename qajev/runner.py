@@ -148,6 +148,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         findings.extend(verdict.findings_from_probe(probe, scenario=scenario.name, url=obs.get("url"),
                                                     first_party_hosts=hosts, why=getattr(session, "why_failed", None)))
         result["blocked_writes"].extend(probe.get("blocked") or [])
+        for key, out in (("allowed", "allowed_writes"), ("dialogs", "dialogs")):  # what production let through, asked
+            if probe.get(key):
+                result.setdefault(out, []).extend(probe[key])
         result["guard_hidden"] = max(result["guard_hidden"], probe.get("hidden") or 0)
         if "hidden_controls" in probe:  # what the guard holds back on the page now
             result["guard_hidden_controls"] = probe["hidden_controls"]

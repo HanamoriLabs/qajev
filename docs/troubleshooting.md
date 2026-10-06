@@ -41,8 +41,8 @@ If the site's fields are unusual, name them in the account's `login:` (`email_fi
 
 **"needs sign-in: ..."**
 The run met a sign-in page, so what is behind it was not tested. Give QAJev a way in: sign in once with
-`qajev browser login --profile NAME --url LOGIN_URL` and run with `--profile NAME`, or set up a test account with
-`qajev account add` ([Signed-in areas](writing-tests.md#signed-in-areas)). With a profile, sign in to it again: its
+`qajev browser login --profile NAME --url LOGIN_URL` and run with `--profile NAME`, or, on a local dev site, use a seeded
+test account ([Signed-in areas](writing-tests.md#signed-in-areas)). With a profile, sign in to it again: its
 session expired. If that page should be public, that is the bug.
 
 **A scenario is `stuck`**

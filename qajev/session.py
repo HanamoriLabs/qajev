@@ -480,6 +480,7 @@ class Session:
         self.assists = []
         self.last_stale = None
         self.net = None
+        self.carried = {}  # what a page's guard recorded before the tab left it, for the next probe
         # Jev's agent and its Browser; a multiplayer client has a Tab and no agent (only Jev's own paths use one)
         self.agent: Any
         self.browser: Any
@@ -571,6 +572,7 @@ class Session:
             allow_requests=self.guard_opts.get("allow_requests") or (),
             redact_emails=self.guard_opts.get("redact_emails", False),
             allow_secret_fields=self.guard_opts.get("allow_secret_fields", False),
+            allow_destructive=self.guard_opts.get("allow_destructive", False),
         )
         if self.guard_cfg and cfg["v"] == self.guard_cfg["v"]:
             return
@@ -632,7 +634,16 @@ class Session:
         self.device = device
 
     # ---- navigation and page reads ----
+    def carry(self):
+        """Take what the page's guard recorded (blocked and allowed writes, dialogs) before the tab leaves it."""
+        with contextlib.suppress(RuntimeError, TimeoutError):
+            got = self.evaluate("window.__qajev && window.__qajev.drain ? window.__qajev.drain() : null",
+                                timeout_ms=3000) or {}
+            for key, items in got.items():
+                self.carried.setdefault(key, []).extend(items or [])
+
     def navigate(self, url, timeout=30.0):
+        self.carry()
         result = self.call("Page.navigate", url=url)
         if result.get("errorText"):
             return result["errorText"]
@@ -651,6 +662,7 @@ class Session:
         return None
 
     def reload(self, timeout=30.0):
+        self.carry()
         self.call("Page.reload")
         time.sleep(0.1)  # the old document may still say "complete" for a moment
         deadline = time.monotonic() + timeout
@@ -672,7 +684,12 @@ class Session:
         spec = {"text": expect.get("text", []), "absent": expect.get("absent", []), "js": bool(expect.get("js")),
                 "ci": bool(expect.get("ignore_case")), "visible": expect.get("visible", [])}
         expression = PROBE_JS.substitute(spec=json.dumps(spec), js=awaited(expect.get("js") or "null"))
-        return self.evaluate(expression) or {}
+        out = self.evaluate(expression) or {}
+        if self.carried and isinstance(out.get("probe"), dict):  # the pages the tab has left, first
+            carried, self.carried = self.carried, {}
+            for key, items in carried.items():
+                out["probe"][key] = items + (out["probe"].get(key) or [])
+        return out
 
     def check_host(self, url):
         from urllib.parse import urlsplit

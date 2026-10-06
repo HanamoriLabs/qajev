@@ -47,11 +47,31 @@ MUTATING = [
     r"^\W*new(\s+\S+)?\s*$",  # "New", "+ New", "New project"; not "New York office"
 ]
 
+# Production is read-only. Destructive is never (José, 6 Oct, 0.4.0): controls that destroy something are hidden in
+# every mode, on every host. `allow` never shows them; only `allow_destructive` does, and only on a local dev host
+# (the guard decides per page; suite.check_safety refuses the flag for a production host before Chrome starts).
+# Matched against everything a person reads on the control, anywhere in it.
+DESTRUCTIVE = [
+    r"\b(delete|deleting|remove|removing|erase|destroy|drop(?![\s-]?down)|purge|wipe|cancel|refund|void|revoke|"
+    r"deactivate|unsubscribe|archive|reset|uninstall|disconnect)\b",
+    r"\bempty\s+(the\s+)?(trash|bin|recycle)",
+    r"\b(close|terminate)\s+(my\s+|your\s+|this\s+|the\s+)?account\b",
+]
+# A reset, clear or cancel of something harmless is not destructive: filters, a search, a selection, the form being
+# edited (a hidden "Reset filters" must not strand a run). Its words are set aside before DESTRUCTIVE is matched, so
+# any other destructive word on the control still counts ("Clear search and delete item" stays hidden).
+HARMLESS = [
+    r"\b(reset|clear|cancel)\s+(all\s+)?(the\s+|my\s+|your\s+|this\s+)?(filters?|search(es)?|search\s+query|"
+    r"selection|selected|edits?|editing|form|changes)\b",
+]
+# ...unless the control names something that matters: then it stays destructive, whatever else it says.
+GRAVE = [r"\b(accounts?|orders?|subscriptions?|plans?|bookings?|data|payments?|memberships?)\b"]
+
 MODES = ("readonly", "mutate")
 
 
 def build_config(*, mode="readonly", hosts=(), deny=(), allow=(), allow_requests=(), speech=None,
-                 redact_emails=False, allow_secret_fields=False):
+                 redact_emails=False, allow_secret_fields=False, allow_destructive=False):
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
     cfg = {
@@ -59,11 +79,15 @@ def build_config(*, mode="readonly", hosts=(), deny=(), allow=(), allow_requests
         "hosts": sorted(set(hosts)),
         "deny": DENY + ([] if speech else MIC) + list(deny),
         "mutating": MUTATING,
+        "destructive": DESTRUCTIVE,
+        "harmless": HARMLESS,
+        "grave": GRAVE,
         "allow": list(allow),
         "allow_requests": list(allow_requests),
         "speech": speech,
         "redact_emails": bool(redact_emails),
         "allow_secret_fields": bool(allow_secret_fields),
+        "allow_destructive": bool(allow_destructive),
     }
     cfg["v"] = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()[:12]
     return cfg

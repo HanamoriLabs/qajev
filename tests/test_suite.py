@@ -87,17 +87,35 @@ def test_malformed_suites_are_refused_with_a_reason(scenarios, top, message):
         parse(scenarios, **top)
 
 
-def test_mutate_is_refused_on_any_non_loopback_host():
-    with pytest.raises(S.SuiteError, match="loopback"):
-        parse([{"url": "https://console.example.com/", "goal": "x", "mode": "mutate"}])
-    with pytest.raises(S.SuiteError, match="loopback"):
+@pytest.mark.parametrize("url", ["https://console.example.com/", "https://staging.myapp.com/",
+                                 "https://myapp-git-main.vercel.app/", "http://localhost.evil.com/",
+                                 "http://10.0.0.5:3000/", "http://evil.com\\@localhost/"])
+def test_mutate_is_refused_on_any_host_that_is_not_a_local_dev_host(url):
+    # production, staging and previews alike: no override (José, 6 Oct: production is read-only)
+    with pytest.raises(S.Refused, match="QAJev never changes a production site: .* is not a local dev host."):
+        parse([{"url": url, "goal": "x", "mode": "mutate"}])
+
+
+def test_one_production_host_refuses_a_mutating_suite():
+    with pytest.raises(S.Refused, match="api.example.com is not a local dev host"):
         parse([{"url": "http://localhost:3000/", "goal": "x", "mode": "mutate"}], hosts=["api.example.com"])
 
 
-@pytest.mark.parametrize("host", ["localhost:3101", "127.0.0.1:5000", "app.localhost:80", "[::1]:8080"])
-def test_mutate_is_allowed_on_loopback(host):
+@pytest.mark.parametrize("host", ["localhost:3101", "127.0.0.1:5000", "app.localhost:80", "[::1]:8080",
+                                  "shop.test", "api.shop.test:8443"])
+def test_mutate_is_allowed_on_a_local_dev_host(host):
     s = parse([{"url": f"http://{host}/", "goal": "x", "mode": "mutate"}])
     assert s.mutates
+
+
+def test_allow_destructive_is_a_local_dev_host_s_alone():
+    data = {"allow_destructive": True, "scenarios": [{"url": "http://localhost:3000/", "goal": "x"}]}
+    assert S.parse(data).guard["allow_destructive"] is True
+    data["scenarios"][0]["url"] = "https://shop.example.com/"
+    with pytest.raises(S.Refused, match="shop.example.com is not a local dev host"):
+        S.parse(data)  # even a read-only run may not show them on production
+    with pytest.raises(S.SuiteError, match="allow_destructive must be true or false"):
+        S.parse({"allow_destructive": "yes", "scenarios": [{"url": "http://localhost:3000/", "goal": "x"}]})
 
 
 def test_secret_fields_can_only_be_unlocked_on_loopback():
@@ -130,26 +148,29 @@ def test_motion_is_reduced_by_default_and_validated():
 
 
 def test_an_account_names_where_its_password_lives_and_signs_in_over_https():
-    account = {"email": "qa+shop@example.com", "password": "keychain:qajev/shop-tester",
+    account = {"email": "qa+shop@example.com", "password": "seed:/qa/qa_test_user.json#password",
                "login": {"url": "/login", "signed_in": {"url_not": "/login"}}}
-    s = parse([{"url": "/account", "expect": {"text": ["Orders"]}}], base_url="https://shop.example",
+    s = parse([{"url": "/account", "expect": {"text": ["Orders"]}}], base_url="https://shop.test",
               account=account)
     assert s.account == {"name": "qa+shop@example.com", "email": "qa+shop@example.com",
-                         "password": "keychain:qajev/shop-tester",
-                         "login": {"url": "https://shop.example/login", "signed_in": {"url_not": "/login"}}}
-    sso = parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.example",
-                account={**account, "login": {"url": "https://auth.example/sign-in"}})
-    assert "auth.example" in sso.hosts  # the sign-in host is one QAJev may visit
-    with pytest.raises(S.SuiteError, match="never the value"):
+                         "password": "seed:/qa/qa_test_user.json#password",
+                         "login": {"url": "https://shop.test/login", "signed_in": {"url_not": "/login"}}}
+    sso = parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.test",
+                account={**account, "login": {"url": "https://auth.test/sign-in"}})
+    assert "auth.test" in sso.hosts  # the sign-in host is one QAJev may visit
+    with pytest.raises(S.SuiteError, match="qajev browser login --url https://shop.example/login"):
         parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.example",
+              account={**account, "password": "keychain:qajev/shop-tester"})  # José, 6 Oct: no person's password
+    with pytest.raises(S.SuiteError, match="never the value"):
+        parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.test",
               account={**account, "password": "hunter2-plain"})
     with pytest.raises(S.SuiteError, match="https"):
-        parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="http://shop.example",
+        parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="http://shop.test",
               account=account)  # a password never travels unencrypted; http is for localhost only
     assert parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="http://127.0.0.1:8765",
                  account=account).account["login"]["url"] == "http://127.0.0.1:8765/login"
     with pytest.raises(S.SuiteError, match="login.url"):
-        parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.example",
+        parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.test",
               account={**account, "login": {}})
 
 

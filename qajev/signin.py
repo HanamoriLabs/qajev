@@ -7,7 +7,9 @@ usual, guarded, in the same browser, so they start signed in. Jev is never invol
 prompt, step, report or log, and the guard still disables password fields for Jev.
 
 Rails: the sign-in page is https (or localhost) and a host the suite allows; the password goes only into an
-<input type=password> on such a page; a failed sign-in stops the run with a reason instead of letting Jev try.
+<input type=password> on such a page; a failed sign-in stops the run with a reason instead of letting Jev try. And
+(José, 6 Oct) a password only for a seeded test account on a local dev host, from seed:FILE#KEY, as a code or a
+cookie below; any other account is signed in once by a person (`qajev browser login`), and the profile keeps it.
 
 A seeded TEST account on a local dev host can also sign in without a person (Dash3 and Dash4, 6 Oct): a one-time
 code computed from its seeded TOTP secret (`totp:`), or a session cookie its seed minted (`cookie:`). Both only for an
@@ -63,6 +65,13 @@ STATE_JS = """(() => {
 })()""" % (json.dumps(", ".join(CODE_FIELDS)), json.dumps(ERRORS))
 
 
+# José, 6 Oct: QAJev types passwords for local test accounts only. Every other account: a person signs in once.
+BROWSER_LOGIN = ("QAJev types a password only for a seeded test account on a local dev host (password: seed:FILE#KEY, "
+                 "from a fixture that says \"test_account\": true and lists the host in allowed_hosts). For any other "
+                 "account, sign in once yourself in QAJev's window: qajev browser login --url {url} (QAJev keeps that "
+                 "session).")
+
+
 class SignInFailed(RuntimeError):
     """The site did not let the account in, or the account could not be used. Never carries the password."""
 
@@ -78,9 +87,10 @@ def totp(secret, at=None, *, digits=6, step=30):
 
 
 def _test_only(account, url, email, what):
-    """A one-time code or a preset cookie: only a seeded test account on a local dev host, its secret only from its
-    seed fixture (seed:FILE#KEY: "test_account": true), and only on a host that fixture's non-empty "allowed_hosts"
-    names. `url` is where the browser is, read as a browser reads it (the review of #47). -> the host."""
+    """A password, a one-time code or a preset cookie: only a seeded test account on a local dev host, its secret only
+    from its seed fixture (seed:FILE#KEY: "test_account": true), and only on a host that fixture's non-empty
+    "allowed_hosts" names. `url` is where the browser is, read as a browser reads it (the review of #47).
+    -> the host."""
     host = plain_host(url)
     if not host or not is_local_dev(url):
         raise SignInFailed(f"refused: {what} is for a seeded test account on a local dev host (localhost, 127.0.0.1, "
@@ -88,7 +98,7 @@ def _test_only(account, url, email, what):
     if not is_test_email(email):
         raise SignInFailed(f"refused: {what} is for a seeded test account at a reserved test domain (example.test, "
                            f"*.test, example.com...), not {email}")
-    secrets = [account.get("totp"), (account.get("cookie") or {}).get("value")]
+    secrets = [account.get("password"), account.get("totp"), (account.get("cookie") or {}).get("value")]
     for ref in [r for r in secrets if r is not None]:
         if not (isinstance(ref, str) and ref.startswith("seed:")):
             raise SignInFailed(f"refused: {what} comes only from the app's seed fixture (seed:FILE#KEY)")
@@ -98,6 +108,14 @@ def _test_only(account, url, email, what):
         if host.strip("[]") not in {str(h).lower().strip("[]") for h in allowed}:
             raise SignInFailed(f"refused: the seed fixture allows {allowed}, not {host}")
     return host
+
+
+def _password_ok(account, url, email):
+    """The password's rails, checked where the browser is; a refusal says how a person signs in once instead."""
+    try:
+        return _test_only(account, url, email, "a password")
+    except SignInFailed as e:
+        raise SignInFailed(f"{e}. {BROWSER_LOGIN.format(url=account['login']['url'])}") from None
 
 
 def _pick(session, selectors, tag):
@@ -162,6 +180,7 @@ def sign_in(session, account, *, timeout=20.0):
     email = vault.resolve(account["email"]) if vault.is_ref(account["email"]) else account["email"]
     if not vault.is_ref(account["email"]):  # an email kept by reference stays out of events, logs and reports
         out["email"] = email
+    _password_ok(account, first.get("href") or "", email)  # before a key is pressed; an unread page is no host
     field = _pick(session, login.get("email_field") or EMAIL_FIELDS, "email")
     if not field:
         raise SignInFailed(f"no email or username field on {login['url']}; set account.login.email_field")
@@ -182,8 +201,15 @@ def sign_in(session, account, *, timeout=20.0):
     if not field or not field.get("secret"):
         raise SignInFailed("refused: the password goes only into a password field, and none was found "
                            f"({password_field!r})")
-    session.check_host(_state(session).get("href", login["url"]))  # still on a host the suite allows
-    session.type_into(field, vault.resolve(account["password"]))
+    # Where the browser is, read from the page itself: never the configured URL (#57 review: a page whose state could
+    # not be read fell back to it, and the password went to whatever host the browser was on). A navigation still
+    # settling gets 2 s; a page that stays unreadable is no host, and nothing is typed.
+    here = (_wait(session, lambda s: s.get("href"), 2) or {}).get("href") or ""
+    _password_ok(account, here, email)  # a local dev host its seed fixture allows
+    session.check_host(here)  # and a host the suite allows
+    password = vault.resolve(account["password"])
+    remember_secret(password)  # never in an error, a log or a report
+    session.type_into(field, password)
 
     button = _pick(session, login["submit"], "submit") if login.get("submit") else None
     if login.get("submit") and not button:

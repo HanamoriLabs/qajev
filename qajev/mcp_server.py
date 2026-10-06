@@ -48,21 +48,26 @@ Outcomes: pass; fail (product wrong); stuck (Jev found no way forward: verify by
 harness (budget/stale/model/browser trouble: says nothing about the product); unverified (no checks);
 skipped. Gate: PASS, FAIL or INCOMPLETE.
 
-Safety built in: read-only by default (writes are blocked in the page), dangerous controls (sign out,
-delete, billing, pay, revoke, close all...) are hidden from Jev, passwords/payment fields are disabled,
-the microphone is stubbed, mutate mode is loopback-only. Sign-in: qa_browser(action="login", url=...) opens
-QAJev's own Chrome for the person, or a suite/project names a stored test account (account: with a keychain:,
-op:// or env: password reference) and QAJev signs in itself before the scenarios. Never ask for, type or write
-down a password: only ever the reference.
+Safety built in: production is read-only and destructive is never. Any host that is not a local dev host
+(localhost, 127.0.0.1, [::1], *.localhost, *.test) is production: mode="mutate" or allow_destructive there is
+refused before Chrome starts (outcome "refused"; do not retry it another way). On production DELETE/PUT/PATCH never
+leave the page, a POST only when the suite's allow_requests names it (listed in the report), and the page's
+confirm/prompt are answered "no". Destructive controls (delete, remove, refund, cancel, archive, reset...) are
+hidden everywhere; allow_destructive=true shows them on a local dev host only. Dangerous controls (sign out,
+billing, pay, revoke, close all...) are hidden from Jev, passwords/payment fields are disabled, the microphone
+is stubbed. Sign-in: qa_browser(action="login", url=...) opens
+QAJev's own Chrome for the person, who signs in once (the profile keeps it); or, for a seeded TEST account on a
+local dev host only, a suite/project names it (account: with password: seed:FILE#KEY from a fixture that says
+"test_account": true) and QAJev signs in itself. keychain:, op:// and env: passwords are refused. Never ask for,
+type or write down a password.
 
 Images: with Clef as the decision model (QAJEV_JEV_PROVIDER=cloudflare), `expect_looks` judges plain statements
 from the final screenshot (layout, a canvas, a cut-off button: what text checks cannot see), and `vision` sends the
 screenshot with every decision. Jev reads text only; asking for either without Clef is refused.
 
 Needs sign-in: when a result has `needs_sign_in`, runs met a sign-in page (those scenarios are harness, not product
-failures). Do not report it as a bug. Ask the person how QAJev should get in, following its `next_step`: they sign
-in once (qa_browser login), or they run `qajev account add NAME --email ... --login-url ...` in their own terminal
-(the Keychain asks them for the password; in Claude Code they type it after a !). Then run again.
+failures). Do not report it as a bug. Ask the person to sign in once (qa_browser login), following its
+`next_step`; a local dev site can use a seeded test account instead. Then run again.
 """
 
 server = MCPServer(name="qajev", version=__version__, instructions=INSTRUCTIONS)
@@ -172,6 +177,8 @@ async def _run_report(args, ctx, background=False, title=None, cwd=None, rerun=N
         with contextlib.suppress(jobs.NotOurs):  # the cancel goes on either way
             await asyncio.to_thread(jobs.stop, job["id"])  # the run closes its own tabs, Chrome and daemon
         raise
+    if data and data.get("outcome") == "refused":  # it would have changed a production site: nothing ran
+        return {**data, "job": job["id"]}
     if not data or "error" in data:
         st = jobs.status(job["id"])
         raise ToolError(data.get("error") or st.get("error") or f"qajev job {job['id']} ended {st['state']}")
@@ -184,7 +191,8 @@ def _trim(report, verbose):
     if verbose or "scenarios" not in report:
         return report
     keep = ("name", "about", "outcome", "reason", "stop", "stop_detail", "not_run", "seconds", "cost_usd", "end_url",
-            "checks", "findings", "shot", "jev", "blocked_writes", "page_says", "needs_sign_in")
+            "checks", "findings", "shot", "jev", "blocked_writes", "allowed_writes", "dialogs", "page_says",
+            "needs_sign_in")
     out = {k: v for k, v in report.items() if k not in ("scenarios", "plan")}  # the plan repeats the scenarios
     out["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [], {})} for r in report["scenarios"]]
     for r in out["scenarios"]:
@@ -241,6 +249,7 @@ async def qa_check(
     devices: list[str] | None = None,
     real_devices: list[str] | None = None,
     motion: str | None = None,
+    allow_destructive: bool = False,
 ) -> dict:
     """Run one QA scenario: open `url`, optionally let Jev pursue `goal`, then judge the page.
 
@@ -251,7 +260,8 @@ async def qa_check(
     without it the check is NOT DESCRIBED and the gate INCOMPLETE).
     expect_looks: statements judged from the final screenshot ("the Sign up button is not cut off"); vision: the
     screenshot goes with every decision. Both need Clef as the decision model (Jev reads text only).
-    fetch: in-page GET checks, "URL" or "URL=STATUS". mode: readonly (default) or mutate (loopback only).
+    fetch: in-page GET checks, "URL" or "URL=STATUS". mode: readonly (default) or mutate (a local dev host only;
+    any other host is refused). allow_destructive: show delete/remove/refund/cancel... controls (local dev host only).
     device: desktop | tall | phone | tablet | WIDTHxHEIGHT pins one; otherwise `devices` (default desktop and
     phone). real_devices: also in ios Safari / android Chrome on a throwaway simulator (read-only, slower).
     about: what this test proves and why, in plain words, for the person reading the report (always give it).
@@ -286,6 +296,8 @@ async def qa_check(
         args += ["--host", host]
     if cost_cap is not None:
         args += ["--cost-cap", str(cost_cap)]
+    if allow_destructive:
+        args.append("--allow-destructive")
     args += _motion_args(motion)
     args += _devices_args(devices, real_devices)
     return _trim(await _run_report(args, ctx, background), verbose)
@@ -308,9 +320,11 @@ async def qa_run_suite(
     devices: list[str] | None = None,
     real_devices: list[str] | None = None,
     motion: str | None = None,
+    allow_destructive: bool = False,
 ) -> dict:
     """Run a QAJev suite (YAML/JSON) from a file path or inline text. `only` limits to named scenarios
     (plus their dependencies). jobs > 1 runs independent chains in parallel; keep 1 on a busy machine.
+    allow_destructive: show delete/remove/refund/cancel... controls (every host a local dev host, or refused).
     background: return a job id at once instead (follow with qa_job, stop with qa_stop)."""
     if bool(suite_path) == bool(suite_yaml):
         raise ToolError("give exactly one of suite_path or suite_yaml")
@@ -335,6 +349,8 @@ async def qa_run_suite(
         args += ["--cost-cap", str(cost_cap)]
     if _allow_commands:
         args.append("--allow-commands")
+    if allow_destructive:
+        args.append("--allow-destructive")
     args += _motion_args(motion)
     args += _devices_args(devices, real_devices)
     return _trim(await _run_report(args, ctx, background, title), verbose)
@@ -415,11 +431,14 @@ async def qa_project_run(
     devices: list[str] | None = None,
     real_devices: list[str] | None = None,
     motion: str | None = None,
+    allow_destructive: bool = False,
 ) -> dict:
     """Prove a product works: run a project's stored objectives (optionally only those tagged `suite`, or named
     in `names`), or one ad-hoc `objective` in plain words with `expect_text`/`expect_url` checks and an `about` (what
     it proves and why). The report is
-    filed with the project and in the cross-project index. Production environments are always read-only.
+    filed with the project and in the cross-project index. Production environments are always read-only: an env
+    with mode = "mutate" on a production host is refused. allow_destructive: show delete/remove/refund/cancel...
+    controls (a local dev env only).
     background: return a job id at once instead (follow with qa_job, stop with qa_stop)."""
     args = ["run", "--project", project, *_browser_args(profile, None, headless)]
     for flag, value in (("--env", env), ("--objective", objective), ("--suite", suite), ("--url", url),
@@ -430,6 +449,8 @@ async def qa_project_run(
         args += ["--name", name]
     for text in expect_text or []:
         args += ["--expect-text", text]
+    if allow_destructive:
+        args.append("--allow-destructive")
     args += _motion_args(motion)
     args += _devices_args(devices, real_devices)
     return _trim(await _run_report(args, ctx, background), verbose)

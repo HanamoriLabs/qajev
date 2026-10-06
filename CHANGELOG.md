@@ -12,6 +12,37 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   `report.md` and `report.html`, and in `qajev doctor` (`+dirty` when QAJev's own code had uncommitted changes;
   absent for an installed package). The audit of past verdicts could not tell which rules judged a run.
   ([Reports](docs/reports.md))
+- Changed (breaking): **production is read-only, destructive is never.** Only a local dev host may change:
+  `localhost`, `127.0.0.1`, `[::1]`, `*.localhost` and `*.test`. Every other host is production, staging and
+  previews included, with no override.
+  - `mode: mutate` or `--allow-destructive` on such a host is refused before Chrome starts, from `check`, `run`, a
+    project, `nightly`, `rerun` and the MCP tools: "QAJev never changes a production site: HOST is not a local dev
+    host.", **exit code 5** (was 3), outcome `refused` (MCP returns it instead of raising). A play suite that asks
+    for `mode: mutate` is refused the same way: games and apps have no write guard.
+  - In the page the guard decides per page and per request: a local run that reaches a production page is
+    read-only there. On production `DELETE`, `PUT` and `PATCH` never leave the page, a `POST` only when
+    `guard.allow_requests` names it (listed in the report as an allowed write), `confirm()` gets "no", `prompt()`
+    nothing, `beforeunload` never holds the tab (each listed as dismissed), and Delete or Backspace reach the page
+    only inside a text field. `guard.allow` no longer shows a dangerous control on production.
+  - Destructive controls (delete, remove, erase, destroy, drop, purge, wipe, cancel, refund, void, revoke,
+    deactivate, unsubscribe, archive, reset, empty trash, close or terminate account, uninstall, disconnect) are
+    hidden on every host, local too, and `guard.allow` never shows them. A reset, clear or cancel of filters, a
+    search, a selection or the form being edited stays, unless the control names an account, order, subscription,
+    plan, booking, data, payment or membership; Escape always reaches the page, so a dialog still closes. `--allow-destructive` (suite
+    `allow_destructive: true`, project env `allow_destructive = true`, MCP `allow_destructive`) shows them on a
+    local dev host; the report then carries a red banner. Hooks may now press `Delete`.
+  - `qajev doctor` prints the rule and the local dev hosts.
+  - Migrating: a mutating suite against a staging or preview host now exits 5: point it at a local copy, or a
+    `*.test` / `*.localhost` name for it. A local suite that used `allow: ["^Delete ..."]` to press a destructive
+    control needs `allow_destructive: true` instead. CI that treated exit 3 as "refused" should read 5.
+    ([Safety](docs/safety.md))
+- **Breaking:** QAJev types a password only for a seeded test account on a local dev host (José, 6 Oct: "local test
+  accounts only"). The password comes only from `seed:FILE#KEY`, a fixture that says `"test_account": true` and lists
+  the host in `allowed_hosts`, checked when the suite loads and again where the browser is just before it types. A
+  `keychain:`, `op://` or `env:` password (and a project's `password_env`) is refused on every host, before a key is
+  pressed. For any other account, sign in once yourself in QAJev's window (`qajev browser login --url <sign-in
+  page>`); the profile keeps that session. `qajev account add` and `qajev secret set` are refused; `qajev secret
+  check` and `qajev account check` stay. ([Signed-in areas](docs/writing-tests.md#signed-in-areas))
 - Key and react hooks press chords: Shift, Ctrl, Alt or Meta with one key (`key: Shift+A`), sent as trusted key events
   with the modifiers set (`event.shiftKey`), so a test can open the FiGGYZ Verse town editor with a real Shift+A
   (verse1). With Ctrl or Meta, the browser's and the system's own shortcuts (quit, close, reload, a new tab or window,

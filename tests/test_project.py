@@ -4,7 +4,8 @@ import time
 import pytest
 
 from qajev import project as P
-from qajev.suite import SuiteError, parse
+from qajev import suite as S
+from qajev.suite import parse
 
 TOML = """
 name = "shop"
@@ -93,7 +94,11 @@ def test_local_env_may_mutate_on_loopback(repo):
 def test_mutate_on_a_production_host_is_still_refused(repo):
     p = P.load(repo)
     p.envs["prod"]["mode"] = "mutate"
-    with pytest.raises(SuiteError, match="loopback"):
+    with pytest.raises(S.Refused, match=r"production site: (cdn\.)?shop\.example is not a local dev host"):
+        parse(P.suite_data(p))
+    p.envs["prod"]["mode"] = "readonly"
+    p.envs["prod"]["allow_destructive"] = True  # showing destructive controls: the same refusal
+    with pytest.raises(S.Refused, match=r"shop\.example is not a local dev host"):
         parse(P.suite_data(p))
 
 

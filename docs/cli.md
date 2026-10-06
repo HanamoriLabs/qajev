@@ -25,8 +25,9 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | `0` | PASS |
 | `1` | FAIL: the product is wrong somewhere |
 | `2` | INCOMPLETE: something could not be judged |
-| `3` | a mistake in the suite or the options, or the run was refused |
+| `3` | a mistake in the suite or the options |
 | `4` | no browser available (or the queue wait ran out) |
+| `5` | refused: the run would change a production site (`mode: mutate` or `--allow-destructive` on a host that is not a local dev host), or a play suite asked for `mode: mutate`. Nothing was started; `--json` prints `{"outcome": "refused", "reason": ...}` |
 | `130` | stopped (Ctrl-C or `qajev stop`) |
 
 ## Options shared by `check`, `run` and `smoke`
@@ -112,7 +113,8 @@ qajev check https://shop.example \
 | `--fetch URL[=STATUS]` | a request from the page that must answer STATUS (default 200) |
 | `--expect-looks STATEMENT` | Clef, looking at the final screenshot, must judge this true (repeatable; needs Clef) |
 | `--vision` | Clef sees the screenshot with every decision (needs Clef) |
-| `--mode readonly\|mutate` | `mutate` lets Jev change data: localhost only |
+| `--mode readonly\|mutate` | `mutate` lets Jev change data, on a local dev host only (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`, `*.test`); any other host is refused, exit 5 |
+| `--allow-destructive` | show delete, remove, refund, cancel... controls, hidden by default on every host; a local dev host only (else exit 5); the report carries a red banner |
 | `--device NAME` | `desktop`, `tall`, `phone`, `tablet` or `WIDTHxHEIGHT` |
 | `--persona TEXT` | who Jev is, e.g. "You are on your phone and new to this site" |
 | `--about TEXT` | what this test proves and why, in plain words; shown with its result in the report and dashboard |
@@ -137,6 +139,7 @@ qajev run --project shop --objective "A visitor finds the refund policy" --expec
 | `--only NAME` | run this scenario, plus what it depends on |
 | `--jobs N` | run independent chains of scenarios in parallel (default 1) |
 | `--allow-commands` | let the suite run its shell commands |
+| `--allow-destructive` | as for `check`: destructive controls shown, every host a local dev host or the run is refused (exit 5) |
 | `--project`, `-p` | a project name, or a repository path with `.qajev/project.toml` |
 | `--env`, `-e` | the project environment (default: the project's `default_env`) |
 | `--suite TAG` | the objectives with this tag (repeatable) |
@@ -291,47 +294,37 @@ qajev browser reap                                                   # clean up 
 
 ## `qajev account`
 
-Sets up a stored test account in one step (see [Signed-in areas](writing-tests.md#signed-in-areas)). Run it
-yourself, in a terminal: the Keychain asks you for the password, so neither QAJev nor an agent ever sees it. In Claude
-Code, type it after a `!`.
+Checks a project's test account by signing in with it (see [Signed-in areas](writing-tests.md#signed-in-areas)).
 
 ```bash
-qajev account add shop-tester --email qa+shop@example.com --login-url /login --project shop --default
-qajev account add shop-tester --email qa+shop@example.com --login-url https://shop.example/login   # for a suite
-qajev account check shop-tester --project shop
+qajev account check qa-test --project shop
 ```
 
-`add` saves the password (by default as `keychain:qajev/NAME`; `--password op://...` or `--password env:NAME` uses one
-that already lives there; `--replace` saves a new Keychain password over the old), then writes the account:
+`check` signs in once, in a throwaway Chrome (`--visible` to watch), and says `ok: signed in as ...` or the site's
+reason. Since 0.4.0 that is only a seeded test account on a local dev host (`password: seed:FILE#KEY`). Exit code 2
+when the sign-in fails, 3 for a mistake in the options or the project.
 
-- with `--project`, as `[accounts.NAME]` in the project file, references only (`--default`: every env signs in with
-  it; otherwise name it with `account = "NAME"` in an env);
-- without, it prints the `account:` block to paste into a suite.
-
-Then QAJev signs in once with it, in a throwaway Chrome (`--visible` to watch, `--no-check` to skip), and says
-`ok: signed in as ...` or the site's reason. `check` does that sign-in alone. Exit code 2 when the sign-in fails, 3
-for a mistake in the options or the project.
+`add` is refused since 0.4.0: QAJev no longer saves an account's password. Put a seeded local test account in the
+suite or project as `password: seed:FILE#KEY`; for any other account, sign in once yourself with
+`qajev browser login --url <sign-in page>`.
 
 ## `qajev secret`
 
-A stored test account's password, by reference (see [Signed-in areas](writing-tests.md#signed-in-areas)). It never
-prints the value.
+Says whether QAJev can read a reference (see [Signed-in areas](writing-tests.md#signed-in-areas)). It never prints
+the value.
 
 ```bash
-qajev secret set keychain:qajev/shop-tester       # the Keychain prompts for the password and saves it
-qajev secret check keychain:qajev/shop-tester     # ok: ... can be read (14 characters)
-qajev secret check "op://QA/Shop tester/password" # 1Password, via its `op` tool (Touch ID)
-qajev secret check env:SHOP_TESTER_PASS
+qajev secret check seed:dev_support/qa_test_user.json#password   # ok: ... can be read (14 characters)
 ```
 
-`set` stores `keychain:` references only (on Linux in the secret service, with `secret-tool`); 1Password items are
-made in 1Password. Exit code 2 when the reference cannot be read, with the store's reason.
+Exit code 2 when the reference cannot be read, with the reason. `set` is refused since 0.4.0 (exit 2): QAJev no
+longer stores a password; sign in once yourself with `qajev browser login --url <sign-in page>`.
 
 ## `qajev doctor`
 
 Checks your keys (present and valid, never printed), Chrome, a free port and the machine's load, and prints the
-QAJev version with the commit it runs from (`+dirty` when its code has uncommitted changes). `--offline` skips the
-key validity check.
+QAJev version with the commit it runs from (`+dirty` when its code has uncommitted changes) and the production rule
+with the hosts that count as local dev hosts. `--offline` skips the key validity check.
 
 ## `qajev init`
 
