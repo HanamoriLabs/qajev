@@ -81,10 +81,10 @@ Objectives use the same goals, expectations and `about` as any scenario (see [Wr
 
 To run an environment's objectives signed in, name the account: `account = "tester"` under `[env.prod]` (or at
 the top of the file, for every environment). QAJev signs in with it once before the objectives; the password is
-read from its reference at that moment and never written anywhere. The older `email_env` / `password_env` keys
-still work, as `env:` references. `qajev account add tester --email ... --login-url /login --project NAME --default`
-writes the `[accounts.tester]` table and the top-level `account` for you, after saving the password at the
-Keychain's prompt, and signs in once to prove it ([`qajev account`](cli.md#qajev-account)).
+read from its reference at that moment and never written anywhere. Since 0.4.0 that is only a seeded test account on
+a local dev host (`password = "seed:FILE#KEY"`); `keychain:`, `op://`, `env:` and the older `password_env` are
+refused. For a real site, sign in once with `qajev browser login --profile NAME --url LOGIN_URL` and run with that
+profile ([Signed-in areas](writing-tests.md#signed-in-areas)).
 
 ## Running it
 

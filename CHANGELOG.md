@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- **Breaking:** QAJev types a password only for a seeded test account on a local dev host (José, 6 Oct: "local test
+  accounts only"). The password comes only from `seed:FILE#KEY`, a fixture that says `"test_account": true` and lists
+  the host in `allowed_hosts`, checked when the suite loads and again where the browser is just before it types. A
+  `keychain:`, `op://` or `env:` password (and a project's `password_env`) is refused on every host, before a key is
+  pressed. For any other account, sign in once yourself in QAJev's window (`qajev browser login --url <sign-in
+  page>`); the profile keeps that session. `qajev account add` and `qajev secret set` are refused; `qajev secret
+  check` and `qajev account check` stay. ([Signed-in areas](docs/writing-tests.md#signed-in-areas))
 - Fixed: a game goal step passed on checks that already held before it began. It ended as soon as its `expect` held,
   so a check true from the start passed after 0 actions (SideGame1: "lesson 1" passed on "still in training"). Such a
   step is now unverified, never passed. A new step option `stop: end` plays the goal to DONE or its budget before the

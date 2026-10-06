@@ -118,7 +118,7 @@ The result is trimmed to fit a model's context; the full report stays on disk.
 |---|---|
 | `gate`, `exit_code`, `counts` | PASS / FAIL / INCOMPLETE, and how many scenarios had each outcome |
 | `findings` | problems seen along the way (S1 to S3), with where; `known_findings` for a project's known ones |
-| `needs_sign_in` | only when runs met a sign-in page: `pages`, and a `next_step` to follow (ask the person to sign in once, or to run `qajev account add`; never ask for the password) |
+| `needs_sign_in` | only when runs met a sign-in page: `pages`, and a `next_step` to follow (ask the person to sign in once with qa_browser login; never ask for the password) |
 | `scenarios[]` | per scenario: `outcome`, `reason`, `checks` (each with `ok` and what was found), `findings`, `end_url`, `page_says` (what the page said), `jev` (actions, decisions), `shot` (screenshot path), `seconds`, `cost_usd` |
 | `cost` | money spent, Jev decisions, text calls, the cap |
 | `run_dir`, `report_html`, `report_md`, `job` | where the full report is (give `report_html` to the person), and the job id |

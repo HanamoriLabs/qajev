@@ -50,18 +50,18 @@ skipped. Gate: PASS, FAIL or INCOMPLETE.
 Safety built in: read-only by default (writes are blocked in the page), dangerous controls (sign out,
 delete, billing, pay, revoke, close all...) are hidden from Jev, passwords/payment fields are disabled,
 the microphone is stubbed, mutate mode is loopback-only. Sign-in: qa_browser(action="login", url=...) opens
-QAJev's own Chrome for the person, or a suite/project names a stored test account (account: with a keychain:,
-op:// or env: password reference) and QAJev signs in itself before the scenarios. Never ask for, type or write
-down a password: only ever the reference.
+QAJev's own Chrome for the person, who signs in once (the profile keeps it); or, for a seeded TEST account on a
+local dev host only, a suite/project names it (account: with password: seed:FILE#KEY from a fixture that says
+"test_account": true) and QAJev signs in itself. keychain:, op:// and env: passwords are refused. Never ask for,
+type or write down a password.
 
 Images: with Clef as the decision model (QAJEV_JEV_PROVIDER=cloudflare), `expect_looks` judges plain statements
 from the final screenshot (layout, a canvas, a cut-off button: what text checks cannot see), and `vision` sends the
 screenshot with every decision. Jev reads text only; asking for either without Clef is refused.
 
 Needs sign-in: when a result has `needs_sign_in`, runs met a sign-in page (those scenarios are harness, not product
-failures). Do not report it as a bug. Ask the person how QAJev should get in, following its `next_step`: they sign
-in once (qa_browser login), or they run `qajev account add NAME --email ... --login-url ...` in their own terminal
-(the Keychain asks them for the password; in Claude Code they type it after a !). Then run again.
+failures). Do not report it as a bug. Ask the person to sign in once (qa_browser login), following its
+`next_step`; a local dev site can use a seeded test account instead. Then run again.
 """
 
 server = MCPServer(name="qajev", version=__version__, instructions=INSTRUCTIONS)

@@ -7,11 +7,14 @@ the model behaving well: the rules are enforced in the page and in QAJev itself.
 
 - **Let Jev type passwords, one-time codes or payment details.** Those fields are disabled in the page. Hooks
   refuse to fill them on any site that is not your own machine.
-- **Sign in on its own initiative.** Either the person signs in once in QAJev's own browser profile
-  (`qajev browser login`), or a suite names a test account whose password lives in the Keychain, 1Password or an
-  environment variable. Then QAJev itself, not Jev, signs in before the scenarios: only on an `https` page of an
-  allowed host, only into a password field, with the value redacted from everything it writes
-  ([Signed-in areas](writing-tests.md#signed-in-areas)).
+- **Sign in on its own initiative, or type a person's password.** Either the person signs in once in QAJev's own
+  browser profile (`qajev browser login --url <sign-in page>`), and the profile keeps that session; or a suite names
+  a seeded **test** account on a local dev host (`localhost`, `127.0.0.1`, `*.test`, `*.localhost`) whose password
+  comes only from the app's seed fixture (`password: seed:FILE#KEY`, a JSON fixture that says
+  `"test_account": true` and lists the host in `allowed_hosts`). Then QAJev itself, not Jev, signs in before the
+  scenarios: only on that host, checked again where the browser is when it types, only into a password field, with
+  the value redacted from everything it writes. A password from the Keychain, 1Password or an environment variable
+  is refused, on every host ([Signed-in areas](writing-tests.md#signed-in-areas)).
 - **Change data on a real site.** Tests are read-only by default: buttons named like writes (save, submit,
   delete, invite...) are hidden, and form posts and other writing requests are blocked in the page and listed in
   the report. `mode: mutate` is allowed **only** on `localhost` / `127.0.0.1`, with no override.
