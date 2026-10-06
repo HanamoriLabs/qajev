@@ -205,6 +205,10 @@ Hooks: `js`, `click` (a CSS selector: scrolled into view, then clicked once it i
 true, within `timeout` seconds: 15 by default, at most 300, e.g. `{js: "window.ready", timeout: 60}`; a Promise counts by what it resolves to; a wait, unlike a check, holds on any truthy value), `key` (a real key press, below), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
 cookies and storage), and `command` (a shell command, only with `--allow-commands`). Hooks refuse to click dangerous controls or fill password fields on a real site.
 A scenario's checks judge the page as it is after its `before:` hooks, so a `wait_for` there is what they see.
+Its `after:` hooks run after the checks: a result an `after:` hook writes can never change the verdict, so a
+hook that plays the page and records a result belongs last in `before:`. `expect` js and hook js run in separate
+JavaScript worlds: they share the page's DOM (so a hook can leave its result in a `data-` attribute), not its
+window globals.
 
 A `key` hook presses real keys, as a player does: the page gets trusted `keydown` and `keyup` events. Jev clicks and
 types but cannot press a game's keys, so a game's real-key test drives them with hooks. A chord adds Shift, Ctrl, Alt
