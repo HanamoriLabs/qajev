@@ -5,7 +5,7 @@ import os
 import time
 from urllib.parse import urlsplit
 
-from . import __version__, plan, report_html, verdict
+from . import __version__, config, plan, report_html, verdict
 
 OBVIOUS = 0.8
 MOTION = {
@@ -29,7 +29,8 @@ class Partial:
 
     def add(self, result):
         self.results.append(result)
-        data = {"qajev": __version__, "suite": self.suite.name, "partial": True, "started_at": self.started_at,
+        data = {"qajev": __version__, "qajev_commit": config.qajev_commit(), "suite": self.suite.name, "partial": True,
+                "started_at": self.started_at,
                 "browser": self.browser, "scenarios": self.results}
         _atomic(self.run_dir / "report.json", json.dumps(data, indent=2, default=str))
 
@@ -74,6 +75,7 @@ def build(suite, results, ledgers, *, browser, started_at, strict, interrupted, 
         **({"needs_sign_in": verdict.sign_in_next_step(walls)} if walls else {}),
         **({"allow_destructive": True} if (getattr(suite, "guard", None) or {}).get("allow_destructive") else {}),
         "qajev": __version__,
+        "qajev_commit": config.qajev_commit(),  # which rules judged this run
         "suite": suite.name,
         "gate": gate,
         "exit_code": verdict.EXIT_CODES[gate],
@@ -341,7 +343,7 @@ def markdown(data):
         *([f"- Motion: {MOTION[data['motion']]}"] if data.get("motion") in MOTION else []),
         *([f"- Watched live: {data['watched_live_s']:.0f} s in the dashboard"] if data.get("watched_live_s") else []),
         *([f"- Sign-in: {report_html.signed_in(data['sign_in'])}"] if data.get("sign_in") else []),
-        f"- QAJev {data['qajev']}",
+        f"- QAJev {data['qajev']}" + (f" ({data['qajev_commit']})" if data.get("qajev_commit") else ""),
         "",
     ]
     return "\n".join(lines)

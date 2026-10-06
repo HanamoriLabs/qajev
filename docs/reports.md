@@ -9,6 +9,10 @@ Every run writes a folder with:
 | `report.json` | programs and AI agents |
 | `shots/*.jpg` | the screen at the end of each scenario |
 
+Each report names the QAJev version and the commit that judged it (`qajev_commit` in `report.json`; `+dirty` when
+QAJev's own code had uncommitted changes, absent for an installed package), so an old verdict can be traced to the
+rules it was judged by.
+
 The CLI prints the folder when the run ends. `qajev report <folder>` prints the Markdown again, and
 `qajev report <folder> --html` rebuilds the page from `report.json`.
 
@@ -49,7 +53,7 @@ the test tool are kept apart.**
 | **pass** | every expectation held, and every one of them ran | nothing |
 | **fail** | the product is wrong: a check failed, or the page did not load | read the reason and the failed checks |
 | **stuck** | Jev looked for a way forward and found none (QAJev also scrolls and looks again, twice) | look at the screenshot: often a real usability problem |
-| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error, a browser error or a failed hook | says nothing about the product; retry or narrow the goal |
+| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error, a browser error, a failed hook, or Jev saying DONE without taking a single action while a check fails | says nothing about the product; retry or narrow the goal |
 | **unverified** | the scenario had no expectations | add some |
 | **skipped** | a scenario it depends on did not pass, or the machine was too busy | fix that first |
 

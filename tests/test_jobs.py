@@ -64,7 +64,9 @@ def test_second_run_queues_behind_the_first_and_names_it():
 def test_a_job_reports_progress_while_running_and_its_gate_when_done():
     job = jobs.start(["check", "https://a.example"], command=fake(1.5))
     assert job["title"] == "check a.example"
-    running = wait_for(lambda: (s := jobs.status(job["id"], detail=True))["progress"]["done"] == 1 and s)
+    # the step event comes a few lines after the first scenario's: wait for both (Ubuntu CI read between them, #57)
+    running = wait_for(lambda: (s := jobs.status(job["id"], detail=True))["progress"]["done"] == 1
+                       and s.get("now") and s)
     assert running["state"] == "running" and running["current"] == "pricing"
     assert running["run_dir"] == "/tmp/demo-run" and running["progress"]["total"] == 2
     assert [r["name"] for r in running["scenarios"]] == ["home"]  # partial results while it runs

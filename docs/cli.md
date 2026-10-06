@@ -323,7 +323,8 @@ longer stores a password; sign in once yourself with `qajev browser login --url 
 ## `qajev doctor`
 
 Checks your keys (present and valid, never printed), Chrome, a free port and the machine's load, and prints the
-production rule with the hosts that count as local dev hosts. `--offline` skips the key validity check.
+QAJev version with the commit it runs from (`+dirty` when its code has uncommitted changes) and the production rule
+with the hosts that count as local dev hosts. `--offline` skips the key validity check.
 
 ## `qajev init`
 

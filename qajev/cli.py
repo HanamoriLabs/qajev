@@ -1056,7 +1056,7 @@ def cmd_account(args):
 
 def cmd_doctor(args):
     from . import chrome, providers
-    from .config import DEFAULTS, LOCAL_DEV_HOSTS, env_files, key_sources, load_env
+    from .config import DEFAULTS, LOCAL_DEV_HOSTS, env_files, key_sources, load_env, qajev_commit
 
     try:
         loaded = load_env(args.env_file)
@@ -1067,6 +1067,7 @@ def cmd_doctor(args):
     def add(name, ok, detail):
         checks.append({"check": name, "ok": ok, "detail": detail})
 
+    add("qajev", True, f"{__version__} ({qajev_commit() or 'installed package, no checkout'})")
     add("env files", bool(loaded), ", ".join(loaded) or
         f"none found; looked in {', '.join(str(p) for p in env_files(args.env_file))}")
     for key in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "CLOUDFLARE_API_TOKEN", "TEXT_MODEL_API_KEY"):

@@ -628,7 +628,8 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
                 checks += looks_checks(game, expect["looks"], ledger, obs)
             except (RuntimeError, ValueError) as e:  # no picture, or Clef unreachable: QAJev's side, no verdict
                 stop, detail = "model_error", f"could not judge looks: {e}"
-    outcome, reason = verdict.classify(stop, checks, has_checks=bool(expect), stop_detail=detail)
+    outcome, reason = verdict.classify(stop, checks, has_checks=bool(expect), stop_detail=detail,
+                                       actions=len(history) if goal else None)
     if goal and outcome == "pass" and held_at_start:
         outcome = "unverified"
         reason = ("its checks already held before the goal's first action, so they prove nothing about the goal: "

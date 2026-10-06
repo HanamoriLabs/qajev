@@ -477,7 +477,7 @@ def render(data):
         run.append(("Sign-in", _e(signed_in(data["sign_in"]))))
     run += [("Legend", "<br>".join(f"{_pill(o)} {_e(t)}" for o, t in LEGEND.items())),
             ("Files", '<a href="report.md">report.md</a> · <a href="report.json">report.json</a>'),
-            ("QAJev", _e(data.get("qajev")))]
+            ("QAJev", _e(data.get("qajev")) + (f" ({_e(data['qajev_commit'])})" if data.get("qajev_commit") else ""))]
     out += ["<h2>Run</h2>", '<div class="card"><dl>', "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in run),
             "</dl></div>", "</main></body></html>"]
     return "\n".join(o for o in out if o)
