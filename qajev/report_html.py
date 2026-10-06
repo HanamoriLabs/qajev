@@ -447,6 +447,8 @@ def render(data):
     if data.get("models"):
         run.append(("Models", _e(f"{data['models'].get('decider') or 'Jev'} {data['models']['jev']}; "
                                  f"text {data['models']['text']}")))
+        if data["models"].get("keys"):  # where QAJev's own keys came from: names only
+            run.append(("Keys", _e("; ".join(data["models"]["keys"]))))
     if data.get("motion") in ("reduce", "full"):
         run.append(("Motion", "reduced (pages were told the visitor prefers reduced motion)"
                     if data["motion"] == "reduce" else "full (as-is)"))

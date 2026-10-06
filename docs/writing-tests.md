@@ -347,7 +347,7 @@ instead of leaving Jev at a sign-in page.
 |---|---|---|
 | `keychain:SERVICE/ACCOUNT` | the macOS Keychain (on Linux, the secret service via `secret-tool`) | `qajev secret set keychain:qajev/shop-tester` (the Keychain prompts for it) |
 | `op://VAULT/ITEM/FIELD` | 1Password, read with its `op` command-line tool (Touch ID) | make the item in 1Password; install `op` and turn on its app integration |
-| `env:NAME` | an environment variable, e.g. a CI secret | set it in CI or your `.env` |
+| `env:NAME` | an environment variable, e.g. a CI secret | set it in CI, your shell or `~/.qajev/.env` (QAJev does not read a project's `.env`) |
 | `seed:FILE#KEY` | a key of your app's own JSON test-user fixture, which must say `"test_account": true` (see "A seeded test user" below) | your seed writes it |
 
 `qajev secret check REF` says whether QAJev can read it (the length, never the value). Use a test account made

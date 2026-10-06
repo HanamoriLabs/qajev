@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Changed (breaking): QAJev no longer reads the current folder's `.env`. A project's file held a Cloudflare token
+  for its own deploys, QAJev read it first, and Clef answered 401 (Foley1). QAJev's files are `--env-file`,
+  `$QAJEV_ENV_FILE` and `~/.qajev/.env`. Its own keys (Jev, OpenRouter, the text model, Cloudflare for Clef) come
+  from those files even when the shell has another value; `QAJEV_<NAME>` pins one on purpose, and a key no file
+  sets still comes from the shell (CI). `qajev doctor` and each report's header say where each key came from, names
+  only, and a model's HTTP 401 or 403 points there. If you kept QAJev's keys or an `env:` secret in a project's
+  `.env`, move them to `~/.qajev/.env` or pass `--env-file`. ([Configuration](docs/configuration.md))
 - Fixed: a page with a ticking number (a video timer in a game's HUD, a countdown, a clock) made every one of Jev's
   moves go stale before it acted, so goals there ended as harness (verse2, FiGGYZ Verse). A clock time ("0:03",
   "1:05:09") or a countdown in seconds or minutes ("59 s", "5 min") that ticks, in the page's words, a control's
