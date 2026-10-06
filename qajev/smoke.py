@@ -258,7 +258,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     session = None
     try:
         session = session_mod.Session(ledger, headless=browser.get("headless", False), hosts={host},
-                                      motion=opts.motion or "reduce")
+                                      motion=opts.motion or "reduce", cpu_throttle=opts.cpu_throttle or 1)
         session.set_device(dev)
         session.arm("readonly")
         while queue and len(results) < max_pages:
@@ -365,6 +365,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     built = report.build(suite, results, [ledger.summary()], browser=browser, started_at=started_at,
                          strict=opts.strict, interrupted=interrupted, run_dir=run_dir)
     built["motion"] = opts.motion or "reduce"
+    built["cpu_throttle"] = opts.cpu_throttle or 1
     if consistency is not None:
         built["ux"] = {"consistency": consistency}
     built["smoke"] = {"start_url": start_url, "pages": len(results), "discovered_links": len(discovered),

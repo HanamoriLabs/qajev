@@ -1031,6 +1031,26 @@ def test_motion_full_leaves_the_media_query_alone(site, browser, tmp_path):
     assert full["gate"] == "FAIL" and full["motion"] == "full"
 
 
+BUSY = ("(() => { const t = performance.now(); let x = 0; for (let i = 0; i < 3e7; i++) x += i % 7; "
+        "return performance.now() - t; })()")
+
+
+def test_cpu_throttle_makes_the_page_about_n_times_slower(session, site):
+    # a phone pass measures phone-like CPU, not the Mac's (the Verse QA night, 7 Oct)
+    from qajev import session as session_mod
+    from qajev.ledger import Ledger
+
+    session.navigate(site + "/")
+    plain = min(session.evaluate(BUSY) for _ in range(3))
+    slow = session_mod.Session(Ledger(0.0), headless=True, hosts={site.split("//")[1]}, cpu_throttle=4)
+    try:
+        slow.navigate(site + "/")
+        throttled = min(slow.evaluate(BUSY) for _ in range(3))
+    finally:
+        slow.close()
+    assert 2.5 <= throttled / plain <= 6.5, (plain, throttled)
+
+
 def test_after_a_wheel_turn_qajev_waits_for_smooth_scrolling_to_finish(session, site):
     session.arm("readonly")
     session.navigate(site + "/smooth.html")

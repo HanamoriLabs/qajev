@@ -184,3 +184,13 @@ def test_about_says_what_a_test_proves_on_the_suite_and_each_scenario():
         ("buy (phone)", "a visitor can pay for a plan"), ("home (phone)", None)]
     with pytest.raises(S.SuiteError, match="about"):
         parse([{"url": "http://h/", "goal": "x", "about": ["not", "text"]}])
+
+
+def test_cpu_throttle_is_1_by_default_a_whole_number_from_1_to_8():
+    # the Verse QA night (7 Oct): a "phone" pass ran the Mac's CPU at a phone's size
+    base = {"base_url": "http://127.0.0.1:1", "scenarios": [{"expect": {"text": "x"}}]}
+    assert S.parse(base).cpu_throttle == 1
+    assert S.parse({**base, "cpu_throttle": 4}).cpu_throttle == 4
+    for bad in (0, 9, 2.5, "4", True):
+        with pytest.raises(S.SuiteError, match="cpu_throttle must be a whole number from 1 to 8"):
+            S.parse({**base, "cpu_throttle": bad})

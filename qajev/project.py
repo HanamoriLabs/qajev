@@ -33,9 +33,10 @@ from .config import HOME
 
 CONFIG_NAME = Path(".qajev") / "project.toml"
 PROJECT_KEYS = {"name", "repo", "default_env", "env", "accounts", "account", "budget", "guard", "persona", "device",
-                "objective", "known", "motion", "devices", "real_devices"}
+                "objective", "known", "motion", "devices", "real_devices", "cpu_throttle"}
 KNOWN_KEYS = {"kind", "url", "note"}
 ENV_KEYS = {"base_url", "hosts", "mode", "device", "devices", "real_devices", "persona", "smoke_start", "motion",
+            "cpu_throttle",
             "account", "allow_destructive"}
 OBJECTIVE_KEYS = {"name", "env", "url", "goal", "expect", "tags", "before", "after", "budget", "device", "persona",
                   "mode", "settle", "depends_on", "speech", "vision", "about"}
@@ -84,6 +85,7 @@ class Project:
     objectives: list = field(default_factory=list)
     known: list = field(default_factory=list)
     motion: str | None = None
+    cpu_throttle: int | None = None
     devices: list | None = None  # every objective runs on each (default desktop and phone)
     real_devices: list | None = None  # opt-in: also in a real device browser (ios, android)
     account: str | None = None  # the account every env signs in with, unless the env names its own
@@ -176,7 +178,7 @@ def load(ref):
         default_env=default_env, envs=envs, accounts=data.get("accounts") or {}, budget=data.get("budget") or {},
         guard=data.get("guard") or {}, persona=data.get("persona"), device=data.get("device"),
         devices=data.get("devices"), real_devices=data.get("real_devices"), objectives=objectives,
-        known=known, motion=data.get("motion"), account=data.get("account"),
+        known=known, motion=data.get("motion"), cpu_throttle=data.get("cpu_throttle"), account=data.get("account"),
     )
 
 
@@ -221,7 +223,7 @@ def suite_data(project, *, env=None, tags=(), names=(), objective=None, url=None
     }
     if "allow_destructive" in target:  # a local env only: the suite refuses it for a production host
         data["allow_destructive"] = target["allow_destructive"]
-    for key in ("persona", "device", "devices", "real_devices", "motion"):
+    for key in ("persona", "device", "devices", "real_devices", "motion", "cpu_throttle"):
         value = target.get(key) or getattr(project, key, None)
         if value:
             data[key] = value

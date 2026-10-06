@@ -77,6 +77,15 @@ _allow_commands = False
 DEFAULT_OUT = Path(os.environ.get("QAJEV_OUT", HOME / "runs"))
 
 
+def _cpu_args(cpu_throttle):
+    """cpu_throttle: run the page's CPU N times slower (1 to 8), e.g. 4 for a phone-like phone pass."""
+    if cpu_throttle in (None, 0, 1):
+        return []
+    if isinstance(cpu_throttle, bool) or not isinstance(cpu_throttle, int) or not 1 <= cpu_throttle <= 8:
+        raise ToolError("cpu_throttle must be a whole number from 1 to 8")
+    return ["--cpu-throttle", str(cpu_throttle)]
+
+
 def _motion_args(motion):
     """reduce (default): pages are told the visitor prefers reduced motion; full: as a default browser."""
     if motion in (None, ""):
@@ -251,6 +260,7 @@ async def qa_check(
     devices: list[str] | None = None,
     real_devices: list[str] | None = None,
     motion: str | None = None,
+    cpu_throttle: int | None = None,
     allow_destructive: bool = False,
 ) -> dict:
     """Run one QA scenario: open `url`, optionally let Jev pursue `goal`, then judge the page.
@@ -301,6 +311,7 @@ async def qa_check(
     if allow_destructive:
         args.append("--allow-destructive")
     args += _motion_args(motion)
+    args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     return _trim(await _run_report(args, ctx, background), verbose)
 
@@ -322,6 +333,7 @@ async def qa_run_suite(
     devices: list[str] | None = None,
     real_devices: list[str] | None = None,
     motion: str | None = None,
+    cpu_throttle: int | None = None,
     allow_destructive: bool = False,
 ) -> dict:
     """Run a QAJev suite (YAML/JSON) from a file path or inline text. `only` limits to named scenarios
@@ -354,6 +366,7 @@ async def qa_run_suite(
     if allow_destructive:
         args.append("--allow-destructive")
     args += _motion_args(motion)
+    args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     return _trim(await _run_report(args, ctx, background, title), verbose)
 
@@ -373,6 +386,7 @@ async def qa_smoke(
     background: bool = False,
     devices: list[str] | None = None,
     motion: str | None = None,
+    cpu_throttle: int | None = None,
     ux: bool = True,
 ) -> dict:
     """Crawl same-origin pages from `url` with NO model calls and lint each one: HTTP status, script
@@ -389,6 +403,7 @@ async def qa_smoke(
     if not ux:
         args.append("--no-ux")
     args += _motion_args(motion)
+    args += _cpu_args(cpu_throttle)
     args += _devices_args(devices)
     return _trim(await _run_report(args, ctx, background), verbose)
 
@@ -433,6 +448,7 @@ async def qa_project_run(
     devices: list[str] | None = None,
     real_devices: list[str] | None = None,
     motion: str | None = None,
+    cpu_throttle: int | None = None,
     allow_destructive: bool = False,
 ) -> dict:
     """Prove a product works: run a project's stored objectives (optionally only those tagged `suite`, or named
@@ -454,6 +470,7 @@ async def qa_project_run(
     if allow_destructive:
         args.append("--allow-destructive")
     args += _motion_args(motion)
+    args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     return _trim(await _run_report(args, ctx, background), verbose)
 

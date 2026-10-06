@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- `cpu_throttle: N` (suite, project env, `--cpu-throttle N`, MCP `cpu_throttle`): Chrome runs the page's CPU N times
+  slower, 1 to 8, default 1, set before the first page loads. A phone pass then measures phone-like speed, not
+  this machine's at a phone's size (the Verse QA night). The report says so under Run ("CPU: 4× slower").
+  ([Writing tests](docs/writing-tests.md))
 - Fixed: three ways a run blamed the product for its own setup.
   - A local dev server that is not answering (connection refused, reset or closed, a name that does not resolve) is
     **harness**: "the server at URL is not answering". Before, every scenario of a run whose app was not started was

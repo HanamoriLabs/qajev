@@ -194,7 +194,8 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
         for c in result["clients"]:
             clients.append(Client(c["name"], c["url"], session_mod.Session(
                 ledger, headless=suite_meta["headless"], hosts=hosts, guard_opts=suite_meta["guard"],
-                motion=suite_meta.get("motion", "reduce"), isolated=True)))
+                motion=suite_meta.get("motion", "reduce"), isolated=True,
+                cpu_throttle=suite_meta.get("cpu_throttle", 1))))
         jev = clients[0].session.jev
         tab = session_mod.Tab(jev.cdp, jev.admin.ensure_daemon)  # the judge: a blank tab no page code reaches
 
