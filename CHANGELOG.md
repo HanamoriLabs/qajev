@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: a game goal step passed on checks that already held before it began. It ended as soon as its `expect` held,
+  so a check true from the start passed after 0 actions (SideGame1: "lesson 1" passed on "still in training"). Such a
+  step is now unverified, never passed. A new step option `stop: end` plays the goal to DONE or its budget before the
+  checks judge, for a step whose check comes true early. ([Games](docs/games.md))
 - Fixed: a scenario without a goal judged its checks on the page as read right after it loaded, before its
   `before:` hooks ran. A `wait_for` there seemed not to wait, and a check that held at once passed on a page still
   loading (verse2: a game judged at its spawn point, nothing drawn yet). The checks now judge the page after the
