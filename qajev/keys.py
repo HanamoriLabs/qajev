@@ -1,9 +1,10 @@
 """Real key presses for `key` hooks: which keys, and the plan for pressing them (once, a sequence repeated, held).
 
 Real-key play-tests are the rule for every game change (Orchestrator, 5 Oct): Jev can click and type but not press a
-game's keys, so a suite does it with hooks. The keys are an allow-list of plain key names, never a modifier or a
-combination, so a hook cannot send a browser or system shortcut. Each press is a trusted key event in the page
-(Chrome's Input.dispatchKeyEvent): keyDown, then keyUp after `hold_ms`.
+game's keys, so a suite does it with hooks. The keys are an allow-list of plain key names, plus chords of them with
+Shift, Ctrl, Alt or Meta ("Shift+A": verse1, 6 Oct). A chord never names a browser or system shortcut with Ctrl or
+Meta (quit, close, reload, a new tab or window, the address bar, print). Each press is a trusted key event in the
+page (Chrome's Input.dispatchKeyEvent, with the chord's modifiers bitmask): keyDown, then keyUp after `hold_ms`.
 """
 
 MAX_HOLD_MS = 5000
@@ -48,13 +49,40 @@ def _table():
 KEYS = _table()
 
 
+# CDP's modifiers bitmask, and the keys that, with Ctrl or Meta, are a browser's or the system's own shortcuts
+MODIFIERS = {"alt": 1, "ctrl": 2, "control": 2, "meta": 4, "cmd": 4, "shift": 8}
+SHORTCUTS = set("qwrtnlp")
+
+
 def spec(name):
-    """The key event fields for a key name (case-insensitive for letters). ValueError for anything else."""
+    """The key event fields for a key name, or a chord ("Shift+A", "Ctrl+Shift+KeyK"): case-insensitive for letters
+    and modifiers. ValueError for anything else, and for a browser or system shortcut."""
+    if isinstance(name, str) and "+" in name and name != "+":
+        *mods, base = name.split("+")
+        bits = 0
+        for m in mods:
+            bit = MODIFIERS.get(m.strip().lower())
+            if not bit or bits & bit:
+                raise ValueError(f"{name!r}: a chord is Shift, Ctrl, Alt or Meta (each once) + one plain key")
+            bits |= bit
+        out = dict(_plain(base))
+        if bits & (2 | 4) and out["key"].lower() in SHORTCUTS:
+            raise ValueError(f"refused: {name!r} is a browser or system shortcut (quit, close, reload, a new tab or "
+                             "window, the address bar, print)")
+        if bits & 8 and len(out["key"]) == 1 and out["key"].isalpha():
+            out.update(key=out["key"].upper(), text=out["key"].upper())
+        if bits & (1 | 2 | 4):
+            out.pop("text", None)  # Ctrl+K types nothing
+        return {**out, "modifiers": bits}
+    return _plain(name)
+
+
+def _plain(name):
     if isinstance(name, str) and len(name) == 1 and name.isalpha():
         name = name.lower()
     if not isinstance(name, str) or name not in KEYS:
         raise ValueError(f"unknown key {name!r}: one plain key, a letter, a digit, punctuation such as '`', or "
-                         f"{', '.join(_NAMED)} (no modifiers or combinations)")
+                         f"{', '.join(_NAMED)}; or a chord such as Shift+A")
     return KEYS[name]
 
 

@@ -207,7 +207,10 @@ cookies and storage), and `command` (a shell command, only with `--allow-command
 A scenario's checks judge the page as it is after its `before:` hooks, so a `wait_for` there is what they see.
 
 A `key` hook presses real keys, as a player does: the page gets trusted `keydown` and `keyup` events. Jev clicks and
-types but cannot press a game's keys, so a game's real-key test drives them with hooks.
+types but cannot press a game's keys, so a game's real-key test drives them with hooks. A chord adds Shift, Ctrl, Alt
+or Meta to one key, e.g. `key: Shift+A` or `Ctrl+Shift+KeyK` (the page sees `event.shiftKey` and the rest; react
+policies take chords too). With Ctrl or Meta, the browser's and the system's own shortcuts (Q, W, R, T, N, L, P:
+quit, close, reload, a new tab or window, the address bar, print) are refused.
 
 ```yaml
 - key: Escape                                       # once

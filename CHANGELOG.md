@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Key and react hooks press chords: Shift, Ctrl, Alt or Meta with one key (`key: Shift+A`), sent as trusted key events
+  with the modifiers set (`event.shiftKey`), so a test can open the FiGGYZ Verse town editor with a real Shift+A
+  (verse1). With Ctrl or Meta, the browser's and the system's own shortcuts (quit, close, reload, a new tab or window,
+  the address bar, print) are refused. ([Writing tests](docs/writing-tests.md))
 - LIVE: **Watch live** in the dashboard shows a running test's screen as a moving picture (about 5 frames a
   second, 1280 px; 2 when the machine is busy, 1 during real-time game steps). View only, at most 2 viewers a run,
   behind the dashboard's key on 127.0.0.1. **Bring to front** raises the page in QAJev's own Chrome; **Open the
