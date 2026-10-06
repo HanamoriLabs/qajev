@@ -91,7 +91,8 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   (passes only when the game exits by itself with code 0). `hide` hides more labels. An Electron game takes
   `game_profile` (keep its save folder between runs, in `~/.qajev/game-profiles/NAME`) and `reset_game_profile`
   (empty it first).
-- Website tools also take `devices` (default desktop and phone: every website test also runs in a phone view).
+- Website tools also take `devices` (default desktop and phone: every website test also runs in a phone view),
+  and `cpu_throttle` (run the page's CPU 1 to 8 times slower, e.g. 4 for a phone-like phone pass).
   `qa_check`, `qa_run_suite` and `qa_project_run` take `real_devices` (`["ios"]`, `["android"]` or both) to
   also run in Chrome on an Android emulator (iOS Safari cannot read page content yet): opt-in, read-only, and slower
   (see [Mobile](mobile.md)).

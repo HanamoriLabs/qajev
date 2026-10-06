@@ -465,7 +465,7 @@ class Tab:
 
 class Session:
     def __init__(self, ledger, *, headless=False, hosts=(), guard_opts=None, allow_commands=False, cwd=None,
-                 motion="reduce", isolated=False):
+                 motion="reduce", isolated=False, cpu_throttle=1):
         """isolated: a multiplayer client (clients.py): its own browser context and tab, and no Jev agent."""
         self.ledger = ledger
         self.jev = load(ledger)
@@ -498,6 +498,8 @@ class Session:
             if motion == "reduce":  # before the first navigation, so the first paint already honours it
                 self.call("Emulation.setEmulatedMedia",
                           features=[{"name": "prefers-reduced-motion", "value": "reduce"}])
+            if cpu_throttle > 1:  # a phone-like CPU, also before the first navigation (its load is measured too)
+                self.call("Emulation.setCPUThrottlingRate", rate=cpu_throttle)
             blocked = list(self.guard_opts.get("block_urls") or [])
             if blocked:
                 self.call("Network.enable")

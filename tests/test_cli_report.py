@@ -433,3 +433,21 @@ def test_the_qajev_commit_comes_from_its_own_checkout_and_says_when_it_is_change
     assert config.qajev_commit(tmp_path) == head
     (tmp_path / "qajev" / "rules.py").write_text("A = 2\n")  # judged by rules no commit holds
     assert config.qajev_commit(tmp_path) == head + "+dirty"
+
+
+def test_a_throttled_run_says_so_in_its_report(tmp_path):
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
+    data = report.build(SimpleNamespace(name="demo"), [result("home", "pass")], [ledger], browser={},
+                        started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+    data["cpu_throttle"] = 4
+    report.write(tmp_path, data)
+    assert "- CPU: 4× slower (Chrome's CPU throttling)" in (tmp_path / "report.md").read_text()
+    assert "<dt>CPU</dt><dd>4× slower (Chrome&#x27;s CPU throttling)</dd>" in (tmp_path / "report.html").read_text()
+    data["cpu_throttle"] = 1
+    report.write(tmp_path, data)
+    assert "CPU:" not in (tmp_path / "report.md").read_text()  # the default says nothing
+    from qajev.cli import build_parser
+
+    args = build_parser().parse_args(["check", "http://x/", "--cpu-throttle", "6"])
+    assert args.cpu_throttle == 6

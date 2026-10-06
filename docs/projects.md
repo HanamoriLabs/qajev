@@ -32,6 +32,7 @@ default_env = "prod"
 base_url = "https://shop.example"
 hosts = ["cdn.shop.example"]     # other hosts Jev may visit
 smoke_start = "/products"        # where `qajev smoke --project` starts (default /)
+cpu_throttle = 1                 # 1 to 8: run the page's CPU this many times slower (4: phone-like)
 
 [env.local]                      # changes are allowed on a local dev host only (localhost, *.test...)
 base_url = "http://localhost:3000"

@@ -132,6 +132,7 @@ budget: {actions: 20, seconds: 90}   # per scenario (at most 60 actions)
 cost_cap_usd: 0.50        # for the whole run; checked before every paid call
 settle: 10                # seconds to wait for expectations after Jev stops
 motion: reduce            # reduce (default): pages are told the visitor prefers less motion; full: as-is
+cpu_throttle: 1           # run the page's CPU this many times slower (1 to 8), e.g. 4 for a phone-like phone pass
 
 scenarios:
   - name: the home page loads

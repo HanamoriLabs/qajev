@@ -66,6 +66,7 @@ STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
+    "cpu_throttle",
 }
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
@@ -135,6 +136,7 @@ class Suite:
     scenarios: list = field(default_factory=list)
     path: Path | None = None
     motion: str = "reduce"
+    cpu_throttle: int = 1  # Chrome runs the page's CPU this many times slower (a phone-like phone pass)
     real_devices: list = field(default_factory=list)  # also run in a real device browser: "ios", "android"
     account: dict | None = None  # signed in once before the scenarios; its password is a vault reference
     about: str | None = None  # what the run as a whole proves
@@ -429,6 +431,7 @@ def parse(data, path=None, devices=None):
     motion = data.get("motion", "reduce")
     if motion not in MOTIONS:
         raise SuiteError(f"motion must be one of {MOTIONS}")
+    cpu_throttle = cpu_rate(data.get("cpu_throttle", 1))
     suite_budget = {**DEFAULT_BUDGET, **(data.get("budget") or {})}
     raw = data.get("scenarios")
     if not isinstance(raw, list) or not raw:
@@ -548,12 +551,20 @@ def parse(data, path=None, devices=None):
         scenarios=scenarios,
         path=path,
         motion=motion,
+        cpu_throttle=cpu_throttle,
         real_devices=_real_devices(data.get("real_devices") or os.environ.get("QAJEV_REAL_DEVICES")),
         account=account,
         about=about(data.get("about"), "about"),
     )
     check_safety(suite)
     return suite
+
+
+def cpu_rate(value):
+    """cpu_throttle: how many times slower Chrome runs the page's CPU, a whole number from 1 (as the machine) to 8."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 8:
+        raise SuiteError("cpu_throttle must be a whole number from 1 to 8 (1 = this machine's speed)")
+    return value
 
 
 def about(value, where):

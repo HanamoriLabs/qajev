@@ -44,6 +44,7 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | `--real-devices ios,android` | also run each website scenario in a real device browser (opt-in; see [Mobile](mobile.md)) |
 | `--devices LIST` | the devices every website test runs on (default `desktop,phone`; `--device` pins one) |
 | `--motion reduce\|full` | `reduce` (default): pages are told the visitor prefers less motion, so busy animations stop changing under Jev; `full`: as a normal browser |
+| `--cpu-throttle N` | run the page's CPU N times slower (1 to 8; default the suite's, else 1), e.g. 4 for a phone-like phone pass; the report says so under Run |
 
 **Output**
 

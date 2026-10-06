@@ -45,6 +45,7 @@ class Options:
     shots: bool = True
     ux: bool = True  # smoke: measure each page's UX (contrast, keyboard, zoom, dialogs, design consistency): free
     motion: str | None = None  # overrides the suite's motion (reduce | full)
+    cpu_throttle: int | None = None  # overrides the suite's cpu_throttle (1 to 8)
     emit: object = None
     load_waited: float = 0.0  # seconds already spent waiting; load_wait is a budget for the whole run
     account: str | None = None  # the stored test account this run signed in with
@@ -517,7 +518,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                     session = session_mod.Session(
                         ledger, headless=suite_meta["headless"], hosts=suite_meta["hosts"],
                         guard_opts=suite_meta["guard"], allow_commands=opts.allow_commands, cwd=suite_meta["cwd"],
-                        motion=suite_meta.get("motion", "reduce"),
+                        motion=suite_meta.get("motion", "reduce"), cpu_throttle=suite_meta.get("cpu_throttle", 1),
                     )
                 _emit(opts, "start", scenario=scenario.name)
                 spent_before = ledger.spent()
@@ -647,8 +648,10 @@ def run(suite, opts):
 
     cap = opts.cost_cap_usd if opts.cost_cap_usd is not None else suite.cost_cap_usd
     motion = opts.motion or getattr(suite, "motion", "reduce")
+    cpu_throttle = opts.cpu_throttle or getattr(suite, "cpu_throttle", 1)
     suite_meta = {"headless": browser.get("headless", False), "hosts": suite.hosts, "guard": suite.guard,
                   "cwd": str(suite.path.parent) if suite.path else None, "motion": motion,
+                  "cpu_throttle": cpu_throttle,
                   "managed": bool(browser.get("managed"))}  # QAJev's own Chrome: a LIVE viewer may bring it to front
     chains = groups(scenarios)
     results_by_name, ledgers, interrupted = {}, [], False
@@ -729,6 +732,7 @@ def run(suite, opts):
                          interrupted=interrupted, run_dir=run_dir)
     built["models"] = models
     built["motion"] = motion
+    built["cpu_throttle"] = cpu_throttle
     if live.watched_seconds(run_dir):  # someone watched it LIVE in the dashboard: for how long
         built["watched_live_s"] = live.watched_seconds(run_dir)
     if signed:
