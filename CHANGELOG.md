@@ -4,6 +4,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: a multiplayer scenario (`clients:`) whose checks all passed and all said what they prove still gated
+  INCOMPLETE: the checks judged across clients, and at each snapshot, lost their `says` on the way to the report,
+  so the test plan called them NOT DESCRIBED (verse1: 13 of 13 passed). They keep their words now.
 - Changed: Jev saying DONE without taking a single action, while a check fails, is now **harness**, not a product
   **fail**: it declared victory on a page it never tried, which says nothing about the page. A goal Jev worked on
   and a page that is wrong still fail. The audit of past verdicts found 45 of 87 such FAILs (52%) were wrong.
