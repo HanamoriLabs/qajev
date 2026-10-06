@@ -72,6 +72,7 @@ What is inside `~/.qajev`:
   run.lock          the queue: who has the browser now
   nightly/          nightly digests
   runs/             runs started over MCP without a project
+  game-profiles/    Electron game save folders kept between runs (--game-profile NAME)
   tmp/              throwaway browser profiles and game save folders (deleted after each run)
 ```
 

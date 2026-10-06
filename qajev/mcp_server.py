@@ -31,7 +31,8 @@ something on a site, and to catch errors a browser can see.
 - qa_check for one goal: say what a user wants in plain words, ending with "Stop when ...", and ALWAYS
   give expectations (expect_text / expect_url / expect_js). Jev's own DONE is only a hint; the verdict
   comes from those checks.
-- qa_run_suite for many scenarios (YAML suite; see qajev init).
+- qa_run_suite for many scenarios (YAML suite; see qajev init). Lint a suite with qa_plan first (free, runs
+  nothing): it lists the tests that do not say what they prove, whose runs could never PASS.
 - qa_project_run to prove a product: a project's stored objectives (qa_projects lists them) or one ad-hoc
   objective; reports are filed per project and listed by qa_reports.
 - Long runs: pass background=true to get a job id at once, then qa_job(job) for progress and partial results,
@@ -57,9 +58,9 @@ hidden everywhere; allow_destructive=true shows them on a local dev host only. D
 billing, pay, revoke, close all...) are hidden from Jev, passwords/payment fields are disabled, the microphone
 is stubbed. Sign-in: qa_browser(action="login", url=...) opens
 QAJev's own Chrome for the person, who signs in once (the profile keeps it); or, for a seeded TEST account on a
-local dev host only, a suite/project names it (account: with password: seed:FILE#KEY from a fixture that says
-"test_account": true) and QAJev signs in itself. keychain:, op:// and env: passwords are refused. Never ask for,
-type or write down a password.
+local dev host only, a suite/project names it (account: with password: seed:FILE#KEY, and totp: or a cookie:
+value from seed: for a second factor, from a fixture that says "test_account": true) and QAJev signs in itself.
+keychain:, op:// and env: passwords are refused. Never ask for, type or write down a password.
 
 Images: with Clef as the decision model (QAJEV_JEV_PROVIDER=cloudflare), `expect_looks` judges plain statements
 from the final screenshot (layout, a canvas, a cut-off button: what text checks cannot see), and `vision` sends the
@@ -680,7 +681,8 @@ async def qa_nightly() -> dict:
 
 @server.tool()
 async def qa_doctor() -> dict:
-    """Check QAJev's setup: API keys present (values never shown), Chrome, a free port, load average."""
+    """Check QAJev's setup: API keys present and where each came from (values never shown), Chrome, a free port,
+    load average, and the production rule with the hosts that count as local dev hosts."""
     code, text, tail = await _spawn(["doctor", "--json"])
     try:
         return json.loads(text)

@@ -8,12 +8,13 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | [`check`](#qajev-check) | one scenario: a goal and expectations on a URL |
 | [`run`](#qajev-run) | a suite file, or a project's objectives |
 | [`play`](#qajev-play) | test a game or a mobile app |
+| [`plan`](#qajev-plan) | a suite's test plan, and the tests that do not say what they prove, without running it |
 | [`report`](#qajev-report) | print a run's report again |
 | [`projects`](#qajev-projects), [`reports`](#qajev-reports) | known projects; their recent runs |
-| [`jobs`](#qajev-jobs), [`stop`](#qajev-stop), [`top`](#qajev-top) | follow, stop and watch runs |
+| [`jobs`](#qajev-jobs), [`stop`](#qajev-stop), [`rerun`](#qajev-rerun), [`top`](#qajev-top), [`dashboard`](#qajev-dashboard) | follow, stop, rerun and watch runs |
 | [`nightly`](#qajev-nightly) | every project, every night, notified only on change |
 | [`browser`](#qajev-browser) | QAJev's own Chrome, and signing in |
-| [`account`](#qajev-account), [`secret`](#qajev-secret) | a stored test account QAJev signs in with |
+| [`account`](#qajev-account), [`secret`](#qajev-secret) | check a seeded test account, or a `seed:` reference |
 | [`doctor`](#qajev-doctor) | check the setup |
 | [`init`](#qajev-init) | write a starter suite |
 | [`mcp`](#qajev-mcp) | run the MCP server for AI agents |
@@ -107,7 +108,7 @@ qajev check https://shop.example \
 | `--goal`, `-g` | what Jev should do, in plain words, ending with "Stop when ..." |
 | `--expect-text`, `-t` | the page must show this (repeatable) |
 | `--absent`, `-a` | the page must not show this (repeatable) |
-| `--visible` | this must be on screen, not just in the page (repeatable) |
+| `--visible` | this must be on screen, whole and on top: not covered or cut short (a failure says which); repeatable |
 | `--expect-url`, `-u` / `--expect-url-regex` | the final address contains this / matches this |
 | `--expect-js`, `-j` | a JavaScript expression that must be true |
 | `--fetch URL[=STATUS]` | a request from the page that must answer STATUS (default 200) |
@@ -233,7 +234,10 @@ qajev jobs 20261001-101502-a3f9
 qajev stop 20261001-101502-a3f9
 ```
 
-The run closes its browser, keeps the scenarios that finished and writes its report (INCOMPLETE).
+The run closes its browser, keeps the scenarios that finished and writes its report (INCOMPLETE). QAJev signals
+the run only when its recorded process still matches (start time and command), so a process id another program now
+uses is left alone ("stale pid, not ours"). A job recorded before 0.4.0 cannot be proved that way: `stop` refuses
+it and says how to stop it by hand.
 
 ## `qajev rerun`
 

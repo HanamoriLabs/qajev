@@ -221,9 +221,10 @@ quit, close, reload, a new tab or window, the address bar, print) are refused.
 - key: {press: Space, hold_ms: 1200}                # held down for 1.2 s, then released
 ```
 
-The keys are plain key names only: a letter, a digit, punctuation (`` ` - = [ ] ; ' , . / \ ``), `Space`, `Enter`,
-`Escape`, `Tab`, `Backspace` and the four arrows. No modifiers or combinations, so a hook cannot send a browser or
-system shortcut. Bounds: `hold_ms` up to 5000, `repeat` up to 200, `interval_ms` up to 2000, and one hook at most
+The keys are plain key names: a letter, a digit, punctuation (`` ` - = [ ] ; ' , . / \ ``), `Space`, `Enter`,
+`Escape`, `Tab`, `Backspace`, `Delete` and the four arrows, each optionally with Shift, Ctrl, Alt or Meta as a chord
+(above). A browser or system shortcut is refused, so a hook cannot quit, close or reload the browser. On a
+production page, Delete and Backspace reach the page only inside a text field ([Safety](safety.md)). Bounds: `hold_ms` up to 5000, `repeat` up to 200, `interval_ms` up to 2000, and one hook at most
 30 s in all. A suite with a key outside them is refused before it runs.
 
 A `react` hook plays in real time: every `every_ms` (default 50) it runs a small policy in the page, and sends the

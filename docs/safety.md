@@ -71,7 +71,8 @@ the model behaving well: the rules are enforced in the page and in QAJev itself.
 
 ## Games and apps
 
-QAJev starts its own copy of the game with a throwaway save folder, sends input into the game only, and never
+QAJev starts its own copy of the game with a throwaway save folder (or, for an Electron game with
+`--game-profile`, a kept test folder under `~/.qajev/game-profiles/`, never a real save), sends input into the game only, and never
 offers Jev quit, purchase or delete-save actions. A game or an app has no in-page write guard, so `qajev play` is
 read-only: a play suite that asks for `mode: mutate` is refused (exit 5). See [Games](games.md).
 

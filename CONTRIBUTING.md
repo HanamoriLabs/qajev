@@ -61,8 +61,17 @@ The demo site: `python3 tests/fixtures/serve.py` serves it on `http://127.0.0.1:
   one, add a reviewed exception to `.gitleaks.toml` in the same pull request (the files it covers and the exact
   fake value, with why), never an inline allow,
   never a string split to get past it.
-- **Plain docs.** If a user can see the change, update the docs in the same pull request. Write for someone who
-  has never used QAJev.
+- **Every surface, in the same pull request.** A change a user or an agent can see ships everywhere they meet
+  QAJev, or the pull request says why a surface needs nothing:
+  - the CLI (`--help`, flags, exit codes) and `qajev doctor` when it reports on the change;
+  - the MCP server: tools, their parameters and docstrings, and the server's instructions;
+  - the JSON a run writes (`report.json`, `--json`, job results);
+  - `README.md` and `docs/`;
+  - `AGENT_PROMPT.md`, `site/llms.txt` and `site/index.html`;
+  - `CHANGELOG.md`, with a migration note for anything breaking.
+
+  The pull request template has this as a checklist.
+- **Plain docs.** Write for someone who has never used QAJev.
 - **Match the code around you:** the existing naming, comment style and module layout
   ([How it works](docs/how-it-works.md) has a map).
 

@@ -24,7 +24,7 @@ missing.
 a clean checkout at the latest release tag and install from it; move it to each new tag, and check the version:
 
 ```bash
-git clone https://github.com/hanamorilabs/qajev qajev-live && git -C qajev-live checkout --detach v0.2.0
+git clone https://github.com/hanamorilabs/qajev qajev-live && git -C qajev-live checkout --detach v0.4.0
 uv tool install --force --editable ./qajev-live
 qajev --version                                            # the tag's version
 git -C qajev-live fetch --tags && git -C qajev-live checkout --detach vX.Y.Z   # a new release; restart MCP servers
@@ -53,6 +53,9 @@ Put it in `~/.qajev/.env`:
 mkdir -p ~/.qajev
 echo 'OPENROUTER_API_KEY=sk-or-...' >> ~/.qajev/.env
 ```
+
+QAJev reads its keys only from `~/.qajev/.env` (or a file you pass with `--env-file`), never from the current
+folder's `.env`, so a project's own tokens cannot reach it.
 
 An OpenRouter key runs everything, including the small helper model that writes what Jev types into text fields.
 Cloudflare's open Clef models can make the decisions instead of Jev: see [Configuration](configuration.md#keys).

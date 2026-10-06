@@ -9,8 +9,9 @@ QAJev talks to the game itself, not to its pixels.
 - **Jev reads text, never pixels.** A small **bridge** inside the game describes each screen as text plus labelled
   actions ("PLAY", "Settings", "Pause the game (Esc)"), and the game's own state (score, level, health...). Jev picks
   among those actions, just as on a web page.
-- **QAJev starts its own copy** of the game with a **throwaway save folder**, so a player's real saves (and cloud
-  saves) are never touched. Nothing is written into the game's project. For Godot, `user://` (saves, settings,
+- **QAJev starts its own copy** of the game with a **throwaway save folder** (or a kept test folder with
+  `--game-profile`, [below](#a-save-kept-between-runs-electron)), so a player's real saves (and cloud saves) are
+  never touched. Nothing is written into the game's project. For Godot, `user://` (saves, settings,
   logs) is moved there by giving the game its own `HOME`, and QAJev's boot script refuses to start the game when
   `user://` is anywhere else. A game that keeps files outside `user://` can read the folder from `QAJEV_USER_DIR`.
 - **Input goes into the game only**, never to your real mouse or keyboard.

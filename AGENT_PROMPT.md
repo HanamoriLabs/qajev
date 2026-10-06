@@ -24,6 +24,8 @@ Use it to check that a change actually works for a user, before you say it does.
 | Do *several* things work, in order? | `qa_run_suite` / `qajev run suite.yaml` | a few cents |
 | Does a known product still meet its stored objectives? | `qa_project_run` / `qajev run --project NAME` | a few cents |
 | Does a mobile app or a game work? | `qa_play` / `qajev play ios:BUNDLE_ID`, `android:PACKAGE`, `path/to/game` | a few cents |
+| Does each test in a suite say what it proves? (lint it before running) | `qa_plan` / `qajev plan suite.yaml` | free |
+| Run again only what did not pass | `qa_rerun` / `qajev rerun JOB --failed` | a few cents |
 | What did a run find? | `qa_report`, `qa_screenshot` / `qajev report RUN_DIR` | free |
 | What is running right now, and can I stop it? | `qa_jobs`, `qa_job`, `qa_stop` / `qajev jobs`, `qajev stop ID` | free |
 | Is QAJev set up correctly? | `qa_doctor` / `qajev doctor` | free |
@@ -84,11 +86,12 @@ and say what they are waiting for. Never start a second copy of a run because th
 ### Rules
 
 - **Never type, ask for or write down passwords, one-time codes or payment details.** QAJev disables those fields
-  anyway. If a test needs a signed-in account, either ask the person to sign in once:
+  anyway. If a test needs a signed-in account, ask the person to sign in once:
   `qa_browser(action="login", profile=NAME, url=LOGIN_URL)` / `qajev browser login --profile NAME --url LOGIN_URL`,
   then run with that `profile`. Only on a local dev site (localhost, 127.0.0.1, *.test) can a seeded test account
-  sign in by itself: an `account:` block with `password: seed:FILE#KEY`, from the app's fixture that says
-  `"test_account": true` and lists the host in `allowed_hosts`. A `keychain:`, `op://` or `env:` password is refused.
+  sign in by itself: an `account:` block with `password: seed:FILE#KEY` (and, for a second factor, `totp:` or a
+  `cookie:` value from `seed:` too), from the app's fixture that says `"test_account": true` and lists the host in
+  `allowed_hosts`. A `keychain:`, `op://` or `env:` password is refused.
 - **A result with `needs_sign_in` means runs met a sign-in page**, not that the product failed (those scenarios are
   `harness`). Ask the person how QAJev should get in, as its `next_step` says: they sign in once (above); on a
   local dev site a seeded test account (`password: seed:FILE#KEY`) can sign in by itself. Never ask for a password.

@@ -55,6 +55,10 @@ the test tool are kept apart.**
 
 `--strict` counts **stuck** as a failure.
 
+A run that would have changed a production site never gets as far as an outcome: it is **refused** before Chrome
+starts (exit code 5, `{"outcome": "refused", "reason": ...}` with `--json`), and nothing is reported because nothing
+ran ([Safety](safety.md)).
+
 A run that broke before it finished (a browser error, a failed hook, a guard that went missing) is never a
 **pass**, even when every check that ran passed, and neither is a run that stopped before some of its checks or steps
 ran. It is **harness**, and the reason says where it stopped and what never ran: "browser/daemon error: step 4
@@ -62,9 +66,13 @@ ran. It is **harness**, and the reason says where it stopped and what never ran:
 `report.json` has the same as `stop_detail` and `not_run`. An action or time budget is different: Jev wandered,
 but the page was still judged in full, so its checks decide.
 
-A run with a stored test account says who signed in, under **Run** ("Sign-in: as qa+shop@example.com (account
-shop-tester), in 3.1 s"). When the sign-in fails, that line gives the site's reason and every scenario is
-**harness**: nothing was tested.
+A run with a seeded test account says who signed in, under **Run** ("Sign-in: as seeded test user
+qa+shop@example.test on localhost (account shop-tester), in 3.1 s; TOTP from seed: yes"). When the sign-in fails,
+that line gives the site's reason and every scenario is **harness**: nothing was tested.
+
+**Run** also says where each of QAJev's keys came from ("Keys": the file or the shell, names only, never values),
+how long someone watched the run live in the dashboard ("Watched live", `watched_live_s` in `report.json`), and, for
+an Electron game run with `--game-profile`, which save folder was used and that it was kept ("Game profile").
 
 A scenario that ended on a sign-in page it did not start on is **harness** too ("needs sign-in: ..."), and the
 report says at the top which pages asked to sign in and how to set up access
