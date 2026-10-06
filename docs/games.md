@@ -226,9 +226,11 @@ folder too (for both switches), if it is allowed. A kept profile lives in one of
 - a folder inside the game's own repo that git ignores (`git check-ignore`), so a test save is never committed.
 
 Anything else is refused before anything is created: a folder under `~/Library` or any Application Support folder
-(where real saves live; Steam syncs them), a path with `..`, or a symlink anywhere on the path. QAJev never deletes
-a kept profile (`--reset-game-profile` empties it, after the same checks), and the report says which folder was used
-and that it was kept.
+(where real saves live; Steam syncs them), a path with `..`, or a symlink anywhere on the path. QAJev also marks
+each folder it keeps (a `.qajev-game-profile` file, written on first use) and refuses a folder that already holds
+files without that mark: naming a git-ignored `node_modules/left-pad` never uses or empties it. Name an empty or new
+folder. QAJev never deletes a kept profile (`--reset-game-profile` empties it, after the same checks, and keeps the
+mark), and the report says which folder was used and that it was kept.
 
 ## Adapters
 

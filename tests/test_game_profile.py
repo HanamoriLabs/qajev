@@ -116,6 +116,30 @@ def test_reset_empties_only_an_allowed_folder(home, game):
     folder = gp.named("plan-71")
     (folder / "save.json").write_text("{}")
     gp.reset(folder, game / "desktop")
-    assert folder.is_dir() and list(folder.iterdir()) == []
+    assert folder.is_dir() and [p.name for p in folder.iterdir()] == [gp.MARKER]  # still QAJev's, now empty
     with pytest.raises(gp.ProfileError):
         gp.reset(home / "Library" / "Application Support" / "ImHim", game / "desktop")
+
+
+def test_a_folder_qajev_did_not_make_is_never_used_or_emptied(home, game):
+    # 0.4.0 review (SideGame3): reset emptied any git-ignored folder a suite named; the probe deleted
+    # node_modules/left-pad. QAJev marks a folder when it first uses one, and leaves alone any with files but no mark.
+    (game / ".gitignore").write_text("qa-work/\nnode_modules/\n")
+    dep = game / "node_modules" / "left-pad"
+    dep.mkdir(parents=True)
+    (dep / "index.js").write_text("module.exports = 1;\n")
+    for act in (gp.check, gp.reset):
+        with pytest.raises(gp.ProfileError, match="not QAJev's"):
+            act(dep, game / "desktop")
+    assert (dep / "index.js").read_text() == "module.exports = 1;\n" and not (dep / gp.MARKER).exists()
+    named = home / ".qajev" / "game-profiles" / "plan-9"
+    named.mkdir(parents=True)
+    (named / "notes.txt").write_text("mine")
+    with pytest.raises(gp.ProfileError, match="not QAJev's"):
+        gp.reset(named, game / "desktop")  # under QAJev's own folder too: no mark, no reset
+    assert (named / "notes.txt").exists()
+    empty = game / "qa-work" / "plan-72"
+    empty.mkdir(parents=True)
+    assert (gp.check(empty, game / "desktop") / gp.MARKER).is_file()  # an empty folder is QAJev's from now on
+    (empty / "save.json").write_text("{}")
+    assert gp.check(empty, game / "desktop") == empty.resolve()  # and stays usable with its save in it

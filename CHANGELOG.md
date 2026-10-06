@@ -7,12 +7,15 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - Fixed: the cleanup after a dead run killed the process group of a game pid it had recorded, and `qajev stop`
   signalled a job's recorded pid, without checking that the pid still belonged to that process. A pid reused by
   another program could have been killed. Each launch now records its process's start time and command; the reaper
-  and `qajev stop` act only when both still match, and say "stale pid, not ours: left alone" otherwise.
+  and `qajev stop` act only when both still match, and say "stale pid, not ours: left alone" otherwise. A job
+  recorded before this change cannot be proved: `qajev stop` refuses it and says how to stop it by hand.
 - An Electron game can keep its save folder between runs, so a test proves a save survives into the next run
   (SideGame1: a setting kept; a long plan run in parts). `--game-profile NAME` (suite `game_profile:`, `qa_play`
   `game_profile`) keeps it in `~/.qajev/game-profiles/NAME`; a suite's own `--profile=` switch may name a git-ignored
   folder in the game's repo instead. Nothing else is allowed: `~/Library` and Application Support folders (real,
-  Steam-synced saves), `..` and symlinks are refused before anything is created. A kept profile is never deleted
+  Steam-synced saves), `..` and symlinks are refused before anything is created. QAJev marks a folder
+  (`.qajev-game-profile`) when it first uses it, and never uses or empties a folder that holds files without that
+  mark (a git-ignored `node_modules/left-pad` is left alone). A kept profile is never deleted
   (`--reset-game-profile` empties it), and the report says which folder was used and that it was kept. Before, a
   suite's `--profile=` was silently ignored. ([Games](docs/games.md#a-save-kept-between-runs-electron))
 - Fixed: `visible` passed on words a person could not see. A first-run overlay covering the whole page, and a

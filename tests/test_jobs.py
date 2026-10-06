@@ -229,6 +229,24 @@ def test_stopping_a_job_never_signals_a_process_that_took_its_pid():
         jobs.stop(job["id"], wait=10)
 
 
+def test_a_record_from_before_identities_is_never_signalled():
+    # 0.4.0 review: as the reaper does, a stop acts only on a process it can prove is the job's. A record written
+    # before QAJev kept identities cannot prove it, so the stop refuses and says how to stop it by hand.
+    job = jobs.start(["run", "suite.yaml"], command=fake(60))
+    wait_for(lambda: jobs.status(job["id"])["progress"]["done"] == 1)
+    path = jobs.JOBS / job["id"] / "job.json"
+    meta = json.loads(path.read_text())
+    try:
+        path.write_text(json.dumps({k: v for k, v in meta.items() if k != "identity"}))
+        with pytest.raises(jobs.NotOurs, match=f"kill {meta['pid']}"):
+            jobs.stop(job["id"], wait=2)
+        assert jobs.alive(meta["pid"]) and jobs.status(job["id"])["state"] == "running"
+        assert main(["stop", job["id"]]) == 3
+    finally:
+        path.write_text(json.dumps(meta))
+        jobs.stop(job["id"], wait=10)
+
+
 def test_a_job_whose_command_fails_is_failed_with_its_error():
     job = jobs.start(["smoke", "x"], command=[sys.executable, "-c", "import sys; print('boom', file=sys.stderr); "
                                                                      "sys.exit(3)"])

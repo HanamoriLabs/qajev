@@ -6,7 +6,8 @@ The default stays a throwaway, deleted at close. A kept profile is allowed in tw
   ~/.qajev/game-profiles/<name>                <name>: ^[a-z0-9][a-z0-9-]{0,39}$
   a git-ignored folder inside the game's repo  (git check-ignore says so: no save is ever committed)
 Checked before anything is created: no "..", nothing under ~/Library or an Application Support folder, no symlink
-anywhere on the path; then created, and its real path checked again.
+anywhere on the path, and a folder that already holds files only when QAJev marked it (MARKER, written on first use):
+a git-ignored node_modules/left-pad is never used or emptied. Then created, and its real path checked again.
 """
 
 import os
@@ -19,6 +20,7 @@ from .config import HOME
 
 ROOT = HOME / "game-profiles"
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+MARKER = ".qajev-game-profile"  # in every folder QAJev keeps as a profile: only those are used and reset
 
 
 class ProfileError(ValueError):
@@ -56,9 +58,15 @@ def _no_symlinks(path):
             raise ProfileError(f"refused: {part} is a symlink (a kept profile's path has none)")
 
 
+def _marked(path):
+    mark = path / MARKER
+    return mark.is_file() and not mark.is_symlink()
+
+
 def check(folder, project):
     """A kept profile's folder, allowed only under ROOT or as a git-ignored folder in the game's repo (`project` is
-    the game). -> its real path, created. Raises ProfileError, before creating anything, when it is not allowed."""
+    the game), and only empty or marked as QAJev's. -> its real path, created and marked. Raises ProfileError, before
+    creating anything, when it is not allowed."""
     raw = Path(os.path.expanduser(str(folder)))
     if not raw.is_absolute() or ".." in raw.parts or "\0" in str(raw):
         raise ProfileError(f"refused: a kept profile is an absolute path without '..' (got {folder})")
@@ -80,18 +88,26 @@ def check(folder, project):
         raise ProfileError(f"refused: {path}: a kept profile lives under {ROOT}/<name> or in a git-ignored folder "
                            "of the game's own repo")
     _no_symlinks(path)
+    if path.is_dir() and any(path.iterdir()) and not _marked(path):
+        raise ProfileError(f"refused: {path} already holds files and is not QAJev's (no {MARKER}): QAJev never "
+                           "uses or empties a folder it did not make; name an empty or new folder")
     path.mkdir(parents=True, exist_ok=True)
     real = Path(os.path.realpath(path))
     if not _under(real, Path(os.path.realpath(allowed))) or real == Path(os.path.realpath(allowed)):
         raise ProfileError(f"refused: {path} resolves to {real}, outside {allowed}")
     _no_symlinks(real)
+    if not _marked(real):
+        (real / MARKER).write_text("A game test profile QAJev keeps between runs. QAJev may empty this folder.\n")
     return real
 
 
 def reset(folder, project):
-    """Empty a kept profile, after the same checks: only ever inside the allowed places. -> its real path."""
+    """Empty a kept profile, after the same checks: only ever a marked folder inside the allowed places, and it stays
+    marked. -> its real path."""
     real = check(folder, project)
     for child in real.iterdir():
+        if child.name == MARKER:
+            continue
         if child.is_symlink() or not child.is_dir():
             child.unlink()
         else:

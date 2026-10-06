@@ -7,6 +7,7 @@ at a time on the whole machine (a lock shared with the CLI); later runs queue.
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -168,7 +169,8 @@ async def _run_report(args, ctx, background=False, title=None, cwd=None, rerun=N
                 break
             await asyncio.sleep(0.5)
     except asyncio.CancelledError:
-        await asyncio.to_thread(jobs.stop, job["id"])  # the run closes its own tabs, Chrome and daemon
+        with contextlib.suppress(jobs.NotOurs):  # the cancel goes on either way
+            await asyncio.to_thread(jobs.stop, job["id"])  # the run closes its own tabs, Chrome and daemon
         raise
     if not data or "error" in data:
         st = jobs.status(job["id"])
@@ -630,6 +632,8 @@ async def qa_stop(job: str) -> dict:
         return await asyncio.to_thread(jobs.stop, job)
     except jobs.NoSuchJob:
         raise ToolError(f"no job {job}") from None
+    except jobs.NotOurs as e:
+        raise ToolError(str(e)) from None
 
 
 @server.tool()

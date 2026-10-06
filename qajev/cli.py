@@ -1173,6 +1173,8 @@ def cmd_stop(args):
         job = jobs.stop(args.job)
     except jobs.NoSuchJob:
         return _fail(args, f"no job {args.job}", EXIT_CONFIG)
+    except jobs.NotOurs as e:
+        return _fail(args, str(e), EXIT_CONFIG)
     print(json.dumps(job, indent=2, default=str) if args.json else _job_line(job))
     return 0
 
