@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: a page with a ticking number (a video timer in a game's HUD, a countdown, a clock) made every one of Jev's
+  moves go stale before it acted, so goals there ended as harness (verse2, FiGGYZ Verse). A clock time ("0:03",
+  "1:05:09") or a countdown in seconds or minutes ("59 s", "5 min") that ticks, in the page's words, a control's
+  label or the text around the target, is no longer a change. Other digits stay exact: a step ("Step 2 of 3"), a
+  count ("Cart (2)"), a price or a label ("Buy 100") that changes, new words, another address, a reload, the scroll,
+  an input's value or a link's address still make Jev decide again.
 - Fixed: a game goal step passed on checks that already held before it began. It ended as soon as its `expect` held,
   so a check true from the start passed after 0 actions (SideGame1: "lesson 1" passed on "still in training"). Such a
   step is now unverified, never passed. A new step option `stop: end` plays the goal to DONE or its budget before the
