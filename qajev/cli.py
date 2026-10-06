@@ -190,6 +190,11 @@ def build_parser():
     play.add_argument("--game-arg", action="append", default=[], metavar="ARG",
                       help="a command-line switch for an Electron app, e.g. --game-arg=--query=autoplay=bot "
                            "(repeatable)")
+    play.add_argument("--game-profile", metavar="NAME",
+                      help="Electron: keep the game's save folder between runs in ~/.qajev/game-profiles/NAME "
+                           "(a test profile, never a real save); default: a throwaway deleted at close")
+    play.add_argument("--reset-game-profile", action="store_true",
+                      help="empty the kept game profile before this run starts")
     play.add_argument("--goal", "-g", help="what a player wants, in plain words; end with 'Stop when ...'")
     play.add_argument("--about", help="what this test proves and why, in plain words (with --suite: the whole run)")
     play.add_argument("--expect-screen", help="the screen the game must be on at the end (from the bridge)")
@@ -257,6 +262,11 @@ def build_parser():
     account.add_argument("--no-check", action="store_true", help="add: do not sign in to prove it")
     account.add_argument("--visible", action="store_true", help="sign in in a visible window (default: headless)")
     account.add_argument("--cdp-url", help="sign in in this already running Chrome instead of a throwaway one")
+
+    plan = sub.add_parser("plan", help="print a suite's test plan and the tests that do not say what they prove, "
+                                       "without running anything (exit 2 while any is NOT DESCRIBED)")
+    plan.add_argument("file", type=Path, help="a suite (scenarios:) or a game's steps suite (steps:)")
+    plan.add_argument("--json", action="store_true")
 
     doctor = sub.add_parser("doctor", help="check keys, Chrome, ports and load (never prints secrets)")
     doctor.add_argument("--env-file")
@@ -804,6 +814,12 @@ def cmd_play(args):
                                "run it without --headless (MCP: headless=false)", EXIT_CONFIG)
     game_env.update(dict(item.split("=", 1) for item in args.game_env if "=" in item))
     game_args += args.game_arg
+    # A kept TEST profile (game_profile.py): --game-profile NAME, or the suite's game_profile:; Electron only
+    game_profile_name = args.game_profile or (spec.get("game_profile") if args.suite else None)
+    reset_profile = args.reset_game_profile or bool(spec.get("reset_game_profile") if args.suite else False)
+    if (game_profile_name or reset_profile) and not electron.is_electron(args.project):
+        return _fail(args, "--game-profile keeps an Electron game's save folder; this game is not Electron (a Godot "
+                           "game's saves come from seed:)", EXIT_CONFIG)
     name = args.name or (spec.get("name") if args.suite else None) or (
         args.project if mobile.is_mobile(args.project) else Path(args.project).expanduser().resolve().name)
     emit = _printer(args) or (lambda _event: None)
@@ -827,7 +843,8 @@ def cmd_play(args):
             elif electron.is_electron(args.project):  # a web game in Electron (I'm Him's desktop build)
                 game_cm = electron.ElectronGame(args.project, adapter=adapter, args=game_args, env=game_env,
                                                 hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
-                                                allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow])
+                                                allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow],
+                                                profile=game_profile_name, reset_profile=reset_profile)
             else:
                 game_cm = native.GodotGame(args.project, adapter=adapter, headless=headless, env=game_env,
                                             hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
@@ -838,6 +855,8 @@ def cmd_play(args):
                            "project": str(game.project), "adapter": game.adapter.stem if game.adapter else None,
                            "headless": headless, "env": game_env, "args": game_args,
                            "managed": True, "pid": game.proc.pid if game.proc else None, "vision": sees}
+                if getattr(game, "record", None) and game.record.get("profile"):  # the save folder, kept or not
+                    browser["game_profile"] = game.record["profile"]
                 emit({"event": "run", "suite": f"play {name}", "run_dir": str(run_dir), "browser": browser,
                       "scenarios": len(session_steps) if session_steps else 1,
                       "decider": providers.describe(providers.resolve()).get("decider")})
@@ -989,7 +1008,7 @@ def cmd_account(args):
 
 def cmd_doctor(args):
     from . import chrome, providers
-    from .config import DEFAULTS, env_files, load_env
+    from .config import DEFAULTS, env_files, key_sources, load_env
 
     try:
         loaded = load_env(args.env_file)
@@ -1004,6 +1023,8 @@ def cmd_doctor(args):
         f"none found; looked in {', '.join(str(p) for p in env_files(args.env_file))}")
     for key in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "CLOUDFLARE_API_TOKEN", "TEXT_MODEL_API_KEY"):
         add(key, True, "set" if os.environ.get(key) else "not set")
+    for line in key_sources():  # where QAJev's own keys came from: names only (Foley1, 6 Oct)
+        add("key source", True, line)
     try:
         resolved = providers.resolve()
         models = providers.describe(resolved)
@@ -1159,6 +1180,8 @@ def cmd_stop(args):
         job = jobs.stop(args.job)
     except jobs.NoSuchJob:
         return _fail(args, f"no job {args.job}", EXIT_CONFIG)
+    except jobs.NotOurs as e:
+        return _fail(args, str(e), EXIT_CONFIG)
     print(json.dumps(job, indent=2, default=str) if args.json else _job_line(job))
     return 0
 
@@ -1346,6 +1369,39 @@ def _interrupt(_signum, _frame):
     raise KeyboardInterrupt
 
 
+def cmd_plan(args):
+    """A suite's test plan, without running anything: each test's about and its checks in plain words, and the tests
+    that are NOT DESCRIBED (a run of it would be INCOMPLETE, never PASS). Exit 0 when all are described, 2 if not."""
+    import yaml
+
+    from . import plan as plan_mod
+    from .suite import SuiteError, about, load
+
+    try:
+        spec = yaml.safe_load(args.file.read_text()) or {}
+        if isinstance(spec, dict) and spec.get("steps") and not spec.get("scenarios"):  # a game's steps suite
+            name, run_about = spec.get("name") or args.file.stem, about(spec.get("about"), "about")
+            items = plan_mod.from_steps(spec["steps"])
+        else:
+            suite = load(args.file)
+            name, run_about, items = suite.name, suite.about, plan_mod.from_suite(suite.scenarios)
+    except (OSError, yaml.YAMLError, SuiteError) as e:
+        return _fail(args, f"{args.file}: {e}", EXIT_CONFIG)
+    missing = plan_mod.not_described(items)
+    if args.json:
+        print(json.dumps({"name": name, "about": run_about, "plan": items, "not_described": missing}))
+    else:
+        print(f"Test plan: {name}" + (f" — {run_about}" if run_about else ""))
+        for it in items:
+            print(f"{it['n']}. {it['name']}: {it['about'] or 'NOT DESCRIBED (no about)'}")
+            for line in it["checks"]:
+                print(f"     - {line['words'] or 'NOT DESCRIBED: ' + str(line['check'])}")
+        described = len(items) - len(missing)
+        print(f"{described} of {len(items)} tests say what they prove"
+              + (f"; NOT DESCRIBED: {', '.join(missing)} (a run would be INCOMPLETE)" if missing else ""))
+    return 2 if missing else 0
+
+
 def _fail(args, message, code):
     _record({"error": message, "exit_code": code})
     if getattr(args, "json", False):
@@ -1373,7 +1429,7 @@ def main(argv=None):
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
                 "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
                 "top": cmd_top, "nightly": cmd_nightly, "rerun": cmd_rerun, "dashboard": cmd_dashboard,
-                "play": cmd_play}
+                "play": cmd_play, "plan": cmd_plan}
     code = 1  # a crash on the way out still leaves an exit code for `qajev jobs`
     try:
         code = handlers[args.command](args)

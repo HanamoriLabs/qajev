@@ -450,6 +450,55 @@ def test_the_stream_needs_the_key(running, server):
     assert status == 401
 
 
+def _open_live(server, job_id, *, cookie=True, host=None):
+    port = server.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    headers = {"Host": host or f"127.0.0.1:{port}"}
+    if cookie:
+        headers["Cookie"] = f"qajev_dashboard={server.RequestHandlerClass.key}"
+    conn.request("GET", f"/api/live/{job_id}.mjpeg", headers=headers)
+    return conn, conn.getresponse()
+
+
+def test_live_streams_the_runs_screen_to_at_most_two_viewers_who_carry_the_key(running, server):
+    # José, 5 Oct: click LIVE and watch the run. A moving picture of QAJev's own browser, on loopback, for the person
+    # holding the dashboard's key, two viewers at most so watching never slows the run.
+    job_id, run = running
+    _, res = _open_live(server, job_id, cookie=False)
+    assert res.status == 401
+    _, res = _open_live(server, job_id, host="evil.example:80")
+    assert res.status == 403
+    (run / "live").mkdir(exist_ok=True)
+    (run / "live" / "frame.jpg").write_bytes(b"\xff\xd8\xff\xe0first")
+    a, res_a = _open_live(server, job_id)
+    assert res_a.status == 200 and res_a.getheader("Content-Type") == "multipart/x-mixed-replace; boundary=frame"
+    assert wait_for(lambda: (run / "live" / "streaming").is_file())  # the run now captures at the live rate
+    first, deadline = b"", time.monotonic() + 5
+    while b"\xff\xd8\xff\xe0first" not in first and time.monotonic() < deadline:
+        first += res_a.fp.readline()  # one part: its boundary, headers and the frame, then nothing until a new one
+    assert b"--frame" in first and b"Content-Type: image/jpeg" in first and b"\xff\xd8\xff\xe0first" in first
+    b, res_b = _open_live(server, job_id)
+    assert res_b.status == 200
+    _, res_c = _open_live(server, job_id)
+    assert res_c.status == 429  # a third viewer waits
+    res_a.close()  # the viewer leaves: its socket closes (the response holds it, not the connection)
+    a.close()
+    assert wait_for(lambda: _open_live(server, job_id)[1].status == 200, timeout=8)  # a seat frees when one leaves
+    res_b.close()
+    b.close()
+
+
+def test_bring_to_front_is_only_for_qajevs_own_chrome_and_the_page_link_is_origin_and_path(running, server):
+    job_id, run = running
+    key = server.RequestHandlerClass.key
+    status, _, body = request(server, "POST", f"/api/run/{job_id}/front", key=key, body={})
+    assert status == 400 and b"QAJev's own Chrome" in body  # this run attached to a Chrome QAJev did not start
+    (run / "live").mkdir(exist_ok=True)
+    (run / "live" / "page.json").write_text(json.dumps({"url": "http://127.0.0.1:5173/shop/cart?token=abc#pay"}))
+    (run / "live" / "frame.jpg").write_bytes(b"\xff\xd8\xff\xe0frame")
+    assert dashboard.detail(job_id)["live"]["page"] == "http://127.0.0.1:5173/shop/cart"  # no query, no fragment
+
+
 def test_the_stream_takes_only_a_job_id(server):
     # A path built from the raw URL id must not leave the jobs folder: the stream checks the id first, as files do.
     jobs.JOBS.mkdir(parents=True, exist_ok=True)  # .. resolves only through a folder that exists

@@ -188,6 +188,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                                   url=observed.get("url"))
             for hook in scenario.before:
                 session.run_hook(hook, observed.get("url") or scenario.url)
+            if scenario.before:  # the checks judge the page after its hooks (verse2, 6 Oct: a wait_for "did not
+                read()           # wait" because the checks used the page as read before it ran)
             if scenario.goal:
                 session.reset_agent(scenario.task)
 
@@ -516,7 +518,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                 _emit(opts, "start", scenario=scenario.name)
                 spent_before = ledger.spent()
                 try:
-                    with live.frames(run_dir, session.page_socket()):  # its screen, while someone watches it
+                    with live.frames(run_dir, session.page_socket(), managed=suite_meta.get("managed", False)):
                         result = run_scenario(session, scenario, opts=opts, hosts=set(suite_meta["hosts"]),
                                               run_dir=run_dir)
                 except KeyboardInterrupt:  # e.g. while waiting for the machine to calm down
@@ -642,7 +644,8 @@ def run(suite, opts):
     cap = opts.cost_cap_usd if opts.cost_cap_usd is not None else suite.cost_cap_usd
     motion = opts.motion or getattr(suite, "motion", "reduce")
     suite_meta = {"headless": browser.get("headless", False), "hosts": suite.hosts, "guard": suite.guard,
-                  "cwd": str(suite.path.parent) if suite.path else None, "motion": motion}
+                  "cwd": str(suite.path.parent) if suite.path else None, "motion": motion,
+                  "managed": bool(browser.get("managed"))}  # QAJev's own Chrome: a LIVE viewer may bring it to front
     chains = groups(scenarios)
     results_by_name, ledgers, interrupted = {}, [], False
     partial = report.Partial(run_dir, suite, browser, started_at, cap)
@@ -722,6 +725,8 @@ def run(suite, opts):
                          interrupted=interrupted, run_dir=run_dir)
     built["models"] = models
     built["motion"] = motion
+    if live.watched_seconds(run_dir):  # someone watched it LIVE in the dashboard: for how long
+        built["watched_live_s"] = live.watched_seconds(run_dir)
     if signed:
         built["sign_in"] = signed
     built = redact_tree(built, secret_values())

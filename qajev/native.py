@@ -190,7 +190,8 @@ class GodotGame:
         threading.Thread(target=self._read_output, daemon=True).start()
         self.record = {"pid": self.proc.pid, "owner_pid": os.getpid(), "engine": "godot", "project": str(self.project),
                        "adapter": self.adapter.stem if self.adapter else None, "port": self.port,
-                       "headless": self.headless, "started_at": time.time(), "user_dir": self.user_dir}
+                       "headless": self.headless, "started_at": time.time(), "user_dir": self.user_dir,
+                       "identity": chrome.identity(self.proc.pid)}  # the reaper kills only this very process
         (STATE / f"{self.proc.pid}.json").write_text(json.dumps(self.record))
         deadline = time.monotonic() + self.start_wait
         while time.monotonic() < deadline:
@@ -313,12 +314,16 @@ def reap():
                     subprocess.run(["xcrun", "simctl", verb, record["udid"]], capture_output=True, timeout=60)
             reaped.append(f"ios simulator clone {record['udid']} ({record.get('project')})")
         elif record["alive"] and not record["owner_alive"]:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(record["pid"], signal.SIGKILL)
-            reaped.append(f"game {record['pid']} ({Path(record['project']).name})")
+            if chrome.still(record["pid"], record.get("identity")):
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.killpg(record["pid"], signal.SIGKILL)
+                reaped.append(f"game {record['pid']} ({Path(record['project']).name})")
+            else:  # the pid now belongs to another process (or this record never said whose it was): never kill it
+                reaped.append(f"stale pid {record['pid']}, not ours: left alone")
         if not record["alive"] or not record["owner_alive"]:
             path.unlink(missing_ok=True)
-            shutil.rmtree(record.get("user_dir") or "/nonexistent", ignore_errors=True)
+            if not (record.get("profile") or {}).get("kept"):  # a kept test profile outlives its run (game_profile)
+                shutil.rmtree(record.get("user_dir") or "/nonexistent", ignore_errors=True)
     from . import mobile  # clones whose run died before it could write a record
 
     return reaped + [r for r in mobile.reap_clones() if r.split(" (")[0] not in {x.split(" (")[0] for x in reaped}]
@@ -496,10 +501,22 @@ def _playing(t, obs):
     return f"playing {t:.0f}s: " + " · ".join(parts + [f"{round(obs.get('fps') or 0)} fps"])
 
 
+def stop_at_end(step):
+    """A goal step's `stop:` "end" (play the goal to DONE or its budget, then judge) or "early" (the default)."""
+    value = step.get("stop", "early")
+    if value not in ("early", "end"):
+        raise NativeError(f"step {step.get('name')!r}: stop is 'end' (judge when the goal ends) or 'early' "
+                          f"(when the checks hold), not {value!r}")
+    return value == "end"
+
+
 def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, settle=0.4, emit=None, wait=10.0,
-         poll=0.5, vision=False, about=None):
+         poll=0.5, vision=False, about=None, stop_at_end=False):
     """One scenario on a running game: Jev pursues `goal` (if any), then the checks judge the game's state.
-    vision: Clef sees the game's screenshot with every decision. about: what the test proves, for its result."""
+    vision: Clef sees the game's screenshot with every decision. about: what the test proves, for its result.
+    stop_at_end (a step's `stop: end`): Jev plays the goal to DONE or its budget, and the checks judge only then;
+    by default the step ends as soon as its checks hold. Either way, checks that already held before the goal's
+    first action prove nothing about the goal: the step is unverified, never passed (SideGame1, 6 Oct)."""
     from . import session as session_mod
     from . import vision as vision_mod
 
@@ -508,6 +525,7 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
     result = {"name": name, "url": f"game://{name}", "goal": goal, "mode": "native", "checks": [], "findings": [],
               "screens": [], "history": [], "jev": None, "shot": None, **({"about": about} if about else {})}
     decisions, history, stop, detail = [], [], None, None
+    held_at_start = False  # the goal's checks held before its first action: they prove nothing about it
     where = game_name(game)
     obs = game.observe()
     # looks are judged once, at the end (a model call each): never a reason to stop early
@@ -518,8 +536,10 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
         if goal:
             jev = session_mod.load(ledger)
             reasks = 0
+            held_at_start = bool(early) and verdict.all_ok(native_checks(early, obs, game.errors))
             while True:
-                if early and verdict.all_ok(native_checks(early, obs, game.errors)):
+                if not stop_at_end and early and (held_at_start and not history
+                                                  or verdict.all_ok(native_checks(early, obs, game.errors))):
                     stop = "reached"
                     break
                 if len(history) >= budget["actions"]:
@@ -609,6 +629,10 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
             except (RuntimeError, ValueError) as e:  # no picture, or Clef unreachable: QAJev's side, no verdict
                 stop, detail = "model_error", f"could not judge looks: {e}"
     outcome, reason = verdict.classify(stop, checks, has_checks=bool(expect), stop_detail=detail)
+    if goal and outcome == "pass" and held_at_start:
+        outcome = "unverified"
+        reason = ("its checks already held before the goal's first action, so they prove nothing about the goal: "
+                  "check a state the goal changes")
     result.update(checks=checks, stop=stop, outcome=outcome, reason=reason,
                   end_url=f"game://{name}/{obs.get('screen')}",
                   page_says=" | ".join([f"Screen: {obs.get('screen')}", *(obs.get("texts") or [])])[:600],
@@ -1023,7 +1047,7 @@ def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit, vision=Fals
     if step.get("goal") or step.get("expect"):
         with contextlib.suppress(NativeError):
             game.call(op="pilot", on=False)
-        r = play(game, name=name, goal=step.get("goal"), expect=step.get("expect") or {},
+        r = play(game, name=name, goal=step.get("goal"), expect=step.get("expect") or {}, stop_at_end=stop_at_end(step),
                  budget={"actions": 20, "seconds": 90, **(step.get("budget") or {})}, ledger=ledger,
                  run_dir=run_dir, shots=shots, emit=emit, vision=bool(step.get("vision", vision)))
         r["checks"] = [started, *r.get("checks", [])]
@@ -1143,7 +1167,8 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
             # idle: the game runs untouched for that long first (then the step's goal, if any, and its checks)
             r = (step.get("idle") and idle_for(game, name=name, seconds=float(step["idle"]), emit=emit)) or play(
                 game, name=name, goal=step.get("goal"), expect=step.get("expect") or {}, budget=budget,
-                ledger=ledger, run_dir=run_dir, shots=shots, emit=emit, vision=bool(step.get("vision", vision)))
+                ledger=ledger, run_dir=run_dir, shots=shots, emit=emit, vision=bool(step.get("vision", vision)),
+                stop_at_end=stop_at_end(step))
         r["cost_usd"] = round(ledger.spent() - spent, 5)
         results.append(r)
         if callable(emit):

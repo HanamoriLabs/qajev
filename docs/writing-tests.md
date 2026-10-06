@@ -105,7 +105,8 @@ For a phone's real browser (Chrome on an Android emulator; iOS Safari is not rea
   (`--says` with `--expect-js` on the command line). The report and the dashboard open with a **test plan**: each
   test's `about` and its checks in these words, a box for each, ticked as the run goes. A test without an `about`,
   or with a check without words, is **NOT DESCRIBED**: the plan flags it and the gate cannot be PASS (it is
-  INCOMPLETE), because its pass would not say what it proved.
+  INCOMPLETE), because its pass would not say what it proved. `qajev plan FILE` shows the plan and lists them
+  without running anything ([CLI](cli.md#qajev-plan)).
 
 ## A suite: several scenarios in one file
 
@@ -201,8 +202,9 @@ For long forms or setup, drive the page directly and let Jev do the decisions:
 Hooks: `js`, `click` (a CSS selector: scrolled into view, then clicked once it is on top and still, waiting up to
 2 s for a splash or a settling panel; a target still covered fails naming what covers it), `fill`
 (`{selector: text}`), `navigate`, `wait_for` (JavaScript that must turn
-true, up to 15 s; a Promise counts by what it resolves to; a wait, unlike a check, holds on any truthy value), `key` (a real key press, below), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
+true, within `timeout` seconds: 15 by default, at most 300, e.g. `{js: "window.ready", timeout: 60}`; a Promise counts by what it resolves to; a wait, unlike a check, holds on any truthy value), `key` (a real key press, below), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
 cookies and storage), and `command` (a shell command, only with `--allow-commands`). Hooks refuse to click dangerous controls or fill password fields on a real site.
+A scenario's checks judge the page as it is after its `before:` hooks, so a `wait_for` there is what they see.
 
 A `key` hook presses real keys, as a player does: the page gets trusted `keydown` and `keyup` events. Jev clicks and
 types but cannot press a game's keys, so a game's real-key test drives them with hooks. A chord adds Shift, Ctrl, Alt
@@ -349,7 +351,8 @@ instead of leaving Jev at a sign-in page.
 |---|---|---|
 | `keychain:SERVICE/ACCOUNT` | the macOS Keychain (on Linux, the secret service via `secret-tool`) | `qajev secret set keychain:qajev/shop-tester` (the Keychain prompts for it) |
 | `op://VAULT/ITEM/FIELD` | 1Password, read with its `op` command-line tool (Touch ID) | make the item in 1Password; install `op` and turn on its app integration |
-| `env:NAME` | an environment variable, e.g. a CI secret | set it in CI or your `.env` |
+| `env:NAME` | an environment variable, e.g. a CI secret | set it in CI, your shell or `~/.qajev/.env` (QAJev does not read a project's `.env`) |
+| `seed:FILE#KEY` | a key of your app's own JSON test-user fixture, which must say `"test_account": true` (see "A seeded test user" below) | your seed writes it |
 
 `qajev secret check REF` says whether QAJev can read it (the length, never the value). Use a test account made
 for this, never a real person's.
@@ -375,7 +378,49 @@ qajev browser login --profile shop --url https://shop.example/login   # a window
 qajev run account.yaml --profile shop
 ```
 
-This is the way for sign-ins QAJev cannot do by itself: one-time codes, passkeys, "Sign in with Google".
+This is the way for sign-ins QAJev cannot do by itself on a real site: one-time codes, passkeys, "Sign in with
+Google".
+
+**A seeded test user on a local dev host** signs in by itself, second factor included. Your app's seed creates the
+user and writes its secrets to a JSON fixture that marks itself as a test account:
+
+```json
+{"test_account": true, "allowed_hosts": ["localhost", "127.0.0.1"], "email": "qa-test@example.test",
+ "password": "...", "totp_secret_base32": "...", "session": "..."}
+```
+
+```yaml
+account:
+  name: qa-test
+  email: seed:dev_support/qa_test_user.json#email          # FILE#KEY, relative to this suite (or the project's repo)
+  password: seed:dev_support/qa_test_user.json#password
+  totp: seed:dev_support/qa_test_user.json#totp_secret_base32  # the code after the password: TOTP, SHA1, 6 digits, 30 s
+  login: {url: /login}
+```
+
+Or skip the form with a session cookie the seed minted (no password needed):
+
+```yaml
+account:
+  email: qa-test@example.test
+  cookie: {name: app-session, value: "seed:dev_support/qa_test_user.json#session"}  # http_only: true by default
+  login: {url: /dashboard, signed_in: {text: ["Your orders"]}}  # a page that shows the user is signed in
+```
+
+`totp` and `cookie` take only a `seed:` reference: the secret comes from the app's own fixture, never from a person's
+keychain, 1Password or environment. QAJev refuses them unless all of these hold:
+
+- the sign-in page is a local dev host: localhost, 127.0.0.1, `*.localhost` or `*.test`, written plainly (an
+  address a browser could read as another host, with a backslash, `user@` or control characters, is refused);
+- the email is at a reserved test domain: `example.test`, `*.test`, `example.com`, `*.example`;
+- the fixture says `"test_account": true` and its `allowed_hosts` list names the host (the list is required).
+
+The page must still be on that host when the code is typed, or after the cookie's page loads. QAJev types the code
+into the page's one-time code field: `autocomplete="one-time-code"`, a `000000` placeholder, or a field named exactly
+`otp`, `totp`, `code`, `mfa_code`, `verification_code` and the like (never `postcode` or `coupon_code`);
+`login.code_field` and `login.code_submit` when these do not find it. No secret or code is written anywhere, and an
+email read by reference is left out of the results. The report says only how it signed in: "as seeded test user …
+on localhost …; TOTP from seed: yes".
 
 **When a run meets a sign-in page anyway** (a page that sends signed-out visitors to `/login`, a profile whose
 sign-in expired), the scenario ends `harness` with "needs sign-in: ...", not as a product failure, and the report

@@ -317,6 +317,14 @@ def decider(data):
     return (data.get("models") or {}).get("decider") or "Jev"
 
 
+def game_profile(browser):
+    """A game's save folder, in one line: kept (a test profile, game_profile.py) or a throwaway. Or None."""
+    p = browser.get("game_profile")
+    if not p:
+        return None
+    return f"{p.get('folder')} (kept for the next run)" if p.get("kept") else "a throwaway, deleted at close"
+
+
 def browser_owner(browser):
     """Whose Chrome a run used, for both reports: attached, a throwaway one, or a named QAJev profile's."""
     if not browser.get("managed"):
@@ -339,6 +347,11 @@ def signed_in(s):
     if not s.get("ok"):
         return f"account {s['account']} failed: {s.get('reason')}"
     how = "already signed in" if s.get("already") else f"in {s.get('seconds')} s"
+    test = s.get("test_signin")
+    if test:  # a seeded test user signed in without a person: say so, and how (never the secret)
+        via = "TOTP from seed: yes" if test.get("totp") else "session cookie from seed: yes"
+        who = s.get("email") or s["account"]
+        return f"as seeded test user {who} on {test.get('host')} (account {s['account']}), {how}; {via}"
     return f"as {s.get('email') or s['account']} (account {s['account']}), {how}"
 
 
@@ -436,15 +449,20 @@ def render(data):
                          f"{', headless' if browser.get('headless') else ', windowed'})"))
            if browser.get("surface") == "native" else
            ("Browser", _e(f"{browser.get('cdp_url')} ({owner}{', headless' if browser.get('headless') else ''})")),
+           *([("Game profile", _e(game_profile(browser)))] if game_profile(browser) else []),
            ("Cost", _e(f"{decisions_cost(data)}, text model "
                        f"${cost['usd_text']:.4f}" + ("" if cost["text_cost_reported"]
                                                      else " (provider did not report cost)")))]
     if data.get("models"):
         run.append(("Models", _e(f"{data['models'].get('decider') or 'Jev'} {data['models']['jev']}; "
                                  f"text {data['models']['text']}")))
+        if data["models"].get("keys"):  # where QAJev's own keys came from: names only
+            run.append(("Keys", _e("; ".join(data["models"]["keys"]))))
     if data.get("motion") in ("reduce", "full"):
         run.append(("Motion", "reduced (pages were told the visitor prefers reduced motion)"
                     if data["motion"] == "reduce" else "full (as-is)"))
+    if data.get("watched_live_s"):
+        run.append(("Watched live", f"{data['watched_live_s']:.0f} s in the dashboard"))
     if data.get("sign_in"):
         run.append(("Sign-in", _e(signed_in(data["sign_in"]))))
     run += [("Legend", "<br>".join(f"{_pill(o)} {_e(t)}" for o, t in LEGEND.items())),

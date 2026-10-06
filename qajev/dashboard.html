@@ -206,6 +206,14 @@ pre.raw { white-space:pre-wrap; font:12px/1.5 var(--mono); background:var(--grou
   background:var(--ground); display:block; }
 .livebadge { position:absolute; top:8px; left:8px; font:600 11px var(--mono); background:var(--navy); color:var(--hi);
   padding:2px 8px; border-radius:999px; letter-spacing:.04em; }
+.liveview { position:fixed; right:16px; bottom:16px; width:min(720px, calc(100vw - 32px)); z-index:40;
+  background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px;
+  box-shadow:0 12px 40px rgba(14,18,64,.25); }
+.lv-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+.lv-badge { position:static; }
+.lv-title { flex:1; min-width:0; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lv-img { width:100%; aspect-ratio:16 / 10; object-fit:contain; border-radius:10px; background:var(--ground); display:block; }
+.lv-note { margin:6px 0 0; }
 .finding { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:8px; font-size:13px; align-items:baseline; overflow-wrap:anywhere; }
 .tline { display:flex; gap:8px; align-items:center; min-width:0; }
 .tline .tname { min-width:0; }
@@ -304,6 +312,16 @@ pre.said { white-space:pre-wrap; font:12px/1.5 var(--mono); background:var(--gro
     <main class="detail" id="detail" aria-label="Run"><div class="blank">Choose a run to see its tests.</div></main>
   </div>
 </div>
+<!-- LIVE (José, 5 Oct): the running test's screen as it happens, outside the rows that rebuild on every step -->
+<section class="liveview" id="liveview" aria-label="Watching live" hidden>
+  <div class="lv-bar"><span class="livebadge lv-badge">● LIVE</span><span class="lv-title" id="lv-title"></span>
+    <button class="btn" id="lv-front" hidden>Bring to front</button>
+    <a class="btn" id="lv-page" target="_blank" rel="noopener noreferrer" hidden>Open the page</a>
+    <button class="btn" id="lv-close">Close</button></div>
+  <img class="lv-img" id="lv-img" alt="The screen of the running test, live">
+  <p class="cdetail lv-note" id="lv-note">View only. Up to 2 people watch a run live; it slows to 2 frames a second
+    when the machine is busy and to 1 during real-time game steps.</p>
+</section>
 <div class="scrim" id="lightbox" role="dialog" aria-modal="true" aria-label="Screenshot">
   <img class="lb-img" id="lb-img" alt="">
   <div class="lb-bar">
@@ -669,7 +687,8 @@ function runningBody(s) {  // the test running now: what it is doing, what it di
     + (!d.live ? `<p class="cdetail">The screen shows here while the test runs (website and Electron runs).</p>` : "")
     + `</div>`
     + (d.live ? `<div class="livebox"><span class="livebadge">● LIVE</span>`
-      + `<img class="liveframe" alt="The screen of the running test, live"></div>` : "")
+      + `<img class="liveframe" alt="The screen of the running test, live">`
+      + `<button class="btn" data-act="live">Watch live</button></div>` : "")
     + `</div>`;
 }
 // The live frame changes every 2 s: set it after rendering, once loaded, so a rebuilt row never shows a blank box.
@@ -791,8 +810,10 @@ function renderDetail() {
   else tests.querySelector(".empty")?.remove();
   showLive();
   watch();
+  liveSync(d);
 }
 async function openRun(id, quiet) {
+  if (liveFor && id !== liveFor) liveClose();  // LIVE belongs to the run on screen
   if (!quiet && id !== selected) { opened.clear(); current = null; }
   selected = id; writeHash();
   $("body").classList.add("body-detail");
@@ -800,8 +821,38 @@ async function openRun(id, quiet) {
   try { current = await api("/api/run/" + encodeURIComponent(id)); renderDetail(); }
   catch (e) { if (!quiet) { $("detail").dataset.run = ""; $("detail").innerHTML = `<div class="blank">${esc(e.message)}</div>`; } }
 }
+// LIVE: one viewer panel, opened on a running run; it closes itself when the run ends or another run opens.
+let liveFor = null;
+function liveOpen(d) {
+  liveFor = d.id;
+  $("lv-title").textContent = heading(d.title);
+  $("lv-img").src = d.live.stream;  // the key's cookie goes with it: same origin
+  $("lv-img").onerror = () => { $("lv-note").textContent = "Cannot watch live now: 2 people already watch this run, or it ended."; };
+  $("liveview").hidden = false;
+  liveSync(d);
+}
+function liveClose() {
+  liveFor = null;
+  $("lv-img").removeAttribute("src");  // ends the stream: the run goes back to a frame every 2 s
+  $("liveview").hidden = true;
+}
+function liveSync(d) {  // on each refresh: the page link and the front button; closes when the run is no longer live
+  if (!liveFor) return;
+  if (!d || d.id !== liveFor) return;
+  if (!LIVE.includes(d.state) || !d.live) return liveClose();
+  $("lv-front").hidden = !d.live.front;
+  const page = d.live.page || "";
+  $("lv-page").hidden = !page;
+  if (page && $("lv-page").getAttribute("href") !== page) $("lv-page").setAttribute("href", page);
+}
+$("lv-close").addEventListener("click", liveClose);
+$("lv-front").addEventListener("click", async () => {
+  try { await api(`/api/run/${liveFor}/front`, {}); toast("Brought to the front in QAJev's Chrome"); }
+  catch (e) { toast(e.message); }
+});
 async function act(kind, button) {
   const id = current.id;
+  if (kind === "live") return liveOpen(current);
   button.disabled = true;
   try {
     if (kind === "stop") { toast("Stopping the run…"); await api(`/api/run/${id}/stop`, {}); await refresh(); openRun(id, true); }
