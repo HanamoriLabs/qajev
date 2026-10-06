@@ -22,6 +22,18 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - A `click` hook waits up to 2 s for its target to be on top and still before it clicks, so a splash that fades
   or a menu panel still settling no longer ends a test as harness (SideGame1). A target that stays covered fails
   naming what covers it.
+- A seeded TEST user on a local dev host signs in without a person, second factor included. `totp:` gives its
+  TOTP secret: QAJev computes the code (RFC 6238) and types it into the page's one-time code field. `cookie:` instead
+  sets a session cookie its seed minted. Both come only from the new `seed:FILE#KEY` reference: a key of the app's
+  own JSON test-user fixture, which must say `"test_account": true` and list the host in `allowed_hosts`. Both are
+  refused unless the sign-in page is localhost, 127.0.0.1, `*.localhost` or `*.test`, written so a browser cannot
+  read another host, and the email is at a reserved test domain. No secret or code is written anywhere; the report
+  says "as seeded test user … on localhost; TOTP from seed: yes". ([Writing tests](docs/writing-tests.md#signed-in-areas),
+  [Projects](docs/projects.md))
+- Fixed: an address with a backslash, `user@` or control characters (`http://evil.com\@localhost/`) counted as
+  loopback, while a browser reads another host there. Such an address is never loopback or a local dev host, so
+  `mutate` mode, an `http` sign-in and secret fields are refused on it.
+
 ## 0.3.0: 6 Oct 2026
 
 - A test plan opens every report and the dashboard: one numbered item per test, its `about` and each check in plain
