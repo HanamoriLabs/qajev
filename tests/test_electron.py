@@ -43,6 +43,25 @@ live = pytest.mark.skipif(os.environ.get("QAJEV_LIVE") != "1" or not os.environ.
 
 
 @live
+def test_a_kept_profile_carries_a_save_from_one_plan_to_the_next(tmp_path, monkeypatch):
+    # SideGame1, 6 Oct: plan 71 (settings persist) and chunked plans need a save from plan A when plan B starts.
+    from qajev import game_profile
+
+    monkeypatch.setattr(game_profile, "ROOT", tmp_path / "game-profiles")
+    with electron.ElectronGame(FIXTURE, adapter=ADAPTER, profile="plan-a-b") as game:
+        folder = Path(game.user_dir)
+        assert folder == (tmp_path / "game-profiles" / "plan-a-b").resolve()
+        game.evaluate("(localStorage.setItem('save', 'from plan A'), true)")
+    assert folder.is_dir() and any(folder.iterdir())  # kept at close
+    with electron.ElectronGame(FIXTURE, adapter=ADAPTER, profile="plan-a-b") as game:
+        assert game.evaluate("localStorage.getItem('save')") == "from plan A"
+    with electron.ElectronGame(FIXTURE, adapter=ADAPTER, profile="plan-a-b", reset_profile=True) as game:
+        assert game.evaluate("localStorage.getItem('save')") is None  # reset: a fresh start, same folder
+    with pytest.raises(native.NativeError, match="where real saves live"):
+        electron.ElectronGame(FIXTURE, args=[f"--profile={Path.home()}/Library/Application Support/ImHim"])
+
+
+@live
 def test_an_electron_game_is_driven_through_its_own_window(monkeypatch):
     with electron.ElectronGame(FIXTURE, adapter=ADAPTER) as game:
         pid, profile = game.proc.pid, Path(game.user_dir)

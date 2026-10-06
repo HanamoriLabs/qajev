@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="HUD">
+<title>Town square</title>
+<style>body { font: 16px system-ui, sans-serif; margin: 24px; } #hud { position: fixed; top: 8px; right: 8px; }</style>
+</head>
+<body>
+  <!-- verse2, 6 Oct: the big screen's video timer ticked in the HUD every second, so each of Jev's moves went stale
+       before it acted. Here the timer ticks every 0.25 s; the words around it stay. -->
+  <div id="hud"><span>Big screen</span> <span id="clock">0:00 / 188:26</span></div>
+  <h1>Town square</h1>
+  <p id="status">Press E to enter the hall.</p>
+  <div class="card"><button id="enter" onclick="status.textContent = 'You are in the hall.'">Enter the hall</button>
+    <span id="left">Doors close in 59 s</span></div>
+  <script>
+    let t = 0;
+    setInterval(() => {
+      t++;
+      clock.textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')} / 188:26`;
+      left.textContent = `Doors close in ${59 - (t % 60)} s`;
+    }, 250);
+  </script>
+</body>
+</html>

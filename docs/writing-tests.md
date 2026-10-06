@@ -105,7 +105,8 @@ For a phone's real browser (Chrome on an Android emulator; iOS Safari is not rea
   (`--says` with `--expect-js` on the command line). The report and the dashboard open with a **test plan**: each
   test's `about` and its checks in these words, a box for each, ticked as the run goes. A test without an `about`,
   or with a check without words, is **NOT DESCRIBED**: the plan flags it and the gate cannot be PASS (it is
-  INCOMPLETE), because its pass would not say what it proved.
+  INCOMPLETE), because its pass would not say what it proved. `qajev plan FILE` shows the plan and lists them
+  without running anything ([CLI](cli.md#qajev-plan)).
 
 ## A suite: several scenarios in one file
 
@@ -206,7 +207,10 @@ cookies and storage), and `command` (a shell command, only with `--allow-command
 A scenario's checks judge the page as it is after its `before:` hooks, so a `wait_for` there is what they see.
 
 A `key` hook presses real keys, as a player does: the page gets trusted `keydown` and `keyup` events. Jev clicks and
-types but cannot press a game's keys, so a game's real-key test drives them with hooks.
+types but cannot press a game's keys, so a game's real-key test drives them with hooks. A chord adds Shift, Ctrl, Alt
+or Meta to one key, e.g. `key: Shift+A` or `Ctrl+Shift+KeyK` (the page sees `event.shiftKey` and the rest; react
+policies take chords too). With Ctrl or Meta, the browser's and the system's own shortcuts (Q, W, R, T, N, L, P:
+quit, close, reload, a new tab or window, the address bar, print) are refused.
 
 ```yaml
 - key: Escape                                       # once

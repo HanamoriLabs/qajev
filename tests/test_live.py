@@ -420,6 +420,17 @@ def test_tap_targets_are_counted_as_wcag_2_5_8_says_and_named(session, site):
         "not counted (WCAG 2.5.8): 1 inline in a sentence, 1 with room around them")
 
 
+def test_a_key_hook_presses_a_chord_with_its_modifiers(session, site):
+    # verse1, 6 Oct: the Verse town editor opens on Shift+A; a page reads event.shiftKey and the key.
+    session.navigate(site + "/keys.html")
+    session.evaluate("(window.modLog.splice(0), true)")
+    session.run_hook({"key": "Shift+A"}, site)
+    session.run_hook({"key": "Ctrl+KeyK"}, site)
+    got = [(e["type"], e["key"], e["shift"], e["ctrl"]) for e in session.evaluate("window.modLog.splice(0)")]
+    assert got == [("keydown", "A", True, False), ("keyup", "A", True, False),
+                   ("keydown", "k", False, True), ("keyup", "k", False, True)], got
+
+
 def test_key_hooks_press_real_keys_repeat_them_and_hold_them(session, site):
     # Real-key play-tests for every game change (Orchestrator, 5 Oct): Jev cannot press a game's keys, so hooks do.
     session.navigate(site + "/keys.html")
@@ -883,6 +894,52 @@ def test_a_click_hook_waits_for_its_target_to_be_on_top_and_says_what_covers_it(
     session.navigate(site + "/visible-covered.html")
     with pytest.raises(HookFailed, match=r"covered by div#overlay"):
         session.run_hook({"click": "h1"}, site + "/visible-covered.html")
+
+
+def test_live_frames_from_the_real_page_are_jpegs_at_most_1280_wide_with_the_page_origin_and_path(
+        session, site, tmp_path):
+    # LIVE (José, 5 Oct): the run's own grabber, on its own debugger link, at the live rate while a viewer streams.
+    import struct
+
+    from qajev import live
+
+    session.arm("readonly")
+    session.navigate(site + "/pricing.html?token=abc#plans")
+    run = tmp_path / "run"
+    live.stream_touch(run)
+    with live.frames(run, session.page_socket()):
+        time.sleep(1.5)
+    data = (run / "live" / "frame.jpg").read_bytes()
+    assert data[:2] == b"\xff\xd8"
+    i, width = 2, None
+    while i < len(data) and width is None:  # the JPEG's frame header holds its size
+        marker, length = data[i + 1], struct.unpack(">H", data[i + 2:i + 4])[0]
+        if marker in (0xC0, 0xC2):
+            width = struct.unpack(">H", data[i + 7:i + 9])[0]
+        i += 2 + length
+    assert width and width <= live.WIDTH
+    assert json.loads((run / "live" / "page.json").read_text())["url"] == site + "/pricing.html"
+    assert live.watched_seconds(run) > 0
+
+
+def test_a_ticking_timer_does_not_make_jevs_moves_stale_but_a_real_change_does(session, site):
+    # verse2, 6 Oct: a video timer in the HUD ("0:03 / 188:26") changed the page text every second, so each of Jev's
+    # moves went stale before it acted. Digits ticking in free text, a label or the target's card are not a change;
+    # new words, another address or a reload still are. Jev's own snapshot code, no model call.
+    session.arm("readonly")
+    session.navigate(site + "/ticking.html")
+    page = session.browser.observe(screenshot=False)
+    enter = next(a for a in page["actions"] if a["label"].startswith("Enter the hall"))
+    time.sleep(1.0)  # four ticks: the clock and the countdown beside the button have changed
+    assert session.evaluate("document.getElementById('clock').textContent") not in page["text"]
+    assert session.browser.fresh(page) is True  # a key press, a wait or a scroll
+    assert session.browser.fresh(page, enter) is True  # a click: its card holds the countdown
+    session.evaluate("(document.getElementById('status').textContent = 'The hall is closed.', true)")
+    assert session.browser.fresh(page) is False  # new words are a change
+    page = session.browser.observe(screenshot=False)
+    session.evaluate("(location.reload(), true)")
+    time.sleep(0.5)
+    assert session.browser.fresh(page) is False  # a reload is a new page
 
 
 def test_the_checks_judge_the_page_after_its_before_hooks_not_before_them(site, browser, tmp_path):

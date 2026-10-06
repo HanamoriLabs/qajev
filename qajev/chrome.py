@@ -112,6 +112,32 @@ def cmdline(pid):
     return out.stdout.strip()
 
 
+def started(pid):
+    """When process `pid` started (ps lstart; /proc's start ticks where there is no ps), or None when it is gone."""
+    try:
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5)
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        return "ticks " + (PROC / str(pid) / "stat").read_text().rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def identity(pid):
+    """What makes `pid` this process and not a later one with the same number: its start and its command."""
+    return {"proc_start": started(pid), "command": cmdline(pid)[:400]}
+
+
+def still(pid, known):
+    """`pid` is still the process `known` (identity()) recorded: a pid reused by another process never matches.
+    Without a recorded identity nothing matches, so nothing is killed on a guess (the Orchestrator, 6 Oct)."""
+    return bool(known and known.get("proc_start")) and started(pid) == known["proc_start"] \
+        and cmdline(pid)[:400] == known.get("command")
+
+
 def processes():
     """Every process as (pid, command): from `ps`, or from /proc where there is no `ps`."""
     try:
