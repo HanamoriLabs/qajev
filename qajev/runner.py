@@ -304,7 +304,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
               "command": scenario.expect.get("command")}
     not_run = [NOT_RUN[k] for k, v in wanted.items() if v and k not in ran]
     outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail,
-                                       not_run=not_run, actions=(result.get("jev") or {}).get("actions"))
+                                       not_run=not_run, actions=(result.get("jev") or {}).get("actions"),
+                                       url=scenario.url)
     result.update({k: v for k, v in (("stop_detail", detail), ("not_run", not_run)) if v})
     idle = verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
                                  session.agent.state["history"]) if scenario.goal else None

@@ -298,7 +298,8 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
                               checks=[{"check": "link answers with HTTP < 400", "ok": ok,
                                        "detail": None if ok else f"HTTP {status}"}])
             elif error:
-                result.update(outcome="fail", reason=f"page did not load: {error}", stop="unreachable")
+                outcome, reason = verdict.unreachable(url, error)
+                result.update(outcome=outcome, reason=reason, stop="unreachable")
             else:
                 facts = _examine(session, result, page, dev, settle=settle, host=host, opts=opts, run_dir=run_dir)
                 if urlsplit(facts.get("url") or "").netloc == host:
@@ -329,7 +330,8 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
                 last_load = time.monotonic()
                 error = session.navigate(first["url"])
                 if error:
-                    result.update(outcome="fail", reason=f"page did not load: {error}", stop="unreachable")
+                    outcome, reason = verdict.unreachable(first["url"], error)
+                    result.update(outcome=outcome, reason=reason, stop="unreachable")
                 else:
                     _examine(session, result, page, other, settle=settle, host=host, opts=opts, run_dir=run_dir)
                 result["seconds"] = round(time.monotonic() - began, 2)

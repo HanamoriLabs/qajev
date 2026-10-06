@@ -64,7 +64,7 @@ Each scenario has one outcome:
 | Outcome | Meaning | What you do |
 |---|---|---|
 | `pass` | every expectation held | nothing |
-| `fail` | the product is wrong (a check failed, or the page did not load) | read `reason` and the failed `checks`; fix the product |
+| `fail` | the product is wrong (a check failed, or the page did not load; a local dev server that is not answering, or a `js` check whose own code throws a TypeError, ReferenceError or SyntaxError, is `harness` instead) | read `reason` and the failed `checks`; fix the product |
 | `stuck` | Jev found no way forward | often a real usability problem; look at the screenshot (`qa_screenshot`) before blaming the product |
 | `harness` | a problem on QAJev's side (time or action budget, cost cap, a page that never stops changing, Jev saying DONE without taking a single action) | **says nothing about the product**; do not report it as a bug; retry, or narrow the goal |
 | `unverified` | no expectations were given | add expectations and run again |
