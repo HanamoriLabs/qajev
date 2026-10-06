@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 from . import keys
-from .config import host_of, is_local_dev, is_loopback, is_test_email
+from .config import host_of, is_local_dev, is_loopback, is_test_email, plain_host
 from .guard import MODES
 
 DEVICES = {
@@ -65,7 +65,7 @@ CLIENT_HOOK_KINDS = HOOK_KINDS - {"command"}  # a shell command is not a player'
 STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout", "settle", "expect"}
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
-    "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about",
+    "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
 }
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
@@ -81,6 +81,14 @@ DEFAULT_BUDGET = {"actions": 20, "seconds": 90}
 
 class SuiteError(ValueError):
     """The suite is malformed or asks for something QAJev refuses to do."""
+
+
+class Refused(SuiteError):
+    """A run that would change a production site: stopped before Chrome starts, with no override (exit 5)."""
+
+
+def refusal(host):
+    return Refused(f"QAJev never changes a production site: {host} is not a local dev host.")
 
 
 @dataclass
@@ -413,6 +421,10 @@ def parse(data, path=None, devices=None):
         raise SuiteError("base_url must be http(s)")
     guard = data.get("guard") or {}
     _unknown("guard", guard, GUARD_KEYS)
+    if data.get("allow_destructive") not in (None, False, True):
+        raise SuiteError("allow_destructive must be true or false")
+    if data.get("allow_destructive"):  # a local dev host's delete, remove, refund... (check_safety refuses the rest)
+        guard = {**guard, "allow_destructive": True}
     suite_mode = data.get("mode", "readonly")
     motion = data.get("motion", "reduce")
     if motion not in MOTIONS:
@@ -554,16 +566,12 @@ def about(value, where):
 
 
 def check_safety(suite):
-    """Mutating runs are loopback-only, with no exceptions and no override flag."""
-    for s in suite.scenarios:
-        if s.mode != "mutate":
-            continue
-        remote = [h for h in suite.hosts if not is_loopback(f"http://{h}")]
-        if remote:
-            raise SuiteError(
-                f"scenario {s.name!r} is mode: mutate, but the suite reaches non-loopback host(s) {remote}. "
-                "Mutating runs go against localhost and a throwaway database only."
-            )
+    """Production is read-only, destructive is never: a mutating run, or one that shows destructive controls, goes
+    against local dev hosts only (config.is_local_dev). No exceptions and no override flag."""
+    if any(s.mode == "mutate" for s in suite.scenarios) or suite.guard.get("allow_destructive"):
+        for h in sorted(suite.hosts):
+            if not is_local_dev(f"http://{h}"):
+                raise refusal(plain_host(f"http://{h}") or h)
     if suite.guard.get("allow_secret_fields") and any(not is_loopback(f"http://{h}") for h in suite.hosts):
         raise SuiteError("guard.allow_secret_fields is only allowed when every host is loopback")
 

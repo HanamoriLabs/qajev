@@ -87,17 +87,35 @@ def test_malformed_suites_are_refused_with_a_reason(scenarios, top, message):
         parse(scenarios, **top)
 
 
-def test_mutate_is_refused_on_any_non_loopback_host():
-    with pytest.raises(S.SuiteError, match="loopback"):
-        parse([{"url": "https://console.example.com/", "goal": "x", "mode": "mutate"}])
-    with pytest.raises(S.SuiteError, match="loopback"):
+@pytest.mark.parametrize("url", ["https://console.example.com/", "https://staging.myapp.com/",
+                                 "https://myapp-git-main.vercel.app/", "http://localhost.evil.com/",
+                                 "http://10.0.0.5:3000/", "http://evil.com\\@localhost/"])
+def test_mutate_is_refused_on_any_host_that_is_not_a_local_dev_host(url):
+    # production, staging and previews alike: no override (José, 6 Oct: production is read-only)
+    with pytest.raises(S.Refused, match="QAJev never changes a production site: .* is not a local dev host."):
+        parse([{"url": url, "goal": "x", "mode": "mutate"}])
+
+
+def test_one_production_host_refuses_a_mutating_suite():
+    with pytest.raises(S.Refused, match="api.example.com is not a local dev host"):
         parse([{"url": "http://localhost:3000/", "goal": "x", "mode": "mutate"}], hosts=["api.example.com"])
 
 
-@pytest.mark.parametrize("host", ["localhost:3101", "127.0.0.1:5000", "app.localhost:80", "[::1]:8080"])
-def test_mutate_is_allowed_on_loopback(host):
+@pytest.mark.parametrize("host", ["localhost:3101", "127.0.0.1:5000", "app.localhost:80", "[::1]:8080",
+                                  "shop.test", "api.shop.test:8443"])
+def test_mutate_is_allowed_on_a_local_dev_host(host):
     s = parse([{"url": f"http://{host}/", "goal": "x", "mode": "mutate"}])
     assert s.mutates
+
+
+def test_allow_destructive_is_a_local_dev_host_s_alone():
+    data = {"allow_destructive": True, "scenarios": [{"url": "http://localhost:3000/", "goal": "x"}]}
+    assert S.parse(data).guard["allow_destructive"] is True
+    data["scenarios"][0]["url"] = "https://shop.example.com/"
+    with pytest.raises(S.Refused, match="shop.example.com is not a local dev host"):
+        S.parse(data)  # even a read-only run may not show them on production
+    with pytest.raises(S.SuiteError, match="allow_destructive must be true or false"):
+        S.parse({"allow_destructive": "yes", "scenarios": [{"url": "http://localhost:3000/", "goal": "x"}]})
 
 
 def test_secret_fields_can_only_be_unlocked_on_loopback():

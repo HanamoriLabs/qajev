@@ -28,14 +28,15 @@ the repository, its name is enough.
 name = "shop"
 default_env = "prod"
 
-[env.prod]                       # production is always read-only
+[env.prod]                       # production is always read-only: mode = "mutate" here is refused (exit 5)
 base_url = "https://shop.example"
 hosts = ["cdn.shop.example"]     # other hosts Jev may visit
 smoke_start = "/products"        # where `qajev smoke --project` starts (default /)
 
-[env.local]                      # changes are allowed on your own machine only
+[env.local]                      # changes are allowed on a local dev host only (localhost, *.test...)
 base_url = "http://localhost:3000"
 mode = "mutate"
+allow_destructive = true         # also show delete, remove, refund... (local only; red report banner)
 
 [accounts.tester]                # a seeded TEST account, local dev hosts only; references only, never passwords
 email = "qa-test@example.test"

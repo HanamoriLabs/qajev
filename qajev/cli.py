@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import __version__
 
-EXIT_CONFIG, EXIT_BROWSER, EXIT_INTERRUPTED = 3, 4, 130
+EXIT_CONFIG, EXIT_BROWSER, EXIT_REFUSED, EXIT_INTERRUPTED = 3, 4, 5, 130
 DASHBOARD_STOP_S = 15  # `qajev dashboard --stop` waits this long for the dashboard to exit and free its lock
 
 SUITE_TEMPLATE = """\
@@ -95,6 +95,10 @@ def _common(p):
                         "`qajev stop`")
 
 
+ALLOW_DESTRUCTIVE_HELP = ("show delete, remove, refund, cancel... controls, hidden by default everywhere; local dev "
+                          "hosts only: a production host is refused (exit 5)")
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="qajev",
@@ -123,7 +127,10 @@ def build_parser():
                        help="Clef sees the screenshot with every decision (needs Clef)")
     check.add_argument("--fetch", action="append", default=[], metavar="URL[=STATUS]",
                        help="in-page GET that must answer STATUS (default 200); repeatable")
-    check.add_argument("--mode", choices=["readonly", "mutate"], default="readonly")
+    check.add_argument("--mode", choices=["readonly", "mutate"], default="readonly",
+                       help="mutate: writes go out, on a local dev host only (localhost, 127.0.0.1, [::1], "
+                            "*.localhost, *.test); any other host is refused (exit 5)")
+    check.add_argument("--allow-destructive", action="store_true", help=ALLOW_DESTRUCTIVE_HELP)
     check.add_argument("--device", help="test on this device only: desktop | tall | phone | tablet | WIDTHxHEIGHT "
                                        "(default: every device in --devices)")
     check.add_argument("--persona", help="who Jev is, prepended to the goal")
@@ -154,6 +161,7 @@ def build_parser():
     proj.add_argument("--says", help="for --objective: what the --expect-js check proves, in plain words")
     run.add_argument("--jobs", type=int, default=1, help="parallel workers for independent chains (default 1)")
     run.add_argument("--allow-commands", action="store_true", help="let the suite run shell commands (hooks/checks)")
+    run.add_argument("--allow-destructive", action="store_true", help=ALLOW_DESTRUCTIVE_HELP)
     _common(run)
 
     smoke = sub.add_parser("smoke", help="crawl same-origin pages with no model calls and lint them")
@@ -512,6 +520,8 @@ def check_suite(args):
     if not args.device:
         del scenario["device"]
     data = {"name": f"check {args.url}", "scenarios": [scenario], "hosts": args.host}
+    if args.allow_destructive:
+        data["allow_destructive"] = True
     if args.devices:
         data["devices"] = args.devices
     return suite_mod.parse(data)
@@ -544,24 +554,28 @@ def cmd_run(args):
     from .jobs import Busy
     from .project import ProjectError
     from .runner import ConfigError, run
-    from .suite import SuiteError, load
+    from .suite import Refused, SuiteError, load
 
     _lower_priority()
     _provider_flag(args)
     try:
         load_env(args.env_file)
         if args.command == "run" and getattr(args, "project", None):
+            proj, env, suite = _project_suite(args)  # refused before the queue and before Chrome
             with _machine_lock(args):
-                return _run_project(args)
+                return _run_project(args, proj, env, suite)
         if args.command == "run" and not args.suite:
             return _fail(args, "give a suite file or --project", EXIT_CONFIG)
-        suite = check_suite(args) if args.command == "check" else load(args.suite, devices=args.devices)
+        suite = check_suite(args) if args.command == "check" else _destructive(load(args.suite, devices=args.devices),
+                                                                                 args)
         if getattr(args, "real_devices", None):
             from .suite import _real_devices
 
             suite.real_devices = _real_devices(args.real_devices)
         with _machine_lock(args):
             report = run(suite, _options(args))
+    except Refused as e:
+        return _refused(args, str(e))
     except (SuiteError, ConfigError, FileNotFoundError, ProjectError) as e:
         return _fail(args, str(e), EXIT_CONFIG)
     except (ChromeError, Busy) as e:
@@ -571,10 +585,19 @@ def cmd_run(args):
     return _finish(args, report)
 
 
-def _run_project(args):
-    """A project's objectives (or one ad-hoc objective) as a suite; the report is filed with the project."""
+def _destructive(suite, args):
+    """--allow-destructive on a loaded suite, judged again: a production host is refused."""
+    from .suite import check_safety
+
+    if getattr(args, "allow_destructive", False):
+        suite.guard = {**suite.guard, "allow_destructive": True}
+        check_safety(suite)
+    return suite
+
+
+def _project_suite(args):
+    """A project's objectives (or one ad-hoc objective) as a suite. -> (project, env name, suite)"""
     from . import project as project_mod
-    from .runner import run
     from .suite import parse
 
     proj = project_mod.load(args.project)
@@ -590,11 +613,19 @@ def _run_project(args):
     env = args.env or proj.default_env
     data = project_mod.suite_data(proj, env=env, tags=args.tags, names=args.names, objective=args.objective,
                                   url=args.url, expect=expect, about=args.about)
-    suite = parse(data, proj.config_path, devices=args.devices)
+    suite = _destructive(parse(data, proj.config_path, devices=args.devices), args)
     if getattr(args, "real_devices", None):
         from .suite import _real_devices
 
         suite.real_devices = _real_devices(args.real_devices)
+    return proj, env, suite
+
+
+def _run_project(args, proj, env, suite):
+    """Run a project's suite; the report is filed with the project."""
+    from . import project as project_mod
+    from .runner import run
+
     opts = _options(args)
     opts.out_dir = project_mod.run_dir_parent(proj)
     report = run(suite, opts)
@@ -769,6 +800,12 @@ def cmd_play(args):
         session_steps = spec.get("steps") or []
         if not session_steps:
             return _fail(args, f"{args.suite}: no steps", EXIT_CONFIG)
+        # A game or an app has no in-page write guard: QAJev plays it read-only, and a run asking to change data is
+        # refused (0.4.0: Godot and native mobile apps never; an Electron app waits for a local `backend:`).
+        if spec.get("mode") == "mutate" or any(isinstance(s, dict) and s.get("mode") == "mutate"
+                                               for s in session_steps):
+            return _refused(args, f"{args.suite}: QAJev never changes data through a game or an app: play runs are "
+                                  "read-only, so mode: mutate is refused.")
         from .suite import SuiteError, about
 
         try:
@@ -1019,7 +1056,7 @@ def cmd_account(args):
 
 def cmd_doctor(args):
     from . import chrome, providers
-    from .config import DEFAULTS, env_files, key_sources, load_env
+    from .config import DEFAULTS, LOCAL_DEV_HOSTS, env_files, key_sources, load_env
 
     try:
         loaded = load_env(args.env_file)
@@ -1073,6 +1110,8 @@ def cmd_doctor(args):
         add("jev-ultrafast", True, "importable")
     except ImportError as e:
         add("jev-ultrafast", False, str(e))
+    add("production", True, "read-only, destructive never: only a local dev host may change ("
+        + ", ".join(LOCAL_DEV_HOSTS) + "); mutate or --allow-destructive anywhere else is refused (exit 5)")
     load1 = os.getloadavg()[0]
     add("load average", load1 < 150, f"{load1:.0f} (runs wait while >= 150)")
     ok = all(c["ok"] for c in checks)
@@ -1378,6 +1417,15 @@ def _interrupt(_signum, _frame):
         return
     _interrupted = True
     raise KeyboardInterrupt
+
+
+def _refused(args, message):
+    """Production is read-only, destructive is never: nothing was started (exit 5, outcome "refused")."""
+    _record({"outcome": "refused", "reason": message, "error": message, "exit_code": EXIT_REFUSED})
+    if getattr(args, "json", False):
+        print(json.dumps({"outcome": "refused", "reason": message, "error": message, "exit_code": EXIT_REFUSED}))
+    print(f"qajev: refused: {message}", file=sys.stderr)
+    return EXIT_REFUSED
 
 
 def cmd_plan(args):

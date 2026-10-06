@@ -103,8 +103,10 @@ login: {url: /login}}`, and QAJev signs in by itself; a seeded TEST user on a lo
 `totp: seed:FILE#KEY` for its one-time code, or `cookie: {name, value: seed:FILE#KEY}`, from a fixture that says
 `"test_account": true` and lists the host in `allowed_hosts`). A result with `needs_sign_in` means runs met a sign-in
 page (harness, not a bug): ask the person to sign in once in QAJev's window (`qajev browser login --url URL`), as its `next_step`
-says; never ask for a password. Production is read-only; tests that change data
-run only against localhost. Dangerous buttons are hidden from Jev on purpose; do not work around that. Keep the
+says; never ask for a password. Production is read-only and destructive is never:
+only a local dev host (localhost, 127.0.0.1, [::1], *.localhost, *.test) may change; `mode: mutate` or
+`allow_destructive` anywhere else is refused before it starts (exit 5, outcome `refused`): do not work around it.
+Dangerous and destructive buttons (delete, refund, cancel...) are hidden from Jev on purpose; do not work around that. Keep the
 cost cap low for exploratory runs (`cost_cap: 0.10`). A game's QUIT is hidden too; to test a normal quit pass
 `allow: ["QUIT"]` and `expect_closed: true`.
 

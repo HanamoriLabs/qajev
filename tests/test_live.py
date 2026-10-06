@@ -335,7 +335,7 @@ def test_the_guard_waits_for_react_to_hydrate(session, site):
     marks = session.evaluate("[...document.querySelectorAll('#pw,#del,#out')].map(e => "
                              "[e.id, e.dataset.qajevGuard || null, e.disabled ?? null, e.inert])")
     assert marks[0] == ["pw", "field", True, False]  # the secret field: disabled, after hydration
-    assert marks[1][:2] == ["del", "danger: Delete account"] and marks[1][3] is True  # the risky button: taken off
+    assert marks[1][:2] == ["del", "destructive: Delete account"] and marks[1][3] is True  # the risky one: taken off
     assert marks[2][:2] == ["out", "off-site link"] and marks[2][3] is True  # the off-site link: inert
 
 

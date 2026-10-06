@@ -196,6 +196,11 @@ def test_a_key_word_or_a_shared_word_alone_does_not_blame_the_tool_or_the_guard(
     # Still QAJev's own: a danger control the goal asks for by its action, and the keys named as keys.
     assert ux.blocked_by("Delete the test account. Stop when it is gone.", "stuck", danger).startswith(
         "blocked by the guard: it hid 'Delete account' (danger: Delete)")
+    gone = [{"label": "Delete draft", "why": "destructive", "match": "Delete"}]
+    assert ux.blocked_by("Look at the pricing page. Stop when prices show.", "stuck", gone) is None
+    assert ux.blocked_by("Delete the draft. Stop when it is gone.", "stuck", gone) == (
+        "blocked by the guard: it hid 'Delete draft' (destructive: Delete), which the goal needs; destructive controls "
+        "are hidden on purpose; on a local dev host --allow-destructive shows them")
     assert ux.blocked_by("Buy the Pro plan. Stop when the receipt shows.", "stuck", danger).startswith(
         "blocked by the guard: it hid 'Buy Pro plan'")
     offsite = [{"label": "Get the desktop app", "why": "off-site link", "match": "downloads.example.org"}]

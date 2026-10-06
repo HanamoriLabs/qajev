@@ -20,6 +20,7 @@ _NAMED = {
     "Tab": ("Tab", "Tab", 9, None),
     "Space": (" ", "Space", 32, " "),
     "Backspace": ("Backspace", "Backspace", 8, None),
+    "Delete": ("Delete", "Delete", 46, None),  # on production the guard keeps it (and Backspace) in text fields
     "ArrowLeft": ("ArrowLeft", "ArrowLeft", 37, None),
     "ArrowUp": ("ArrowUp", "ArrowUp", 38, None),
     "ArrowRight": ("ArrowRight", "ArrowRight", 39, None),

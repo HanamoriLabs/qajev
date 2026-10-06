@@ -295,11 +295,11 @@ def _forms(verb):
 
 
 def _asks_for(task, h):
-    """Whether the goal needs this hidden control. An off-site link: a word of its label or its host. A danger or
-    read-only control: only when the goal asks for its action, the guard's word as the goal's verb and the control's
-    object when it names one ("Find your account settings" never needs "Delete account")."""
+    """Whether the goal needs this hidden control. An off-site link: a word of its label or its host. A danger,
+    destructive or read-only control: only when the goal asks for its action, the guard's word as the goal's verb and
+    the control's object when it names one ("Find your account settings" never needs "Delete account")."""
     want = _words(task)
-    if h.get("why") not in {"danger", "read-only"}:
+    if h.get("why") not in {"danger", "destructive", "read-only"}:
         host = str(h.get("match") or "") if h.get("why") == "off-site link" else ""
         return bool(want & _words(h.get("label"))) or any(w in host.lower() for w in want)
     verbs = [w for w in re.findall(r"[a-z]+", str(h.get("match") or "").lower()) if w not in _NOT_VERBS]
@@ -325,6 +325,8 @@ def blocked_by(goal, outcome, hidden):
             match = f": {h['match']}" if h.get("match") else ""
             held = f"{str(h.get('label') or '?')[:60]!r} ({h.get('why')}{match})"
             fix = (f"add --host {host} to let Jev follow it" if host else
+                   "destructive controls are hidden on purpose; on a local dev host --allow-destructive shows them"
+                   if h.get("why") == "destructive" else
                    "the guard holds it back on purpose, so this goal cannot be checked read-only")
             return f"blocked by the guard: it hid {held}, which the goal needs; {fix}"
     for name, pattern in KEYS:

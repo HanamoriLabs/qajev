@@ -15,9 +15,26 @@ the model behaving well: the rules are enforced in the page and in QAJev itself.
   scenarios: only on that host, checked again where the browser is when it types, only into a password field, with
   the value redacted from everything it writes. A password from the Keychain, 1Password or an environment variable
   is refused, on every host ([Signed-in areas](writing-tests.md#signed-in-areas)).
-- **Change data on a real site.** Tests are read-only by default: buttons named like writes (save, submit,
-  delete, invite...) are hidden, and form posts and other writing requests are blocked in the page and listed in
-  the report. `mode: mutate` is allowed **only** on `localhost` / `127.0.0.1`, with no override.
+- **Change a production site.** Production is read-only. Destructive is never. Only a **local dev host** may
+  change: `localhost`, `127.0.0.1`, `[::1]`, `*.localhost` and `*.test` (names that never reach the internet).
+  Every other host is production, staging and previews included, and there is no override:
+  - A run that would change it (`mode: mutate`, or `--allow-destructive`) is **refused before Chrome starts**, from
+    every entry point (`check`, `run`, a project, `nightly`, `rerun`, the MCP tools): "QAJev never changes a
+    production site: HOST is not a local dev host.", exit code 5, outcome `refused`.
+  - In the page, the guard decides per page and per request, so a local run that reaches a production page is
+    read-only there. Buttons named like writes (save, submit, invite...) are hidden. `DELETE`, `PUT` and `PATCH`
+    never leave the page; a `POST` only when the suite's `guard.allow_requests` names it, and every one let
+    through is listed in the report. Other writes are blocked and listed.
+  - The page's `confirm()` gets "no", `prompt()` gets nothing, and a "leave this page?" (`beforeunload`) never
+    holds the tab; each is recorded in the report. Delete and Backspace reach the page only inside a text field.
+- **Show destructive controls.** Delete, remove, erase, destroy, drop, purge, wipe, cancel, refund, void,
+  revoke, deactivate, unsubscribe, archive, reset, empty trash, close or terminate account, uninstall and
+  disconnect are hidden from Jev on **every** host, in every mode, local included. A reset, clear or cancel of
+  something harmless stays (filters, a search, a selection, the form being edited), unless the control also names
+  an account, order, subscription, plan, booking, data, payment or membership. Escape always reaches the page, so a
+  dialog whose only way out is a bare "Cancel" still closes. `guard.allow` never shows them.
+  Only `--allow-destructive` (suite `allow_destructive: true`, project env `allow_destructive = true`, MCP
+  `allow_destructive`) does, on a local dev host only, and the report then carries a red banner.
 - **Press dangerous buttons.** Sign out, close all, delete account or data, revoke keys, billing, upgrade or
   downgrade, pay, buy, checkout, subscribe, start a trial, leave or transfer, "danger zone" and more are hidden
   from Jev before it sees the page. Links to other sites (store badges, social links) stay on the page as
@@ -52,10 +69,11 @@ the model behaving well: the rules are enforced in the page and in QAJev itself.
   second (or slower if the site asks).
 - QAJev is not a load-testing tool. Only test sites you own or have permission to test.
 
-## Games
+## Games and apps
 
 QAJev starts its own copy of the game with a throwaway save folder, sends input into the game only, and never
-offers Jev quit, purchase or delete-save actions. See [Games](games.md).
+offers Jev quit, purchase or delete-save actions. A game or an app has no in-page write guard, so `qajev play` is
+read-only: a play suite that asks for `mode: mutate` is refused (exit 5). See [Games](games.md).
 
 ## Reporting a security problem
 

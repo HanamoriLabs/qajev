@@ -55,9 +55,11 @@ A person can watch all of it live with [`qajev top`](jobs-and-top.md).
 QAJev enforces these, whatever the agent asks:
 
 - no typing of passwords, one-time codes or payment details (the fields are disabled);
-- no writes on real sites: form posts and deletes are blocked unless the site is on the same machine
-  (`localhost`);
-- no dangerous buttons: sign out, delete, pay, billing, "close all" and similar are hidden from Jev;
+- production is read-only: form posts and deletes are blocked unless the site is a local dev host (`localhost`,
+  `127.0.0.1`, `[::1]`, `*.localhost`, `*.test`), and a run that would change any other host is refused before it
+  starts (exit 5, outcome `refused`);
+- destructive is never: delete, remove, refund, cancel, archive, reset and similar are hidden on every host
+  (`--allow-destructive` shows them on a local dev host only), and so are sign out, pay, billing, "close all";
 - no downloads;
 - no spending past the cost cap.
 

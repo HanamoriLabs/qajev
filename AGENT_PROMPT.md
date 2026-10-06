@@ -93,10 +93,14 @@ and say what they are waiting for. Never start a second copy of a run because th
   `harness`). Ask the person how QAJev should get in, as its `next_step` says: they sign in once (above); on a
   local dev site a seeded test account (`password: seed:FILE#KEY`) can sign in by itself. Never ask for a password.
   Then run again.
-- **Production is read-only.** QAJev blocks writes (form posts, deletes) on any site that is not your own
-  machine. Tests that change data (`mode: mutate`) only run against `localhost` / `127.0.0.1`.
-- **Dangerous buttons are hidden from Jev** (sign out, delete, pay, billing, "close all"...). Do not try to work
-  around that.
+- **Production is read-only. Destructive is never.** Only a local dev host may change: `localhost`,
+  `127.0.0.1`, `[::1]`, `*.localhost`, `*.test`. Every other host is production, staging and previews too. A run
+  that would change it (`mode: mutate`, `--allow-destructive`) is refused before it starts: exit code 5, outcome
+  `refused`. Do not work around it (another host name, a tunnel, a proxy): tell the person, and run read-only or
+  against a local copy.
+- **Dangerous and destructive buttons are hidden from Jev** (sign out, pay, billing, "close all"; delete, remove,
+  refund, cancel, archive, reset...). Do not try to work around that. Only `--allow-destructive` shows the
+  destructive ones, on a local dev host.
 - **Respect other people's sites.** Crawl public sites politely (the smoke crawl already reads robots.txt and waits
   a second between pages). Do not load-test with QAJev.
 - **Mind the cost cap.** Every run has one (default $1). Keep it low for exploratory runs (`cost_cap` /
