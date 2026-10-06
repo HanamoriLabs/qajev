@@ -20,7 +20,8 @@ LEGEND = {
     "pass": "every expectation held",
     "fail": "the product is wrong (page or side effect)",
     "stuck": "Jev found no way forward; check by hand, often a UX finding",
-    "harness": "the tool ran out of budget, went stale or errored; says nothing about the product",
+    "harness": "the tool ran out of budget, went stale or errored, or Jev said DONE without trying; says nothing "
+               "about the product",
     "unverified": "no expectations were given",
     "skipped": "not run (machine busy, or an earlier step failed)",
 }

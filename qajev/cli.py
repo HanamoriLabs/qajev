@@ -19,7 +19,7 @@ SUITE_TEMPLATE = """\
 # QAJev suite. Run: qajev run {name}
 name: My site
 base_url: http://localhost:3000
-mode: readonly            # readonly (default, blocks writes) | mutate (loopback hosts only)
+mode: readonly            # readonly (default, blocks writes) | mutate (a local dev host only: localhost, *.test...)
 device: desktop           # desktop | tall | phone | tablet | WIDTHxHEIGHT
 budget: {{actions: 20, seconds: 90}}
 cost_cap_usd: 1.0
@@ -75,7 +75,8 @@ def _common(p):
                                      "desktop,phone, or $QAJEV_DEVICES); e.g. --devices desktop for desktop only")
     g.add_argument("--out", type=Path, default=Path(os.environ.get("QAJEV_OUT", "qajev-runs")),
                    help="where run folders go (default ./qajev-runs)")
-    g.add_argument("--env-file", help="file with TYPESAFE_API_KEY etc. (default ./.env, then ~/.qajev/.env)")
+    g.add_argument("--env-file", help="file with TYPESAFE_API_KEY etc. (default $QAJEV_ENV_FILE, then ~/.qajev/.env; "
+                                      "never the current folder's .env)")
     g.add_argument("--jev-provider", choices=["auto", "typesafe", "openrouter", "cloudflare"],
                    help="who makes the decisions (default auto: TypeSafe key if set, else OpenRouter key; "
                         "cloudflare: Clef or Clef-flash, only when chosen, see QAJEV_CLEF_MODEL)")
@@ -113,7 +114,8 @@ def build_parser():
     check.add_argument("--expect-text", "-t", action="append", default=[], help="page must show this (repeatable)")
     check.add_argument("--absent", "-a", action="append", default=[], help="page must not show this (repeatable)")
     check.add_argument("--visible", action="append", default=[],
-                       help="this text must be on screen (in the viewport), not just in the page (repeatable)")
+                       help="this text must be on screen (in the viewport), whole and on top: not covered or cut "
+                            "short (a failure says which); repeatable")
     check.add_argument("--expect-url", "-u", help="final URL must contain this")
     check.add_argument("--expect-url-regex", help="final URL must match this regex")
     check.add_argument("--expect-js", "-j", help="JS expression that must return exactly true (may use await); a "
@@ -248,28 +250,28 @@ def build_parser():
     browser.add_argument("--url", help="for login: the page to sign in on")
     browser.add_argument("--json", action="store_true")
 
-    secret = sub.add_parser("secret", help="store or check a test account's password reference (never prints it)")
+    secret = sub.add_parser("secret", help="check that QAJev can read a seeded test account's password reference "
+                                           "(never prints it)")
     secret.add_argument("action", choices=["set", "check"],
                         help="check: can QAJev read a reference; set: refused since 0.4.0 (QAJev types a password only "
                              "for a seeded local test account; sign in to others once with qajev browser login)")
-    secret.add_argument("ref", help="keychain:SERVICE/ACCOUNT, op://VAULT/ITEM/FIELD or env:NAME")
+    secret.add_argument("ref", help="a reference, e.g. seed:FILE#KEY (QAJev signs in only with seed: on a local dev "
+                                    "host; keychain:, op:// and env: passwords are refused)")
 
-    account = sub.add_parser("account", help="set up a stored test account: QAJev signs in with it, Jev never sees "
-                             "the password (run it yourself: the Keychain asks you for it)")
+    account = sub.add_parser("account", help="check a project's seeded test account: QAJev signs in with it on a "
+                             "local dev host, Jev never sees the password (add is refused since 0.4.0)")
     account.add_argument("action", choices=["add", "check"],
                          help="check: sign in with a project's account; add: refused since 0.4.0 (QAJev saves no "
                               "password; sign in once with qajev browser login)")
     account.add_argument("name", help="the account's name (letters, digits, - and _), e.g. shop-tester")
-    account.add_argument("--email", help="add: the test account's email or user name")
-    account.add_argument("--login-url", help="add: the sign-in page (https; with --project it may be a path)")
-    account.add_argument("--password", metavar="REF",
-                         help="where the password lives: keychain:qajev/NAME (the default, saved at the Keychain's "
-                              "prompt), op://VAULT/ITEM/FIELD or env:NAME")
+    account.add_argument("--email", help="add (refused since 0.4.0): the test account's email or user name")
+    account.add_argument("--login-url", help="add (refused since 0.4.0): the sign-in page")
+    account.add_argument("--password", metavar="REF", help="add (refused since 0.4.0): where the password lives")
     account.add_argument("--project", help="write it into this project (add), or read it from there (check)")
     account.add_argument("--env", help="with --project: the env whose site to sign in to (default: its default)")
-    account.add_argument("--default", action="store_true", help="add with --project: every env signs in with it")
-    account.add_argument("--replace", action="store_true", help="add: save a new Keychain password over the old")
-    account.add_argument("--no-check", action="store_true", help="add: do not sign in to prove it")
+    account.add_argument("--default", action="store_true", help="add (refused since 0.4.0): every env signs in with it")
+    account.add_argument("--replace", action="store_true", help="add (refused since 0.4.0)")
+    account.add_argument("--no-check", action="store_true", help="add (refused since 0.4.0): do not sign in first")
     account.add_argument("--visible", action="store_true", help="sign in in a visible window (default: headless)")
     account.add_argument("--cdp-url", help="sign in in this already running Chrome instead of a throwaway one")
 
@@ -278,7 +280,8 @@ def build_parser():
     plan.add_argument("file", type=Path, help="a suite (scenarios:) or a game's steps suite (steps:)")
     plan.add_argument("--json", action="store_true")
 
-    doctor = sub.add_parser("doctor", help="check keys, Chrome, ports and load (never prints secrets)")
+    doctor = sub.add_parser("doctor", help="check keys and where each came from, Chrome, ports and load, and print the "
+                                           "production rule (never prints secrets)")
     doctor.add_argument("--env-file")
     doctor.add_argument("--offline", action="store_true", help="skip the free OpenRouter key validity check")
     doctor.add_argument("--json", action="store_true")

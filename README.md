@@ -72,6 +72,7 @@ Every run writes `report.html` (open it in a browser), `report.md` and `report.j
 | **Crawl a site for free** | `qajev smoke URL`: HTTP errors, script errors, broken images and links, accessibility and SEO basics |
 | **Check one thing** | `qajev check URL --goal ... --expect-text ...` |
 | **Run a suite** | `qajev run suite.yaml`: several scenarios, on desktop, phone or tablet, with personas ([Writing tests](docs/writing-tests.md)) |
+| **Lint a suite first** | `qajev plan suite.yaml`: its test plan, and any test that does not say what it proves, without running it |
 | **Prove a product works** | store its objectives once, run them any time, see what changed since last time ([Projects](docs/projects.md)) |
 | **Every night** | `qajev nightly --install`: runs every project, tells you only when something changed |
 | **From AI agents** | `qajev mcp` ([MCP](docs/mcp.md), [agents](docs/agents.md), [prompt](AGENT_PROMPT.md)) |

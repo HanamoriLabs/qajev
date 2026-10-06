@@ -4,13 +4,21 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Docs: every surface says what 0.4.0 does.
+  - `qajev --help`: `--env-file` never reads the current folder's `.env`; `secret` and `account` describe seeded
+    test accounts only; `--visible` and `doctor` say what they check.
+  - Docs: `qajev plan`, `qa_plan` and `qa_rerun` in the agent prompt, the README and the CLI command list; the
+    troubleshooting page (key sources, HTTP 401/403, refused runs, seeded sign-in); report lines for keys, live
+    watching and game profiles; and `--game-profile` folders.
+  - The site lists all 17 MCP tools.
+  - Contributors get an every-surface checklist in the pull request template.
 - Fixed: a multiplayer scenario (`clients:`) whose checks all passed and all said what they prove still gated
   INCOMPLETE: the checks judged across clients, and at each snapshot, lost their `says` on the way to the report,
   so the test plan called them NOT DESCRIBED (verse1: 13 of 13 passed). They keep their words now.
 - Changed: Jev saying DONE without taking a single action, while a check fails, is now **harness**, not a product
   **fail**: it declared victory on a page it never tried, which says nothing about the page. A goal Jev worked on
   and a page that is wrong still fail. The audit of past verdicts found 45 of 87 such FAILs (52%) were wrong.
-  ([Reports](docs/reports.md#outcomes))
+  In CI such a run now exits 2 (INCOMPLETE) instead of 1 (FAIL). ([Reports](docs/reports.md#outcomes))
 - Every report names the QAJev commit that judged it: `qajev_commit` in `report.json`, beside the version in
   `report.md` and `report.html`, and in `qajev doctor` (`+dirty` when QAJev's own code had uncommitted changes;
   absent for an installed package). The audit of past verdicts could not tell which rules judged a run.
@@ -95,8 +103,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   `before:` hooks ran. A `wait_for` there seemed not to wait, and a check that held at once passed on a page still
   loading (verse2: a game judged at its spawn point, nothing drawn yet). The checks now judge the page after the
   hooks.
-- A `wait_for` timeout is in seconds, at most 300; a suite that says more is refused when it loads, and 1000 or
-  more is named as milliseconds (`timeout: 60000` read as almost 17 hours).
+- Changed (breaking): a `wait_for` timeout is in seconds, at most 300; a suite that says more is refused when it
+  loads (exit code 3), and 1000 or more is named as milliseconds (`timeout: 60000` read as almost 17 hours).
+  Migrating: a suite with a longer wait now stops at load; give the timeout in seconds (300 at most), and split a
+  longer wait into steps.
 - Fixed: `visible` passed on words a person could not see. A first-run overlay covering the whole page, and a
   label cut to "Message to Or…" by its ellipsis box, both passed (FlockTab1). Visible now means drawn on top and
   whole: the words' own lines are checked for anything drawn over them, and against any `overflow` box that clips

@@ -21,7 +21,7 @@ anywhere.
 qajev run --project shop --background   # start as a job and return at once; prints its id
 qajev jobs                              # who has the browser; queued, running and recent jobs
 qajev jobs 20261001-101502-a3f9         # one job: progress, scenarios finished so far, its report
-qajev stop 20261001-101502-a3f9         # stop it
+qajev stop 20261001-101502-a3f9         # stop it (only if its process is still the one QAJev started)
 ```
 
 Every job's title says what it is about, so a list of runs from several agents stays readable:

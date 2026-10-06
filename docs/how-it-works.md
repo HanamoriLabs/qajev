@@ -47,7 +47,7 @@ errors and a lint of the page.
 | commands and options | `qajev/cli.py` |
 | a suite run and Jev's loop | `qajev/runner.py` |
 | one browser tab: Jev, the guard, page reads | `qajev/session.py` |
-| stored test accounts: signing in, password stores | `qajev/signin.py`, `qajev/vault.py` |
+| seeded test accounts: signing in on a local dev host, reading `seed:` references | `qajev/signin.py`, `qajev/vault.py` |
 | the guard | `qajev/guard.py`, `qajev/js/guard.js` |
 | checks, outcomes, findings | `qajev/verdict.py` |
 | the smoke crawl | `qajev/smoke.py`, `qajev/js/page_facts.js` |
@@ -71,7 +71,7 @@ progress, and `qajev top` reads them.
 | `waiting` | queued, or waiting for the machine to calm down | `reason`, `queued` |
 | `reaped` | leftovers of dead runs were cleaned up | `items` |
 | `run` | the browser is ready | `suite`, `run_dir`, `browser`, `scenarios` |
-| `signin` | a stored test account starts signing in, then has signed in or failed | `account`; then `ok`, `email`, `seconds` or `reason` |
+| `signin` | a seeded test account starts signing in, then has signed in or failed | `account`; then `ok`, `email`, `seconds` or `reason` |
 | `start` | a scenario begins | `scenario` |
 | `step` | each move Jev makes; every 2 s of real-time game play | `scenario`, `doing`, `p`, `n`, `spent_usd`, `at` |
 | `scenario` | a scenario finished | `result` |

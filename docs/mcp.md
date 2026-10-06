@@ -88,7 +88,9 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   game's window: they need it to look). `vision` is on by default when Clef decides and the game has a window
   (Electron, mobile, `headless=false` Godot); `vision=false` turns it off. Quit and
   delete-save buttons are hidden from Jev; to test a normal quit pass `allow: ["QUIT"]` and `expect_closed: true`
-  (passes only when the game exits by itself with code 0). `hide` hides more labels.
+  (passes only when the game exits by itself with code 0). `hide` hides more labels. An Electron game takes
+  `game_profile` (keep its save folder between runs, in `~/.qajev/game-profiles/NAME`) and `reset_game_profile`
+  (empty it first).
 - Website tools also take `devices` (default desktop and phone: every website test also runs in a phone view).
   `qa_check`, `qa_run_suite` and `qa_project_run` take `real_devices` (`["ios"]`, `["android"]` or both) to
   also run in Chrome on an Android emulator (iOS Safari cannot read page content yet): opt-in, read-only, and slower
@@ -126,6 +128,8 @@ The result is trimmed to fit a model's context; the full report stays on disk.
 | `findings` | problems seen along the way (S1 to S3), with where; `known_findings` for a project's known ones |
 | `needs_sign_in` | only when runs met a sign-in page: `pages`, and a `next_step` to follow (ask the person to sign in once with qa_browser login; never ask for the password) |
 | `scenarios[]` | per scenario: `outcome`, `reason`, `checks` (each with `ok` and what was found), `findings`, `end_url`, `page_says` (what the page said), `jev` (actions, decisions), `shot` (screenshot path), `seconds`, `cost_usd` |
+| `scenarios[]` guard fields | `blocked_writes` (how many writes the guard stopped), `allowed_writes` (each write `allow_requests` let through on production), `dialogs` (each `confirm`, `prompt` or `beforeunload` it dismissed) |
+| `outcome: refused` | instead of a report: the run would have changed a production site, so nothing started; `reason` says which host |
 | `cost` | money spent, Jev decisions, text calls, the cap |
 | `run_dir`, `report_html`, `report_md`, `job` | where the full report is (give `report_html` to the person), and the job id |
 

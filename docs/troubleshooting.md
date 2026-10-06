@@ -11,7 +11,15 @@ Add one key to `~/.qajev/.env` ([Getting started](getting-started.md)). `qajev s
 credentials alone are not used: Clef needs `QAJEV_JEV_PROVIDER=cloudflare` too.
 
 **A key in the file is ignored**
-A variable set in your shell wins over the file. `qajev doctor` says when that happens; `unset` the old one.
+QAJev's own keys come from its files (`--env-file`, `$QAJEV_ENV_FILE`, `~/.qajev/.env`) even when your shell has
+another value; it does not read the current folder's `.env`. A key no file sets is taken from the shell. To use
+another value on purpose, set it as `QAJEV_<NAME>` (e.g. `QAJEV_OPENROUTER_API_KEY`). `qajev doctor` says where each
+key came from ([Configuration](configuration.md)).
+
+**"HTTP 401" or "HTTP 403" from the model**
+The decision or text model refused the key. The message names where that key came from: fix it there, or move it
+into `~/.qajev/.env`. A project's own `.env` (a deploy token, another service's key) is no longer read, so it cannot
+be the cause; an old value pinned as `QAJEV_<NAME>` in your shell can.
 
 **The run says "queued behind ..."**
 Another QAJev run has the browser; yours starts when it ends. See who with `qajev jobs` or `qajev top`.
@@ -33,11 +41,17 @@ That is QAJev's side, not your product:
 - *cost cap reached*: raise `--cost-cap`, or narrow the goals.
 
 **"sign-in failed: ..." and every scenario is `harness`**
-The stored test account could not sign in, so nothing was tested. The reason is the site's own message ("Wrong
-email or password") or the password store's: run `qajev secret check REF` to see whether QAJev can read it (a
-1Password reference needs `op` signed in, and may wait for Touch ID; `env:` needs the variable set where QAJev runs).
-If the site's fields are unusual, name them in the account's `login:` (`email_field`, `password_field`, `next`,
-`submit`) and say how to tell it worked (`signed_in`).
+The seeded test account could not sign in, so nothing was tested. The reason is the site's own message ("Wrong
+email or password") or the seed fixture's: check that your app's seed wrote the fixture, that it says
+`"test_account": true`, and that it lists the host in `allowed_hosts`. QAJev signs in by itself only on a local dev
+host, with a `seed:FILE#KEY` password; a `keychain:`, `op://` or `env:` password is refused. If the site's fields
+are unusual, name them in the account's `login:` (`email_field`, `password_field`, `next`, `submit`) and say how to
+tell it worked (`signed_in`).
+
+**"refused: QAJev never changes a production site ..." (exit code 5)**
+The run asked to change a site that is not a local dev host (`mode: mutate` or `--allow-destructive`), so nothing
+started. Run it read-only, or against a local copy (`localhost`, `*.test`, `*.localhost`). There is no override
+([Safety](safety.md)).
 
 **"needs sign-in: ..."**
 The run met a sign-in page, so what is behind it was not tested. Give QAJev a way in: sign in once with
