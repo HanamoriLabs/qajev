@@ -268,6 +268,30 @@ def test_a_run_that_breaks_mid_scenario_is_never_a_pass_and_says_where_and_why(m
     assert data["gate"] == "INCOMPLETE"
 
 
+def test_a_described_multiplayer_run_that_passes_is_a_pass_not_incomplete(monkeypatch, tmp_path):
+    # verse1 (6 Oct, job 20261006-214802-091b): 13 of 13 checks passed and the gate said INCOMPLETE, because the
+    # checks judged across clients lost their plain words on the way to the report.
+    from qajev import session
+
+    monkeypatch.setattr(session, "Session", lambda *a, **k: FakePlayer(10))
+    monkeypatch.setattr(session, "Tab", lambda *a, **k: FakeJudge())
+    s = suite(steps=[{"all": {"js": "game.join()"}},
+                     {"snapshot": "joined", "expect": [{"js": "clients.length === 5", "says": "all five joined"}]}],
+              clients=5, about="five players see the same room",
+              expect={"text": "Room", "across": [{"js": "clients.length === 5", "says": "nobody dropped out"}]})
+    result = clients.run(s.scenarios[0], ledger=None, hosts={"127.0.0.1"}, run_dir=tmp_path,
+                         suite_meta={"headless": True, "guard": {}})
+    assert result["outcome"] == "pass", result["reason"]
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
+    data = report.build(s, [result], [ledger], browser={}, started_at=time.time(), strict=False, interrupted=False,
+                        run_dir=tmp_path)
+    assert data.get("not_described") is None, data.get("not_described")
+    assert data["gate"] == "PASS"
+    words = [line["words"] for line in data["plan"][0]["checks"]]
+    assert "all five joined" in " ".join(map(str, words)) and "nobody dropped out" in " ".join(map(str, words))
+
+
 def test_a_command_over_the_daemons_limit_says_so_in_plain_words():
     from qajev.session import too_long
 
