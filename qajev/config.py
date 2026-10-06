@@ -1,12 +1,42 @@
 """Paths, environment and secret handling. Stdlib only: imported on every CLI start."""
 
+import functools
 import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 HOME = Path(os.environ.get("QAJEV_HOME", Path.home() / ".qajev"))
+SOURCE = Path(__file__).resolve().parent.parent  # the checkout an editable or source install runs from
+
+
+def qajev_commit(root=None):
+    """The commit this QAJev runs from, "+dirty" when its own code has changes no commit holds, or None (a wheel: no
+    checkout). Every report carries it, so a verdict says which rules judged it (the audit of 6 Oct could not).
+    root: another checkout (tests); QAJev's own is read once per process."""
+    return _own_commit() if root is None else _commit(root)
+
+
+@functools.cache
+def _own_commit():
+    return _commit(SOURCE)
+
+
+def _commit(root):
+    if not (Path(root) / ".git").exists():  # a worktree's .git is a file
+        return None
+    git = ["git", "-C", str(root)]
+    try:
+        head = subprocess.run([*git, "rev-parse", "--short=12", "HEAD"], capture_output=True, text=True, timeout=5)
+        dirty = subprocess.run([*git, "status", "--porcelain", "--untracked-files=no", "--", "qajev"],
+                               capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if head.returncode != 0 or not head.stdout.strip():
+        return None
+    return head.stdout.strip() + ("+dirty" if dirty.stdout.strip() else "")
 
 # Keys QAJev needs. Values are never printed; `doctor` reports presence only.
 # Goals need a Jev route (TYPESAFE_API_KEY, or an OpenRouter key); see providers.py.

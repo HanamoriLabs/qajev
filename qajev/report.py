@@ -5,7 +5,7 @@ import os
 import time
 from urllib.parse import urlsplit
 
-from . import __version__, plan, report_html, verdict
+from . import __version__, config, plan, report_html, verdict
 
 OBVIOUS = 0.8
 MOTION = {
@@ -29,7 +29,8 @@ class Partial:
 
     def add(self, result):
         self.results.append(result)
-        data = {"qajev": __version__, "suite": self.suite.name, "partial": True, "started_at": self.started_at,
+        data = {"qajev": __version__, "qajev_commit": config.qajev_commit(), "suite": self.suite.name, "partial": True,
+                "started_at": self.started_at,
                 "browser": self.browser, "scenarios": self.results}
         _atomic(self.run_dir / "report.json", json.dumps(data, indent=2, default=str))
 
@@ -74,6 +75,7 @@ def build(suite, results, ledgers, *, browser, started_at, strict, interrupted, 
         **({"needs_sign_in": verdict.sign_in_next_step(walls)} if walls else {}),
         **({"allow_destructive": True} if (getattr(suite, "guard", None) or {}).get("allow_destructive") else {}),
         "qajev": __version__,
+        "qajev_commit": config.qajev_commit(),  # which rules judged this run
         "suite": suite.name,
         "gate": gate,
         "exit_code": verdict.EXIT_CODES[gate],
@@ -234,8 +236,8 @@ def markdown(data):
         f"({cost['calls']['typesafe']} {report_html.decider(data)} decisions, {cost['calls']['text']} text calls)",
         "",
         "Legend: **fail** = the product is wrong (page or side effect). **stuck** = Jev found no way forward "
-        "(check by hand: often a UX finding). **harness** = the tool ran out of budget, went stale or errored; "
-        "it says nothing about the product. **unverified** = no expectations were given.",
+        "(check by hand: often a UX finding). **harness** = the tool ran out of budget, went stale or errored, or "
+        "Jev said DONE without trying; it says nothing about the product. **unverified** = no expectations were given.",
         "",
         *_needs_sign_in_md(data.get("needs_sign_in")),
         "## Scenarios",
@@ -341,7 +343,7 @@ def markdown(data):
         *([f"- Motion: {MOTION[data['motion']]}"] if data.get("motion") in MOTION else []),
         *([f"- Watched live: {data['watched_live_s']:.0f} s in the dashboard"] if data.get("watched_live_s") else []),
         *([f"- Sign-in: {report_html.signed_in(data['sign_in'])}"] if data.get("sign_in") else []),
-        f"- QAJev {data['qajev']}",
+        f"- QAJev {data['qajev']}" + (f" ({data['qajev_commit']})" if data.get("qajev_commit") else ""),
         "",
     ]
     return "\n".join(lines)

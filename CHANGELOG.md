@@ -12,6 +12,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
     watching and game profiles; and `--game-profile` folders.
   - The site lists all 17 MCP tools.
   - Contributors get an every-surface checklist in the pull request template.
+- Changed: Jev saying DONE without taking a single action, while a check fails, is now **harness**, not a product
+  **fail**: it declared victory on a page it never tried, which says nothing about the page. A goal Jev worked on
+  and a page that is wrong still fail. The audit of past verdicts found 45 of 87 such FAILs (52%) were wrong.
+  In CI such a run now exits 2 (INCOMPLETE) instead of 1 (FAIL). ([Reports](docs/reports.md#outcomes))
+- Every report names the QAJev commit that judged it: `qajev_commit` in `report.json`, beside the version in
+  `report.md` and `report.html`, and in `qajev doctor` (`+dirty` when QAJev's own code had uncommitted changes;
+  absent for an installed package). The audit of past verdicts could not tell which rules judged a run.
+  ([Reports](docs/reports.md))
 - Changed (breaking): **production is read-only, destructive is never.** Only a local dev host may change:
   `localhost`, `127.0.0.1`, `[::1]`, `*.localhost` and `*.test`. Every other host is production, staging and
   previews included, with no override.

@@ -1020,7 +1020,8 @@ def test_motion_full_leaves_the_media_query_alone(site, browser, tmp_path):
     def check(*extra):
         out = subprocess.run(
             [sys.executable, "-m", "qajev", "check", site + "/", "--cdp-url", browser["cdp_url"], "--out",
-             str(tmp_path), "--expect-js", REDUCED, "--json", "--quiet", "--load-high", "0", "--no-shots", *extra],
+             str(tmp_path), "--expect-js", REDUCED, "--says", "the page is told the visitor prefers reduced motion",
+             "--json", "--quiet", "--load-high", "0", "--no-shots", *extra],
             capture_output=True, text=True, timeout=120,
         )
         return json.loads(out.stdout)

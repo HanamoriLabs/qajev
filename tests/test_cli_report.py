@@ -401,3 +401,35 @@ def test_the_tap_target_finding_names_up_to_ten_and_what_wcag_let_off():
     assert smoke.small_targets({"small_targets": 2}) == "2 target(s)"  # an older page_facts: the count alone
     exempt_only = {"small_targets": 0, "small_targets_skipped": {"inline": 9}}  # nothing counted: no finding
     assert all(f["kind"] != "tap targets under 24 px" for f in smoke.lint(exempt_only, mobile=True, name="home"))
+
+
+def test_a_report_names_the_qajev_commit_that_judged_it(tmp_path, monkeypatch):
+    # The audit (6 Oct) could not tell which rules judged a run: every report before then said only a version.
+    from qajev import config
+
+    monkeypatch.setattr(config, "qajev_commit", lambda: "0123456789ab+dirty")
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
+    data = report.build(SimpleNamespace(name="demo"), [result("home", "pass")], [ledger], browser={},
+                        started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+    assert data["qajev_commit"] == "0123456789ab+dirty"
+    report.write(tmp_path, data)
+    assert "0123456789ab+dirty" in (tmp_path / "report.md").read_text()
+    assert "0123456789ab+dirty" in (tmp_path / "report.html").read_text()
+
+
+def test_the_qajev_commit_comes_from_its_own_checkout_and_says_when_it_is_changed(tmp_path):
+    import subprocess
+
+    from qajev import config
+
+    assert config.qajev_commit(tmp_path) is None  # a wheel: no checkout, no commit
+    (tmp_path / "qajev").mkdir()
+    (tmp_path / "qajev" / "rules.py").write_text("A = 1\n")
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-C", str(tmp_path)]
+    for args in (["init", "-q"], ["add", "."], ["commit", "-qm", "x"]):
+        subprocess.run(git + args, check=True)
+    head = subprocess.run(git + ["rev-parse", "--short=12", "HEAD"], capture_output=True, text=True).stdout.strip()
+    assert config.qajev_commit(tmp_path) == head
+    (tmp_path / "qajev" / "rules.py").write_text("A = 2\n")  # judged by rules no commit holds
+    assert config.qajev_commit(tmp_path) == head + "+dirty"
