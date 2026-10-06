@@ -74,6 +74,14 @@ frame. The running test shows what it is doing now, its last steps, and its **sc
 website and Electron runs (Godot and mobile runs show their steps only). Frames are taken only while someone has the
 run open, so an unwatched run costs nothing.
 
+**Watch live** opens the running test's screen as a moving picture in a panel of its own: about 5 frames a second,
+1280 px wide, dropping to 2 when the machine is busy (load above 60, or memory free under 30%) and to 1 during a
+real-time game step (a held key, a react hook), so watching never takes the game's time. It is view only: you cannot
+click into the page. At most 2 people watch one run live; the stream needs the dashboard's key and is served on
+127.0.0.1 only. **Bring to front** raises the page in QAJev's own Chrome (not in a browser QAJev attached to), and
+**Open the page** opens the page's address, its origin and path only (a query or fragment can hold a token). The
+report says how long the run was watched live.
+
 **Actions**: **Stop** a running job; **Rerun** a finished one, all of it or only its failed tests (as
 `qajev rerun`); **New run** starts a project's stored objectives. It never reruns a job that ran shell commands
 (`--allow-commands`): do that in a terminal.
