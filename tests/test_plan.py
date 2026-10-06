@@ -37,6 +37,38 @@ def test_a_check_says_what_it_proves_in_plain_words_or_is_flagged():
     assert not plan.item(1, "pay", None, [], "pass")["described"]  # no about: nothing stated
 
 
+def test_qajev_plan_lists_a_suites_plan_and_its_not_described_tests_without_running(tmp_path, capsys):
+    # SideGame1, 6 Oct: a lint before the PR. `qajev plan FILE` prints the plan, opens no browser, spends nothing,
+    # and exits 2 (as INCOMPLETE would) while a test does not say what it proves.
+    from qajev import cli
+
+    site = tmp_path / "site.qajev.yaml"
+    site.write_text(
+        "name: shop\nbase_url: http://127.0.0.1:9\nscenarios:\n"
+        "  - name: pay\n    about: Paying adds the order\n    url: /\n"
+        "    expect: {text: [Paid], js: 'window.paid === true', says: {js: the order is saved}}\n"
+        "  - name: look\n    url: /\n    expect: {js: 'window.ok === true'}\n")
+    assert cli.main(["plan", str(site)]) == 2
+    out = capsys.readouterr().out
+    assert "1. pay: Paying adds the order" in out and "the page shows “Paid”" in out and "the order is saved" in out
+    assert "2. look: NOT DESCRIBED" in out and "1 of 2 tests say what they prove" in out
+    game = tmp_path / "game.suite.yaml"
+    game.write_text(
+        "name: boss\nabout: the first boss can be beaten\nsteps:\n"
+        "  - name: title\n    about: the game opens on its title\n    expect: {screen: TITLE, min_fps: 30}\n"
+        "  - name: fight\n    play: {seconds: 60, until: {boss_hp: '<= 0'}}\n")
+    assert cli.main(["plan", str(game), "--json"]) == 2
+    data = json.loads(capsys.readouterr().out)
+    assert data["not_described"] == ["fight"]
+    title, fight = data["plan"]
+    assert [c["words"] for c in title["checks"]] == [
+        "the screen is TITLE", "the game runs at 30 frames a second or more", "no script errors"]
+    assert fight["checks"][0]["words"] == "the game reaches boss_hp <= 0 in time"
+    site.write_text(site.read_text().replace("expect: {js: 'window.ok === true'}",
+                                             "about: the home page opens\n    expect: {text: [Welcome]}"))
+    assert cli.main(["plan", str(site)]) == 0
+
+
 def test_the_plan_before_a_run_names_the_checks_as_the_run_will(tmp_path):
     # The dashboard shows the plan before the run and ticks it live: a planned check must match the one that runs.
     from qajev import suite as suite_mod

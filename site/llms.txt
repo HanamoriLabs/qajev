@@ -85,7 +85,8 @@ How to write a check:
 4. Give every value Jev must type, and start from a URL close to the target.
 5. Say what each test proves: `about` on every test, and `says` (plain words) on every `js`, `url_regex`, `fetch` or
    `command` check (`says` with `expect_js` on `qa_check`). Without them the test is NOT DESCRIBED and the gate is
-   INCOMPLETE, never PASS. Reports open with this test plan.
+   INCOMPLETE, never PASS. Reports open with this test plan. Lint a suite first with `qa_plan` (CLI `qajev plan
+   FILE`): free, no browser, and it lists the tests that are NOT DESCRIBED.
 
 Outcomes: `pass`; `fail` (the product is wrong); `stuck` (Jev found no way forward, often a usability problem:
 look at the screenshot); `harness` (QAJev's own problem: says nothing about the product, never report it as a

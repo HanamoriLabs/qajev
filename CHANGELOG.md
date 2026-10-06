@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- `qajev plan FILE` (and `qa_plan` for agents) prints a suite's test plan without running it: each test's about
+  and its checks in plain words, and the tests that are NOT DESCRIBED. It reads website suites and game `steps:`
+  suites, costs nothing, and exits 2 while any test is NOT DESCRIBED, so it works as a lint before a run or a pull
+  request (SideGame1). ([CLI](docs/cli.md#qajev-plan))
 - Fixed: the cleanup after a dead run killed the process group of a game pid it had recorded, and `qajev stop`
   signalled a job's recorded pid, without checking that the pid still belonged to that process. A pid reused by
   another program could have been killed. Each launch now records its process's start time and command; the reaper

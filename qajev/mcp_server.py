@@ -451,6 +451,18 @@ async def qa_reports(project: str | None = None, limit: int = 20) -> dict:
 
 
 @server.tool()
+async def qa_plan(suite: str) -> dict:
+    """A suite's test plan without running it (free, no browser): each test's about and its checks in plain words,
+    and `not_described`, the tests that do not say what they prove (a run would be INCOMPLETE). `suite`: a suite file
+    (scenarios:) or a game's steps suite (steps:). Lint a suite with it before running or sending a PR."""
+    code, text, tail = await _spawn(["plan", str(Path(suite).expanduser()), "--json"])
+    data = json.loads(text or "{}")
+    if code not in (0, 2) or "plan" not in data:
+        raise ToolError(data.get("error") or tail or f"qajev plan exited {code}")
+    return data
+
+
+@server.tool()
 async def qa_report(run_dir: str, markdown: bool = False) -> dict:
     """Read a finished run's report (JSON by default, or the Markdown text)."""
     folder = Path(run_dir).expanduser()
