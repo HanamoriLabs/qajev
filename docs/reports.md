@@ -49,7 +49,7 @@ the test tool are kept apart.**
 | **pass** | every expectation held, and every one of them ran | nothing |
 | **fail** | the product is wrong: a check failed, or the page did not load | read the reason and the failed checks |
 | **stuck** | Jev looked for a way forward and found none (QAJev also scrolls and looks again, twice) | look at the screenshot: often a real usability problem |
-| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error, a browser error or a failed hook | says nothing about the product; retry or narrow the goal |
+| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error, a browser error, a failed hook, or Jev saying DONE without taking a single action while a check fails | says nothing about the product; retry or narrow the goal |
 | **unverified** | the scenario had no expectations | add some |
 | **skipped** | a scenario it depends on did not pass, or the machine was too busy | fix that first |
 

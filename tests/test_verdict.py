@@ -284,3 +284,15 @@ def test_an_after_hook_that_fails_leaves_the_scenario_incomplete_and_names_what_
     assert result["outcome"] == "harness", result["reason"]
     assert "hook failed: js 'cart.empty()' returned false" in result["reason"]
     assert result["reason"].endswith("not run: expect.fetch")
+
+
+def test_done_without_a_single_action_and_a_failed_check_is_harness_not_a_product_fail():
+    # Audit, 6 Oct: 45 of 87 such FAILs (52%) were wrong; Jev declared victory on a page it never tried.
+    failed = [{"check": "text 'Score' on the page", "ok": False, "detail": "not found"}]
+    outcome, reason = V.classify("done", failed, has_checks=True, actions=0)
+    assert outcome == "harness" and reason.startswith("Jev said DONE without taking a single action")
+    assert "text 'Score' on the page" in reason
+    assert V.classify("done", failed, has_checks=True, actions=1)[0] == "fail"  # it tried: the page is wrong
+    assert V.classify("done", failed, has_checks=True)[0] == "fail"  # no count given: as before
+    passed = [{"check": "text 'Score' on the page", "ok": True}]
+    assert V.classify("done", passed, has_checks=True, actions=0)[0] == "pass"  # already there: still a pass

@@ -139,8 +139,9 @@ def all_ok(checks):
     return bool(checks) and all(c["ok"] for c in checks)
 
 
-def classify(stop, checks, *, has_checks, stop_detail=None, not_run=()) -> tuple[str, str]:
-    """not_run: the expectations or steps that never ran (the run stopped first). -> (outcome, reason)."""
+def classify(stop, checks, *, has_checks, stop_detail=None, not_run=(), actions=None) -> tuple[str, str]:
+    """not_run: the expectations or steps that never ran (the run stopped first). actions: how many Jev took, when it
+    pursued a goal. -> (outcome, reason)."""
     failed = [c for c in checks if not c["ok"]]
     why = "; ".join(f"{c['check']}" + (f" ({c['detail']})" if c.get("detail") else "") for c in failed)
     if stop == "skipped":
@@ -157,6 +158,10 @@ def classify(stop, checks, *, has_checks, stop_detail=None, not_run=()) -> tuple
     if all_ok(checks):
         tail = f" (Jev ended with {stop})" if stop not in {"reached", "checked"} else ""
         return "pass", f"all {len(checks)} check(s) passed{tail}"
+    if stop == "done" and actions == 0:
+        # it declared victory on a page it never tried: says nothing about the page (audit, 6 Oct: 52% of these
+        # FAILs were wrong)
+        return "harness", f"Jev said DONE without taking a single action; unmet: {why}"
     if stop == "done":
         return "fail", f"Jev reported DONE but: {why}"
     if stop == "reached":

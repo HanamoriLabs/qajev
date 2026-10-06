@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Changed: Jev saying DONE without taking a single action, while a check fails, is now **harness**, not a product
+  **fail**: it declared victory on a page it never tried, which says nothing about the page. A goal Jev worked on
+  and a page that is wrong still fail. The audit of past verdicts found 45 of 87 such FAILs (52%) were wrong.
+  ([Reports](docs/reports.md#outcomes))
 - Every report names the QAJev commit that judged it: `qajev_commit` in `report.json`, beside the version in
   `report.md` and `report.html`, and in `qajev doctor` (`+dirty` when QAJev's own code had uncommitted changes;
   absent for an installed package). The audit of past verdicts could not tell which rules judged a run.
