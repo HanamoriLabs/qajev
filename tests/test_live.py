@@ -22,6 +22,24 @@ SITE = Path(__file__).parent / "fixtures" / "site"
 ENV_FILE = os.environ.get("QAJEV_TEST_ENV_FILE", str(Path.home() / "Development/jev-ultrafast/.env"))
 
 
+FIXTURE_TOTP = "JBSWY3DPEHPK3PXP"  # the seeded test user's TOTP secret in login-2fa.html's tests (not a real one)
+
+
+def fixture_codes(secret, now):
+    """The server's own RFC 6238 check, written apart from qajev.signin: the codes for now and the step before."""
+    import base64
+    import hashlib
+    import hmac
+
+    key = base64.b32decode(secret)
+    out = set()
+    for counter in (int(now // 30), int(now // 30) - 1):
+        mac = hmac.new(key, counter.to_bytes(8, "big"), hashlib.sha1).digest()
+        o = mac[19] & 15
+        out.add("%06d" % ((int.from_bytes(mac[o:o + 4], "big") & 0x7FFFFFFF) % 1000000))
+    return out
+
+
 class Recorder(http.server.SimpleHTTPRequestHandler):
     requests = []
 
@@ -30,9 +48,13 @@ class Recorder(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         Recorder.requests.append(("POST", self.path))
+        body = b"{}"
+        if self.path == "/api/totp":  # login-2fa.html's second step
+            sent = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)) or b"{}")
+            body = json.dumps({"ok": sent.get("code") in fixture_codes(FIXTURE_TOTP, time.time())}).encode()
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"{}")
+        self.wfile.write(body)
 
     def _download_redirect(self):
         if self.path.startswith("/download?platform="):  # a "Download for Mac" link: a redirect to a file
@@ -887,6 +909,26 @@ def test_live_frames_from_the_real_page_are_jpegs_at_most_1280_wide_with_the_pag
     assert live.watched_seconds(run) > 0
 
 
+def test_a_ticking_timer_does_not_make_jevs_moves_stale_but_a_real_change_does(session, site):
+    # verse2, 6 Oct: a video timer in the HUD ("0:03 / 188:26") changed the page text every second, so each of Jev's
+    # moves went stale before it acted. Digits ticking in free text, a label or the target's card are not a change;
+    # new words, another address or a reload still are. Jev's own snapshot code, no model call.
+    session.arm("readonly")
+    session.navigate(site + "/ticking.html")
+    page = session.browser.observe(screenshot=False)
+    enter = next(a for a in page["actions"] if a["label"].startswith("Enter the hall"))
+    time.sleep(1.0)  # four ticks: the clock and the countdown beside the button have changed
+    assert session.evaluate("document.getElementById('clock').textContent") not in page["text"]
+    assert session.browser.fresh(page) is True  # a key press, a wait or a scroll
+    assert session.browser.fresh(page, enter) is True  # a click: its card holds the countdown
+    session.evaluate("(document.getElementById('status').textContent = 'The hall is closed.', true)")
+    assert session.browser.fresh(page) is False  # new words are a change
+    page = session.browser.observe(screenshot=False)
+    session.evaluate("(location.reload(), true)")
+    time.sleep(0.5)
+    assert session.browser.fresh(page) is False  # a reload is a new page
+
+
 def test_the_checks_judge_the_page_after_its_before_hooks_not_before_them(site, browser, tmp_path):
     # verse2, 6 Oct: `before: wait_for` "did not wait": the scenario's checks were judged on the page as it was read
     # right after loading, before its hooks ran. They now judge the page after the hooks (here: after the wait).
@@ -1037,6 +1079,101 @@ def _qajev(*args, env=None, timeout=180):
 
     return subprocess.run([sys.executable, "-m", "qajev", *args], capture_output=True, text=True, timeout=timeout,
                           env={**os.environ, **(env or {})})
+
+
+def test_a_seeded_test_user_signs_in_with_its_totp_code_or_its_session_cookie_and_no_secret_is_written(
+        site, browser, tmp_path):
+    # Dash3 and Dash4, 6 Oct: a local UI proof waited for a person whenever sign-in asked for a second factor. A
+    # seeded TEST user on a local dev host signs in by itself: its one-time code from the seed's TOTP secret, or a
+    # session cookie its seed minted. The report says how, never with what.
+    import subprocess
+    import sys
+
+    seed = tmp_path / "qa_test_user.json"
+    seed.write_text(json.dumps({"test_account": True, "allowed_hosts": ["localhost", "127.0.0.1"],
+                                "email": "tester@example.test", "password": "fixture-pass-123",
+                                "totp_secret_base32": FIXTURE_TOTP, "session": "tester"}))
+    scenario = """scenarios:
+  - name: the account page knows who is signed in
+    about: a signed-in page proves the sign-in
+    url: /account.html
+    expect: {text: ["Signed in as tester@example.test"]}
+"""
+    two_step = f"""name: totp
+base_url: {site}
+devices: [desktop]
+account:
+  name: qa-test
+  email: seed:qa_test_user.json#email
+  password: seed:qa_test_user.json#password
+  totp: seed:qa_test_user.json#totp_secret_base32
+  login: {{url: /login-2fa.html}}
+""" + scenario
+    by_cookie = f"""name: cookie
+base_url: {site}
+devices: [desktop]
+account:
+  name: qa-test
+  email: tester@example.test
+  cookie: {{name: qajev_fixture_session, value: "seed:qa_test_user.json#session", http_only: false}}
+  login: {{url: /account.html, signed_in: {{text: "Signed in as"}}}}
+""" + scenario
+
+    def run(text, name):
+        (tmp_path / f"{name}.yaml").write_text(text)
+        p = subprocess.run([sys.executable, "-m", "qajev", "run", str(tmp_path / f"{name}.yaml"), "--cdp-url",
+                            browser["cdp_url"], "--out", str(tmp_path / name), "--json", "--quiet", "--load-high", "0"],
+                           capture_output=True, text=True, timeout=180)
+        return json.loads(p.stdout), p
+
+    for name, text, via in (("totp", two_step, "TOTP from seed: yes"),
+                            ("cookie", by_cookie, "session cookie from seed: yes")):
+        got, p = run(text, name)
+        assert got["sign_in"]["ok"], got["sign_in"]
+        events = "".join(f.read_text() for f in (tmp_path / name).rglob("*.jsonl"))
+        if name == "totp":  # an email read from the seed is a reference: not in the result, events or stderr
+            assert "email" not in got["sign_in"] and "tester@example.test" not in p.stderr + events
+        assert got["scenarios"][0]["outcome"] == "pass", got["scenarios"][0]
+        (md,) = (tmp_path / name).rglob("report.md")
+        said = md.read_text()  # an email read from a seed or env reference is a vault value: redacted like the rest
+        assert "as seeded test user " in said and "on 127.0.0.1 (account qa-test)" in said and via in said, said
+        written = [f.read_text(errors="replace") for f in (tmp_path / name).rglob("*") if f.is_file()]
+        assert not any(secret in text for text in written + [p.stdout, p.stderr]
+                       for secret in (FIXTURE_TOTP, "fixture-pass-123", *fixture_codes(FIXTURE_TOTP, time.time())))
+
+    seed.write_text(json.dumps({"test_account": True, "allowed_hosts": ["dash.test"], "email": "tester@example.test",
+                                "password": "fixture-pass-123", "totp_secret_base32": FIXTURE_TOTP}))
+    got, _ = run(two_step, "elsewhere")  # the seed allows another host only: no code is computed here
+    assert not got["sign_in"]["ok"]
+    assert "the seed fixture allows ['dash.test'], not 127.0.0.1" in got["sign_in"]["reason"]
+
+
+def test_a_postcode_or_coupon_code_field_is_not_a_one_time_code(site, browser, tmp_path):
+    # The review of #47: `name*=code` matched postcode and coupon_code, so a password-only sign-in stopped at a
+    # "one-time code" step it did not have (and with totp, would type the code into the postcode).
+    import subprocess
+    import sys
+
+    suite = tmp_path / "postcode.yaml"
+    suite.write_text(f"""
+name: postcode
+base_url: {site}
+devices: [desktop]
+account:
+  email: tester@example.test
+  password: env:QAJEV_FIXTURE_PASS
+  login: {{url: /login-postcode.html}}
+scenarios:
+  - name: the account page knows who is signed in
+    about: a signed-in page proves the sign-in
+    url: /account.html
+    expect: {{text: ["Signed in as tester@example.test"]}}
+""")
+    p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--cdp-url", browser["cdp_url"], "--out",
+                        str(tmp_path / "out"), "--json", "--quiet", "--load-high", "0"], capture_output=True, text=True,
+                       timeout=180, env={**os.environ, "QAJEV_FIXTURE_PASS": "fixture-pass-123"})
+    got = json.loads(p.stdout)
+    assert got["sign_in"]["ok"] and "test_signin" not in got["sign_in"], got["sign_in"]
 
 
 def test_a_run_sent_to_a_sign_in_page_says_it_needs_sign_in_and_what_to_do(site, browser, session, tmp_path):
