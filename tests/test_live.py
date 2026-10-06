@@ -789,6 +789,33 @@ def test_imhim_talk_says_where_the_conversation_is_and_offers_one_way_out(sessio
     assert obs["state"]["talk_line"] == 2 and obs["texts"][0].startswith("Conversation, line 2:")
 
 
+def test_imhim_state_carries_a_staged_scenarios_own_verdict(session, site):
+    # SideGame1, 6 Oct: a staged scenario's goal step had no end state to check, so every scenario run was INCOMPLETE.
+    # The adapter now says which scenario is staged, whether it staged, and whether its own checks hold now.
+    from qajev import electron
+
+    session.navigate(site + "/imhim-scenario.html")
+    session.evaluate((Path(electron.__file__).parent / "bridges/web/adapters/imhim.js").read_text())
+
+    def state():
+        return {k: v for k, v in session.evaluate(electron.OBSERVE)["state"].items() if k.startswith("scenario")}
+
+    staged = {"scenario": "door-opens", "scenario_ready": True}
+    assert state() == {}  # no scenario staged: nothing
+    session.evaluate("stage()")
+    assert state() == {**staged, "scenario_ready": False, "scenario_pass": False}
+    assert session.evaluate("checks") == 0  # its checks are not asked before it has staged
+    session.evaluate("__scenario.ready = true")
+    assert state() == {**staged, "scenario_pass": False}
+    session.evaluate("door.open = true")
+    assert state() == {**staged, "scenario_pass": True}
+    session.evaluate("__scenario.check = () => { throw new Error('no door') }")
+    assert state() == {**staged, "scenario_pass": False, "scenario_error": "Error: no door"}  # says why it is false
+    session.evaluate("__scenario.error = 'staging failed: no door'")
+    assert state() == {**staged, "scenario_ready": False, "scenario_pass": False,
+                       "scenario_error": "staging failed: no door"}
+
+
 def test_text_checks_read_visible_text_and_ignore_case_is_opt_in(session, site):
     session.arm("readonly")
     session.navigate(site + "/")

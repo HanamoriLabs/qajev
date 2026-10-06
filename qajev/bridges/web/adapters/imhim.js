@@ -105,6 +105,20 @@ function noteTalkLine(line) {
   return t.n;
 }
 
+// A staged test scenario (a dev build's ?scenario=<id>, window.__scenario): which one, whether it staged, and whether
+// all its own checks hold now, so a goal step can end on the scenario's own verdict. Its checks are asked only once it
+// has staged; a check that throws, or a staging that failed, is false with the reason. Nothing when none is staged.
+function scenario() {
+  const s = window.__scenario;
+  if (!s) return {};
+  const out = { scenario: s.id, scenario_ready: !!s.ready && !s.error, scenario_pass: false };
+  if (s.error) out.scenario_error = String(s.error);
+  else if (out.scenario_ready) {
+    try { out.scenario_pass = s.check().pass === true; } catch (err) { out.scenario_error = String(err); }
+  }
+  return out;
+}
+
 window.__qajevAdapter = {
   observe(base) {
     const $ = (sel) => document.querySelector(sel);
@@ -276,7 +290,7 @@ window.__qajevAdapter = {
         });
       } catch (err) { state.state_error = String(err); }
     }
-    Object.assign(state, a11y(g));
+    Object.assign(state, a11y(g), scenario());
     if (ap) state.autoplay = ap.state;
     if (ap && ap.waitingFor) state.waiting_for = ap.waitingFor;
     // The game's clock is its tick: a soft-lock is a clock that stops while nothing waits for the player.

@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- The I'M HIM! adapter gives a staged test scenario's own verdict as state: `scenario`, `scenario_ready`,
+  `scenario_pass`, and `scenario_error` with the reason when its check throws or its staging failed. A goal step
+  can now end on `expect: {state: {scenario_pass: true}}`; before, it had no end state, so every scenario run was
+  INCOMPLETE (SideGame1). The scenario's checks are asked only once it has staged.
 - Fixed: `visible` passed on words a person could not see. A first-run overlay covering the whole page, and a
   label cut to "Message to Or…" by its ellipsis box, both passed (FlockTab1). Visible now means drawn on top and
   whole: the words' own lines are checked for anything drawn over them, and against any `overflow` box that clips

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>I'M HIM! staged scenario (shape only)</title></head>
+<body>
+  <!-- The shape of a dev build's staged test scenario (?scenario=<id>): window.__scenario with its id, `ready` once
+       it has staged, `error` when staging failed, and check() giving the scenario's own verdict as {pass}. -->
+  <p>A staged scenario</p>
+  <script>
+    window.door = { open: false };
+    window.checks = 0;
+    window.stage = () => {
+      window.__scenario = { id: 'door-opens', ready: false, error: null,
+        check: () => { window.checks += 1; return { pass: window.door.open }; } };
+    };
+  </script>
+</body>
+</html>
