@@ -52,6 +52,7 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 | `qa_run_suite` | a suite, from a file or inline YAML | Jev decisions |
 | `qa_project_run` | a project's stored objectives, or one ad-hoc objective | Jev decisions |
 | `qa_play` | test a game (Godot or Electron) or a mobile app: menus with Jev, real-time play with the game's pilot | Jev decisions |
+| `qa_plan` | a suite's test plan without running it, and the tests that do not say what they prove (a lint) | free |
 | `qa_projects` | the projects QAJev knows | free |
 | `qa_reports` | recent project runs | free |
 | `qa_report` | read a run's report (JSON or Markdown) | free |
@@ -107,9 +108,9 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   `qa_stop(job)`.
 - Runs from MCP use a **headless, throwaway Chrome** by default: nothing appears on the person's screen and
   nothing is left behind. Pass `profile` for a signed-in run (the person signs in once with
-  `qa_browser(action="login", profile=..., url=...)`), or give the suite or project a stored test account
-  (`account:`, a password *reference* such as `keychain:qajev/shop-tester`): QAJev then signs in by itself before
-  the scenarios, also headless, and the password never reaches the agent or Jev
+  `qa_browser(action="login", profile=..., url=...)`). On a local dev host only, the suite or project can name a
+  seeded test account (`account:` with `password: seed:FILE#KEY`; `keychain:`, `op://` and `env:` are refused):
+  QAJev then signs in by itself before the scenarios, also headless, and the password never reaches the agent or Jev
   ([Writing tests](writing-tests.md#signed-in-areas)).
 - Runs queue one at a time per machine, shared with the CLI and every other agent. `qa_jobs` shows the queue.
   Each job's title says what it is about: the project or site and the goal for website runs (`check foley /pricing
@@ -123,7 +124,7 @@ The result is trimmed to fit a model's context; the full report stays on disk.
 |---|---|
 | `gate`, `exit_code`, `counts` | PASS / FAIL / INCOMPLETE, and how many scenarios had each outcome |
 | `findings` | problems seen along the way (S1 to S3), with where; `known_findings` for a project's known ones |
-| `needs_sign_in` | only when runs met a sign-in page: `pages`, and a `next_step` to follow (ask the person to sign in once, or to run `qajev account add`; never ask for the password) |
+| `needs_sign_in` | only when runs met a sign-in page: `pages`, and a `next_step` to follow (ask the person to sign in once with qa_browser login; never ask for the password) |
 | `scenarios[]` | per scenario: `outcome`, `reason`, `checks` (each with `ok` and what was found), `findings`, `end_url`, `page_says` (what the page said), `jev` (actions, decisions), `shot` (screenshot path), `seconds`, `cost_usd` |
 | `cost` | money spent, Jev decisions, text calls, the cap |
 | `run_dir`, `report_html`, `report_md`, `job` | where the full report is (give `report_html` to the person), and the job id |

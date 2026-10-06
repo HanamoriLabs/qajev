@@ -20,7 +20,7 @@ from string import Template
 from types import SimpleNamespace
 from typing import Any
 
-from . import chrome, keys, netlog, providers
+from . import chrome, keys, live, netlog, providers
 from . import guard as guard_mod
 from .config import is_loopback
 
@@ -989,10 +989,12 @@ class Session:
                 time.sleep(0.25)
         elif kind == "reload":  # the same page again, keeping the tab's cookies and storage (a player rejoining)
             self.reload()
-        elif kind == "key":
-            self.press(value)
-        elif kind == "react":
-            self.react(value)
+        elif kind in ("key", "react"):  # real time: a LIVE frame must not steal its time (live.REALTIME: 1 a second)
+            live.REALTIME.set()
+            try:
+                self.press(value) if kind == "key" else self.react(value)
+            finally:
+                live.REALTIME.clear()
         elif kind == "sleep":
             time.sleep(min(float(value), 30))
         elif kind == "command":

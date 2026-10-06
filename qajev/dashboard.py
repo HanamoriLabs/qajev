@@ -213,12 +213,41 @@ def detail(run_id):
     return out
 
 
+_viewers: dict[str, int] = {}  # run id -> LIVE viewers now (at most live.MAX_VIEWERS each)
+_viewers_lock = threading.Lock()
+
+
+def _managed(run_id):
+    """The run's Chrome is QAJev's own (it started it): only then may a viewer bring its page to the front."""
+    events, _ = jobs.events_since(run_id, 0)
+    run = next((e for e in events if e.get("event") == "run"), {})
+    return bool((run.get("browser") or {}).get("managed"))
+
+
+def bring_to_front(run_id):
+    """Ask the run to bring its page to the front of QAJev's own Chrome (the run's grabber does it)."""
+    if not _managed(run_id):
+        raise DashboardError("Bring to front works only on QAJev's own Chrome; this run uses another browser")
+    folder = jobs.run_folder(run_id)
+    if not folder or jobs.status(run_id)["state"] in FINISHED:
+        raise DashboardError("the run is not running")
+    live.folder(folder).mkdir(parents=True, exist_ok=True)
+    (live.folder(folder) / "front").touch()
+    return {"ok": True}
+
+
 def _live(run_id, folder, current):
     """A running job's screen right now (while someone watches it: live.py) and what its test did last."""
     out = {}
     shot = live.frame(folder) if folder else None
     if shot:
-        out["live"] = {"shot": f"{_file_url(run_id, 'live/frame.jpg')}?t={shot[1]:.3f}", "at": shot[1]}
+        out["live"] = {"shot": f"{_file_url(run_id, 'live/frame.jpg')}?t={shot[1]:.3f}", "at": shot[1],
+                       "stream": f"/api/live/{run_id}.mjpeg", "viewers": _viewers.get(run_id, 0),
+                       "front": _managed(run_id)}
+        with contextlib.suppress(OSError, ValueError, TypeError):  # "Open the page": its origin and path, no more
+            parts = urlsplit(json.loads((live.folder(folder) / "page.json").read_text())["url"])
+            if parts.scheme in ("http", "https") and parts.netloc:
+                out["live"]["page"] = f"{parts.scheme}://{parts.netloc}{parts.path}"
     events, _ = jobs.events_since(run_id, 0)
     steps = [{"at": e.get("at"), "doing": e.get("doing")} for e in events
              if e.get("event") == "step" and e.get("scenario") == current and e.get("doing") and not e.get("pulse")]
@@ -361,6 +390,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, detail(url.path.removeprefix("/api/run/")))
             if url.path.startswith("/api/stream/"):
                 return self._stream(url.path.removeprefix("/api/stream/"))
+            if url.path.startswith("/api/live/") and url.path.endswith(".mjpeg"):
+                return self._mjpeg(url.path.removeprefix("/api/live/").removesuffix(".mjpeg"))
             if url.path.startswith("/files/"):
                 run_id, _, rel = url.path.removeprefix("/files/").partition("/")
                 path = run_file(run_id, rel)
@@ -411,6 +442,44 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             return  # the page went away
 
+    def _mjpeg(self, run_id):
+        """LIVE: the run's screen as a moving picture (multipart JPEG), while the viewer stays. At most
+        live.MAX_VIEWERS per run; the run captures at the live rate while one watches (live.stream_touch)."""
+        if not jobs.JOB_ID.fullmatch(run_id) or not (jobs.JOBS / run_id / "job.json").is_file():
+            raise jobs.NoSuchJob(run_id)
+        with _viewers_lock:
+            if _viewers.get(run_id, 0) >= live.MAX_VIEWERS:
+                return self._error(429, f"at most {live.MAX_VIEWERS} people watch a run live")
+            _viewers[run_id] = _viewers.get(run_id, 0) + 1
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            folder, touched, sent, at = None, 0.0, None, 0.0
+            while True:
+                if jobs.status(run_id)["state"] in FINISHED:
+                    return
+                folder = folder or jobs.run_folder(run_id)
+                if folder and time.monotonic() - touched > 1:
+                    live.stream_touch(folder)
+                    touched = time.monotonic()
+                shot = live.frame(folder) if folder else None
+                # a new frame, or the same one again every 2 s: a still screen must not keep a gone viewer's seat
+                if shot and (shot[1] != sent or time.monotonic() - at > 2):
+                    data = shot[0].read_bytes()
+                    self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                                     + str(len(data)).encode() + b"\r\n\r\n" + data + b"\r\n")
+                    self.wfile.flush()
+                    sent, at = shot[1], time.monotonic()
+                time.sleep(1 / live.FPS / 2)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return  # the viewer went away
+        finally:
+            with _viewers_lock:
+                _viewers[run_id] = max(0, _viewers.get(run_id, 1) - 1)
+
     def do_POST(self):  # noqa: N802
         # An action needs the key the page carries in a header: a page elsewhere has the cookie sent, never the key.
         if not (self._host_ok() and self._cookie_ok()
@@ -432,6 +501,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, stop(parts[2]))
             if parts[:2] == ["api", "run"] and len(parts) == 4 and parts[3] == "rerun":
                 return self._send(200, rerun(parts[2], bool(body.get("failed"))))
+            if parts[:2] == ["api", "run"] and len(parts) == 4 and parts[3] == "front":
+                return self._send(200, bring_to_front(parts[2]))
             if parts[:2] == ["api", "projects"] and len(parts) == 4 and parts[3] == "run":
                 return self._send(200, start_project(unquote(parts[2]), body.get("env") or None,
                                                      body.get("objective") or None))

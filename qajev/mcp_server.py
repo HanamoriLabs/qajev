@@ -7,6 +7,7 @@ at a time on the whole machine (a lock shared with the CLI); later runs queue.
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -55,18 +56,18 @@ confirm/prompt are answered "no". Destructive controls (delete, remove, refund, 
 hidden everywhere; allow_destructive=true shows them on a local dev host only. Dangerous controls (sign out,
 billing, pay, revoke, close all...) are hidden from Jev, passwords/payment fields are disabled, the microphone
 is stubbed. Sign-in: qa_browser(action="login", url=...) opens
-QAJev's own Chrome for the person, or a suite/project names a stored test account (account: with a keychain:,
-op:// or env: password reference) and QAJev signs in itself before the scenarios. Never ask for, type or write
-down a password: only ever the reference.
+QAJev's own Chrome for the person, who signs in once (the profile keeps it); or, for a seeded TEST account on a
+local dev host only, a suite/project names it (account: with password: seed:FILE#KEY from a fixture that says
+"test_account": true) and QAJev signs in itself. keychain:, op:// and env: passwords are refused. Never ask for,
+type or write down a password.
 
 Images: with Clef as the decision model (QAJEV_JEV_PROVIDER=cloudflare), `expect_looks` judges plain statements
 from the final screenshot (layout, a canvas, a cut-off button: what text checks cannot see), and `vision` sends the
 screenshot with every decision. Jev reads text only; asking for either without Clef is refused.
 
 Needs sign-in: when a result has `needs_sign_in`, runs met a sign-in page (those scenarios are harness, not product
-failures). Do not report it as a bug. Ask the person how QAJev should get in, following its `next_step`: they sign
-in once (qa_browser login), or they run `qajev account add NAME --email ... --login-url ...` in their own terminal
-(the Keychain asks them for the password; in Claude Code they type it after a !). Then run again.
+failures). Do not report it as a bug. Ask the person to sign in once (qa_browser login), following its
+`next_step`; a local dev site can use a seeded test account instead. Then run again.
 """
 
 server = MCPServer(name="qajev", version=__version__, instructions=INSTRUCTIONS)
@@ -173,7 +174,8 @@ async def _run_report(args, ctx, background=False, title=None, cwd=None, rerun=N
                 break
             await asyncio.sleep(0.5)
     except asyncio.CancelledError:
-        await asyncio.to_thread(jobs.stop, job["id"])  # the run closes its own tabs, Chrome and daemon
+        with contextlib.suppress(jobs.NotOurs):  # the cancel goes on either way
+            await asyncio.to_thread(jobs.stop, job["id"])  # the run closes its own tabs, Chrome and daemon
         raise
     if data and data.get("outcome") == "refused":  # it would have changed a production site: nothing ran
         return {**data, "job": job["id"]}
@@ -470,6 +472,18 @@ async def qa_reports(project: str | None = None, limit: int = 20) -> dict:
 
 
 @server.tool()
+async def qa_plan(suite: str) -> dict:
+    """A suite's test plan without running it (free, no browser): each test's about and its checks in plain words,
+    and `not_described`, the tests that do not say what they prove (a run would be INCOMPLETE). `suite`: a suite file
+    (scenarios:) or a game's steps suite (steps:). Lint a suite with it before running or sending a PR."""
+    code, text, tail = await _spawn(["plan", str(Path(suite).expanduser()), "--json"])
+    data = json.loads(text or "{}")
+    if code not in (0, 2) or "plan" not in data:
+        raise ToolError(data.get("error") or tail or f"qajev plan exited {code}")
+    return data
+
+
+@server.tool()
 async def qa_report(run_dir: str, markdown: bool = False) -> dict:
     """Read a finished run's report (JSON by default, or the Markdown text)."""
     folder = Path(run_dir).expanduser()
@@ -489,6 +503,8 @@ async def qa_play(
     only: list[str] | None = None,
     game_env: dict | None = None,
     game_args: list[str] | None = None,
+    game_profile: str | None = None,
+    reset_game_profile: bool = False,
     expect_screen: str | None = None,
     expect_text: list[str] | None = None,
     expect_state: dict | None = None,
@@ -517,7 +533,9 @@ async def qa_play(
     own UI. `suite`: a YAML file of steps in one session: goal steps, real-time play steps (`play:`, needs the
     game's bot), idle steps (`idle: SECONDS`, the game runs untouched), with top-level `allow`/`hide` labels.
     `only`: run these steps of the suite, plus the steps they name in `depends_on` and every `setup: true` step.
-    `game_env`: environment settings for the game; `game_args`: switches for an Electron app. expect_state: game
+    `game_env`: environment settings for the game; `game_args`: switches for an Electron app. `game_profile`: keep
+    an Electron game's save folder between runs (~/.qajev/game-profiles/NAME, a test profile; reset_game_profile
+    empties it first); default: a throwaway deleted at close. expect_state: game
     state values, e.g. {"game_over": false, "kills": ">= 1"}. Quit, exit and delete-save buttons are hidden from Jev;
     to test a normal quit pass allow=["QUIT"] and expect_closed=true (passes only on exit code 0). `name` titles the
     run in qa_jobs. Each step ends with a screenshot (shots=false skips them); headless (default) only applies to
@@ -536,6 +554,10 @@ async def qa_play(
     for key, value in (game_env or {}).items():
         args += ["--game-env", f"{key}={value}"]
     args += [f"--game-arg={a}" for a in game_args or []]  # one token: the switch itself starts with --
+    if game_profile:
+        args += ["--game-profile", game_profile]
+    if reset_game_profile:
+        args.append("--reset-game-profile")
     for text in expect_text or []:
         args += ["--expect-text", text]
     for key, value in (expect_state or {}).items():
@@ -643,6 +665,8 @@ async def qa_stop(job: str) -> dict:
         return await asyncio.to_thread(jobs.stop, job)
     except jobs.NoSuchJob:
         raise ToolError(f"no job {job}") from None
+    except jobs.NotOurs as e:
+        raise ToolError(str(e)) from None
 
 
 @server.tool()

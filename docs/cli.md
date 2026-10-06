@@ -60,7 +60,7 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | Option | Does |
 |---|---|
 | `--cost-cap USD` | a hard cap for the whole run (default: the suite's, else $1) |
-| `--env-file FILE` | where your keys are (default `./.env`, then `~/.qajev/.env`) |
+| `--env-file FILE` | where your keys are (default `$QAJEV_ENV_FILE`, then `~/.qajev/.env`; never the current folder's `.env`) |
 | `--jev-provider auto\|typesafe\|openrouter\|cloudflare` | who makes the decisions: Jev (TypeSafe, OpenRouter) or Clef (Cloudflare; see [Configuration](configuration.md)) |
 | `--usd-per-call USD` | the estimated TypeSafe cost per decision, for the ledger |
 | `--strict` | count `stuck` scenarios as failures |
@@ -175,11 +175,27 @@ qajev play path/to/game --suite session.yaml
 | `--hide LABEL` | never offer this exact label to Jev (repeatable) |
 | `--game-env KEY=VALUE` | an environment setting for the game (repeatable) |
 | `--game-arg ARG` | a switch for an Electron app, e.g. `--game-arg=--fullscreen` (repeatable) |
+| `--game-profile NAME` | keep an Electron game's save folder between runs, in `~/.qajev/game-profiles/NAME` (a test profile; [Games](games.md#a-save-kept-between-runs-electron)) |
+| `--reset-game-profile` | empty that kept profile before this run |
 | `--device NAME` | mobile: the iOS simulator to clone, or the Android virtual device to boot |
 | `--install FILE` | mobile: an `.apk` or simulator `.app` to install on the throwaway device first |
 | `--headless` | Godot: no window, fastest, no screenshots. Electron apps always open a window and keep their screenshots |
 | `--name` | the test's name, shown with the game's in `qajev jobs` and `qajev top` |
 | `--max-actions`, `--max-seconds`, `--no-shots`, `--out`, `--cost-cap`, `--load-high`, `--load-ok`, `--load-wait`, `--json`, `--events`, `--quiet`, `--background` | as above |
+
+## `qajev plan`
+
+A suite's test plan, without running anything (no browser, no cost): each test's `about` and its checks in plain
+words, and the tests that are NOT DESCRIBED. Use it as a lint before you run a suite or send a pull request.
+
+```bash
+qajev plan shop.qajev.yaml            # a website suite (scenarios:)
+qajev plan qa/plans/boss.suite.yaml   # a game's steps suite (steps:)
+qajev plan shop.qajev.yaml --json     # {name, about, plan, not_described}
+```
+
+It exits `0` when every test says what it proves and `2` while any is NOT DESCRIBED (a run of it would be
+INCOMPLETE, never PASS). `qa_plan` is the same for agents.
 
 ## `qajev report`
 
@@ -278,41 +294,31 @@ qajev browser reap                                                   # clean up 
 
 ## `qajev account`
 
-Sets up a stored test account in one step (see [Signed-in areas](writing-tests.md#signed-in-areas)). Run it
-yourself, in a terminal: the Keychain asks you for the password, so neither QAJev nor an agent ever sees it. In Claude
-Code, type it after a `!`.
+Checks a project's test account by signing in with it (see [Signed-in areas](writing-tests.md#signed-in-areas)).
 
 ```bash
-qajev account add shop-tester --email qa+shop@example.com --login-url /login --project shop --default
-qajev account add shop-tester --email qa+shop@example.com --login-url https://shop.example/login   # for a suite
-qajev account check shop-tester --project shop
+qajev account check qa-test --project shop
 ```
 
-`add` saves the password (by default as `keychain:qajev/NAME`; `--password op://...` or `--password env:NAME` uses one
-that already lives there; `--replace` saves a new Keychain password over the old), then writes the account:
+`check` signs in once, in a throwaway Chrome (`--visible` to watch), and says `ok: signed in as ...` or the site's
+reason. Since 0.4.0 that is only a seeded test account on a local dev host (`password: seed:FILE#KEY`). Exit code 2
+when the sign-in fails, 3 for a mistake in the options or the project.
 
-- with `--project`, as `[accounts.NAME]` in the project file, references only (`--default`: every env signs in with
-  it; otherwise name it with `account = "NAME"` in an env);
-- without, it prints the `account:` block to paste into a suite.
-
-Then QAJev signs in once with it, in a throwaway Chrome (`--visible` to watch, `--no-check` to skip), and says
-`ok: signed in as ...` or the site's reason. `check` does that sign-in alone. Exit code 2 when the sign-in fails, 3
-for a mistake in the options or the project.
+`add` is refused since 0.4.0: QAJev no longer saves an account's password. Put a seeded local test account in the
+suite or project as `password: seed:FILE#KEY`; for any other account, sign in once yourself with
+`qajev browser login --url <sign-in page>`.
 
 ## `qajev secret`
 
-A stored test account's password, by reference (see [Signed-in areas](writing-tests.md#signed-in-areas)). It never
-prints the value.
+Says whether QAJev can read a reference (see [Signed-in areas](writing-tests.md#signed-in-areas)). It never prints
+the value.
 
 ```bash
-qajev secret set keychain:qajev/shop-tester       # the Keychain prompts for the password and saves it
-qajev secret check keychain:qajev/shop-tester     # ok: ... can be read (14 characters)
-qajev secret check "op://QA/Shop tester/password" # 1Password, via its `op` tool (Touch ID)
-qajev secret check env:SHOP_TESTER_PASS
+qajev secret check seed:dev_support/qa_test_user.json#password   # ok: ... can be read (14 characters)
 ```
 
-`set` stores `keychain:` references only (on Linux in the secret service, with `secret-tool`); 1Password items are
-made in 1Password. Exit code 2 when the reference cannot be read, with the store's reason.
+Exit code 2 when the reference cannot be read, with the reason. `set` is refused since 0.4.0 (exit 2): QAJev no
+longer stores a password; sign in once yourself with `qajev browser login --url <sign-in page>`.
 
 ## `qajev doctor`
 

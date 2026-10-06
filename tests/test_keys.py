@@ -21,7 +21,7 @@ def test_a_key_hook_is_one_key_or_a_sequence_repeated_or_held():
 
 
 @pytest.mark.parametrize("value, error", [
-    ("cmd+w", "unknown key 'cmd+w'"),  # no combinations: nothing reaches a browser or system shortcut
+    ("cmd+w", "refused: 'cmd+w' is a browser or system shortcut"),  # chords exist, shortcuts never
     ("Meta", "unknown key 'Meta'"),
     ("Control", "unknown key 'Control'"),
     ({"press": "w", "modifiers": 4}, "unknown key option(s) ['modifiers']"),
@@ -39,7 +39,7 @@ def test_a_key_hook_outside_the_allow_list_or_its_bounds_is_refused(value, error
 
 
 def test_a_suite_with_a_bad_key_hook_is_refused_before_it_runs():
-    with pytest.raises(SuiteError, match=r"scenarios\[0\].before\[0\].key: unknown key 'cmd\+q'"):
+    with pytest.raises(SuiteError, match=r"scenarios\[0\].before\[0\].key: refused: 'cmd\+q' is a browser or system"):
         parse({"scenarios": [{"name": "a", "url": "http://127.0.0.1:1/", "before": [{"key": "cmd+q"}],
                               "expect": {"text": "x"}}]})
     with pytest.raises(SuiteError, match=r"steps\[0\].key: hold_ms must be"):
@@ -65,7 +65,7 @@ def test_a_press_sends_trusted_key_events_repeats_them_and_holds_the_key_down(mo
     page.press({"press": "Space", "hold_ms": 1500})
     assert log == [("keyDown", " ", "Space", True), ("sleep", 1500), ("keyUp", " ", "Space", False)]
 
-    with pytest.raises(HookFailed, match="unknown key 'cmd\\+w'"):
+    with pytest.raises(HookFailed, match="refused: 'cmd\\+w' is a browser or system shortcut"):
         page.press("cmd+w")
 
 
@@ -111,7 +111,7 @@ def test_a_react_hook_releases_every_key_and_bounds_its_holds(monkeypatch):
 
 
 @pytest.mark.parametrize("answer, error", [
-    ({"actions": "cmd+q"}, "react: unknown key 'cmd+q'"),
+    ({"actions": "cmd+q"}, "react: refused: 'cmd+q' is a browser or system shortcut"),
     ({"actions": {"hold": "f"}}, "a key action is a key name, {press: k}, {down: k} or {up: k}"),
     ({"actions": ["f"] * 11}, "returned 11 actions at once"),
 ])
@@ -205,3 +205,20 @@ def test_a_ticks_evaluate_never_outlasts_the_hook_and_every_held_key_is_released
     with pytest.raises(HookFailed, match="boom"):
         f.page.react({"js": "p()"})
     assert ups == ["KeyA", "KeyB", "KeyC"]  # a failed keyUp for a does not leave b and c down
+
+
+def test_a_chord_carries_its_modifiers_and_a_browser_shortcut_is_refused():
+    # verse1, 6 Oct: the Verse town editor opens on Shift+A, which the key hook could not send.
+    shift_a = keys.spec("Shift+A")
+    assert shift_a["modifiers"] == 8 and shift_a["key"] == "A" and shift_a["text"] == "A" and shift_a["code"] == "KeyA"
+    assert keys.spec("ctrl+shift+KeyK")["modifiers"] == 10 and "text" not in keys.spec("Ctrl+k")
+    assert keys.spec("Alt+ArrowLeft")["modifiers"] == 1 and keys.spec("Meta+Digit1")["modifiers"] == 4
+    assert "modifiers" not in keys.spec("a")  # a plain key stays plain
+    for shortcut in ("Meta+q", "Ctrl+w", "Ctrl+R", "Meta+t", "Ctrl+n", "Meta+l", "Ctrl+p"):
+        with pytest.raises(ValueError, match="shortcut"):
+            keys.spec(shortcut)
+    for bad in ("Hyper+a", "Shift+Shift+a", "Shift+", "+a"):
+        with pytest.raises(ValueError):
+            keys.spec(bad)
+    assert keys.plan({"press": ["Shift+A", "Escape"]})["keys"] == ["Shift+A", "Escape"]
+    assert keys.actions([{"down": "Shift+w"}, {"up": "Shift+w"}]) == [("down", "Shift+w"), ("up", "Shift+w")]

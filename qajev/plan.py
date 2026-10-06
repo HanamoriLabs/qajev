@@ -87,6 +87,34 @@ def from_suite(scenarios):
     return out
 
 
+def from_steps(steps):
+    """The plan of a game's `steps:` suite before it runs: each step with the checks its `expect` and `play.until` will
+    make, named as native.py names them (they describe themselves; a step still needs its `about`)."""
+    from .native import _until_text
+
+    out = []
+    for i, step in enumerate(steps, 1):
+        step = step if isinstance(step, dict) else {}
+        expect, checks = step.get("expect") or {}, []
+        if "screen" in expect:
+            checks.append(f"screen is {expect['screen']}")
+        checks += [f"game shows '{t}'" for t in expect.get("text") or []]
+        checks += [f"state {k} {v}" for k, v in (expect.get("state") or {}).items()]
+        if expect.get("min_fps") is not None:
+            checks.append(f"at least {expect['min_fps']} fps")
+        if expect.get("max_memory_growth_mb") is not None:
+            checks.append(f"memory grew at most {expect['max_memory_growth_mb']} MB")
+        if expect and expect.get("no_errors", True):
+            checks.append("no engine or script errors")
+        if expect.get("closed"):
+            checks.append("the game closed")
+        until = (step.get("play") or {}).get("until") if isinstance(step.get("play"), dict) else None
+        if until:
+            checks.insert(0, f"reached {_until_text(until)}")
+        out.append(item(i, step.get("name") or f"step {i}", step.get("about"), [{"check": c} for c in checks]))
+    return out
+
+
 def merge(planned, results):
     """The plan as a run goes: a finished test shows its own checks and box; the others stay as planned."""
     done = {r.get("name"): r for r in results}

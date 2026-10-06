@@ -28,6 +28,48 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
     `*.test` / `*.localhost` name for it. A local suite that used `allow: ["^Delete ..."]` to press a destructive
     control needs `allow_destructive: true` instead. CI that treated exit 3 as "refused" should read 5.
     ([Safety](docs/safety.md))
+- **Breaking:** QAJev types a password only for a seeded test account on a local dev host (José, 6 Oct: "local test
+  accounts only"). The password comes only from `seed:FILE#KEY`, a fixture that says `"test_account": true` and lists
+  the host in `allowed_hosts`, checked when the suite loads and again where the browser is just before it types. A
+  `keychain:`, `op://` or `env:` password (and a project's `password_env`) is refused on every host, before a key is
+  pressed. For any other account, sign in once yourself in QAJev's window (`qajev browser login --url <sign-in
+  page>`); the profile keeps that session. `qajev account add` and `qajev secret set` are refused; `qajev secret
+  check` and `qajev account check` stay. ([Signed-in areas](docs/writing-tests.md#signed-in-areas))
+- Key and react hooks press chords: Shift, Ctrl, Alt or Meta with one key (`key: Shift+A`), sent as trusted key events
+  with the modifiers set (`event.shiftKey`), so a test can open the FiGGYZ Verse town editor with a real Shift+A
+  (verse1). With Ctrl or Meta, the browser's and the system's own shortcuts (quit, close, reload, a new tab or window,
+  the address bar, print) are refused. ([Writing tests](docs/writing-tests.md))
+- LIVE: **Watch live** in the dashboard shows a running test's screen as a moving picture (about 5 frames a
+  second, 1280 px; 2 when the machine is busy, 1 during real-time game steps). View only, at most 2 viewers a run,
+  behind the dashboard's key on 127.0.0.1. **Bring to front** raises the page in QAJev's own Chrome; **Open the
+  page** opens its origin and path only. The frame grabber may only take screenshots, read the page's address and
+  size, and bring its own page to the front; the report says how long the run was watched live.
+  ([The dashboard](docs/dashboard.md))
+- `qajev plan FILE` (and `qa_plan` for agents) prints a suite's test plan without running it: each test's about
+  and its checks in plain words, and the tests that are NOT DESCRIBED. It reads website suites and game `steps:`
+  suites, costs nothing, and exits 2 while any test is NOT DESCRIBED, so it works as a lint before a run or a pull
+  request (SideGame1). ([CLI](docs/cli.md#qajev-plan))
+- Fixed: the cleanup after a dead run killed the process group of a game pid it had recorded, and `qajev stop`
+  signalled a job's recorded pid, without checking that the pid still belonged to that process. A pid reused by
+  another program could have been killed. Each launch now records its process's start time and command; the reaper
+  and `qajev stop` act only when both still match, and say "stale pid, not ours: left alone" otherwise. A job
+  recorded before this change cannot be proved: `qajev stop` refuses it and says how to stop it by hand.
+- An Electron game can keep its save folder between runs, so a test proves a save survives into the next run
+  (SideGame1: a setting kept; a long plan run in parts). `--game-profile NAME` (suite `game_profile:`, `qa_play`
+  `game_profile`) keeps it in `~/.qajev/game-profiles/NAME`; a suite's own `--profile=` switch may name a git-ignored
+  folder in the game's repo instead. Nothing else is allowed: `~/Library` and Application Support folders (real,
+  Steam-synced saves), `..` and symlinks are refused before anything is created. QAJev marks a folder
+  (`.qajev-game-profile`) when it first uses it, and never uses or empties a folder that holds files without that
+  mark (a git-ignored `node_modules/left-pad` is left alone). A kept profile is never deleted
+  (`--reset-game-profile` empties it), and the report says which folder was used and that it was kept. Before, a
+  suite's `--profile=` was silently ignored. ([Games](docs/games.md#a-save-kept-between-runs-electron))
+- Changed (breaking): QAJev no longer reads the current folder's `.env`. A project's file held a Cloudflare token
+  for its own deploys, QAJev read it first, and Clef answered 401 (Foley1). QAJev's files are `--env-file`,
+  `$QAJEV_ENV_FILE` and `~/.qajev/.env`. Its own keys (Jev, OpenRouter, the text model, Cloudflare for Clef) come
+  from those files even when the shell has another value; `QAJEV_<NAME>` pins one on purpose, and a key no file
+  sets still comes from the shell (CI). `qajev doctor` and each report's header say where each key came from, names
+  only, and a model's HTTP 401 or 403 points there. If you kept QAJev's keys or an `env:` secret in a project's
+  `.env`, move them to `~/.qajev/.env` or pass `--env-file`. ([Configuration](docs/configuration.md))
 - Fixed: a page with a ticking number (a video timer in a game's HUD, a countdown, a clock) made every one of Jev's
   moves go stale before it acted, so goals there ended as harness (verse2, FiGGYZ Verse). A clock time ("0:03",
   "1:05:09") or a countdown in seconds or minutes ("59 s", "5 min") that ticks, in the page's words, a control's

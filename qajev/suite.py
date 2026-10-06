@@ -386,18 +386,23 @@ def _account(raw, base, folder=None):
     if scheme != "https" and not (scheme == "http" and is_loopback(url)):
         raise SuiteError("account.login.url must be https (http only on localhost): a password never travels "
                          "unencrypted")
-    if raw.get("totp") is not None or cookie is not None:  # a seeded TEST user on a local dev host, nothing else
-        what = "account.totp" if raw.get("totp") is not None else "account.cookie"
-        for ref in (raw.get("totp"), (cookie or {}).get("value")):
-            if ref is not None and not str(ref).startswith("seed:"):
-                raise SuiteError(f"{what} comes only from the app's seed fixture: seed:FILE#KEY, a JSON fixture that "
-                                 "says \"test_account\": true and lists its allowed_hosts")
+    secrets = {k: v for k, v in (("account.password", raw.get("password")), ("account.totp", raw.get("totp")),
+                                 ("account.cookie", (cookie or {}).get("value"))) if v is not None}
+    if secrets:  # a seeded TEST user on a local dev host, nothing else (passwords too: José, 6 Oct)
+        from .signin import BROWSER_LOGIN
+
+        later = f". {BROWSER_LOGIN.format(url=url)}" if "account.password" in secrets else ""
+        what = next(iter(secrets))
+        for key, ref in secrets.items():
+            if not str(ref).startswith("seed:"):
+                raise SuiteError(f"{key} comes only from the app's seed fixture: seed:FILE#KEY, a JSON fixture that "
+                                 f"says \"test_account\": true and lists its allowed_hosts{later}")
         if not is_local_dev(url):
             raise SuiteError(f"{what} is for a seeded test account on a local dev host (localhost, 127.0.0.1, *.test), "
-                             f"not {urlsplit(url).hostname}")
+                             f"not {urlsplit(url).hostname}{later}")
         if not vault.is_ref(raw["email"]) and not is_test_email(raw["email"]):
             raise SuiteError(f"{what} is for a seeded test account at a reserved test domain (example.test, *.test, "
-                             f"example.com...), not {raw['email']}")
+                             f"example.com...), not {raw['email']}{later}")
     out = {"name": str(raw.get("name") or raw["email"]), "email": vault.anchor(raw["email"], folder),
            "password": vault.anchor(raw.get("password"), folder), "login": {**login, "url": url}}
     if raw.get("totp") is not None:

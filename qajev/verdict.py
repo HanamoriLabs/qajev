@@ -243,12 +243,11 @@ def sign_in_next_step(walls):
                 f"(qa_browser action=login, profile={profiles[0]}, url={login}; CLI: qajev browser login --profile "
                 f"{profiles[0]} --url {login}).")
     else:
-        step = ("Ask the person how QAJev should get in, and never ask for, type or write down the password. Either "
-                f"they sign in once in QAJev's own browser (qa_browser action=login, profile=NAME, url={login}; CLI: "
-                f"qajev browser login --profile NAME --url {login}) and runs use profile NAME; or they keep a test "
-                "account and run, in their own terminal (in Claude Code, after a !): qajev account add NAME --email "
-                f"EMAIL --login-url {login} [--project PROJECT]. The Keychain asks them for the password, QAJev "
-                "proves the sign-in, and the suite's account: block (or the project's account) does the rest.")
+        step = ("Ask the person to sign in once in QAJev's own browser, and never ask for, type or write down the "
+                f"password: qa_browser action=login, profile=NAME, url={login} (CLI: qajev browser login --profile "
+                f"NAME --url {login}); runs then use profile NAME, which keeps that session. On a local dev site a "
+                "seeded test account can sign in by itself instead (account: with password: seed:FILE#KEY, from a "
+                "fixture that says \"test_account\": true and lists the host in allowed_hosts).")
     return {"pages": pages, "next_step": step}
 
 
@@ -260,6 +259,8 @@ def _stop_text(stop, detail) -> str:
         "browser_error": "browser/daemon error", "left_site": "left the allowed hosts",
         "hook_failed": "hook failed", "interrupted": "interrupted", "machine_busy": "machine too busy",
     }.get(stop, str(stop))
+    if stop == "model_error" and detail and re.search(r"\b40[13]\b", str(detail)):  # a key the provider refused
+        detail = f"{detail} (the model's key was refused: `qajev doctor` says which file or variable it came from)"
     return f"{text}: {detail}" if detail else text
 
 

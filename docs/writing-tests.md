@@ -105,7 +105,8 @@ For a phone's real browser (Chrome on an Android emulator; iOS Safari is not rea
   (`--says` with `--expect-js` on the command line). The report and the dashboard open with a **test plan**: each
   test's `about` and its checks in these words, a box for each, ticked as the run goes. A test without an `about`,
   or with a check without words, is **NOT DESCRIBED**: the plan flags it and the gate cannot be PASS (it is
-  INCOMPLETE), because its pass would not say what it proved.
+  INCOMPLETE), because its pass would not say what it proved. `qajev plan FILE` shows the plan and lists them
+  without running anything ([CLI](cli.md#qajev-plan)).
 
 ## A suite: several scenarios in one file
 
@@ -208,7 +209,10 @@ cookies and storage), and `command` (a shell command, only with `--allow-command
 A scenario's checks judge the page as it is after its `before:` hooks, so a `wait_for` there is what they see.
 
 A `key` hook presses real keys, as a player does: the page gets trusted `keydown` and `keyup` events. Jev clicks and
-types but cannot press a game's keys, so a game's real-key test drives them with hooks.
+types but cannot press a game's keys, so a game's real-key test drives them with hooks. A chord adds Shift, Ctrl, Alt
+or Meta to one key, e.g. `key: Shift+A` or `Ctrl+Shift+KeyK` (the page sees `event.shiftKey` and the rest; react
+policies take chords too). With Ctrl or Meta, the browser's and the system's own shortcuts (Q, W, R, T, N, L, P:
+quit, close, reload, a new tab or window, the address bar, print) are refused.
 
 ```yaml
 - key: Escape                                       # once
@@ -325,62 +329,37 @@ scenarios:
 
 ## Signed-in areas
 
-Two ways in. Jev never types a password in either.
+Two ways in. Jev never types a password in either, and QAJev types one only for a seeded test account on your own
+machine (since 0.4.0).
 
-**A stored test account.** The suite names a test account; its password stays in your password store and the file
-only says where:
-
-```yaml
-account:
-  email: qa+shop@example.com          # or a reference, like the password
-  password: keychain:qajev/shop-tester # or op://QA/Shop tester/password (1Password), or env:SHOP_TESTER_PASS
-  login: {url: /login}
-scenarios:
-  - name: the order history lists past orders
-    url: /account/orders
-    expect: {text: ["Order #"]}
-```
-
-Before the first scenario, QAJev itself opens the sign-in page in its own tab, types the email, reads the password
-from the store and types it into the password field, submits, and checks it got in. Then the scenarios run as usual,
-guarded and already signed in. The password is never in Jev's prompt, a report, a screenshot or a log (whatever is
-read from a store is redacted from everything QAJev writes), and Jev still cannot type into password fields. If the
-site does not let the account in, the run stops with the reason (`harness: sign-in failed: Wrong email or password`)
-instead of leaving Jev at a sign-in page.
-
-| `password:` | Where the password lives | Set it up |
-|---|---|---|
-| `keychain:SERVICE/ACCOUNT` | the macOS Keychain (on Linux, the secret service via `secret-tool`) | `qajev secret set keychain:qajev/shop-tester` (the Keychain prompts for it) |
-| `op://VAULT/ITEM/FIELD` | 1Password, read with its `op` command-line tool (Touch ID) | make the item in 1Password; install `op` and turn on its app integration |
-| `env:NAME` | an environment variable, e.g. a CI secret | set it in CI or your `.env` |
-| `seed:FILE#KEY` | a key of your app's own JSON test-user fixture, which must say `"test_account": true` (see "A seeded test user" below) | your seed writes it |
-
-`qajev secret check REF` says whether QAJev can read it (the length, never the value). Use a test account made
-for this, never a real person's.
-
-The quickest way is one command, which saves the password at the Keychain's prompt, writes the account (into a
-project with `--project`, or prints the block above for a suite) and signs in once to prove it
-([`qajev account`](cli.md#qajev-account)):
-
-```bash
-qajev account add shop-tester --email qa+shop@example.com --login-url https://shop.example/login
-```
-
-The sign-in page must be `https` (plain `http` only on localhost) and its host one the suite allows; the password
-only goes into a password field. `login` also takes `email_field`, `password_field` and `submit` (CSS selectors,
-when the defaults do not find them), `next` (the button between the email and password steps of a two-step
-sign-in), and `signed_in` to say how success looks (`{url_not: /login}`, `{text: ["Your orders"]}` or `{js: ...}`;
-by default: away from the sign-in page with no password field showing).
-
-**Or sign in once yourself** in QAJev's own browser profile; the profile remembers it:
+**On any real site, sign in once yourself** in QAJev's own browser profile; the profile keeps that session:
 
 ```bash
 qajev browser login --profile shop --url https://shop.example/login   # a window opens: sign in, then close it
 qajev run account.yaml --profile shop
 ```
 
-This is the way for sign-ins QAJev cannot do by itself on a real site: one-time codes, passkeys, "Sign in with
-Google".
+This works for every kind of sign-in: a password, one-time codes, passkeys, "Sign in with Google". QAJev never sees
+or stores the password.
+
+**A seeded test user on a local dev host** (below) is the only account QAJev signs in by itself. Its password comes
+only from your app's seed fixture (`password: seed:FILE#KEY`). A `keychain:`, `op://` or `env:` password is refused
+when the suite loads, on every host, with a message that points to `qajev browser login`: a Keychain entry cannot
+show that it belongs to a test account, and the fixture's `"test_account": true` can.
+
+Before the first scenario, QAJev itself opens the sign-in page in its own tab, types the email, reads the password
+from the fixture and types it into the password field, submits, and checks it got in. Then the scenarios run as
+usual, guarded and already signed in. The password is never in Jev's prompt, a report, a screenshot or a log (it is
+redacted from everything QAJev writes), and Jev still cannot type into password fields. If the site does not let the
+account in, the run stops with the reason (`harness: sign-in failed: Wrong email or password`) instead of leaving Jev
+at a sign-in page.
+
+The sign-in page must be `https` (plain `http` only on localhost), on a local dev host the fixture's `allowed_hosts`
+names, checked again where the browser is just before it types; the password only goes into a password field.
+`login` also takes `email_field`, `password_field` and `submit` (CSS selectors, when the defaults do not find them),
+`next` (the button between the email and password steps of a two-step sign-in), and `signed_in` to say how success
+looks (`{url_not: /login}`, `{text: ["Your orders"]}` or `{js: ...}`; by default: away from the sign-in page with no
+password field showing).
 
 **A seeded test user on a local dev host** signs in by itself, second factor included. Your app's seed creates the
 user and writes its secrets to a JSON fixture that marks itself as a test account:

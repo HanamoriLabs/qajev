@@ -420,6 +420,17 @@ def test_tap_targets_are_counted_as_wcag_2_5_8_says_and_named(session, site):
         "not counted (WCAG 2.5.8): 1 inline in a sentence, 1 with room around them")
 
 
+def test_a_key_hook_presses_a_chord_with_its_modifiers(session, site):
+    # verse1, 6 Oct: the Verse town editor opens on Shift+A; a page reads event.shiftKey and the key.
+    session.navigate(site + "/keys.html")
+    session.evaluate("(window.modLog.splice(0), true)")
+    session.run_hook({"key": "Shift+A"}, site)
+    session.run_hook({"key": "Ctrl+KeyK"}, site)
+    got = [(e["type"], e["key"], e["shift"], e["ctrl"]) for e in session.evaluate("window.modLog.splice(0)")]
+    assert got == [("keydown", "A", True, False), ("keyup", "A", True, False),
+                   ("keydown", "k", False, True), ("keyup", "k", False, True)], got
+
+
 def test_key_hooks_press_real_keys_repeat_them_and_hold_them(session, site):
     # Real-key play-tests for every game change (Orchestrator, 5 Oct): Jev cannot press a game's keys, so hooks do.
     session.navigate(site + "/keys.html")
@@ -684,7 +695,8 @@ def test_smoke_crawls_and_lints_the_fixture(site, browser, tmp_path):
 
 def test_a_stored_test_account_signs_in_before_the_scenarios_and_its_password_goes_nowhere(site, browser, tmp_path):
     # The sign-in form posts (the read-only guard would block it), so QAJev signs in itself, unguarded, in its own
-    # tab; the scenarios then run guarded and signed in. The password is read from the vault reference only.
+    # tab; the scenarios then run guarded and signed in. The password is read from the seeded test account's fixture
+    # only (José, 6 Oct: passwords for local test accounts only).
     import subprocess
     import sys
 
@@ -695,7 +707,7 @@ base_url: {site}
 devices: [desktop]
 account:
   email: tester@example.test
-  password: env:QAJEV_FIXTURE_PASS
+  password: seed:qa_test_user.json#password
   login: {{url: /login.html}}
 scenarios:
   - name: the account page knows who is signed in
@@ -704,10 +716,11 @@ scenarios:
 """)
 
     def run(password, out):
-        env = {**os.environ, "QAJEV_FIXTURE_PASS": password}
+        (tmp_path / "qa_test_user.json").write_text(json.dumps(
+            {"test_account": True, "allowed_hosts": ["127.0.0.1"], "password": password}))
         p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--cdp-url", browser["cdp_url"],
                             "--out", str(out), "--json", "--quiet", "--load-high", "0"],
-                           capture_output=True, text=True, timeout=180, env=env)
+                           capture_output=True, text=True, timeout=180)
         return json.loads(p.stdout), p
 
     wrong, _ = run("not-the-password", tmp_path / "wrong")
@@ -881,6 +894,32 @@ def test_a_click_hook_waits_for_its_target_to_be_on_top_and_says_what_covers_it(
     session.navigate(site + "/visible-covered.html")
     with pytest.raises(HookFailed, match=r"covered by div#overlay"):
         session.run_hook({"click": "h1"}, site + "/visible-covered.html")
+
+
+def test_live_frames_from_the_real_page_are_jpegs_at_most_1280_wide_with_the_page_origin_and_path(
+        session, site, tmp_path):
+    # LIVE (José, 5 Oct): the run's own grabber, on its own debugger link, at the live rate while a viewer streams.
+    import struct
+
+    from qajev import live
+
+    session.arm("readonly")
+    session.navigate(site + "/pricing.html?token=abc#plans")
+    run = tmp_path / "run"
+    live.stream_touch(run)
+    with live.frames(run, session.page_socket()):
+        time.sleep(1.5)
+    data = (run / "live" / "frame.jpg").read_bytes()
+    assert data[:2] == b"\xff\xd8"
+    i, width = 2, None
+    while i < len(data) and width is None:  # the JPEG's frame header holds its size
+        marker, length = data[i + 1], struct.unpack(">H", data[i + 2:i + 4])[0]
+        if marker in (0xC0, 0xC2):
+            width = struct.unpack(">H", data[i + 7:i + 9])[0]
+        i += 2 + length
+    assert width and width <= live.WIDTH
+    assert json.loads((run / "live" / "page.json").read_text())["url"] == site + "/pricing.html"
+    assert live.watched_seconds(run) > 0
 
 
 def test_a_ticking_timer_does_not_make_jevs_moves_stale_but_a_real_change_does(session, site):
@@ -1175,7 +1214,8 @@ scenarios:
     assert greeting["outcome"] == "fail"  # a scenario that sets out to test the sign-in page itself is judged as usual
     wall = report["needs_sign_in"]
     assert wall["pages"] == [members["needs_sign_in"]["url"]]
-    assert "qajev account add" in wall["next_step"] and "never ask for" in wall["next_step"]
+    assert "qajev browser login" in wall["next_step"] and "never ask for" in wall["next_step"]
+    assert "qajev account add" not in wall["next_step"]  # 0.4.0: QAJev saves no person's password
     (md,) = tmp_path.rglob("report.md")
     assert "**Needs sign-in:** 1 page(s)" in md.read_text()
 
@@ -1186,19 +1226,28 @@ scenarios:
     assert "behind sign-in" in smoke["scenarios"][0]["reason"]
 
 
-def test_account_add_saves_the_account_by_reference_and_proves_the_sign_in(site, browser, tmp_path):
+def test_account_add_is_refused_and_check_signs_in_a_seeded_project_account(site, browser, tmp_path):
+    # José, 6 Oct: QAJev saves no person's password. `account add` is refused before it saves or writes anything;
+    # `account check` still proves a seeded local test account named in a project.
     proj = tmp_path / "fixture.toml"
-    proj.write_text(f'name = "fixture"\ndefault_env = "local"\n\n[env.local]\nbase_url = "{site}"\n\n'
-                    '[[objective]]\nname = "account"\nurl = "/account.html"\n'
-                    'expect = { text = ["Signed in as tester@example.test"] }\n')
-    add = _qajev("account", "add", "tester", "--email", "tester@example.test", "--login-url", "/login.html",
-                 "--password", "env:QAJEV_FIXTURE_PASS", "--project", str(proj), "--default", "--cdp-url",
-                 browser["cdp_url"], env={"QAJEV_FIXTURE_PASS": "fixture-pass-123"})
-    assert add.returncode == 0, add.stderr
-    assert "ok: signed in as tester@example.test" in add.stdout
-    text = proj.read_text()
-    assert "[accounts.tester]" in text and "env:QAJEV_FIXTURE_PASS" in text and 'account = "tester"' in text
-    assert "fixture-pass-123" not in text + add.stdout + add.stderr
-    wrong = _qajev("account", "check", "tester", "--project", str(proj), "--cdp-url", browser["cdp_url"],
-                   env={"QAJEV_FIXTURE_PASS": "not-the-password"})
+    body = (f'name = "fixture"\ndefault_env = "local"\naccount = "tester"\n\n[env.local]\nbase_url = "{site}"\n\n'
+            '[accounts.tester]\nemail = "tester@example.test"\npassword = "seed:qa_test_user.json#password"\n'
+            'login = { url = "/login.html" }\n\n[[objective]]\nname = "account"\nurl = "/account.html"\n'
+            'expect = { text = ["Signed in as tester@example.test"] }\n')
+    proj.write_text(body)
+    add = _qajev("account", "add", "other", "--email", "tester@example.test", "--login-url", "/login.html",
+                 "--password", "env:QAJEV_FIXTURE_PASS", "--project", str(proj), "--cdp-url", browser["cdp_url"],
+                 env={"QAJEV_FIXTURE_PASS": "fixture-pass-123"})
+    assert add.returncode == 3 and "qajev browser login --url /login.html" in add.stderr, add.stderr
+    assert proj.read_text() == body and "fixture-pass-123" not in add.stdout + add.stderr
+
+    def check(password):
+        (tmp_path / "qa_test_user.json").write_text(json.dumps(
+            {"test_account": True, "allowed_hosts": ["127.0.0.1"], "password": password}))
+        return _qajev("account", "check", "tester", "--project", str(proj), "--cdp-url", browser["cdp_url"])
+
+    good = check("fixture-pass-123")
+    assert good.returncode == 0 and "ok: signed in as tester@example.test" in good.stdout, good.stderr
+    assert "fixture-pass-123" not in good.stdout + good.stderr
+    wrong = check("not-the-password")
     assert wrong.returncode == 2 and "Wrong email or password" in wrong.stderr, wrong.stderr

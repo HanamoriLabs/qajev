@@ -148,26 +148,29 @@ def test_motion_is_reduced_by_default_and_validated():
 
 
 def test_an_account_names_where_its_password_lives_and_signs_in_over_https():
-    account = {"email": "qa+shop@example.com", "password": "keychain:qajev/shop-tester",
+    account = {"email": "qa+shop@example.com", "password": "seed:/qa/qa_test_user.json#password",
                "login": {"url": "/login", "signed_in": {"url_not": "/login"}}}
-    s = parse([{"url": "/account", "expect": {"text": ["Orders"]}}], base_url="https://shop.example",
+    s = parse([{"url": "/account", "expect": {"text": ["Orders"]}}], base_url="https://shop.test",
               account=account)
     assert s.account == {"name": "qa+shop@example.com", "email": "qa+shop@example.com",
-                         "password": "keychain:qajev/shop-tester",
-                         "login": {"url": "https://shop.example/login", "signed_in": {"url_not": "/login"}}}
-    sso = parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.example",
-                account={**account, "login": {"url": "https://auth.example/sign-in"}})
-    assert "auth.example" in sso.hosts  # the sign-in host is one QAJev may visit
-    with pytest.raises(S.SuiteError, match="never the value"):
+                         "password": "seed:/qa/qa_test_user.json#password",
+                         "login": {"url": "https://shop.test/login", "signed_in": {"url_not": "/login"}}}
+    sso = parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.test",
+                account={**account, "login": {"url": "https://auth.test/sign-in"}})
+    assert "auth.test" in sso.hosts  # the sign-in host is one QAJev may visit
+    with pytest.raises(S.SuiteError, match="qajev browser login --url https://shop.example/login"):
         parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.example",
+              account={**account, "password": "keychain:qajev/shop-tester"})  # José, 6 Oct: no person's password
+    with pytest.raises(S.SuiteError, match="never the value"):
+        parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.test",
               account={**account, "password": "hunter2-plain"})
     with pytest.raises(S.SuiteError, match="https"):
-        parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="http://shop.example",
+        parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="http://shop.test",
               account=account)  # a password never travels unencrypted; http is for localhost only
     assert parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="http://127.0.0.1:8765",
                  account=account).account["login"]["url"] == "http://127.0.0.1:8765/login"
     with pytest.raises(S.SuiteError, match="login.url"):
-        parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.example",
+        parse([{"url": "/", "expect": {"text": ["x"]}}], base_url="https://shop.test",
               account={**account, "login": {}})
 
 

@@ -64,9 +64,12 @@ def test_the_keychain_prompt_needs_the_persons_own_terminal(monkeypatch):
 
 
 def test_a_suite_block_signs_in_over_https_only():
-    assert account.block("t", "qa@example.com", "env:P", "https://shop.test/login")["login"] == {
+    seed = "seed:/qa/qa_test_user.json#password"
+    assert account.block("t", "qa@example.com", seed, "https://shop.test/login")["login"] == {
         "url": "https://shop.test/login"}
     with pytest.raises(account.AccountError, match="https"):
-        account.block("t", "qa@example.com", "env:P", "http://shop.test/login")
+        account.block("t", "qa@example.com", seed, "http://shop.test/login")
     with pytest.raises(account.AccountError, match="password"):
         account.block("t", "qa@example.com", "plain-value", "https://shop.test/login")
+    with pytest.raises(account.AccountError, match="qajev browser login"):  # José, 6 Oct: no person's password
+        account.block("t", "qa@example.com", "env:P", "https://shop.example.com/login")
