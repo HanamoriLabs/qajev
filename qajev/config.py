@@ -102,6 +102,10 @@ def is_loopback(url):
     return bool(LOOPBACK.match(plain_host(url)))
 
 
+# What is_local_dev accepts, as `qajev doctor` prints it. Every other host is production: read-only, no override.
+LOCAL_DEV_HOSTS = ("localhost", "127.0.0.1", "[::1]", "*.localhost", "*.test")
+
+
 def is_local_dev(url):
     """A local development host: loopback, or a name under .localhost or .test (RFC 6761: never on the internet)."""
     host = plain_host(url)

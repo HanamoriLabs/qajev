@@ -122,7 +122,9 @@ A suite in full:
 name: Shop
 about: a visitor can see what we sell and what it costs   # what the whole run proves
 base_url: http://localhost:3000
-mode: readonly            # readonly (default) or mutate (only on localhost / 127.0.0.1)
+mode: readonly            # readonly (default) or mutate (a local dev host only: localhost, 127.0.0.1, [::1],
+                          # *.localhost, *.test; any other host is refused, exit 5)
+allow_destructive: false  # true shows delete, remove, refund, cancel... (a local dev host only; red report banner)
 device: desktop           # desktop | tall | phone | tablet | WIDTHxHEIGHT
 persona: "You are a first-time visitor."
 budget: {actions: 20, seconds: 90}   # per scenario (at most 60 actions)
@@ -251,7 +253,9 @@ policy, as above: then the test shows how fast a player had to be.
 
 ## Guard options
 
-The guard hides dangerous controls and blocks writes (see [Safety](safety.md)). It reads everything a person could
+The guard hides dangerous controls and blocks writes (see [Safety](safety.md)). Destructive controls (delete,
+remove, refund, cancel, archive, reset...) are hidden on every host; `allow` never shows them, only
+`allow_destructive: true` does, and only when every host is a local dev host. It reads everything a person could
 read on a control: its text, `aria-label`, `title` (the tooltip) and an input's value. A stuck or harness result
 names what it held back ("guard hid: 'Shop Show clothes and gear you can buy' (danger: buy)"), and so does the
 report. A suite can tune it:
@@ -260,8 +264,9 @@ report. A suite can tune it:
 hosts: [accounts.example.com]      # other sites Jev may visit; anything else stops the scenario
 guard:
   deny: ["\\bexport all\\b"]       # more button labels to hide (regular expressions, any case)
-  allow: ["^Delete draft$"]        # exceptions to the built-in hidden list
-  allow_requests: ["/graphql$"]    # read-only mode: let these non-GET requests through
+  allow: ["^See plans and subscribe$"]  # exceptions to the built-in hidden list (on a local dev host; on
+                                       # production only to a read-only rule, never to a dangerous control)
+  allow_requests: ["/graphql$"]    # read-only: let these writes through, listed in the report (production: POST only)
   block_urls: ["*://*/logout*"]    # never load these addresses
   redact_emails: false             # hide e-mail addresses from Jev
 ```
@@ -316,7 +321,7 @@ scenarios:
 - **The report** shows each player's screenshot, when each player acted in each step, and when each reached each
   snapshot (ms after the first, or "timed out").
 - The guard is armed for every player as in any scenario: `mode: readonly` blocks writing requests (WebSockets pass);
-  `mode: mutate` works on localhost only. A scenario with clients has no goal, persona, or before/after hooks.
+  `mode: mutate` works on a local dev host only. A scenario with clients has no goal, persona, or before/after hooks.
 
 ## Signed-in areas
 

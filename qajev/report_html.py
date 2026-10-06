@@ -10,6 +10,10 @@ from urllib.parse import urlsplit
 from . import plan as plan_mod
 from .verdict import hidden_words
 
+# The red banner of a run that showed destructive controls (allow_destructive; refused for a production host).
+DESTRUCTIVE = ("Destructive controls were shown (allow_destructive): Jev could delete, remove, refund or cancel "
+               "things in this run. Local dev hosts only; production never shows them.")
+
 OBVIOUS = 0.8
 OUTCOME_ORDER = ("pass", "fail", "stuck", "harness", "unverified", "skipped")
 LEGEND = {
@@ -186,6 +190,10 @@ def _scenario(i, r, who="Jev"):
         first = r["blocked_writes"][0]
         notes.append(f"Read-only guard blocked {len(r['blocked_writes'])} write request(s), e.g. "
                      f"{_e(first.get('method'))} {_e(_where(first.get('url')))}")
+    for w in r.get("allowed_writes") or []:  # every write production let through (allow_requests) is listed
+        notes.append(f"Allowed write: {_e(w.get('method'))} {_e(_where(w.get('url')))}")
+    for d in r.get("dialogs") or []:
+        notes.append(f"Dismissed {_e(d.get('kind'))}" + (f": {_e(d['message'])}" if d.get("message") else ""))
     blocked = [a for a in r.get("assists") or [] if a.get("after", "BLOCKED") == "BLOCKED"]
     if blocked:
         moved = sum(1 for a in blocked if a.get("scrolled"))
@@ -394,6 +402,8 @@ def render(data):
         f'<div class="gate {_e(data["gate"])}">Gate: {_e(data["gate"])}{interrupted}</div>',
         f'<div class="counts">{counts}</div><div class="muted">{_e(summary)}</div>',
     ]
+    if data.get("allow_destructive"):
+        out.append(f'<div class="box fail" role="alert"><strong>{_e(DESTRUCTIVE)}</strong></div>')
     wall = data.get("needs_sign_in")
     if wall:
         out.append(f'<div class="card"><p><strong>Needs sign-in:</strong> {len(wall["pages"])} page(s) asked to '

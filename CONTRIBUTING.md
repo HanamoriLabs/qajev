@@ -48,8 +48,9 @@ The demo site: `python3 tests/fixtures/serve.py` serves it on `http://127.0.0.1:
 
 ## Guidelines
 
-- **Safety first.** Changes must keep the guarantees in [docs/safety.md](docs/safety.md): read-only by default,
-  `mutate` on loopback only, no secrets typed, dangerous controls hidden, a cost cap. Tests that use a browser must
+- **Safety first.** Changes must keep the guarantees in [docs/safety.md](docs/safety.md): production read-only and
+  destructive never (`mutate` and `--allow-destructive` on a local dev host only, refused elsewhere with exit 5), no
+  secrets typed, dangerous and destructive controls hidden, a cost cap. Tests that use a browser must
   only touch the local fixtures.
 - **Keep product and harness apart.** A new way for a run to fail must say whether it is the product's fault or
   QAJev's.

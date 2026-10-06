@@ -16,6 +16,7 @@ def test_a_key_hook_is_one_key_or_a_sequence_repeated_or_held():
     assert keys.spec("F") == keys.spec("f") == {"key": "f", "code": "KeyF", "windowsVirtualKeyCode": 70, "text": "f"}
     assert keys.spec("Backquote") == keys.spec("`")  # a code works as a name: easier in YAML than a backquote
     assert keys.spec("ArrowLeft") == {"key": "ArrowLeft", "code": "ArrowLeft", "windowsVirtualKeyCode": 37}
+    assert keys.spec("Delete") == {"key": "Delete", "code": "Delete", "windowsVirtualKeyCode": 46}  # guarded on prod
     assert keys.spec("7")["code"] == "Digit7"
 
 

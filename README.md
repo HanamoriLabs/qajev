@@ -34,7 +34,8 @@ qajev check https://shop.example \
   user agent, like a browser's device mode), unless you pin one device. [More](docs/writing-tests.md#desktop-and-phone).
 - **Fast and cheap.** A decision takes about a quarter of a second and costs a fraction of a cent. The smoke crawl
   is free.
-- **Safe by default.** Read-only on real sites, dangerous buttons hidden, Jev never types passwords or payment
+- **Safe by default.** Production is read-only and destructive is never: a run that would change a site that is
+  not on your machine is refused, delete and refund buttons are hidden, Jev never types passwords or payment
   details (a test account signs in from the Keychain or 1Password by reference), a hard cost cap on every run.
   [More](docs/safety.md).
 - **Built for agents.** An MCP server, a ready-made [agent prompt](AGENT_PROMPT.md), jobs that any agent can follow

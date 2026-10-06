@@ -60,7 +60,9 @@ def run(names=None, smoke_pages=10, notify=True, emit=print):
         emit(f"{time.strftime('%H:%M:%S')} {project} {kind}: running")
         report = _run(argv)
         ch: dict = report.get("changes") or {}
-        entry = {"project": project, "kind": kind, "gate": report.get("gate"), "error": report.get("error"),
+        # a refused run (a project env that would change production, exit 5) started nothing: it says so in the gate
+        gate = report.get("gate") or ("REFUSED" if report.get("outcome") == "refused" else None)
+        entry = {"project": project, "kind": kind, "gate": gate, "error": report.get("error"),
                  "cost_usd": (report.get("cost") or {}).get("usd"),
                  "html": str(Path(report["run_dir"]) / "report.html") if report.get("run_dir") else None,
                  "changes": ch.get("summary") or "first run: nothing to compare with",

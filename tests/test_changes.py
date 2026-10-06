@@ -94,6 +94,14 @@ def test_nightly_notifies_only_when_something_changed(monkeypatch, tmp_path):
     md = (tmp_path / "nightly" / f"{d['date']}.md").read_text()
     assert "**Something changed**" in md and "could not run:** Chrome did not start" in md
 
+    refused = {"outcome": "refused", "exit_code": 5, "error": "QAJev never changes a production site: shop.example is "
+               "not a local dev host.", "reason": "same"}
+    monkeypatch.setattr(nightly, "_run", lambda argv: refused if argv[0] == "run" else quiet)
+    d = nightly.run(emit=lambda _: None)
+    assert d["entries"][0]["gate"] == "REFUSED" and d["changed"]  # a refused project is news, never a quiet night
+    row = "| shop | objectives | REFUSED | **could not run:** QAJev never changes a production site"
+    assert row in nightly.markdown(d)
+
 
 def test_nightly_notifies_without_macos_tools(monkeypatch, tmp_path):
     # On Linux there is no osascript: the notification must not crash the run, and the user's hook still runs.

@@ -25,8 +25,9 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | `0` | PASS |
 | `1` | FAIL: the product is wrong somewhere |
 | `2` | INCOMPLETE: something could not be judged |
-| `3` | a mistake in the suite or the options, or the run was refused |
+| `3` | a mistake in the suite or the options |
 | `4` | no browser available (or the queue wait ran out) |
+| `5` | refused: the run would change a production site (`mode: mutate` or `--allow-destructive` on a host that is not a local dev host), or a play suite asked for `mode: mutate`. Nothing was started; `--json` prints `{"outcome": "refused", "reason": ...}` |
 | `130` | stopped (Ctrl-C or `qajev stop`) |
 
 ## Options shared by `check`, `run` and `smoke`
@@ -112,7 +113,8 @@ qajev check https://shop.example \
 | `--fetch URL[=STATUS]` | a request from the page that must answer STATUS (default 200) |
 | `--expect-looks STATEMENT` | Clef, looking at the final screenshot, must judge this true (repeatable; needs Clef) |
 | `--vision` | Clef sees the screenshot with every decision (needs Clef) |
-| `--mode readonly\|mutate` | `mutate` lets Jev change data: localhost only |
+| `--mode readonly\|mutate` | `mutate` lets Jev change data, on a local dev host only (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`, `*.test`); any other host is refused, exit 5 |
+| `--allow-destructive` | show delete, remove, refund, cancel... controls, hidden by default on every host; a local dev host only (else exit 5); the report carries a red banner |
 | `--device NAME` | `desktop`, `tall`, `phone`, `tablet` or `WIDTHxHEIGHT` |
 | `--persona TEXT` | who Jev is, e.g. "You are on your phone and new to this site" |
 | `--about TEXT` | what this test proves and why, in plain words; shown with its result in the report and dashboard |
@@ -137,6 +139,7 @@ qajev run --project shop --objective "A visitor finds the refund policy" --expec
 | `--only NAME` | run this scenario, plus what it depends on |
 | `--jobs N` | run independent chains of scenarios in parallel (default 1) |
 | `--allow-commands` | let the suite run its shell commands |
+| `--allow-destructive` | as for `check`: destructive controls shown, every host a local dev host or the run is refused (exit 5) |
 | `--project`, `-p` | a project name, or a repository path with `.qajev/project.toml` |
 | `--env`, `-e` | the project environment (default: the project's `default_env`) |
 | `--suite TAG` | the objectives with this tag (repeatable) |
@@ -313,8 +316,8 @@ made in 1Password. Exit code 2 when the reference cannot be read, with the store
 
 ## `qajev doctor`
 
-Checks your keys (present and valid, never printed), Chrome, a free port and the machine's load. `--offline`
-skips the key validity check.
+Checks your keys (present and valid, never printed), Chrome, a free port and the machine's load, and prints the
+production rule with the hosts that count as local dev hosts. `--offline` skips the key validity check.
 
 ## `qajev init`
 

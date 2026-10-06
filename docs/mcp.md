@@ -67,13 +67,18 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 ### Main parameters
 
 - `qa_check`: `url` (required), `goal`, `expect_text`, `absent_text`, `expect_url`, `expect_js`, `fetch`, `mode`
-  (`readonly` or `mutate`), `device`, `persona`, `about`, `max_actions`, `max_seconds`, `cost_cap`, `profile`, `headless`,
+  (`readonly` or `mutate`: a local dev host only), `allow_destructive`, `device`, `persona`, `about`, `max_actions`, `max_seconds`, `cost_cap`, `profile`, `headless`,
   `background`, and with Clef `expect_looks` (statements judged from the final screenshot) and `vision` (Clef sees
   the screen with every decision).
-- `qa_run_suite`: `suite_path` or `suite_yaml`, `only`, `jobs`, `cost_cap`, `profile`, `background`.
+- `qa_run_suite`: `suite_path` or `suite_yaml`, `only`, `jobs`, `cost_cap`, `profile`, `allow_destructive`,
+  `background`.
 - `qa_smoke`: `url` (required), `max_pages`, `device`, `check_links`, `ux` (default true: measured UX notes and design consistency, free).
 - `qa_project_run`: `project` (required), `suite` (a tag), `names`, `env`, or an ad-hoc `objective` with `url`,
-  `expect_text`, `expect_url`, `about`.
+  `expect_text`, `expect_url`, `about`, and `allow_destructive`.
+- **Refused runs.** A run that would change a production site (`mode: mutate` or `allow_destructive` where a host is
+  not a local dev host: `localhost`, `127.0.0.1`, `[::1]`, `*.localhost`, `*.test`) starts nothing and returns
+  `{"outcome": "refused", "reason": "QAJev never changes a production site: HOST is not a local dev host."}`.
+  It is not an error to work around: tell the person, and run it read-only or against a local copy.
 - `qa_rerun`: `job` (required), `failed` (default true: only the tests that did not pass), `background`.
 - `qa_play`: `project` (the game, or `ios:...` / `android:...`), `goal`, `adapter`, `suite`, `only` (steps of the
   suite, with their `depends_on` and `setup: true` steps), `game_env`,

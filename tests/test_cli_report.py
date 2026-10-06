@@ -47,8 +47,9 @@ def test_bad_suite_exits_3_with_a_json_error(tmp_path, capsys):
     path.write_text("scenarios:\n  - url: https://example.com/\n    goal: x\n    mode: mutate\n")
     env = tmp_path / ".env"
     env.write_text("")
-    assert main(["run", str(path), "--json", "--env-file", str(env)]) == 3
-    assert "loopback" in json.loads(capsys.readouterr().out.strip().splitlines()[-1])["error"]
+    assert main(["run", str(path), "--json", "--env-file", str(env)]) == 5  # production: refused, not a config error
+    out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert out["outcome"] == "refused" and "example.com is not a local dev host" in out["reason"]
 
 
 def test_only_pulls_in_dependencies_and_groups_follow_chains():
@@ -88,6 +89,37 @@ def test_report_gate_counts_and_markdown(tmp_path):
     assert "token=secret" not in md and "code=123" not in md  # query strings never reach the Markdown
     assert "blocked 1 write request" in md
     assert json.loads((tmp_path / "report.json").read_text())["suite"] == "demo"
+
+
+def test_a_destructive_run_carries_a_red_banner_and_every_write_production_let_through(tmp_path):
+    results = [result("look", "pass", allowed_writes=[{"method": "POST", "url": "https://shop.example/api/search?q=1"}],
+                      dialogs=[{"kind": "confirm", "message": "Really delete item 1?"}, {"kind": "beforeunload",
+                                                                                          "message": ""}])]
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
+    data = report.build(SimpleNamespace(name="demo", guard={"allow_destructive": True}), results, [ledger],
+                        browser={}, started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+    assert data["allow_destructive"] is True
+    report.write(tmp_path, data)
+    md, page = (tmp_path / "report.md").read_text(), (tmp_path / "report.html").read_text()
+    for text in (md, page):
+        assert "Destructive controls were shown (allow_destructive)" in text
+        assert "Allowed write: POST shop.example/api/search" in text and "q=1" not in text
+        assert "Dismissed confirm: Really delete item 1?" in text and "Dismissed beforeunload" in text
+    assert '<div class="box fail" role="alert">' in page
+    plain = report.build(SimpleNamespace(name="demo", guard={}), results, [ledger], browser={},
+                         started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+    assert "allow_destructive" not in plain
+
+
+def test_a_play_suite_that_asks_to_change_data_is_refused(tmp_path, capsys):
+    suite = tmp_path / "play.yaml"
+    suite.write_text("steps:\n  - name: wipe\n    goal: x\n    mode: mutate\n")
+    env = tmp_path / ".env"
+    env.write_text("")
+    assert main(["play", str(tmp_path), "--suite", str(suite), "--json", "--env-file", str(env)]) == 5
+    out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert out["outcome"] == "refused" and "play runs are read-only" in out["reason"]
 
 
 def test_every_report_also_writes_a_self_contained_html_page(tmp_path):

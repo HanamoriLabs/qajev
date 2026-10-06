@@ -2,7 +2,7 @@
 
 A project is `.qajev/project.toml` inside the product's repo, or a central `<name>.toml` (with `repo = "..."`) in a
 projects folder while the repo has not adopted one. Objectives are plain goals with checks; they become an ordinary
-suite, so everything a suite guarantees (read-only production, loopback-only mutate, the guard) applies unchanged.
+suite, so everything a suite guarantees (read-only production, local-dev-only mutate, the guard) applies unchanged.
 
     name = "shop"
     default_env = "prod"
@@ -36,7 +36,7 @@ PROJECT_KEYS = {"name", "repo", "default_env", "env", "accounts", "account", "bu
                 "objective", "known", "motion", "devices", "real_devices"}
 KNOWN_KEYS = {"kind", "url", "note"}
 ENV_KEYS = {"base_url", "hosts", "mode", "device", "devices", "real_devices", "persona", "smoke_start", "motion",
-            "account"}
+            "account", "allow_destructive"}
 OBJECTIVE_KEYS = {"name", "env", "url", "goal", "expect", "tags", "before", "after", "budget", "device", "persona",
                   "mode", "settle", "depends_on", "speech", "vision", "about"}
 # email and password are vault references (vault.py) or, for email, the plain address; never a password value.
@@ -219,6 +219,8 @@ def suite_data(project, *, env=None, tags=(), names=(), objective=None, url=None
         "guard": project.guard,
         "scenarios": scenarios,
     }
+    if "allow_destructive" in target:  # a local env only: the suite refuses it for a production host
+        data["allow_destructive"] = target["allow_destructive"]
     for key in ("persona", "device", "devices", "real_devices", "motion"):
         value = target.get(key) or getattr(project, key, None)
         if value:
