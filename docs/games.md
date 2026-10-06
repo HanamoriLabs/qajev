@@ -39,7 +39,10 @@ qajev play MyGame.app --adapter my-game.js --goal "Open the settings. Stop when 
 
 A **suite** plays one game session in steps, in order. Each step is either:
 
-- a **goal** step: Jev works the menus, as above;
+- a **goal** step: Jev works the menus, as above. It ends as soon as its `expect` holds; with `stop: end` Jev plays
+  the goal to DONE or its budget first, and the checks judge only then (for "open OUTFITS and browse five", whose
+  check comes true at the first click). Checks that already held before the goal's first action prove nothing about
+  it: the step is unverified, never passed. Check a state the goal changes;
 - a **play** step: the game is played in real time for a while. The adapter's **pilot** steers (usually the
   game's own bot or autopilot), and Jev makes every **decision** the game stops for (level-up cards, dialogue
   choices, which item to wear...). QAJev samples frames per second, frame time, memory and the game's state every

@@ -228,6 +228,44 @@ def test_each_game_decision_is_logged_as_made_with_labels_and_the_runner_up(monk
         "runner_up_p": 0.08, "options": 2, "ms": 41}
 
 
+def test_a_goal_steps_check_that_held_before_it_acted_proves_nothing_and_stop_end_plays_on(tmp_path, monkeypatch):
+    # SideGame1 and the Orchestrator, 6 Oct: a goal step ended as "reached" the moment its check held, so a check
+    # true from the start passed after 0 actions (a false pass). It is now unverified; `stop: end` plays the goal to
+    # DONE or its budget before judging, for a step whose check comes true early ("open OUTFITS and browse five").
+    from types import SimpleNamespace
+
+    from qajev import session as session_mod
+
+    class Wardrobe(FakeGame):
+        def __init__(self, screen):
+            super().__init__()
+            self.screen, self.acted = screen, 0
+
+        def observe(self):
+            return {"screen": self.screen, "texts": [], "state": {}, "fps": 60,
+                    "actions": [{"id": "go", "label": "OUTFITS" if self.screen != "OUTFITS" else "NEXT",
+                                 "kind": "click", "x": 1, "y": 1}]}
+
+        def act(self, action):
+            self.acted += 1
+            self.screen = "OUTFITS" if self.screen in ("MENU", "OUTFITS") else self.screen
+
+    monkeypatch.setattr(session_mod, "load", lambda ledger: SimpleNamespace(model=SimpleNamespace(
+        choose=lambda state, goal, history: {"choice": "go", "probabilities": {"go": 0.9}})))
+    run = dict(budget={"actions": 4, "seconds": 10}, ledger=_NoLedger(), run_dir=tmp_path, shots=False, settle=0)
+    training = Wardrobe("TRAINING")  # the step's end state is already true before it starts
+    r = native.play(training, name="lesson 1", goal="Do lesson 1.", expect={"screen": "TRAINING"}, **run)
+    assert r["outcome"] == "unverified" and training.acted == 0, r
+    assert "held before the goal's first action" in r["reason"]
+    browse = Wardrobe("MENU")
+    r = native.play(browse, name="browse", goal="Open OUTFITS and browse five.", expect={"screen": "OUTFITS"}, **run)
+    assert r["outcome"] == "pass" and browse.acted == 1  # by default: stopped once OUTFITS opened
+    browse = Wardrobe("MENU")
+    r = native.play(browse, name="browse", goal="Open OUTFITS and browse five.", expect={"screen": "OUTFITS"},
+                    stop_at_end=True, **run)
+    assert r["outcome"] == "pass" and browse.acted == 4  # stop: end: the goal ran its budget, then was judged
+
+
 def test_a_decision_jev_answers_done_says_so_and_does_not_borrow_its_probability(monkeypatch):
     from types import SimpleNamespace
 

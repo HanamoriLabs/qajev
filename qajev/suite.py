@@ -173,7 +173,25 @@ def _hooks(value, where):
         if not isinstance(hook, dict) or len(hook) != 1 or next(iter(hook)) not in HOOK_KINDS:
             raise SuiteError(f"{where}[{i}] must be one of {sorted(HOOK_KINDS)}, e.g. {{js: '...'}}")
         _key_hook(hook, f"{where}[{i}]")
+        _wait_hook(hook, f"{where}[{i}]")
     return hooks
+
+
+WAIT_MAX_S = 300
+
+
+def _wait_hook(hook, where):
+    """A wait's timeout is in seconds and bounded (verse2, 6 Oct: `timeout: 60000` meant 60 s and read as 17 hours)."""
+    spec = hook.get("wait_for")
+    if not isinstance(spec, dict) or "timeout" not in spec:
+        return
+    t = spec["timeout"]
+    if isinstance(t, bool) or not isinstance(t, (int, float)) or t <= 0:
+        raise SuiteError(f"{where}.wait_for.timeout must be a number of seconds")
+    if t > WAIT_MAX_S:
+        raise SuiteError(f"{where}.wait_for.timeout is in seconds, at most {WAIT_MAX_S}; {t:g} looks like "
+                         f"milliseconds (write {t / 1000:g})" if t >= 1000 else
+                         f"{where}.wait_for.timeout is in seconds, at most {WAIT_MAX_S}")
 
 
 def _key_hook(hook, where):
