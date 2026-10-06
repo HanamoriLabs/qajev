@@ -7,6 +7,7 @@ at a time on the whole machine (a lock shared with the CLI); later runs queue.
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -168,7 +169,8 @@ async def _run_report(args, ctx, background=False, title=None, cwd=None, rerun=N
                 break
             await asyncio.sleep(0.5)
     except asyncio.CancelledError:
-        await asyncio.to_thread(jobs.stop, job["id"])  # the run closes its own tabs, Chrome and daemon
+        with contextlib.suppress(jobs.NotOurs):  # the cancel goes on either way
+            await asyncio.to_thread(jobs.stop, job["id"])  # the run closes its own tabs, Chrome and daemon
         raise
     if not data or "error" in data:
         st = jobs.status(job["id"])
@@ -468,6 +470,8 @@ async def qa_play(
     only: list[str] | None = None,
     game_env: dict | None = None,
     game_args: list[str] | None = None,
+    game_profile: str | None = None,
+    reset_game_profile: bool = False,
     expect_screen: str | None = None,
     expect_text: list[str] | None = None,
     expect_state: dict | None = None,
@@ -496,7 +500,9 @@ async def qa_play(
     own UI. `suite`: a YAML file of steps in one session: goal steps, real-time play steps (`play:`, needs the
     game's bot), idle steps (`idle: SECONDS`, the game runs untouched), with top-level `allow`/`hide` labels.
     `only`: run these steps of the suite, plus the steps they name in `depends_on` and every `setup: true` step.
-    `game_env`: environment settings for the game; `game_args`: switches for an Electron app. expect_state: game
+    `game_env`: environment settings for the game; `game_args`: switches for an Electron app. `game_profile`: keep
+    an Electron game's save folder between runs (~/.qajev/game-profiles/NAME, a test profile; reset_game_profile
+    empties it first); default: a throwaway deleted at close. expect_state: game
     state values, e.g. {"game_over": false, "kills": ">= 1"}. Quit, exit and delete-save buttons are hidden from Jev;
     to test a normal quit pass allow=["QUIT"] and expect_closed=true (passes only on exit code 0). `name` titles the
     run in qa_jobs. Each step ends with a screenshot (shots=false skips them); headless (default) only applies to
@@ -515,6 +521,10 @@ async def qa_play(
     for key, value in (game_env or {}).items():
         args += ["--game-env", f"{key}={value}"]
     args += [f"--game-arg={a}" for a in game_args or []]  # one token: the switch itself starts with --
+    if game_profile:
+        args += ["--game-profile", game_profile]
+    if reset_game_profile:
+        args.append("--reset-game-profile")
     for text in expect_text or []:
         args += ["--expect-text", text]
     for key, value in (expect_state or {}).items():
@@ -622,6 +632,8 @@ async def qa_stop(job: str) -> dict:
         return await asyncio.to_thread(jobs.stop, job)
     except jobs.NoSuchJob:
         raise ToolError(f"no job {job}") from None
+    except jobs.NotOurs as e:
+        raise ToolError(str(e)) from None
 
 
 @server.tool()

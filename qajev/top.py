@@ -580,8 +580,10 @@ def run_ui(watch=None):
                 continue
             if confirm:
                 if key in (ord("y"), ord("Y")):
-                    st = jobs.stop(confirm)
-                    message = f"job {confirm}: {st['state']}"
+                    try:
+                        message = f"job {confirm}: {jobs.stop(confirm)['state']}"
+                    except jobs.NotOurs as e:
+                        message = str(e)
                 elif key != -1:
                     message = "not stopped"
                 if key != -1:
