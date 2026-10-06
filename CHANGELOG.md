@@ -10,6 +10,16 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   page** opens its origin and path only. The frame grabber may only take screenshots, read the page's address and
   size, and bring its own page to the front; the report says how long the run was watched live.
   ([The dashboard](docs/dashboard.md))
+- Fixed: a game goal step passed on checks that already held before it began. It ended as soon as its `expect` held,
+  so a check true from the start passed after 0 actions (SideGame1: "lesson 1" passed on "still in training"). Such a
+  step is now unverified, never passed. A new step option `stop: end` plays the goal to DONE or its budget before the
+  checks judge, for a step whose check comes true early. ([Games](docs/games.md))
+- Fixed: a scenario without a goal judged its checks on the page as read right after it loaded, before its
+  `before:` hooks ran. A `wait_for` there seemed not to wait, and a check that held at once passed on a page still
+  loading (verse2: a game judged at its spawn point, nothing drawn yet). The checks now judge the page after the
+  hooks.
+- A `wait_for` timeout is in seconds, at most 300; a suite that says more is refused when it loads, and 1000 or
+  more is named as milliseconds (`timeout: 60000` read as almost 17 hours).
 - Fixed: `visible` passed on words a person could not see. A first-run overlay covering the whole page, and a
   label cut to "Message to Or…" by its ellipsis box, both passed (FlockTab1). Visible now means drawn on top and
   whole: the words' own lines are checked for anything drawn over them, and against any `overflow` box that clips

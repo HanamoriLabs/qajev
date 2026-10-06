@@ -52,6 +52,15 @@ class Recorder(http.server.SimpleHTTPRequestHandler):
         if self.path == "/reset.png":  # hang up without an answer: Chrome says net::ERR_EMPTY_RESPONSE
             self.close_connection = True
             return
+        if self.path.startswith("/slow.html"):  # a page the server takes 0.8 s to answer (verse2's deep links)
+            time.sleep(0.8)
+            body = b"<!doctype html><title>Slow</title><p>The second page</p><script>window.where = 'second'</script>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if not self._download_redirect():
             super().do_GET()
 
@@ -876,6 +885,52 @@ def test_live_frames_from_the_real_page_are_jpegs_at_most_1280_wide_with_the_pag
     assert width and width <= live.WIDTH
     assert json.loads((run / "live" / "page.json").read_text())["url"] == site + "/pricing.html"
     assert live.watched_seconds(run) > 0
+
+
+def test_the_checks_judge_the_page_after_its_before_hooks_not_before_them(site, browser, tmp_path):
+    # verse2, 6 Oct: `before: wait_for` "did not wait": the scenario's checks were judged on the page as it was read
+    # right after loading, before its hooks ran. They now judge the page after the hooks (here: after the wait).
+    import subprocess
+    import sys
+
+    suite = tmp_path / "late.yaml"
+    suite.write_text(f"""
+name: late
+base_url: {site}
+devices: [desktop]
+scenarios:
+  - name: the page is ready after the wait
+    about: the checks see the page the wait waited for
+    url: /ready-late.html
+    settle: 0
+    before:
+      - wait_for: {{js: "window.ready === true", timeout: 5}}
+    expect:
+      js: "window.ready === true || 'checked before the wait: ready is ' + window.ready"
+      says: {{js: the page says it is ready}}
+""")
+    p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--cdp-url", browser["cdp_url"], "--out",
+                        str(tmp_path / "out"), "--json", "--quiet", "--load-high", "0"], capture_output=True, text=True,
+                       timeout=180)
+    (scenario,) = json.loads(p.stdout)["scenarios"]
+    assert scenario["outcome"] == "pass", scenario["reason"]
+
+
+def test_a_navigation_returns_on_the_new_page_so_a_wait_never_holds_on_the_last_one(session, site):
+    # verse2, 6 Oct: in a suite's second scenario, `before: wait_for` held at once on the PREVIOUS page, and the checks
+    # then ran on a page still loading. A navigation now returns only once the new document is the one in the tab.
+    session.arm("readonly")
+    session.navigate(site + "/index.html")
+    session.evaluate("(window.where = 'first', true)")
+    assert session.navigate(site + "/slow.html?at=29,65") is None
+    assert session.evaluate("window.where") == "second"
+    session.run_hook({"wait_for": {"js": "window.where === 'second'", "timeout": 1}}, site + "/slow.html")
+    session.evaluate("(window.where = 'before reload', true)")
+    session.reload()
+    assert session.evaluate("window.where") == "second"  # a reload waits for the new document too
+    session.evaluate("(window.where = 'same document', true)")
+    assert session.navigate(site + "/slow.html?at=29,65#dock") is None  # a hash change keeps the document
+    assert session.evaluate("window.where") == "same document"
 
 
 def test_a_small_decorative_progress_bar_is_not_a_spinner(session, site):

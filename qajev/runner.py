@@ -188,6 +188,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                                   url=observed.get("url"))
             for hook in scenario.before:
                 session.run_hook(hook, observed.get("url") or scenario.url)
+            if scenario.before:  # the checks judge the page after its hooks (verse2, 6 Oct: a wait_for "did not
+                read()           # wait" because the checks used the page as read before it ran)
             if scenario.goal:
                 session.reset_agent(scenario.task)
 
