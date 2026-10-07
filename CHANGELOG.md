@@ -7,6 +7,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - The I'M HIM! adapter reports the game's own QA flags (`window.__qaState`) as state fields. A play step can now stop
   on one: `until: {kaigun_beaten: true}`. It keeps strings up to 200 characters, numbers and booleans, at most 50 of
   them. A flag never replaces one of the adapter's own fields. ([Games](docs/games.md#adapters))
+
+## 0.4.2: 7 Oct 2026
+
 - Fixed: a run now stops when the process that started it ends. A lane stopped a run script for high load, but
   `qajev play` kept going on its own, with its game window at 120% CPU for 20 minutes. Now `check`, `run`, `smoke`
   and `play` see within 2 s that their parent ended. They then stop like Ctrl-C and close their browser or game.
