@@ -9,6 +9,17 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   and `play` see within 2 s that their parent ended. They then stop like Ctrl-C and close their browser or game.
   Runs that launchd starts (nightly) and background jobs are not affected. To keep a run you detached on purpose,
   set `QAJEV_OUTLIVE_PARENT=1`. ([Configuration](docs/configuration.md))
+- Game steps can prove where they start and how long a state lasts (im-him plan 40: a cutscene that never opened
+  passed the same way as one that played out).
+  - `before: {screen, text, state}` on any step but a relaunch must hold when the step starts, or the step fails at
+    once and does not run.
+  - `lasted: {min, max}` on an `idle` step with `before:` measures how long that state held with no input. QAJev
+    looks every half second, and the check passes or fails only when both looks around the end agree. When the
+    machine was too slow to tell, the step is harness. The checks after it get no 10 s grace period.
+  - `qajev play` and `qajev plan` refuse a bad `lasted:` when the suite loads (exit 3).
+  - Fixed: an idle step's time now includes its idle. Plan 40 showed "0 s" after a 45 s idle. The report says
+    "idled 45 s, no input from QAJev".
+  ([Games](docs/games.md#where-a-step-starts-and-how-long-a-state-lasts))
 - A game goal step can be judged by later steps: `judged_by: [step names]`. It passes only when Jev took at least
   one action and every named step passed; a DONE with no action stays unverified, and a judge that did not pass
   leaves it unverified (its own result counts what went wrong). The names must be later steps of the suite, checked

@@ -178,6 +178,8 @@ def _scenario(i, r, who="Jev"):
         size = f"{device['width']}×{device['height']}" + (" mobile" if device.get("mobile") else "")
         facts.append(("Device", _e(size)))
     timing = [f"{r['seconds']} s" if r.get("seconds") is not None else "",
+              f"idled {r['idled_s']:.0f} s, no input from QAJev" if r.get("idled_s") is not None else "",
+              f"looked at the game at most {r['look_gap_s']:.1f} s apart" if r.get("look_gap_s") is not None else "",
               f"{jev['actions']} Jev action(s)" if jev.get("actions") is not None else "",
               f"${r['cost_usd']:.4f}" if isinstance(r.get("cost_usd"), (int, float)) else ""]
     if any(timing):
