@@ -369,6 +369,18 @@ class ElectronGame:
         path.write_bytes(base64.b64decode(data))
         return path
 
+    def use_pad(self):
+        """The virtual pad (pad.SHIM_JS) in this page, and in any page it loads later before that page's own code.
+        The game's first page loads before QAJev connects, so there the pad appears now, with a gamepadconnected
+        event: a game that reads navigator.getGamepads as it plays sees it."""
+        from . import pad
+
+        if getattr(self, "_pad", False):
+            return
+        self.send("Page.addScriptToEvaluateOnNewDocument", source=pad.SHIM_JS)
+        self.evaluate(pad.SHIM_JS)
+        self._pad = True
+
     def run_js(self, expression):
         """A suite's `js:` step: the expression's value (a promise is awaited). A script error is a NativeError
         "page script failed: ..."; an error it schedules for later reaches the page as uncaught."""

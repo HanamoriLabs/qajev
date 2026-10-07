@@ -983,6 +983,47 @@ def js_step(game, *, name, expression, emit=None):
                         page_errors=list(getattr(game, "errors", errors)[before:])[:10])
 
 
+def pad_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shots=True, emit=None):
+    """A suite's `pad:` step (Electron): buttons, a stick or a trigger on the virtual pad (pad.py), then the step's
+    `expect` checks, if it has any (with the usual grace for the game to answer the input)."""
+    from . import pad as pad_mod
+
+    use = getattr(game, "use_pad", None)
+    if use is None:
+        return _step_result(name, "browser_error", [], "pad steps need an Electron app (a page to read the pad in)")
+    said = pad_mod.describe(value)
+    _step(emit, name, None, said)
+    try:
+        use()
+        for frame in pad_mod.plan(value):
+            game.run_js(pad_mod.set_js(frame))
+            if frame["ms"]:
+                time.sleep(frame["ms"] / 1000)
+    except NativeError as e:
+        if not str(e).startswith("page script failed"):
+            return _step_result(name, "browser_error", [], str(e))
+        return _step_result(name, "reached", [{"check": "the pad input was sent", "says": said, "ok": False,
+                                                "detail": str(e)[:300]}])
+    sent = {"check": "the pad input was sent", "says": said, "ok": True, "detail": None}
+    if not expect:
+        return _step_result(name, "reached", [sent])
+    return play(game, name=name, goal=None, expect=expect, budget={"actions": 0, "seconds": 0}, ledger=ledger,
+                run_dir=run_dir, shots=shots, emit=emit, prior=[sent])
+
+
+def check_pad(steps):
+    """A suite's `pad:` steps, checked when it loads (raises NativeError): buttons, sticks and triggers that exist,
+    within their bounds (pad.plan)."""
+    from . import pad as pad_mod
+
+    for i, step in enumerate(steps):
+        if isinstance(step, dict) and step.get("pad") is not None:
+            try:
+                pad_mod.plan(step["pad"])
+            except ValueError as e:
+                raise NativeError(f"step {step.get('name') or f'step {i + 1}'!r}: pad: {e}") from None
+
+
 def crash_step(game, *, name, emit=None):
     """A suite's `crash_renderer:` step: crash the game's page renderer on purpose (a crash-report proof). It passes
     when the renderer is gone and the app's main process runs on."""
@@ -1320,6 +1361,9 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
             r = refused
         elif step.get("js") is not None:
             r = js_step(game, name=name, expression=str(step["js"]), emit=emit)
+        elif step.get("pad") is not None:
+            r = pad_step(game, name=name, value=step["pad"], expect=step.get("expect"), ledger=ledger,
+                         run_dir=run_dir, shots=shots, emit=emit)
         elif step.get("crash_renderer"):
             r = crash_step(game, name=name, emit=emit)
         elif step.get("idle") and getattr(game, "renderer_gone", False):

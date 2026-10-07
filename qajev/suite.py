@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-from . import keys
+from . import keys, pad
 from .config import host_of, is_local_dev, is_loopback, is_test_email, plain_host
 from .guard import MODES
 
@@ -49,7 +49,7 @@ def wanted_devices(explicit=None):
     for name in names:
         _device(name, "devices")
     return names or list(DEFAULT_DEVICES)
-HOOK_KINDS = {"js", "fill", "click", "navigate", "wait_for", "key", "react", "sleep", "command", "reload"}
+HOOK_KINDS = {"js", "fill", "click", "navigate", "wait_for", "key", "react", "sleep", "command", "reload", "pad"}
 EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
                "looks", "across", "says"}
 # The checks only their author can describe, by what `says` gives them in plain words (the test plan, 6 Oct)
@@ -205,8 +205,9 @@ def _wait_hook(hook, where):
 
 
 def _key_hook(hook, where):
-    """A key hook names real keys within its bounds (keys.py), checked here so a bad one fails before the run."""
-    for kind, check in (("key", keys.plan), ("react", keys.react_plan)):
+    """A key or pad hook names real keys or buttons within its bounds (keys.py, pad.py), checked here so a bad one
+    fails before the run."""
+    for kind, check in (("key", keys.plan), ("react", keys.react_plan), ("pad", pad.plan)):
         if kind in hook:
             try:
                 check(hook[kind])
