@@ -934,3 +934,87 @@ def test_js_and_crash_renderer_steps_for_a_crash_report_proof(monkeypatch):
 
     [r] = native.run_session(Godot(), steps[:1], ledger=_NoLedger(), run_dir=None, shots=False)
     assert r["outcome"] == "harness" and "Electron" in r["reason"]
+
+
+# ---- judged_by: a goal step that later steps judge (SideGame1, im-him: ~25 scenarios whose Jev step has no end
+# state of its own; the scenario's verdict comes from the js steps after it) ----
+
+GIVE = {"name": "jev gives", "goal": "Give granny the cake. Stop when she has it.", "judged_by": ["verdict", "after"]}
+
+
+def judged_session(monkeypatch, *, actions, judges, own="unverified", own_checks=()):
+    """GIVE, then two js judges whose outcomes are `judges` (a judge named "skip" in it is a skipped step)."""
+    def fake_play(game, *, name, **_):
+        return {"name": name, "outcome": own, "reason": "own result", "checks": list(own_checks), "findings": [],
+                "screens": [], "jev": {"actions": actions}}
+
+    def fake_js(game, *, name, expression, emit=None):
+        o = judges[name]
+        return {"name": name, "outcome": o, "reason": f"the verdict said {o}", "findings": [], "screens": [],
+                "checks": [{"check": "js verdict", "ok": o == "pass"}]}
+
+    monkeypatch.setattr(native, "play", fake_play)
+    monkeypatch.setattr(native, "js_step", fake_js)
+    steps = [dict(GIVE), *({"name": n, "js": "verdict()", **({"skip": "not today"} if o == "skipped" else {})}
+                           for n, o in judges.items())]
+    native.check_judged_by(steps)
+    return native.run_session(FakeGame(), steps, ledger=_NoLedger(), run_dir=None, shots=False)
+
+
+def test_a_judged_step_passes_when_jev_acted_and_every_judge_passed(monkeypatch):
+    jev, *_ = judged_session(monkeypatch, actions=3, judges={"verdict": "pass", "after": "pass"})
+    assert jev["outcome"] == "pass", jev["reason"]
+    assert "judged by: verdict, after" in jev["reason"]
+    said = jev["checks"][-1]
+    assert said["check"] == "judged by: verdict, after" and said["ok"] is True and said["says"]  # described
+
+
+def test_a_judged_step_where_jev_took_no_action_is_unverified_whatever_the_judges_say(monkeypatch):
+    jev, *_ = judged_session(monkeypatch, actions=0, judges={"verdict": "pass", "after": "pass"})
+    assert jev["outcome"] == "unverified" and "Jev took no action" in jev["reason"]
+    assert "judged by: verdict, after" in jev["reason"] and jev["checks"][-1]["ok"] is False
+
+
+@pytest.mark.parametrize("outcome", ["fail", "harness", "skipped", "stuck"])
+def test_a_judged_step_does_not_pass_when_a_judge_did_not_pass(monkeypatch, outcome):
+    # unverified, not fail: the judge's own result already counts what went wrong (a fail gates FAIL by itself),
+    # and it cannot tell Jev's part from the product's, so the Jev step says it is not proven, and why
+    jev, verdict, _ = judged_session(monkeypatch, actions=3, judges={"verdict": outcome, "after": "pass"})
+    assert verdict["outcome"] == outcome
+    assert jev["outcome"] == "unverified", jev["reason"]
+    assert f"verdict {outcome}" in jev["reason"] and "judged by: verdict, after" in jev["reason"]
+
+
+def test_a_judged_steps_own_failed_check_still_fails_it(monkeypatch):
+    jev, *_ = judged_session(monkeypatch, actions=3, judges={"verdict": "pass", "after": "pass"}, own="fail",
+                             own_checks=[{"check": "game shows 'Thank you'", "ok": False}])
+    assert jev["outcome"] == "fail" and "judged by: verdict, after" in jev["reason"]
+
+
+@pytest.mark.parametrize("judged_by, error", [
+    (["nope"], r"step 'jev gives' is judged by 'nope', which the suite does not have"),
+    (["jev gives"], r"step 'jev gives' cannot judge itself"),
+    (["setup"], r"step 'jev gives' is judged by 'setup', an earlier step: a judge runs after the step it judges"),
+    ([], r"judged_by needs the names of the later steps that judge it"),
+    ([3], r"judged_by needs the names of the later steps that judge it"),
+])
+def test_judged_by_names_only_later_steps_of_the_suite(judged_by, error):
+    steps = [{"name": "setup", "js": "boot()"}, {**GIVE, "judged_by": judged_by}, {"name": "verdict", "js": "x"}]
+    with pytest.raises(native.NativeError, match=error):
+        native.check_judged_by(steps)
+
+
+def test_judged_by_belongs_on_a_goal_step_and_only_brings_its_judges():
+    with pytest.raises(native.NativeError, match="judged_by goes on a goal step"):
+        native.check_judged_by([{"name": "look", "expect": {}, "judged_by": ["verdict"]},
+                                {"name": "verdict", "js": "x"}])
+    steps = native.check_judged_by([dict(GIVE), {"name": "verdict", "js": "x"}, {"name": "after", "js": "y"},
+                                    {"name": "other", "js": "z"}])
+    assert [s["name"] for s in native.select_steps(steps, ["jev gives"])] == ["jev gives", "verdict", "after"]
+
+
+def test_the_plan_names_a_steps_judges_before_the_run():
+    from qajev import plan
+
+    [it] = plan.from_steps([{**GIVE, "about": "Jev gives granny the cake"}])
+    assert [(c["check"], bool(c["words"])) for c in it["checks"]] == [("judged by: verdict, after", True)]

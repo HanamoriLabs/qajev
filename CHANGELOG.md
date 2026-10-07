@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- A game goal step can be judged by later steps: `judged_by: [step names]`. It passes only when Jev took at least
+  one action and every named step passed; a DONE with no action stays unverified, and a judge that did not pass
+  leaves it unverified (its own result counts what went wrong). The names must be later steps of the suite, checked
+  when it loads (`qajev play` and `qajev plan` refuse the rest, exit 3); `--only` brings a step's judges. For a
+  template whose Jev step has no end state of its own (SideGame1, im-him: about 25 scenarios gated INCOMPLETE).
+  ([Games](docs/games.md#a-goal-step-judged-by-later-steps))
 - `cpu_throttle: N` (suite, project env, `--cpu-throttle N`, MCP `cpu_throttle`): Chrome runs the page's CPU N times
   slower, 1 to 8, default 1, set before the first page loads. A phone pass then measures phone-like speed, not
   this machine's at a phone's size (the Verse QA night). The report says so under Run ("CPU: 4× slower").
