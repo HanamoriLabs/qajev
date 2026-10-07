@@ -51,7 +51,9 @@ A **suite** plays one game session in steps, in order. Each step is either:
 - an **idle** step (`idle: 90`): nobody touches the game for that many seconds, then the step's checks run. It
   needs no pilot, so it works on a release build, for example to leave the game running while something outside
   watches it (a `--game-arg=--log-net-log=...` network log). If the game crashes or closes meanwhile, the step
-  stops with an S1 finding and the rest of the session is skipped;
+  stops with an S1 finding and the rest of the session is skipped. The step's time includes the idle, and the
+  report says "idled 90 s, no input from QAJev". To prove something plays out by itself for a given time (a
+  cutscene, a countdown), give it `before:` and `lasted:` (below);
 - a **js** step (`js: "<expression>"`, Electron only): runs the expression in the game's page (a promise is
   awaited) and records its value as `js_result`, plus any page error in the next half second as `page_errors`. An
   error the script schedules (`setTimeout(() => { throw new Error('probe') }, 0)`) reaches the page uncaught, as a
@@ -122,6 +124,35 @@ asked for (it answered DONE or BLOCKED, or picked something not on screen), the 
 offer, and QAJev files an S3 "decision not made by" the model, by name (Jev, Clef). For a run that must be the
 model's own route, set `strict_decisions: true` on the play step: the first such decision then fails the step there,
 nothing clicked, with the screen and the model's answer in the reason.
+
+### Where a step starts, and how long a state lasts
+
+`before:` (any step but a relaunch) is the state the step must start from: `screen`, `text` and `state`, as in
+`expect`. QAJev checks it before the step does anything. If it does not hold, the step fails at once ("at the
+start: screen is ENDING (on PLAYING); the step did not run"). Without it, a cutscene that never opened passes the
+same way as one that played out.
+
+`lasted: {min: S, max: S}` (an `idle` step with `before:`) measures how long the `before:` state held once nobody
+touched the game. QAJev looks at the game every half second. It records the last look that saw the state and the
+first look that did not, so it knows when the state ended to within those two looks:
+
+- both inside the window: the check passes ("ended between 31.0 and 31.5 s");
+- both outside it: the check fails (a cutscene that closed after 0.1 s, or one still on screen at the max);
+- one inside and one outside: the machine was too slow to tell (the looks were far apart). The step is harness,
+  not the game's fail.
+
+The `expect` checks after a `lasted:` idle are judged at once, with no grace period, so a state that comes true
+only later does not pass. When the suite loads (`qajev play`, `qajev plan`), QAJev refuses (exit 3) a `lasted:`
+without `before:` and `idle:`, a min above the max, and an idle that is not longer than the max.
+
+```yaml
+- name: the ending cutscene plays out by itself
+  about: The ending cutscene starts, runs about 30 s with no input, and the game goes on.
+  before: {screen: ENDING}
+  idle: 45
+  lasted: {min: 25, max: 40}
+  expect: {screen: PLAYING}
+```
 
 ### Looking at the screen (Clef)
 
