@@ -59,6 +59,11 @@ A **suite** plays one game session in steps, in order. Each step is either:
   error the script schedules (`setTimeout(() => { throw new Error('probe') }, 0)`) reaches the page uncaught, as a
   real one would, for proving an error reporter. Later steps then see that error: give them
   `expect: {no_errors: false}`; or
+- a **pad** step (`pad: A`, or a press, stick or trigger as in a web suite's
+  [`pad` hook](writing-tests.md), Electron only): works a virtual gamepad in the game's page, then runs the step's
+  `expect`. The game's page loads before QAJev connects, so the pad appears at the first pad step, with a
+  `gamepadconnected` event. A game that reads `navigator.getGamepads()` as it plays sees it, and so does a game that
+  keeps the pad from that event. `qajev play` and `qajev plan` refuse a bad button or bound (exit 3); or
 - a **crash_renderer** step (`crash_renderer: true`, Electron only): crashes the game's page renderer on purpose
   (CDP `Page.crash`) so the app's crash reporter writes and sends its report. It passes when the renderer is gone
   and the app runs on. After it, `idle` steps watch the app's process (there is no page left to read) and other

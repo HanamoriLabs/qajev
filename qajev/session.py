@@ -22,6 +22,7 @@ from typing import Any
 
 from . import chrome, keys, live, netlog, providers
 from . import guard as guard_mod
+from . import pad as pad_mod
 from .config import is_loopback
 
 _jev = None
@@ -841,6 +842,30 @@ class Session:
                 if p["interval_ms"]:
                     time.sleep(p["interval_ms"] / 1000)
 
+    def use_pad(self):
+        """Put the virtual pad (pad.SHIM_JS) in every document from now on, before the page's own code, and in the
+        current one. Only a scenario with a pad hook gets it: other pages keep the real navigator.getGamepads."""
+        if getattr(self, "pad_script_id", None):
+            return
+        self.pad_script_id = self.call("Page.addScriptToEvaluateOnNewDocument", source=pad_mod.SHIM_JS)["identifier"]
+        with contextlib.suppress(RuntimeError):
+            self.evaluate(pad_mod.SHIM_JS)
+
+    def pad(self, value):
+        """A pad hook: each frame of pad.plan(value) set on the virtual pad, held for its time."""
+        try:
+            frames = pad_mod.plan(value)
+        except ValueError as e:
+            raise HookFailed(str(e)) from None
+        self.use_pad()
+        for frame in frames:
+            try:
+                self.evaluate(pad_mod.set_js(frame))
+            except RuntimeError as e:
+                raise HookFailed(f"pad: {e}") from None
+            if frame["ms"]:
+                time.sleep(frame["ms"] / 1000)
+
     def react(self, value):
         """A react hook: run a key policy in the page every `every_ms` (keys.react_plan) and send the key actions it
         returns as trusted key events, until `until` holds or `for_s` runs out. A policy can also ask for a frame
@@ -991,10 +1016,10 @@ class Session:
                 time.sleep(0.25)
         elif kind == "reload":  # the same page again, keeping the tab's cookies and storage (a player rejoining)
             self.reload()
-        elif kind in ("key", "react"):  # real time: a LIVE frame must not steal its time (live.REALTIME: 1 a second)
+        elif kind in ("key", "react", "pad"):  # real time: a LIVE frame must not steal its time (live.REALTIME)
             live.REALTIME.set()
             try:
-                self.press(value) if kind == "key" else self.react(value)
+                {"key": self.press, "react": self.react, "pad": self.pad}[kind](value)
             finally:
                 live.REALTIME.clear()
         elif kind == "sleep":

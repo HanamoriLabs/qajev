@@ -176,6 +176,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     try:
         session.set_device(scenario.device)
         session.arm(scenario.mode, scenario.speech)
+        if any("pad" in hook for hook in [*scenario.before, *scenario.after]):
+            session.use_pad()  # before the page loads: a game may read its pads only once, at load
         if scenario.url:
             session.check_host(scenario.url)
             error = session.navigate(scenario.url)
