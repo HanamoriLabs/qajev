@@ -821,7 +821,8 @@ def cmd_play(args):
                     step["about"] = about(step["about"], f"steps[{i}].about")
         except SuiteError as e:
             return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
-        try:
+        try:  # judged_by names later steps of the whole suite, before --only picks some
+            native.check_judged_by(session_steps)
             native.check_window(session_steps)
         except native.NativeError as e:
             return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
@@ -1453,7 +1454,7 @@ def cmd_plan(args):
         if isinstance(spec, dict) and spec.get("steps") and not spec.get("scenarios"):  # a game's steps suite
             name, run_about = spec.get("name") or args.file.stem, about(spec.get("about"), "about")
             native.check_window(spec["steps"])
-            items = plan_mod.from_steps(spec["steps"])
+            items = plan_mod.from_steps(native.check_judged_by(spec["steps"]))
         else:
             suite = load(args.file)
             name, run_about, items = suite.name, suite.about, plan_mod.from_suite(suite.scenarios)

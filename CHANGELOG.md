@@ -15,6 +15,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   - Fixed: an idle step's time now includes its idle. Plan 40 showed "0 s" after a 45 s idle. The report says
     "idled 45 s, no input from QAJev".
   ([Games](docs/games.md#where-a-step-starts-and-how-long-a-state-lasts))
+- A game goal step can be judged by later steps: `judged_by: [step names]`. It passes only when Jev took at least
+  one action and every named step passed; a DONE with no action stays unverified, and a judge that did not pass
+  leaves it unverified (its own result counts what went wrong). The names must be later steps of the suite, checked
+  when it loads (`qajev play` and `qajev plan` refuse the rest, exit 3); `--only` brings a step's judges. For a
+  template whose Jev step has no end state of its own (SideGame1, im-him: about 25 scenarios gated INCOMPLETE).
+  ([Games](docs/games.md#a-goal-step-judged-by-later-steps))
 
 ## 0.4.1: 7 Oct 2026
 

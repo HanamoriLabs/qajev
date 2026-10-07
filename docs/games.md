@@ -180,6 +180,28 @@ Asked for (`vision: true`, `--vision`, or `looks`), both need the game's window:
 `--headless` (MCP: `headless=false`), since a headless Godot game draws nothing to look at. They also refuse to start
 without Clef.
 
+### A goal step judged by later steps
+
+Sometimes Jev's step has no end state of its own: Jev does what the scenario asks (talk, give the item, hire), and
+the steps after it ask the game whether the scenario worked. Name those steps in `judged_by:`:
+
+```yaml
+steps:
+  - name: jev gives
+    about: Jev gives granny the cake
+    goal: Give granny the cake. Stop when she has it.
+    judged_by: [verdict]         # later steps whose result proves this one
+  - name: verdict
+    about: the scenario says it passed
+    js: window.scenario.verdict === "pass"
+```
+
+The goal step passes only when Jev took at least one action and every named step passed; the report says "judged
+by: verdict". Jev saying DONE without acting is never a pass (unverified). If a judge fails, is skipped or ends as
+harness, the goal step is unverified, not failed: the judge's own result already counts what went wrong, and it
+cannot tell Jev's part from the game's. The names must be later steps of the suite (never the step itself or an
+earlier one), checked before anything runs; `--only` on the goal step brings its judges too.
+
 ### Running some steps only
 
 A long session need not run whole to check one part of it. `--only STEP` (repeatable; MCP `only`) runs the named
