@@ -5,10 +5,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 ## Unreleased
 
 - Fixed: on a Mac, QAJev's Chrome took the keyboard from the app you were typing in. A run without `--headless`
-  started Chrome directly, so macOS brought it to the front, and it ignored `--start-minimized`. Now it starts
-  through macOS's launcher (`open -n -g`), so the window opens behind the app you are using, and QAJev then minimises
-  it as before. `qajev browser login` still opens in front, because you asked for that window. Games (Electron,
-  Godot) still open in front; run Godot with `--headless` to avoid it.
+  started Chrome directly, so macOS brought it to the front, and Chrome ignored `--start-minimized`. Now QAJev
+  starts Chrome hidden through macOS's launcher (`open -n -g -j`). In one test, Chrome held the front for about
+  0.2 s, down from about 7 s. Pages and screenshots work as before. `qajev browser login` still opens in front,
+  because you asked for that window. Games (Electron, Godot) still open in front. Run Godot with `--headless` to
+  avoid it.
   ([CLI](docs/cli.md#options-shared-by-check-run-and-smoke))
 
 ## 0.4.1: 7 Oct 2026

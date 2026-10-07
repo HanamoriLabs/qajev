@@ -50,7 +50,8 @@ def test_a_headed_chrome_on_macos_opens_behind_the_app_in_front(launch):
     start, spawned, niced = launch
     record = start()
     argv = spawned[0]
-    assert argv[:5] == ["/usr/bin/open", "-n", "-g", "-a", APP]  # -g: not to the front; -n: never the person's Chrome
+    # -n: never the person's Chrome; -g: not to the front; -j: hidden (else Chrome still took the front ~6 s)
+    assert argv[:6] == ["/usr/bin/open", "-n", "-g", "-j", "-a", APP]
     chrome_args = argv[argv.index("--args") + 1:]  # Chrome's own flags, without its binary (open names the app)
     assert chrome_args[0].startswith("--user-data-dir=") and chrome_args[-1] == "about:blank"
     assert "--start-minimized" in chrome_args and EXE not in argv

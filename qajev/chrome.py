@@ -233,11 +233,13 @@ def _app_bundle(path):
 
 
 def _open_behind(app, argv, log_path):
-    """Start a new Chrome through LaunchServices with -g, so its window opens behind the app in front. Started
-    directly, Chrome comes to the front, ignores --start-minimized, and what the person types lands in it (José,
-    7 Oct). -n: always a new instance, never the person's own Chrome. Returns the `open` process, not Chrome's."""
-    return subprocess.Popen(["/usr/bin/open", "-n", "-g", "-a", str(app), "--stderr", str(log_path), "--args", *argv],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+    """Start a new Chrome through LaunchServices, hidden (-j) and not brought forward (-g). Started directly, Chrome
+    comes to the front, ignores --start-minimized, and what the person types lands in it (José, 7 Oct). Measured on
+    one run each: Chrome held the front ~7.2 s started directly, ~5.9 s with -g alone, ~0.2 s with -g -j; pages and
+    screenshots worked in all three. -n: always a new instance, never the person's own Chrome. Returns the `open`
+    process, not Chrome's."""
+    return subprocess.Popen(["/usr/bin/open", "-n", "-g", "-j", "-a", str(app), "--stderr", str(log_path), "--args",
+                             *argv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
 
 
 def _browser_pid(exe, profile_dir, port):
