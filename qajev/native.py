@@ -511,9 +511,10 @@ def stop_at_end(step):
 
 
 def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, settle=0.4, emit=None, wait=10.0,
-         poll=0.5, vision=False, about=None, stop_at_end=False):
+         poll=0.5, vision=False, about=None, stop_at_end=False, prior=()):
     """One scenario on a running game: Jev pursues `goal` (if any), then the checks judge the game's state.
     vision: Clef sees the game's screenshot with every decision. about: what the test proves, for its result.
+    prior: checks made before this ran (a step's `before:` and `lasted:`), judged with its own.
     stop_at_end (a step's `stop: end`): Jev plays the goal to DONE or its budget, and the checks judge only then;
     by default the step ends as soon as its checks hold. Either way, checks that already held before the goal's
     first action prove nothing about the goal: the step is unverified, never passed (SideGame1, 6 Oct)."""
@@ -628,7 +629,8 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
                 checks += looks_checks(game, expect["looks"], ledger, obs)
             except (RuntimeError, ValueError) as e:  # no picture, or Clef unreachable: QAJev's side, no verdict
                 stop, detail = "model_error", f"could not judge looks: {e}"
-    outcome, reason = verdict.classify(stop, checks, has_checks=bool(expect), stop_detail=detail,
+    checks = [*prior, *checks]
+    outcome, reason = verdict.classify(stop, checks, has_checks=bool(expect or prior), stop_detail=detail,
                                        actions=len(history) if goal else None)
     if goal and outcome == "pass" and held_at_start:
         outcome = "unverified"
@@ -995,30 +997,114 @@ def crash_step(game, *, name, emit=None):
         {"check": "the app is still running", "ok": alive, "detail": None if alive else "the app exited"}])
 
 
-def idle_for(game, *, name, seconds, emit=None, every=10.0):
+def idle_for(game, *, name, seconds, emit=None, every=10.0, watch=None, look=0.5):
     """No input for `seconds` while the game runs on its own (a release build has no bot for a `play` step); it must
-    keep answering. -> None, or the step's harness result when it stopped (crashed or closed). After a
-    crash_renderer step there is no page to ask: the app's process must stay up instead."""
-    started = told = time.monotonic()
+    keep answering. After a crash_renderer step there is no page to ask: the app's process must stay up instead.
+    watch: the step's `before:` checks, for its `lasted:`. QAJev looks every `look` seconds and records the last time
+    they held and the first time they did not. -> {"idled_s", "look_gap_s" (the longest gap between two looks: a
+    loaded machine stretches it), "held": [last seen holding, first seen not holding or None]}, or the step's harness
+    result (with "outcome") when the game stopped (crashed or closed)."""
+    started = told = last = time.monotonic()
     gone = getattr(game, "renderer_gone", False)
+    gap, held = 0.0, [0.0, None]
     while (left := seconds - (time.monotonic() - started)) > 0:
-        time.sleep(min(1.0, left))
+        time.sleep(min(look if watch else 1.0, left))
         try:
             if gone:
                 if game.proc.poll() is not None:
                     raise NativeError(f"the app exited (code {game.proc.poll()})")
             else:
-                game.observe()
+                obs = game.observe()
+                if watch and held[1] is None:
+                    at = round(time.monotonic() - started, 2)
+                    if verdict.all_ok(native_checks({**watch, "no_errors": False}, obs, [])):
+                        held[0] = at
+                    else:
+                        held[1] = at
         except NativeError as e:
             waited = time.monotonic() - started
             return {"name": name, "outcome": "harness", "stop": "browser_error", "checks": [], "screens": [],
                     "findings": [{"severity": "S1", "kind": "game crashed or closed", "detail": str(e)[:200],
                                   "scenario": name, "url": None}],
                     "reason": f"the game stopped answering after {waited:.0f} s of {seconds:.0f} s idle: {e}"}
-        if time.monotonic() - told >= every:
-            told = time.monotonic()
+        now = time.monotonic()
+        gap, last = max(gap, now - last), now
+        if now - told >= every:
+            told = now
             _step(emit, name, None, f"idle {told - started:.0f} of {seconds:.0f} s, no input")
-    return None
+    return {"idled_s": round(time.monotonic() - started, 2), "look_gap_s": round(gap, 2),
+            **({"held": held} if watch else {})}
+
+
+def _window_text(window):
+    lo, hi = window.get("min"), window.get("max")
+    return f"{lo} to {hi} s" if lo is not None and hi is not None else f"at least {lo} s" if lo is not None \
+        else f"at most {hi} s"
+
+
+def before_names(before):
+    """The checks a `before:` makes, as they are named (screen is X, game shows 'Y', state k v)."""
+    return [c["check"] for c in native_checks({**before, "no_errors": False}, {}, [])]
+
+
+def lasted_words(before, window):
+    """A `lasted:` check's name and plain words, the same in the plan and in the result."""
+    from .plan import words
+
+    names = before_names(before)
+    return {"check": f"lasted: {' and '.join(names)} held {_window_text(window)}",
+            "says": f"with no input, {' and '.join(words({'check': n}) or n for n in names)} for "
+                    f"{_window_text(window)}"}
+
+
+def lasted_check(before, window, measured):
+    """A step's `lasted: {min, max}`: how long its `before:` state held once QAJev stopped touching the game (a
+    cutscene that plays out, a timer that runs). The time is known only between two looks: the last one that saw it
+    hold and the first that did not. Inside the window at both ends: ok; outside at both: not ok; one end each way:
+    the machine was too slow to tell, so the check broke (harness, not the game's fail)."""
+    check = lasted_words(before, window)
+    lo =0.0 if window.get("min") is None else float(window["min"])
+    hi = float("inf") if window.get("max") is None else float(window["max"])
+    seen, gone = measured["held"]
+    early, late = seen, float("inf") if gone is None else gone  # it ended somewhere in [early, late]
+    span = f"still held after {seen:.1f} s" if gone is None else f"ended between {seen:.1f} and {gone:.1f} s"
+    if lo <= early and late <= hi:
+        return {**check, "ok": True, "detail": f"{span}; QAJev looked at most {measured['look_gap_s']:.1f} s apart"}
+    if late < lo or early > hi:
+        return {**check, "ok": False, "detail": f"{span}; QAJev looked at most {measured['look_gap_s']:.1f} s apart"}
+    return {**check, "ok": False, "broke": True,
+            "detail": f"{span}: the machine was too slow to tell whether that is {_window_text(window)} (looks up to "
+                      f"{measured['look_gap_s']:.1f} s apart)"}
+
+
+def check_window(steps):
+    """A suite's `before:` and `lasted:`, checked when it loads (raises NativeError). before: the state a step starts
+    from (screen, text, state), not on a relaunch (the game starts again). lasted: only with `before:` and `idle:`,
+    a min and/or max in seconds, min <= max, and the idle longer than the max (else "still held" says nothing)."""
+    for i, step in enumerate(steps):
+        if not isinstance(step, dict):
+            continue
+        name = step.get("name") or f"step {i + 1}"
+        before, window = step.get("before"), step.get("lasted")
+        if before is not None:
+            if not isinstance(before, dict) or not before or set(before) - {"screen", "text", "state"}:
+                raise NativeError(f"step {name!r}: before: takes screen, text and state (the state the step starts "
+                                  f"from), not {before!r}")
+            if step.get("relaunch"):
+                raise NativeError(f"step {name!r}: before: cannot go on a relaunch step (the game starts again)")
+        if window is None:
+            continue
+        if not isinstance(window, dict) or not window or set(window) - {"min", "max"} or not all(
+                isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0 for v in window.values()):
+            raise NativeError(f"step {name!r}: lasted: takes min and/or max in seconds, not {window!r}")
+        if before is None or not step.get("idle"):
+            raise NativeError(f"step {name!r}: lasted: measures how long the step's before: state holds while it "
+                              "idles; it needs before: and idle:")
+        if window.get("min") is not None and window.get("max") is not None and window["min"] > window["max"]:
+            raise NativeError(f"step {name!r}: lasted: min {window['min']} is more than max {window['max']}")
+        if window.get("max") is not None and float(step["idle"]) <= window["max"]:
+            raise NativeError(f"step {name!r}: idle: {step['idle']} must be longer than lasted: max {window['max']}, "
+                              "or QAJev cannot see it end in time")
 
 
 def _answers(game):
@@ -1073,12 +1159,74 @@ def select_steps(steps, only):
         if name in keep:
             continue
         keep.add(name)
-        needs = by_name[name].get("depends_on") or []
+        needs = [*(by_name[name].get("depends_on") or []), *(by_name[name].get("judged_by") or [])]
         unknown = [n for n in needs if n not in by_name]
         if unknown:
             raise NativeError(f"step {name!r} depends on {unknown}, which the suite does not have")
         todo.extend(needs)
     return [{**s, "name": n} for n, s in zip(names, steps) if n in keep or s.get("setup")]
+
+
+def check_judged_by(steps):
+    """`judged_by:` on a goal step: the later steps whose verdict proves it (im-him's template, SideGame1, 7 Oct:
+    Jev does what the scenario asks, then js steps judge the scenario; Jev's step has no end state of its own).
+    Each name must be a later step of the suite, never the step itself or an earlier one. -> the steps; NativeError
+    when a suite says otherwise, before anything runs."""
+    names = [(s.get("name") if isinstance(s, dict) else None) or f"step {i + 1}" for i, s in enumerate(steps)]
+    for i, step in enumerate(steps):
+        if not isinstance(step, dict) or step.get("judged_by") is None:
+            continue
+        judges = [step["judged_by"]] if isinstance(step["judged_by"], str) else step["judged_by"]
+        if not isinstance(judges, list) or not judges or not all(isinstance(j, str) and j for j in judges):
+            raise NativeError(f"step {names[i]!r}: judged_by needs the names of the later steps that judge it")
+        if not step.get("goal"):
+            raise NativeError(f"step {names[i]!r}: judged_by goes on a goal step (Jev acts; later steps judge it)")
+        for judge in judges:
+            if judge == names[i]:
+                raise NativeError(f"step {names[i]!r} cannot judge itself")
+            if judge not in names:
+                raise NativeError(f"step {names[i]!r} is judged by {judge!r}, which the suite does not have")
+            if names.index(judge) < i:
+                raise NativeError(f"step {names[i]!r} is judged by {judge!r}, an earlier step: a judge runs after the "
+                                  "step it judges")
+        step["judged_by"] = judges
+    return steps
+
+
+def judged_words(judges):
+    return f"judged by: {', '.join(judges)}"
+
+
+def _judge(results, steps):
+    """Settle each `judged_by` step from its judges, once they have run. It passes only when Jev acted (a DONE with
+    no action proves nothing) and every judge passed. A judge that did not pass leaves it unverified, not failed:
+    the judge's own result already counts what went wrong (a fail gates FAIL by itself), and it cannot tell Jev's
+    part from the product's. A step that failed its own checks, got stuck or broke keeps that outcome."""
+    by_name = {r["name"]: r for r in results}
+    for i, step in enumerate(steps):
+        judges = step.get("judged_by") if isinstance(step, dict) else None
+        if not judges:
+            continue
+        r = by_name.get(step.get("name") or f"step {i + 1}")
+        if r is None:
+            continue
+        said = judged_words(judges)
+        r["judged_by"] = judges
+        if r.get("outcome") not in ("pass", "unverified"):
+            r["reason"] = f"{r.get('reason')}; {said}"
+            continue
+        verdicts = [(j, (by_name.get(j) or {}).get("outcome", "not run")) for j in judges]
+        if not ((r.get("jev") or {}).get("actions") or 0):
+            ok, reason = False, f"Jev took no action, so its judges cannot vouch for it; {said}"
+        elif all(o == "pass" for _, o in verdicts):
+            ok, reason = True, f"{said} (all passed after Jev acted)"
+        else:
+            missed = ", ".join(f"{j} {o}" for j, o in verdicts if o != "pass")
+            ok, reason = False, f"{said}; not proven: {missed} (their own results say what went wrong)"
+        r.update(outcome="pass" if ok else "unverified", reason=reason)
+        proves = f"Jev acted, and the later steps {', '.join(judges)} passed"
+        r["checks"] = [*(r.get("checks") or []), {"check": said, "ok": ok, "detail": None if ok else reason,
+                                                   "says": proves}]
 
 
 def _with_about(results, steps):
@@ -1087,6 +1235,25 @@ def _with_about(results, steps):
     for r in results:
         if abouts.get(r["name"]):
             r.setdefault("about", abouts[r["name"]])
+
+
+def _before(game, step, name):
+    """A step's `before:`: the state it must start from, checked before it does anything (a cutscene that never
+    opened must not pass as one that played out). -> (its ticked checks, None), or ([], the step's result when the
+    state did not hold: a fail, and the step did not run)."""
+    if not step.get("before"):
+        return [], None
+    try:
+        obs = game.observe()
+    except NativeError as e:
+        return [], _step_result(name, "browser_error", [], f"could not read the game before the step: {e}")
+    start = [{**c, "check": f"at the start: {c['check']}"}
+             for c in native_checks({**step["before"], "no_errors": False}, obs, [])]
+    if verdict.all_ok(start):
+        return start, None
+    r = _step_result(name, "checked", start)
+    r["reason"] += "; the step did not run"
+    return [], r
 
 
 def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=False):
@@ -1147,13 +1314,19 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
                 if callable(emit):
                     emit({"event": "scenario", "result": r})
                 continue
-        if step.get("js") is not None:
+        began = time.monotonic()
+        start, refused = _before(game, step, name)
+        if refused:
+            r = refused
+        elif step.get("js") is not None:
             r = js_step(game, name=name, expression=str(step["js"]), emit=emit)
         elif step.get("crash_renderer"):
             r = crash_step(game, name=name, emit=emit)
         elif step.get("idle") and getattr(game, "renderer_gone", False):
-            r = idle_for(game, name=name, seconds=float(step["idle"]), emit=emit) or _step_result(
-                name, "reached", [{"check": "the app kept running", "ok": True, "detail": None}])
+            idled = idle_for(game, name=name, seconds=float(step["idle"]), emit=emit)
+            r = idled if "outcome" in idled else _step_result(
+                name, "reached", [{"check": "the app kept running", "ok": True, "detail": None}],
+                idled_s=idled["idled_s"])
         elif step.get("play"):
             p = step["play"]
             r = play_for(game, name=name, seconds=float(p.get("seconds", 60)), until=p.get("until"),
@@ -1166,13 +1339,28 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
                 game.call(op="pilot", on=False)
             budget = {"actions": 20, "seconds": 90, **(step.get("budget") or {})}
             # idle: the game runs untouched for that long first (then the step's goal, if any, and its checks)
-            r = (step.get("idle") and idle_for(game, name=name, seconds=float(step["idle"]), emit=emit)) or play(
-                game, name=name, goal=step.get("goal"), expect=step.get("expect") or {}, budget=budget,
-                ledger=ledger, run_dir=run_dir, shots=shots, emit=emit, vision=bool(step.get("vision", vision)),
-                stop_at_end=stop_at_end(step))
+            window = step.get("lasted")
+            idled = step.get("idle") and idle_for(game, name=name, seconds=float(step["idle"]), emit=emit,
+                                                  watch=step.get("before") if window else None)
+            if idled and "outcome" in idled:
+                r = idled
+            else:
+                prior = [*start, *([lasted_check(step["before"], window, idled)] if window and idled else [])]
+                # a measured window is judged now: no grace for the checks after it to come true later
+                r = play(game, name=name, goal=step.get("goal"), expect=step.get("expect") or {}, budget=budget,
+                         ledger=ledger, run_dir=run_dir, shots=shots, emit=emit, wait=0.0 if window else 10.0,
+                         vision=bool(step.get("vision", vision)), stop_at_end=stop_at_end(step), prior=prior)
+                start = []  # judged inside play
+                if idled:
+                    r.update(idled_s=idled["idled_s"], **({"look_gap_s": idled["look_gap_s"]} if window else {}))
+        if start and r.get("checks") is not None:  # a step that passed its before: shows it held
+            r["checks"] = [*start, *r["checks"]]
+        if r.get("idled_s") is not None:  # the step's time includes its idle (it was 0 s after a 45 s idle)
+            r["seconds"] = round(time.monotonic() - began, 2)
         r["cost_usd"] = round(ledger.spent() - spent, 5)
         results.append(r)
         if callable(emit):
             emit({"event": "scenario", "result": r})
+    _judge(results, steps)
     _with_about(results, steps)
     return results

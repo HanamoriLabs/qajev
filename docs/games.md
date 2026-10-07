@@ -51,7 +51,9 @@ A **suite** plays one game session in steps, in order. Each step is either:
 - an **idle** step (`idle: 90`): nobody touches the game for that many seconds, then the step's checks run. It
   needs no pilot, so it works on a release build, for example to leave the game running while something outside
   watches it (a `--game-arg=--log-net-log=...` network log). If the game crashes or closes meanwhile, the step
-  stops with an S1 finding and the rest of the session is skipped;
+  stops with an S1 finding and the rest of the session is skipped. The step's time includes the idle, and the
+  report says "idled 90 s, no input from QAJev". To prove something plays out by itself for a given time (a
+  cutscene, a countdown), give it `before:` and `lasted:` (below);
 - a **js** step (`js: "<expression>"`, Electron only): runs the expression in the game's page (a promise is
   awaited) and records its value as `js_result`, plus any page error in the next half second as `page_errors`. An
   error the script schedules (`setTimeout(() => { throw new Error('probe') }, 0)`) reaches the page uncaught, as a
@@ -123,6 +125,35 @@ offer, and QAJev files an S3 "decision not made by" the model, by name (Jev, Cle
 model's own route, set `strict_decisions: true` on the play step: the first such decision then fails the step there,
 nothing clicked, with the screen and the model's answer in the reason.
 
+### Where a step starts, and how long a state lasts
+
+`before:` (any step but a relaunch) is the state the step must start from: `screen`, `text` and `state`, as in
+`expect`. QAJev checks it before the step does anything. If it does not hold, the step fails at once ("at the
+start: screen is ENDING (on PLAYING); the step did not run"). Without it, a cutscene that never opened passes the
+same way as one that played out.
+
+`lasted: {min: S, max: S}` (an `idle` step with `before:`) measures how long the `before:` state held once nobody
+touched the game. QAJev looks at the game every half second. It records the last look that saw the state and the
+first look that did not, so it knows when the state ended to within those two looks:
+
+- both inside the window: the check passes ("ended between 31.0 and 31.5 s");
+- both outside it: the check fails (a cutscene that closed after 0.1 s, or one still on screen at the max);
+- one inside and one outside: the machine was too slow to tell (the looks were far apart). The step is harness,
+  not the game's fail.
+
+The `expect` checks after a `lasted:` idle are judged at once, with no grace period, so a state that comes true
+only later does not pass. When the suite loads (`qajev play`, `qajev plan`), QAJev refuses (exit 3) a `lasted:`
+without `before:` and `idle:`, a min above the max, and an idle that is not longer than the max.
+
+```yaml
+- name: the ending cutscene plays out by itself
+  about: The ending cutscene starts, runs about 30 s with no input, and the game goes on.
+  before: {screen: ENDING}
+  idle: 45
+  lasted: {min: 25, max: 40}
+  expect: {screen: PLAYING}
+```
+
 ### Looking at the screen (Clef)
 
 With Clef as the decision model (it reads images; see [Configuration](configuration.md#keys)), a step can use the
@@ -148,6 +179,28 @@ steps:
 Asked for (`vision: true`, `--vision`, or `looks`), both need the game's window: QAJev refuses them with
 `--headless` (MCP: `headless=false`), since a headless Godot game draws nothing to look at. They also refuse to start
 without Clef.
+
+### A goal step judged by later steps
+
+Sometimes Jev's step has no end state of its own: Jev does what the scenario asks (talk, give the item, hire), and
+the steps after it ask the game whether the scenario worked. Name those steps in `judged_by:`:
+
+```yaml
+steps:
+  - name: jev gives
+    about: Jev gives granny the cake
+    goal: Give granny the cake. Stop when she has it.
+    judged_by: [verdict]         # later steps whose result proves this one
+  - name: verdict
+    about: the scenario says it passed
+    js: window.scenario.verdict === "pass"
+```
+
+The goal step passes only when Jev took at least one action and every named step passed; the report says "judged
+by: verdict". Jev saying DONE without acting is never a pass (unverified). If a judge fails, is skipped or ends as
+harness, the goal step is unverified, not failed: the judge's own result already counts what went wrong, and it
+cannot tell Jev's part from the game's. The names must be later steps of the suite (never the step itself or an
+earlier one), checked before anything runs; `--only` on the goal step brings its judges too.
 
 ### Running some steps only
 
@@ -246,7 +299,7 @@ optionally pilots it. Three real ones ship with QAJev as examples:
 |---|---|---|
 | `qajev/bridges/godot/adapters/suho.gd` | a Godot horde-survival game | describe a menu the game draws itself; level-up decisions; pilot with touch input |
 | `qajev/bridges/godot/adapters/hypervolley.gd` | a Godot racket game | read match state; pilot with the game's own autopilot; hide online screens |
-| `qajev/bridges/web/adapters/imhim.js` | an Electron brawler | screens from DOM overlays; keys; label settings options by their row, including rows scrolled out of view (the adapter scrolls to them); count short-lived aids across looks (captions, edge markers, menus read aloud) and report saved settings; in a dev build, open the dev menu and offer its options and buttons ("Boss: Fight"); hand every decision the game's bot waits on to Jev, or, with no `decide`, to the bot's own pick |
+| `qajev/bridges/web/adapters/imhim.js` | an Electron brawler | screens from DOM overlays; keys; label settings options by their row, including rows scrolled out of view (the adapter scrolls to them); count short-lived aids across looks (captions, edge markers, menus read aloud) and report saved settings; in a dev build, open the dev menu and offer its options and buttons ("Boss: Fight"); hand every decision the game's bot waits on to Jev, or, with no `decide`, to the bot's own pick; report the game's own QA flags (`window.__qaState`) as state fields, so a step can wait on one (`until: {kaigun_beaten: true}`): strings up to 200 characters, numbers and booleans, at most 50, never over the adapter's own fields |
 
 Two lessons from these adapters:
 

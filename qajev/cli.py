@@ -8,6 +8,8 @@ import shlex
 import shutil
 import signal
 import sys
+import threading
+import time
 from pathlib import Path
 
 from . import __version__
@@ -821,6 +823,11 @@ def cmd_play(args):
                     step["about"] = about(step["about"], f"steps[{i}].about")
         except SuiteError as e:
             return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
+        try:  # judged_by names later steps of the whole suite, before --only picks some
+            native.check_judged_by(session_steps)
+            native.check_window(session_steps)
+        except native.NativeError as e:
+            return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
         if args.only:
             try:
                 session_steps = native.select_steps(session_steps, args.only)
@@ -1426,6 +1433,26 @@ def _interrupt(_signum, _frame):
     raise KeyboardInterrupt
 
 
+def _stop_when_orphaned(every=2.0):
+    """Stop the run, like Ctrl-C, when the process that started it ends. A lane stop or a killed script left
+    `qajev play` running on its own, its game window at 120% CPU for 20 minutes (SideGame1 plan 61, 7 Oct).
+    Started by launchd (parent 1 from the start: nightly), there is nothing to watch. QAJEV_OUTLIVE_PARENT=1 keeps
+    a run that was detached on purpose. A background job's parent is its wrapper, which waits for it."""
+    parent = os.getppid()
+    if parent == 1 or os.environ.get("QAJEV_OUTLIVE_PARENT") == "1":
+        return None
+
+    def watch():
+        while os.getppid() == parent:
+            time.sleep(every)
+        print(f"qajev: the process that started this run (pid {parent}) ended; stopping", file=sys.stderr)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    thread = threading.Thread(target=watch, name="qajev-parent-watch", daemon=True)
+    thread.start()
+    return thread
+
+
 def _refused(args, message):
     """Production is read-only, destructive is never: nothing was started (exit 5, outcome "refused")."""
     _record({"outcome": "refused", "reason": message, "error": message, "exit_code": EXIT_REFUSED})
@@ -1440,6 +1467,7 @@ def cmd_plan(args):
     that are NOT DESCRIBED (a run of it would be INCOMPLETE, never PASS). Exit 0 when all are described, 2 if not."""
     import yaml
 
+    from . import native
     from . import plan as plan_mod
     from .suite import SuiteError, about, load
 
@@ -1447,11 +1475,12 @@ def cmd_plan(args):
         spec = yaml.safe_load(args.file.read_text()) or {}
         if isinstance(spec, dict) and spec.get("steps") and not spec.get("scenarios"):  # a game's steps suite
             name, run_about = spec.get("name") or args.file.stem, about(spec.get("about"), "about")
-            items = plan_mod.from_steps(spec["steps"])
+            native.check_window(spec["steps"])
+            items = plan_mod.from_steps(native.check_judged_by(spec["steps"]))
         else:
             suite = load(args.file)
             name, run_about, items = suite.name, suite.about, plan_mod.from_suite(suite.scenarios)
-    except (OSError, yaml.YAMLError, SuiteError) as e:
+    except (OSError, yaml.YAMLError, SuiteError, native.NativeError) as e:
         return _fail(args, f"{args.file}: {e}", EXIT_CONFIG)
     missing = plan_mod.not_described(items)
     if args.json:
@@ -1486,6 +1515,7 @@ def main(argv=None):
     if args.command in {"check", "run", "smoke", "play"}:
         signal.signal(signal.SIGTERM, _interrupt)
         signal.signal(signal.SIGINT, _interrupt)
+        _stop_when_orphaned()
         if not os.environ.get("QAJEV_JOB"):  # a background job's run is already recorded by its wrapper
             from . import jobs
 

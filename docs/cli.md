@@ -163,7 +163,7 @@ qajev play path/to/game --suite session.yaml
 | `--goal`, `-g` | what a player wants, ending with "Stop when ..." |
 | `--about TEXT` | what the test proves and why (with `--suite`: the whole run; steps carry their own `about:`) |
 | `--suite FILE` | several steps in one game session: goal steps, real-time play steps and idle steps (see [Games](games.md)) |
-| `--only STEP` | run this step of the `--suite` (repeatable), plus the steps it names in `depends_on` and every `setup: true` step |
+| `--only STEP` | run this step of the `--suite` (repeatable), plus the steps it names in `depends_on` or `judged_by` and every `setup: true` step |
 | `--adapter NAME\|PATH` | the game's adapter (bundled name, or a `.gd` / `.js` file) |
 | `--expect-screen NAME` | the screen the game must be on at the end |
 | `--expect-text TEXT` | the game must show this (repeatable) |
