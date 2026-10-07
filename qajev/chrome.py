@@ -4,6 +4,7 @@ Ownership is proven from the process command line (a port number is a convention
 and stopping kills that exact pid only. Chrome runs at low priority because the machine is shared.
 """
 
+import contextlib
 import json
 import os
 import re
@@ -226,6 +227,27 @@ def run_record(owned):
             "port": owned["port"], "ephemeral": bool(owned.get("ephemeral"))}
 
 
+def _app_bundle(path):
+    """The .app a macOS binary lives in (.../Google Chrome.app/Contents/MacOS/Google Chrome), or None."""
+    return next((p for p in Path(path).parents if p.suffix == ".app"), None)
+
+
+def _open_behind(app, argv, log_path):
+    """Start a new Chrome through LaunchServices with -g, so its window opens behind the app in front. Started
+    directly, Chrome comes to the front, ignores --start-minimized, and what the person types lands in it (José,
+    7 Oct). -n: always a new instance, never the person's own Chrome. Returns the `open` process, not Chrome's."""
+    return subprocess.Popen(["/usr/bin/open", "-n", "-g", "-a", str(app), "--stderr", str(log_path), "--args", *argv],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+
+
+def _browser_pid(exe, profile_dir, port):
+    """The browser process of the Chrome on this profile and port (not a helper: those carry --type=; not the `open`
+    that started it: its command line starts with /usr/bin/open), or None."""
+    marks = (f"--user-data-dir={profile_dir}", f"--remote-debugging-port={port}")
+    return next((pid for pid, cmd in processes()
+                 if cmd.startswith(exe) and all(m in cmd for m in marks) and "--type=" not in cmd), None)
+
+
 def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait):
     args = [binary(), f"--user-data-dir={profile_dir}", f"--remote-debugging-port={port}", *flags()]
     if headless:
@@ -235,25 +257,40 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait):
         args.append("--start-minimized")
     args.append("about:blank")
     STATE.mkdir(parents=True, exist_ok=True)
-    with open(STATE / f"{profile}.log", "ab") as log:
-        proc = subprocess.Popen(
-            args, stdout=subprocess.DEVNULL, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True,
-            preexec_fn=(lambda: os.nice(10)) if sys.platform != "win32" else None,
-        )
+    log_path = STATE / f"{profile}.log"
+    # A window the person did not ask for must not take their keyboard; `visible` (a sign-in) is meant to come forward.
+    app = _app_bundle(args[0]) if sys.platform == "darwin" and not headless and not visible else None
+    if app:
+        proc, pid = _open_behind(app, args[1:], log_path), None
+    else:
+        with open(log_path, "ab") as log:
+            proc = subprocess.Popen(
+                args, stdout=subprocess.DEVNULL, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True,
+                preexec_fn=(lambda: os.nice(10)) if sys.platform != "win32" else None,
+            )
+        pid = proc.pid
     cdp_url = f"http://127.0.0.1:{port}"
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
-        if version(cdp_url, timeout=0.5):
+        if pid is None and (pid := _browser_pid(args[0], profile_dir, port)) is not None:
+            with contextlib.suppress(OSError):  # LaunchServices started it: lower its priority as Popen's nice did
+                os.setpriority(os.PRIO_PROCESS, pid, 10)
+        if pid is not None and version(cdp_url, timeout=0.5):
             break
-        if proc.poll() is not None:
-            raise ChromeError(f"Chrome exited with {proc.returncode} (see {STATE / (profile + '.log')})")
+        if pid == proc.pid and proc.poll() is not None:
+            raise ChromeError(f"Chrome exited with {proc.returncode} (see {log_path})")
+        if pid is None and proc.poll() not in (None, 0):
+            raise ChromeError(f"macOS could not start Chrome (open exited with {proc.returncode}; see {log_path})")
+        if pid is not None and pid != proc.pid and reaped(pid):
+            raise ChromeError(f"Chrome exited (see {log_path})")
         time.sleep(0.2)
     else:
-        _kill(proc.pid)
+        if pid is not None:
+            _kill(pid)
         raise ChromeError(f"Chrome did not open its debugging port {port} within {wait}s")
     state_key = f"{profile}.ephemeral-{os.getpid()}" if ephemeral else profile
     record = {
-        "profile": profile, "state_key": state_key, "pid": proc.pid, "port": port, "cdp_url": cdp_url,
+        "profile": profile, "state_key": state_key, "pid": pid, "port": port, "cdp_url": cdp_url,
         "profile_dir": str(profile_dir), "headless": headless, "ephemeral": ephemeral, "owner_pid": os.getpid(),
         "started_at": time.time(),
     }
