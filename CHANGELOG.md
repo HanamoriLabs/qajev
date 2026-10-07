@@ -11,6 +11,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   code runs. A game gets it at its first pad step, with a `gamepadconnected` event. Home is refused. Suites with a
   bad button or bound are refused before the run (exit 3).
   ([Writing tests](docs/writing-tests.md), [Games](docs/games.md))
+- The I'M HIM! adapter reports the game's own QA flags (`window.__qaState`) as state fields. A play step can now stop
+  on one: `until: {kaigun_beaten: true}`. It keeps strings up to 200 characters, numbers and booleans, at most 50 of
+  them. A flag never replaces one of the adapter's own fields. ([Games](docs/games.md#adapters))
 
 ## 0.4.2: 7 Oct 2026
 
