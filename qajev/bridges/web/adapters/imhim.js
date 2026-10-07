@@ -105,6 +105,32 @@ function noteTalkLine(line) {
   return t.n;
 }
 
+// The game's own QA flags (window.__qaState, SideGame1 7 Oct) as state fields, so a step can wait on them:
+// `until: {state: {kaigun_beaten: true}}`. Plain values only (a string up to 200 characters, a finite number, a
+// boolean), at most 50 of them, and never one of the adapter's own fields, even when this look did not set it.
+const QA_STATE_MAX_KEYS = 50, QA_STATE_MAX_CHARS = 200;
+const OWN_FIELDS = new Set([
+  'screen', 'talk_line', 'bag_tab', 'settings_tab', 'level_text', 'kills_text', 'timer', 'toast', 'phase', 'paused',
+  'training', 'run_time', 'hp', 'alive', 'kills', 'level', 'stage', 'stage_mode', 'stage_name', 'enemies', 'boss',
+  'physics_failed', 'game_over', 'state_error', 'autoplay', 'waiting_for', 'tick', 'settings_open', 'overlay',
+  'captions_seen', 'captions_last', 'edges_seen', 'edge_last', 'spoken_count', 'spoken_last', 'a11y_classes',
+  'settings_error', 'contrast', 'speed',
+]);
+function qaState(state) {
+  const src = window.__qaState, out = {};
+  if (!src || typeof src !== 'object') return out;
+  let kept = 0;
+  for (const k of Object.keys(src)) {
+    if (kept >= QA_STATE_MAX_KEYS) break;
+    if (OWN_FIELDS.has(k) || k.startsWith('setting_') || k in state) continue;
+    const v = src[k];
+    const plain = typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v)) ||
+      (typeof v === 'string' && v.length <= QA_STATE_MAX_CHARS);
+    if (plain) { out[k] = v; kept += 1; }
+  }
+  return out;
+}
+
 window.__qajevAdapter = {
   observe(base) {
     const $ = (sel) => document.querySelector(sel);
@@ -284,6 +310,7 @@ window.__qajevAdapter = {
     if (g && g.paused) state.settings_open = true; // the pause menu: waits for the player
     else if (g && !(g.streamCalm ? g.streamCalm() : true)) state.overlay = true; // a talk, QTE, stall, cutscene...
     else if (g && g.phase === 'title') state.overlay = true; // the clock waits while the bot starts a run
+    Object.assign(state, qaState(state)); // last: the adapter's own fields always win
     // The dev watchdog's blockers (page errors, its own soft-lock and overlay timers), as the game's own findings.
     const w = window.__watch;
     const problems = w && w.blockers ? w.blockers.slice(-20).map((b) => ({ kind: b.kind, detail: b.detail, t: b.t })) : [];

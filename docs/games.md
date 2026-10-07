@@ -299,7 +299,7 @@ optionally pilots it. Three real ones ship with QAJev as examples:
 |---|---|---|
 | `qajev/bridges/godot/adapters/suho.gd` | a Godot horde-survival game | describe a menu the game draws itself; level-up decisions; pilot with touch input |
 | `qajev/bridges/godot/adapters/hypervolley.gd` | a Godot racket game | read match state; pilot with the game's own autopilot; hide online screens |
-| `qajev/bridges/web/adapters/imhim.js` | an Electron brawler | screens from DOM overlays; keys; label settings options by their row, including rows scrolled out of view (the adapter scrolls to them); count short-lived aids across looks (captions, edge markers, menus read aloud) and report saved settings; in a dev build, open the dev menu and offer its options and buttons ("Boss: Fight"); hand every decision the game's bot waits on to Jev, or, with no `decide`, to the bot's own pick |
+| `qajev/bridges/web/adapters/imhim.js` | an Electron brawler | screens from DOM overlays; keys; label settings options by their row, including rows scrolled out of view (the adapter scrolls to them); count short-lived aids across looks (captions, edge markers, menus read aloud) and report saved settings; in a dev build, open the dev menu and offer its options and buttons ("Boss: Fight"); hand every decision the game's bot waits on to Jev, or, with no `decide`, to the bot's own pick; report the game's own QA flags (`window.__qaState`) as state fields, so a step can wait on one (`until: {kaigun_beaten: true}`): strings up to 200 characters, numbers and booleans, at most 50, never over the adapter's own fields |
 
 Two lessons from these adapters:
 
