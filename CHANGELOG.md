@@ -4,6 +4,18 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Game steps can prove where they start and how long a state lasts (im-him plan 40: a cutscene that never opened
+  passed the same way as one that played out).
+  - `before: {screen, text, state}` on any step but a relaunch must hold when the step starts, or the step fails at
+    once and does not run.
+  - `lasted: {min, max}` on an `idle` step with `before:` measures how long that state held with no input. QAJev
+    looks every half second, and the check passes or fails only when both looks around the end agree. When the
+    machine was too slow to tell, the step is harness. The checks after it get no 10 s grace period.
+  - `qajev play` and `qajev plan` refuse a bad `lasted:` when the suite loads (exit 3).
+  - Fixed: an idle step's time now includes its idle. Plan 40 showed "0 s" after a 45 s idle. The report says
+    "idled 45 s, no input from QAJev".
+  ([Games](docs/games.md#where-a-step-starts-and-how-long-a-state-lasts))
+
 ## 0.4.1: 7 Oct 2026
 
 - `cpu_throttle: N` (suite, project env, `--cpu-throttle N`, MCP `cpu_throttle`): Chrome runs the page's CPU N times

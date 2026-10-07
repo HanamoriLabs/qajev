@@ -550,7 +550,9 @@ async def qa_play(
     (menus, start, pause, choices), reading each screen as text; input goes into the game only, and the game gets a
     throwaway save folder. `adapter`: a bundled name (suho, hypervolley, imhim) or a path, for games that draw their
     own UI. `suite`: a YAML file of steps in one session: goal steps, real-time play steps (`play:`, needs the
-    game's bot), idle steps (`idle: SECONDS`, the game runs untouched), with top-level `allow`/`hide` labels.
+    game's bot), idle steps (`idle: SECONDS`, the game runs untouched), with top-level `allow`/`hide` labels. A step's
+    `before:` (screen/text/state) must hold when it starts; an idle step's `lasted: {min, max}` measures how long that
+    state held with no input.
     `only`: run these steps of the suite, plus the steps they name in `depends_on` and every `setup: true` step.
     `game_env`: environment settings for the game; `game_args`: switches for an Electron app. `game_profile`: keep
     an Electron game's save folder between runs (~/.qajev/game-profiles/NAME, a test profile; reset_game_profile

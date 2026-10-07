@@ -46,7 +46,7 @@ def words(check):
     if check.get("says"):
         return str(check["says"])
     name = str(check.get("check") or "")
-    m = re.match(r"(\[[^\]]+\] |across: |snapshot [^:]+: )(.*)$", name, re.S)
+    m = re.match(r"(\[[^\]]+\] |across: |snapshot [^:]+: |at the start: )(.*)$", name, re.S)
     if m:
         inner = words({"check": m[2]})
         return f"{m[1]}{inner}" if inner else None
@@ -90,7 +90,7 @@ def from_suite(scenarios):
 def from_steps(steps):
     """The plan of a game's `steps:` suite before it runs: each step with the checks its `expect` and `play.until` will
     make, named as native.py names them (they describe themselves; a step still needs its `about`)."""
-    from .native import _until_text
+    from .native import _until_text, before_names, lasted_words
 
     out = []
     for i, step in enumerate(steps, 1):
@@ -111,7 +111,13 @@ def from_steps(steps):
         until = (step.get("play") or {}).get("until") if isinstance(step.get("play"), dict) else None
         if until:
             checks.insert(0, f"reached {_until_text(until)}")
-        out.append(item(i, step.get("name") or f"step {i}", step.get("about"), [{"check": c} for c in checks]))
+        planned = [{"check": c} for c in checks]
+        before = step.get("before") if isinstance(step.get("before"), dict) else None
+        if before and isinstance(step.get("lasted"), dict):  # checked first, then the idle's measured window
+            planned.insert(0, lasted_words(before, step["lasted"]))
+        if before:
+            planned[:0] = [{"check": f"at the start: {c}"} for c in before_names(before)]
+        out.append(item(i, step.get("name") or f"step {i}", step.get("about"), planned))
     return out
 
 
