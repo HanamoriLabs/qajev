@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: a run now stops when the process that started it ends. A lane stopped a run script for high load, but
+  `qajev play` kept going on its own, with its game window at 120% CPU for 20 minutes. Now `check`, `run`, `smoke`
+  and `play` see within 2 s that their parent ended. They then stop like Ctrl-C and close their browser or game.
+  Runs that launchd starts (nightly) and background jobs are not affected. To keep a run you detached on purpose,
+  set `QAJEV_OUTLIVE_PARENT=1`. ([Configuration](docs/configuration.md))
 - Game steps can prove where they start and how long a state lasts (im-him plan 40: a cutscene that never opened
   passed the same way as one that played out).
   - `before: {screen, text, state}` on any step but a relaunch must hold when the step starts, or the step fails at
