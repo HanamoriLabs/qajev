@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.2: 7 Oct 2026
+
 - Fixed: a run now stops when the process that started it ends. A lane stopped a run script for high load, but
   `qajev play` kept going on its own, with its game window at 120% CPU for 20 minutes. Now `check`, `run`, `smoke`
   and `play` see within 2 s that their parent ended. They then stop like Ctrl-C and close their browser or game.
