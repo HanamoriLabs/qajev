@@ -232,6 +232,24 @@ The keys are plain key names: a letter, a digit, punctuation (`` ` - = [ ] ; ' ,
 production page, Delete and Backspace reach the page only inside a text field ([Safety](safety.md)). Bounds: `hold_ms` up to 5000, `repeat` up to 200, `interval_ms` up to 2000, and one hook at most
 30 s in all. A suite with a key outside them is refused before it runs.
 
+A `pad` hook works a gamepad, with no real device. Chrome has no gamepad input of its own, so QAJev puts one virtual
+pad in the page before the page's code runs: `navigator.getGamepads()` returns it, with the W3C standard mapping,
+`connected` true, and a timestamp that goes up on every change. The page also gets a `gamepadconnected` event. A
+scenario without a `pad` hook keeps the browser's own `getGamepads`. Only a page that reads the Web Gamepad API sees
+the pad (not Steam Input or a native module).
+
+```yaml
+- pad: A                                               # press A once (held 80 ms)
+- pad: {press: [A, DpadDown], repeat: 3, interval_ms: 100} # a sequence, 3 times
+- pad: {stick: left, x: 1, y: 0, hold_ms: 500}         # left stick right for 0.5 s, then centred
+- pad: {trigger: RT, value: 1, hold_ms: 200}           # pull RT fully for 0.2 s
+```
+
+The buttons are `A B X Y LB RB LT RT View Menu LS RS DpadUp DpadDown DpadLeft DpadRight`. `Home` is refused: it opens
+Steam's or the system's overlay. Sticks are `left` and `right`, with `x` and `y` from -1 to 1 (`y` 1 is down).
+Bounds: `hold_ms` from 34 (two frames) to 5000, `repeat` up to 200, `interval_ms` up to 2000, and one hook at most 30 s.
+A suite with a pad input outside them is refused before it runs.
+
 A `react` hook plays in real time: every `every_ms` (default 50) it runs a small policy in the page, and sends the
 keys the policy returns. It is for a cue too short for anything slower, such as a 0.6 s flash: the policy reads what the
 player can see, waits a human reaction time, and answers.

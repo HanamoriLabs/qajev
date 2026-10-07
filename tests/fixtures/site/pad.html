@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Pad test</title></head>
+<body>
+<h1>Pad test</h1>
+<p id="out">waiting</p>
+<script>
+// Reads its pad two ways, as games do: the pad object it kept at load, and navigator.getGamepads() every frame,
+// picking the connected standard pad touched last (I'M HIM's pickPad).
+const atLoad = (navigator.getGamepads ? navigator.getGamepads() : [])[0] || null;
+window.padSeen = { idAtLoad: atLoad && atLoad.id, connected: 0, keptA: 0, polledA: 0, presses: 0, stickRight: 0,
+                   rt: 0 };
+let wasDown = false;
+addEventListener('gamepadconnected', () => { window.padSeen.connected++; });
+function pickPad() {
+  let best = null;
+  for (const p of navigator.getGamepads()) {
+    if (!p || !p.connected || p.mapping !== 'standard') continue;
+    if (!best || p.timestamp > best.timestamp) best = p;
+  }
+  return best;
+}
+function frame() {
+  const s = window.padSeen;
+  if (atLoad && atLoad.buttons[0].pressed) s.keptA++;
+  const p = pickPad();
+  if (p) {
+    const down = p.buttons[0].pressed;
+    if (down) s.polledA++;
+    if (down && !wasDown) s.presses++;
+    wasDown = down;
+    if (p.axes[0] > 0.5) s.stickRight++;
+    if (p.buttons[7].value > 0.5) s.rt++;
+  }
+  document.getElementById('out').textContent = JSON.stringify(s);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

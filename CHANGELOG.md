@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- A virtual gamepad: `pad` hooks in web suites and `pad:` steps in Electron game suites press buttons, push sticks and
+  pull triggers, with no real device (I'M HIM supports a controller and key rebinding, but no plan could test it).
+  Chrome has no gamepad input, so QAJev puts one virtual pad in the page. It has the standard mapping, is connected,
+  and its timestamp goes up on every change, so a game's pad picker takes it. A web page gets it before its own
+  code runs. A game gets it at its first pad step, with a `gamepadconnected` event. Home is refused. Suites with a
+  bad button or bound are refused before the run (exit 3).
+  ([Writing tests](docs/writing-tests.md), [Games](docs/games.md))
 - Game steps can prove where they start and how long a state lasts (im-him plan 40: a cutscene that never opened
   passed the same way as one that played out).
   - `before: {screen, text, state}` on any step but a relaunch must hold when the step starts, or the step fails at

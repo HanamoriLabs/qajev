@@ -112,6 +112,10 @@ def from_steps(steps):
         if until:
             checks.insert(0, f"reached {_until_text(until)}")
         planned = [{"check": c} for c in checks]
+        if step.get("pad") is not None:  # the input first, then the checks of what it did
+            from .pad import describe
+
+            planned.insert(0, {"check": "the pad input was sent", "says": describe(step["pad"])})
         before = step.get("before") if isinstance(step.get("before"), dict) else None
         if before and isinstance(step.get("lasted"), dict):  # checked first, then the idle's measured window
             planned.insert(0, lasted_words(before, step["lasted"]))
