@@ -90,7 +90,7 @@ def from_suite(scenarios):
 def from_steps(steps):
     """The plan of a game's `steps:` suite before it runs: each step with the checks its `expect` and `play.until` will
     make, named as native.py names them (they describe themselves; a step still needs its `about`)."""
-    from .native import _until_text
+    from .native import _until_text, judged_words
 
     out = []
     for i, step in enumerate(steps, 1):
@@ -111,7 +111,13 @@ def from_steps(steps):
         until = (step.get("play") or {}).get("until") if isinstance(step.get("play"), dict) else None
         if until:
             checks.insert(0, f"reached {_until_text(until)}")
-        out.append(item(i, step.get("name") or f"step {i}", step.get("about"), [{"check": c} for c in checks]))
+        planned = [{"check": c} for c in checks]
+        judges = step.get("judged_by")
+        if judges:  # the later steps that prove it (native.check_judged_by), in the words the result will carry
+            judges = [judges] if isinstance(judges, str) else list(judges)
+            planned.append({"check": judged_words(judges), "says": f"Jev acted, and the later steps "
+                                                                   f"{', '.join(judges)} passed"})
+        out.append(item(i, step.get("name") or f"step {i}", step.get("about"), planned))
     return out
 
 

@@ -1073,12 +1073,74 @@ def select_steps(steps, only):
         if name in keep:
             continue
         keep.add(name)
-        needs = by_name[name].get("depends_on") or []
+        needs = [*(by_name[name].get("depends_on") or []), *(by_name[name].get("judged_by") or [])]
         unknown = [n for n in needs if n not in by_name]
         if unknown:
             raise NativeError(f"step {name!r} depends on {unknown}, which the suite does not have")
         todo.extend(needs)
     return [{**s, "name": n} for n, s in zip(names, steps) if n in keep or s.get("setup")]
+
+
+def check_judged_by(steps):
+    """`judged_by:` on a goal step: the later steps whose verdict proves it (im-him's template, SideGame1, 7 Oct:
+    Jev does what the scenario asks, then js steps judge the scenario; Jev's step has no end state of its own).
+    Each name must be a later step of the suite, never the step itself or an earlier one. -> the steps; NativeError
+    when a suite says otherwise, before anything runs."""
+    names = [(s.get("name") if isinstance(s, dict) else None) or f"step {i + 1}" for i, s in enumerate(steps)]
+    for i, step in enumerate(steps):
+        if not isinstance(step, dict) or step.get("judged_by") is None:
+            continue
+        judges = [step["judged_by"]] if isinstance(step["judged_by"], str) else step["judged_by"]
+        if not isinstance(judges, list) or not judges or not all(isinstance(j, str) and j for j in judges):
+            raise NativeError(f"step {names[i]!r}: judged_by needs the names of the later steps that judge it")
+        if not step.get("goal"):
+            raise NativeError(f"step {names[i]!r}: judged_by goes on a goal step (Jev acts; later steps judge it)")
+        for judge in judges:
+            if judge == names[i]:
+                raise NativeError(f"step {names[i]!r} cannot judge itself")
+            if judge not in names:
+                raise NativeError(f"step {names[i]!r} is judged by {judge!r}, which the suite does not have")
+            if names.index(judge) < i:
+                raise NativeError(f"step {names[i]!r} is judged by {judge!r}, an earlier step: a judge runs after the "
+                                  "step it judges")
+        step["judged_by"] = judges
+    return steps
+
+
+def judged_words(judges):
+    return f"judged by: {', '.join(judges)}"
+
+
+def _judge(results, steps):
+    """Settle each `judged_by` step from its judges, once they have run. It passes only when Jev acted (a DONE with
+    no action proves nothing) and every judge passed. A judge that did not pass leaves it unverified, not failed:
+    the judge's own result already counts what went wrong (a fail gates FAIL by itself), and it cannot tell Jev's
+    part from the product's. A step that failed its own checks, got stuck or broke keeps that outcome."""
+    by_name = {r["name"]: r for r in results}
+    for i, step in enumerate(steps):
+        judges = step.get("judged_by") if isinstance(step, dict) else None
+        if not judges:
+            continue
+        r = by_name.get(step.get("name") or f"step {i + 1}")
+        if r is None:
+            continue
+        said = judged_words(judges)
+        r["judged_by"] = judges
+        if r.get("outcome") not in ("pass", "unverified"):
+            r["reason"] = f"{r.get('reason')}; {said}"
+            continue
+        verdicts = [(j, (by_name.get(j) or {}).get("outcome", "not run")) for j in judges]
+        if not ((r.get("jev") or {}).get("actions") or 0):
+            ok, reason = False, f"Jev took no action, so its judges cannot vouch for it; {said}"
+        elif all(o == "pass" for _, o in verdicts):
+            ok, reason = True, f"{said} (all passed after Jev acted)"
+        else:
+            missed = ", ".join(f"{j} {o}" for j, o in verdicts if o != "pass")
+            ok, reason = False, f"{said}; not proven: {missed} (their own results say what went wrong)"
+        r.update(outcome="pass" if ok else "unverified", reason=reason)
+        proves = f"Jev acted, and the later steps {', '.join(judges)} passed"
+        r["checks"] = [*(r.get("checks") or []), {"check": said, "ok": ok, "detail": None if ok else reason,
+                                                   "says": proves}]
 
 
 def _with_about(results, steps):
@@ -1174,5 +1236,6 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
         results.append(r)
         if callable(emit):
             emit({"event": "scenario", "result": r})
+    _judge(results, steps)
     _with_about(results, steps)
     return results

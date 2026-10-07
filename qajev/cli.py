@@ -821,6 +821,10 @@ def cmd_play(args):
                     step["about"] = about(step["about"], f"steps[{i}].about")
         except SuiteError as e:
             return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
+        try:  # judged_by names later steps of the whole suite, before --only picks some
+            native.check_judged_by(session_steps)
+        except native.NativeError as e:
+            return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
         if args.only:
             try:
                 session_steps = native.select_steps(session_steps, args.only)
@@ -1440,6 +1444,7 @@ def cmd_plan(args):
     that are NOT DESCRIBED (a run of it would be INCOMPLETE, never PASS). Exit 0 when all are described, 2 if not."""
     import yaml
 
+    from . import native
     from . import plan as plan_mod
     from .suite import SuiteError, about, load
 
@@ -1447,11 +1452,11 @@ def cmd_plan(args):
         spec = yaml.safe_load(args.file.read_text()) or {}
         if isinstance(spec, dict) and spec.get("steps") and not spec.get("scenarios"):  # a game's steps suite
             name, run_about = spec.get("name") or args.file.stem, about(spec.get("about"), "about")
-            items = plan_mod.from_steps(spec["steps"])
+            items = plan_mod.from_steps(native.check_judged_by(spec["steps"]))
         else:
             suite = load(args.file)
             name, run_about, items = suite.name, suite.about, plan_mod.from_suite(suite.scenarios)
-    except (OSError, yaml.YAMLError, SuiteError) as e:
+    except (OSError, yaml.YAMLError, SuiteError, native.NativeError) as e:
         return _fail(args, f"{args.file}: {e}", EXIT_CONFIG)
     missing = plan_mod.not_described(items)
     if args.json:

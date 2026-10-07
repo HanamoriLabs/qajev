@@ -82,7 +82,7 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   It is not an error to work around: tell the person, and run it read-only or against a local copy.
 - `qa_rerun`: `job` (required), `failed` (default true: only the tests that did not pass), `background`.
 - `qa_play`: `project` (the game, or `ios:...` / `android:...`), `goal`, `adapter`, `suite`, `only` (steps of the
-  suite, with their `depends_on` and `setup: true` steps), `game_env`,
+  suite, with their `depends_on`, `judged_by` and `setup: true` steps), `game_env`,
   `game_args`, `expect_screen`, `expect_text`, `expect_state`, `min_fps`, `name`, `about`, `headless` (Godot only), `shots`
   (a screenshot at the end of each step, on by default), and with Clef `expect_looks` and `vision` (these open the
   game's window: they need it to look). `vision` is on by default when Clef decides and the game has a window
