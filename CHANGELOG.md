@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: a run now stops when the process that started it ends. A lane stopped a run script for high load, but
+  `qajev play` kept going on its own, with its game window at 120% CPU for 20 minutes. Now `check`, `run`, `smoke`
+  and `play` see within 2 s that their parent ended. They then stop like Ctrl-C and close their browser or game.
+  Runs that launchd starts (nightly) and background jobs are not affected. To keep a run you detached on purpose,
+  set `QAJEV_OUTLIVE_PARENT=1`. ([Configuration](docs/configuration.md))
 - A game goal step can be judged by later steps: `judged_by: [step names]`. It passes only when Jev took at least
   one action and every named step passed; a DONE with no action stays unverified, and a judge that did not pass
   leaves it unverified (its own result counts what went wrong). The names must be later steps of the suite, checked

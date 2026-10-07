@@ -83,6 +83,7 @@ What is inside `~/.qajev`:
 | `QAJEV_CHROME` | the Chrome or Chromium binary | found automatically |
 | `QAJEV_CHROME_FLAGS` | extra Chrome flags, e.g. `--no-sandbox` in Docker or on CI runners that block user namespaces | none |
 | `QAJEV_CHROME_START_WAIT` | seconds Chrome may take to start | `60` |
+| `QAJEV_OUTLIVE_PARENT` | `1`: a run keeps going after the process that started it ends. By default `check`, `run`, `smoke` and `play` stop, like Ctrl-C, and close their browser or game | unset |
 | `QAJEV_CDP_TIMEOUT` | seconds per browser command | `30` |
 | `QAJEV_LOAD_HIGH`, `QAJEV_LOAD_OK`, `QAJEV_LOAD_WAIT` | wait before a scenario (`smoke` and `play`: before starting) while the 1-minute load is at or above HIGH, until it drops below OK; at most WAIT seconds per run | `150`, `100`, `600` |
 | `QAJEV_LOCK_WAIT` | seconds a run waits in the queue before giving up (exit code 4) | `3600` |

@@ -8,6 +8,8 @@ import shlex
 import shutil
 import signal
 import sys
+import threading
+import time
 from pathlib import Path
 
 from . import __version__
@@ -1430,6 +1432,26 @@ def _interrupt(_signum, _frame):
     raise KeyboardInterrupt
 
 
+def _stop_when_orphaned(every=2.0):
+    """Stop the run, like Ctrl-C, when the process that started it ends. A lane stop or a killed script left
+    `qajev play` running on its own, its game window at 120% CPU for 20 minutes (SideGame1 plan 61, 7 Oct).
+    Started by launchd (parent 1 from the start: nightly), there is nothing to watch. QAJEV_OUTLIVE_PARENT=1 keeps
+    a run that was detached on purpose. A background job's parent is its wrapper, which waits for it."""
+    parent = os.getppid()
+    if parent == 1 or os.environ.get("QAJEV_OUTLIVE_PARENT") == "1":
+        return None
+
+    def watch():
+        while os.getppid() == parent:
+            time.sleep(every)
+        print(f"qajev: the process that started this run (pid {parent}) ended; stopping", file=sys.stderr)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    thread = threading.Thread(target=watch, name="qajev-parent-watch", daemon=True)
+    thread.start()
+    return thread
+
+
 def _refused(args, message):
     """Production is read-only, destructive is never: nothing was started (exit 5, outcome "refused")."""
     _record({"outcome": "refused", "reason": message, "error": message, "exit_code": EXIT_REFUSED})
@@ -1491,6 +1513,7 @@ def main(argv=None):
     if args.command in {"check", "run", "smoke", "play"}:
         signal.signal(signal.SIGTERM, _interrupt)
         signal.signal(signal.SIGINT, _interrupt)
+        _stop_when_orphaned()
         if not os.environ.get("QAJEV_JOB"):  # a background job's run is already recorded by its wrapper
             from . import jobs
 
