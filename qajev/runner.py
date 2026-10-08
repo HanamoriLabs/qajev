@@ -310,7 +310,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),
                                        url=scenario.url)
     result.update({k: v for k, v in (("stop_detail", detail), ("not_run", not_run)) if v})
-    idle = verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
+    outcome, reason = verdict.hidden_page(outcome, reason, observed)
+    idle =verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
                                  session.agent.state["history"]) if scenario.goal else None
     if outcome in {"fail", "stuck"} and idle:
         outcome, reason = "harness", f"{idle}; {reason}"
@@ -319,6 +320,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     if outcome not in {"pass", "skipped"} and wall:
         result["needs_sign_in"] = wall
         return _finish(result, "harness", wall["reason"], started)
+    if scenario.goal and getattr(session, "held", 0):  # the page kept moving: its frames waited while Jev decided
+        result["held_decisions"] = session.held
+        result["held_seconds"] = round(session.held_s, 1)
     assists = getattr(session, "assists", []) if scenario.goal else []
     if assists:
         result["assists"] = assists

@@ -268,7 +268,7 @@ PROBE_JS = Template("""(async () => {
   let status = null;
   try { status = performance.getEntriesByType('navigation')[0].responseStatus || null; } catch (e) {}
   const seen = spec.visible.map(onScreen);
-  return { probe, url: location.href, title: document.title, status,
+  return { probe, url: location.href, title: document.title, status, hidden: document.hidden,
     text: spec.text.map(t => has(t)), absent: spec.absent.map(t => has(t)), visible: seen.map(s => s.ok),
     visible_why: seen.map(s => s.why),
     near: spec.text.map(t => has(t) ? null : nearest(t)), js, says: body.slice(0, 400) };
@@ -292,6 +292,65 @@ FIND_JS = Template("""(() => {
 
 # Why a decision went stale, read before Jev looks again: Jev's freshness keys now (its pageKey and the target's
 # guard, as Browser.fresh compares them) and the first of Browser.act's target checks that fails.
+# While Jev looks and chooses on a page that keeps moving, its animation frames wait, as in a background tab: the frame
+# counter and the 3D scene stop, so the page Jev decided on is the page it acts on. Timers, network messages and input
+# still run, so a multiplayer page keeps its feed (8 Oct: 29 feed messages arrived during a 3 s hold). release() runs
+# the frames that waited. Only window.requestAnimationFrame and the page's CSS animations are held.
+HOLD_JS = """(() => {
+  if (window.__qajevHold) return;
+  const raf = window.requestAnimationFrame.bind(window), caf = window.cancelAnimationFrame.bind(window);
+  let on = false, since = 0, waiting = new Map(), next = -1, inbox = [];
+  window.requestAnimationFrame = (cb) => {
+    if (!on) return raf(cb);
+    const id = next--; waiting.set(id, cb); return id;
+  };
+  window.cancelAnimationFrame = (id) => { if (waiting.has(id)) waiting.delete(id); else caf(id); };
+  // A server message that comes during a hold waits, and the page handles it in order on release: none is lost, and
+  // the page Jev reads does not change under it. The socket itself keeps receiving. Only for sockets the page opens
+  // after this script, so QAJev adds it to each document before the page's own code.
+  const later = (fn) => function (e) { if (on) inbox.push([fn, this, e]); else return fn.call(this, e); };
+  [window.WebSocket, window.EventSource].forEach((Kind) => {
+    if (!Kind) return;
+    const proto = Kind.prototype, add = proto.addEventListener, remove = proto.removeEventListener;
+    const wraps = new WeakMap(), owners = new WeakMap();
+    const wrap = (fn) => { if (!wraps.has(fn)) wraps.set(fn, later(fn)); return wraps.get(fn); };
+    const message = (type, fn) => type === 'message' && typeof fn === 'function';
+    proto.addEventListener = function (type, fn, opts) {
+      return add.call(this, type, message(type, fn) ? wrap(fn) : fn, opts);
+    };
+    proto.removeEventListener = function (type, fn, opts) {
+      return remove.call(this, type, message(type, fn) ? wrap(fn) : fn, opts);
+    };
+    const d = Object.getOwnPropertyDescriptor(proto, 'onmessage');
+    if (d && d.get && d.set) Object.defineProperty(proto, 'onmessage', { configurable: true, enumerable: d.enumerable,
+      get() { const fn = d.get.call(this); return owners.get(fn) || fn; },
+      set(fn) {
+        if (typeof fn !== 'function') return d.set.call(this, fn);
+        const w = later(fn); owners.set(w, fn); d.set.call(this, w);
+      } });
+  });
+  // held: how many holds, heldMs: their time. A page's own frame-rate check divides by the time it was not held.
+  window.__qajevHold = {
+    held: 0,
+    heldMs: 0,
+    hold() {
+      if (!on) { on = true; since = performance.now(); this.held++; }
+      document.getAnimations().forEach((a) => { try { a.pause(); } catch (e) {} });
+      // A frame the page asked for before the hold still draws once: answer after it, so the page is still when read.
+      return new Promise((done) => { raf(() => done(true)); setTimeout(() => done(true), 100); });
+    },
+    release() {
+      if (on) this.heldMs += performance.now() - since;
+      on = false;
+      const mail = inbox; inbox = [];  // a throwing handler surfaces as the page's own error; the rest still run
+      mail.forEach(([fn, self, e]) => { try { fn.call(self, e); } catch (err) { setTimeout(() => { throw err; }); } });
+      document.getAnimations().forEach((a) => { try { if (a.playState === 'paused') a.play(); } catch (e) {} });
+      const cbs = [...waiting.values()]; waiting = new Map();
+      cbs.forEach((cb) => raf(cb));
+    },
+  };
+})()"""
+
 STALE_JS = Template("""(() => {
   const c = window.__jevFast;
   if (!c) return { target: null, key: null, guard: null };
@@ -480,6 +539,10 @@ class Session:
         self.device = None
         self.assists = []
         self.last_stale = None
+        self.holding = False  # the page keeps moving: hold its frames while Jev decides (HOLD_JS)
+        self.held = 0  # decisions made on a held page
+        self.held_s = 0.0  # and how long the page was held for them
+        self.hold_loaded = False  # HOLD_JS is added to each new document of this tab
         self.net = None
         self.carried = {}  # what a page's guard recorded before the tab left it, for the next probe
         # Jev's agent and its Browser; a multiplayer client has a Tab and no agent (only Jev's own paths use one)
@@ -496,6 +559,9 @@ class Session:
             self.browser.fresh = functools.partial(fresh_past_ticks, self.browser, self.jev.browser.MARKER)
         try:
             self.call("Page.enable")  # must precede addScriptToEvaluateOnNewDocument
+            if self.agent is not None:  # before the page's own code, so its sockets' messages can wait out a hold
+                self.call("Page.addScriptToEvaluateOnNewDocument", source=HOLD_JS)
+                self.hold_loaded = True
             if motion == "reduce":  # before the first navigation, so the first paint already honours it
                 self.call("Emulation.setEmulatedMedia",
                           features=[{"name": "prefers-reduced-motion", "value": "reduce"}])
@@ -517,7 +583,8 @@ class Session:
                     self.jev.cdp("Browser.setPermission", permission={"name": name}, setting="denied")
                 except (RuntimeError, TimeoutError):
                     pass  # the in-page stub still refuses capture
-            self.minimize()
+            # Never minimised: a minimised window draws no frames, so a 3D page stalls (8 Oct). On a Mac the window
+            # stays off the person's screen because QAJev starts Chrome hidden (chrome._open_behind).
             self.net = netlog.start(self.page_socket())  # still on about:blank: it hears the site's first request
         except Exception:
             self.close()
@@ -539,15 +606,6 @@ class Session:
         """A condition's settled value is truthy (a throw, a rejection or no answer counts as not holding)."""
         r = self.evaluate(awaited(expression)) or {}
         return "error" not in r and bool(r.get("value"))
-
-    def minimize(self):
-        if self.headless or self.agent is None:  # a client's window stays up: a minimised page stops rendering
-            return
-        try:
-            window = self.jev.cdp("Browser.getWindowForTarget", targetId=self.browser.target)["windowId"]
-            self.jev.cdp("Browser.setWindowBounds", windowId=window, bounds={"windowState": "minimized"})
-        except (RuntimeError, KeyError, TimeoutError):
-            pass
 
     def _keep_safe(self):
         """Re-asserted whenever the guard is armed: another CDP session in the same browser can undo either."""
@@ -661,7 +719,6 @@ class Session:
         if self.guard_cfg is not None:
             with contextlib.suppress(RuntimeError):  # navigating on: the next page's guard is judged in its turn
                 self.guard_settled()
-        self.minimize()
         return None
 
     def reload(self, timeout=30.0):
@@ -749,6 +806,7 @@ class Session:
         self.agent.pending_text = None
         self.agent.state.update(goal=goal, plan=[goal], plan_index=0, history=[], decisions=[], text_calls=[],
                                 status="ready", decision=None, started_at=None, elapsed_ms=0)
+        self.holding, self.held, self.held_s = False, 0, 0.0  # held again only after this goal's own stale move
         self.observe()
 
     def tick(self):
@@ -757,13 +815,24 @@ class Session:
         stale = self.jev.browser.StalePage
         state = self.agent.state
         made = len(state["decisions"])
+        start = time.monotonic() if self.holding else 0.0
+        held = self.holding and self._hold("hold")
         try:
-            self.agent.command("predict")
-            self.require_guard()
-            self.agent.command("act", {"fingerprint": state["page"]["fingerprint"]})
+            try:
+                if held:  # read the held page: frames drawn since the last read must not make the choice stale
+                    self.observe()
+                self.agent.command("predict")
+                self.require_guard()
+                self.agent.command("act", {"fingerprint": state["page"]["fingerprint"]})
+                self.held += bool(held)
+            finally:
+                if held:  # the action's own effects draw now, before the page is read again; on any error too
+                    self._hold("release")
+                    self.held_s += time.monotonic() - start
             self.settle_scroll()
             return True
         except stale as e:
+            self.hold_moving_page()  # it moved under Jev: from now on, its frames wait while Jev decides
             decision = state["decisions"][-1] if len(state["decisions"]) > made else None
             before = state["page"]
             why, now, node = self.why_stale(str(e), before, decision)
@@ -774,6 +843,26 @@ class Session:
             self.last_stale = why
             if decision is not None:
                 decision["stale"] = why
+            return False
+
+    def hold_moving_page(self):
+        """Hold this page's frames while Jev decides, from its next decision on (HOLD_JS), in each document it loads."""
+        if self.holding:
+            return
+        self.holding = True
+        if not self.hold_loaded:  # once per tab: in a later goal's documents it waits, unused, until a hold
+            self.hold_loaded = True
+            with contextlib.suppress(RuntimeError, TimeoutError):
+                self.call("Page.addScriptToEvaluateOnNewDocument", source=HOLD_JS)
+        with contextlib.suppress(RuntimeError, TimeoutError):
+            self.evaluate(HOLD_JS)
+
+    def _hold(self, op):
+        """Hold or release the page's frames. -> True when the page has the hold (a page that blocks it moves on)."""
+        try:
+            return bool(self.evaluate(f"(async (h) => !!h && (await h.{op}(), true))(window.__qajevHold)",
+                                      timeout_ms=3000))
+        except (RuntimeError, TimeoutError):
             return False
 
     def why_stale(self, reason, page, decision):

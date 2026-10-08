@@ -4,6 +4,27 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Fixed: on a Mac, QAJev's Chrome took the keyboard from the app you were typing in. A run without `--headless`
+  started Chrome directly, so macOS brought it to the front, and Chrome ignored `--start-minimized`. Now QAJev
+  starts Chrome hidden through macOS's launcher (`open -n -g -j`). In one test, Chrome held the front for about
+  0.2 s, down from about 7 s. Pages and screenshots work as before. `qajev browser login` still opens in front,
+  because you asked for that window. Games (Electron, Godot) still open in front. Run Godot with `--headless` to
+  avoid it.
+  ([CLI](docs/cli.md#options-shared-by-check-run-and-smoke))
+- QAJev never minimises its Chrome window. A minimised window draws no frames, so a 3D page stays on its loading
+  screen. On a local Verse 3D page: 182 frames a second with the hidden start, 0 minimised. The minimise did not
+  take effect in real runs (a headed run drew 94 frames a second), so results so far stand.
+- On a page that never stops moving, Jev's moves no longer go stale one after another. After the first stale move,
+  QAJev holds the page's animation frames while Jev chooses, then lets them run once it has acted. A server message
+  (WebSocket or EventSource) that comes during the hold waits, and the page handles it in order on release, so none
+  is lost and a chat or scoreboard beside the buttons no longer makes the move stale. QAJev adds the hold script to
+  each page before the page's own code, unused until a hold. Timers run on. The rig
+  tool's run went harness with 9 stale decisions ("217 fps" became "201 fps" each time). QAJev reads the page again
+  once it is held, so Jev chooses on the page it clicks. The report gives the held decisions and their time
+  (`held_decisions`, `held_seconds`). A page's own frame-rate check can leave out the held time with
+  `window.__qajevHold.heldMs`. ([Reports](docs/reports.md#outcomes))
+- A check on a page the browser reports hidden is **harness**: "the page was hidden and drew no frames". Before, a
+  hidden page could pass or fail with no frames drawn. ([Reports](docs/reports.md#outcomes))
 - A virtual gamepad: `pad` hooks in web suites and `pad:` steps in Electron game suites press buttons, push sticks and
   pull triggers, with no real device (I'M HIM supports a controller and key rebinding, but no plan could test it).
   Chrome has no gamepad input, so QAJev puts one virtual pad in the page. It has the standard mapping, is connected,

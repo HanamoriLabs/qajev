@@ -213,6 +213,18 @@ def _same_page(a, b):
     return bare(a) == bare(b)
 
 
+HIDDEN_PAGE = "the page was hidden and drew no frames, so its checks say nothing about it"
+
+
+def hidden_page(outcome, reason, observed):
+    """A page the browser reports hidden (a minimised or covered-up window) draws no frames: a 3D scene stays on its
+    loading screen and anything timed stops (8 Oct). Its pass, fail or stuck is then QAJev's, not the product's.
+    -> (outcome, reason)."""
+    if (observed or {}).get("hidden") is True and outcome in {"pass", "fail", "stuck"}:
+        return "harness", f"{HIDDEN_PAGE}; {reason}"
+    return outcome, reason
+
+
 def never_set_off(start_url, end_url, expect, history):
     """Jev never set off for the page the checks need: they want another address, the run ended on the page it began
     on, and Jev clicked nothing (it only scrolled or waited). That is Jev not navigating, not the product failing

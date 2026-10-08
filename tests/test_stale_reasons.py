@@ -42,6 +42,8 @@ def fake_session(before, after, now):
     s.evaluate = lambda expression, timeout_ms=0: now
     s.observe = lambda: state.update(page=after)
     s.last_stale = None
+    s.holding, s.held, s.hold_loaded = False, 0, False
+    s.call = lambda method, **p: None  # the hold script for the next documents (hold_moving_page)
     return s, state
 
 

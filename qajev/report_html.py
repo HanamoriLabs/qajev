@@ -195,6 +195,11 @@ def _scenario(i, r, who="Jev"):
                      f"{_e(first.get('method'))} {_e(_where(first.get('url')))}")
     for w in r.get("allowed_writes") or []:  # every write production let through (allow_requests) is listed
         notes.append(f"Allowed write: {_e(w.get('method'))} {_e(_where(w.get('url')))}")
+    if r.get("held_decisions"):
+        notes.append(f"The page kept moving, so QAJev held its animation while Jev chose ({r['held_decisions']} "
+                     f"decision(s), {r.get('held_seconds') or 0:.1f} s); server messages waited and ran in order on "
+                     "release. A frame rate the page counts itself divides by the time it was not held "
+                     "(window.__qajevHold.heldMs)")
     for d in r.get("dialogs") or []:
         notes.append(f"Dismissed {_e(d.get('kind'))}" + (f": {_e(d['message'])}" if d.get("message") else ""))
     blocked = [a for a in r.get("assists") or [] if a.get("after", "BLOCKED") == "BLOCKED"]

@@ -37,7 +37,7 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 
 | Option | Does |
 |---|---|
-| `--headless` | run Chrome with no window |
+| `--headless` | run Chrome with no window. Without it, on a Mac Chrome starts hidden, so it does not take your keyboard, and it still draws 3D pages. QAJev never minimises it: a minimised window draws nothing |
 | `--ephemeral` | a throwaway browser profile, deleted after the run (the report says "throwaway profile") |
 | `--profile NAME` | a named QAJev browser profile (sign in to it once with `qajev browser login`) |
 | `--cdp-url URL` | attach to a Chrome you started yourself instead of QAJev's |

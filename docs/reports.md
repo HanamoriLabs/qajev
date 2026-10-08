@@ -53,11 +53,29 @@ the test tool are kept apart.**
 | **pass** | every expectation held, and every one of them ran | nothing |
 | **fail** | the product is wrong: a check failed, or the page did not load (a production server that is not answering included: the site is down) | read the reason and the failed checks |
 | **stuck** | Jev looked for a way forward and found none (QAJev also scrolls and looks again, twice) | look at the screenshot: often a real usability problem |
-| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error, a browser error, a failed hook, Jev saying DONE without taking a single action while a check fails, a local dev server that is not answering ("the server at ... is not answering": start the app), or a `js` check whose own code broke ("the check failed to run: TypeError ...": fix the check) | says nothing about the product; retry or narrow the goal |
+| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error, a browser error, a failed hook, Jev saying DONE without taking a single action while a check fails, a local dev server that is not answering ("the server at ... is not answering": start the app), a `js` check whose own code broke ("the check failed to run: TypeError ...": fix the check), or a page the browser reported hidden ("the page was hidden and drew no frames": a minimised or covered window draws nothing, so a 3D scene never loads) | says nothing about the product; retry or narrow the goal |
 | **unverified** | the scenario had no expectations | add some |
 | **skipped** | a scenario it depends on did not pass, or the machine was too busy | fix that first |
 
 `--strict` counts **stuck** as a failure.
+
+A page that never stops moving (a frame counter, a 3D scene, an animated tool) can make each of Jev's moves stale: the
+page changes between Jev's choice and its click. After the first stale move, QAJev holds the page's animation frames
+while Jev looks and chooses, and lets them run again once it has acted, as a background tab would. QAJev reads the
+page again once it is held, so Jev chooses on the page it will click. A server message (WebSocket or EventSource)
+that comes during the hold waits, and the page handles it in order on release, so none is lost and the page does not
+change under Jev. The socket keeps receiving the whole time. Timers and input run on. The report says how many decisions it held and for how long ("The page kept moving,
+so QAJev held its animation while Jev chose (3 decision(s), 1.4 s)"); the JSON has `held_decisions` and
+`held_seconds`. A timer that writes the page (a countdown, a clock beside the buttons) still counts as the page
+moving on.
+
+A held page draws no frames, so a frame rate the page counts itself reads low across a hold. The page can correct it:
+`window.__qajevHold` (present only once QAJev held the page) has `held` (how many holds) and `heldMs` (their time).
+
+```js
+const h = window.__qajevHold, heldMs = h ? h.heldMs : 0;   // read at the start and at the end of the count
+fps = frames / ((elapsedMs - (heldMsAtEnd - heldMsAtStart)) / 1000);
+```
 
 A run that would have changed a production site never gets as far as an outcome: it is **refused** before Chrome
 starts (exit code 5, `{"outcome": "refused", "reason": ...}` with `--json`), and nothing is reported because nothing
