@@ -28,7 +28,8 @@ A native app is not a web page: QAJev **cannot block its network writes**. So, o
   starts (the iOS Simulator's microphone is your Mac's real one). On a microphone or speech prompt, only
   **Don't Allow** is ever offered;
 - **password and other secure fields** are never offered to Jev, so it never types into them;
-- the Android emulator runs with **no audio** at all.
+- the Android emulator runs with **no audio** at all. QAJev cannot mute the iOS Simulator: its sound plays on your
+  Mac.
 
 Test against a **test build and a test account** whenever a flow could change data. Against a production backend,
 stick to signed-out flows.

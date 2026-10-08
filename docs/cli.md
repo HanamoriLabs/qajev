@@ -38,6 +38,7 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | Option | Does |
 |---|---|
 | `--headless` | run Chrome with no window |
+| `--audio` | let Chrome play sound. QAJev's Chrome is muted by default; ask only when the test must hear the page. Muted, a page still plays its media and Web Audio, so a check that a sound starts works without it. The report says "Sound: on" or "muted" under Run |
 | `--ephemeral` | a throwaway browser profile, deleted after the run (the report says "throwaway profile") |
 | `--profile NAME` | a named QAJev browser profile (sign in to it once with `qajev browser login`) |
 | `--cdp-url URL` | attach to a Chrome you started yourself instead of QAJev's |
@@ -171,6 +172,7 @@ qajev play path/to/game --suite session.yaml
 | `--min-fps N` | the frame rate must be at least this |
 | `--expect-looks STATEMENT` | Clef, looking at the game's final screenshot, must judge this true (repeatable; needs Clef and a window) |
 | `--vision` / `--no-vision` | Clef sees the game's screen with every decision. On by default with Clef and a window; `--vision` refuses to run without them, `--no-vision` uses the labels only |
+| `--audio` | let the game or app play sound (Electron: no `--mute-audio`; Godot: its real audio driver). Muted by default. The Android emulator never plays sound, and QAJev cannot mute the iOS Simulator |
 | `--allow-errors` | engine or script errors do not fail the run |
 | `--expect-closed` | the game must quit by itself with exit code 0 (to test a normal quit) |
 | `--allow LABEL` | offer this exact label to Jev although it is hidden by default, e.g. `QUIT` (repeatable) |
@@ -319,7 +321,7 @@ QAJev's own Chrome.
 ```bash
 qajev browser login --profile shop --url https://shop.example/login   # a window opens: sign in yourself, once
 qajev browser status                                                 # QAJev's running Chromes (a throwaway one is marked)
-qajev browser start --profile shop                                   # start one and leave it running
+qajev browser start --profile shop                                   # start one and leave it running (muted; --audio for sound)
 qajev browser stop --profile shop
 qajev browser reap                                                   # clean up after runs that died
 ```

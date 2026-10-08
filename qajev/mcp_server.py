@@ -95,14 +95,17 @@ def _motion_args(motion):
     return ["--motion", motion]
 
 
-def _browser_args(profile, cdp_url, headless):
+def _browser_args(profile, cdp_url, headless, audio=False):
     """Agents get a headless throwaway Chrome by default: nothing appears on the person's screen and nothing is
-    left behind. Name a `profile` for signed-in runs (the person signs in once with qa_browser login)."""
+    left behind. Name a `profile` for signed-in runs (the person signs in once with qa_browser login). It is muted
+    unless the agent asks for sound (audio=True): runs happen on the person's machine, during their calls."""
     if cdp_url:
         return ["--cdp-url", cdp_url]
     args = ["--profile", profile] if profile else ["--ephemeral"]
     if headless:
         args.append("--headless")
+    if audio:
+        args.append("--audio")
     return args
 
 
@@ -258,6 +261,7 @@ async def qa_check(
     profile: str | None = None,
     cdp_url: str | None = None,
     headless: bool = True,
+    audio: bool = False,
     cost_cap: float | None = None,
     out_dir: str | None = None,
     verbose: bool = False,
@@ -285,13 +289,15 @@ async def qa_check(
     about: what this test proves and why, in plain words, for the person reading the report (always give it).
     Returns the report with a gate and findings.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    audio: let Chrome play sound. It is muted by default: ask only when the test must hear the page (a page
+    still plays its media and Web Audio while muted, so a check that a sound starts needs no audio).
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     """
     args = ["check", url, "--mode", mode, *(["--device", device] if device else []), "--max-actions",
             str(max_actions),
             "--max-seconds", str(max_seconds), "--settle", str(settle), "--out", out_dir or str(DEFAULT_OUT),
-            *_browser_args(profile, cdp_url, headless)]
+            *_browser_args(profile, cdp_url, headless, audio)]
     if goal:
         args += ["--goal", goal]
     for text in expect_text or []:
@@ -335,6 +341,7 @@ async def qa_run_suite(
     profile: str | None = None,
     cdp_url: str | None = None,
     headless: bool = True,
+    audio: bool = False,
     cost_cap: float | None = None,
     out_dir: str | None = None,
     verbose: bool = False,
@@ -350,6 +357,8 @@ async def qa_run_suite(
     (plus their dependencies). jobs > 1 runs independent chains in parallel; keep 1 on a busy machine.
     allow_destructive: show delete/remove/refund/cancel... controls (every host a local dev host, or refused).
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    audio: let Chrome play sound. It is muted by default: ask only when the test must hear the page (a page
+    still plays its media and Web Audio while muted, so a check that a sound starts needs no audio).
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     """
@@ -369,7 +378,7 @@ async def qa_run_suite(
         except yaml.YAMLError:
             title = "run suite (inline)"
     args = ["run", suite_path, "--jobs", str(jobs), "--out", out_dir or str(DEFAULT_OUT),
-            *_browser_args(profile, cdp_url, headless)]
+            *_browser_args(profile, cdp_url, headless, audio)]
     for name in only or []:
         args += ["--only", name]
     if cost_cap is not None:
@@ -395,6 +404,7 @@ async def qa_smoke(
     profile: str | None = None,
     cdp_url: str | None = None,
     headless: bool = True,
+    audio: bool = False,
     out_dir: str | None = None,
     verbose: bool = False,
     background: bool = False,
@@ -410,12 +420,14 @@ async def qa_smoke(
     contrast, keyboard reach and visible focus, 200% zoom, cut-off or overlapping text, open dialogs) and
     a design-consistency comparison across pages; they never change the gate.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    audio: let Chrome play sound. It is muted by default: ask only when the test must hear the page (a page
+    still plays its media and Web Audio while muted, so a check that a sound starts needs no audio).
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     """
     args = ["smoke", url, "--max-pages", str(max_pages), *(["--device", device] if device else []),
             "--out", out_dir or str(DEFAULT_OUT),
-            *_browser_args(profile, cdp_url, headless)]
+            *_browser_args(profile, cdp_url, headless, audio)]
     if check_links:
         args.append("--check-links")
     if not ux:
@@ -428,9 +440,11 @@ async def qa_smoke(
 
 
 @server.tool()
-async def qa_browser(action: str, profile: str = "default", url: str | None = None, headless: bool = False) -> dict:
+async def qa_browser(action: str, profile: str = "default", url: str | None = None, headless: bool = False,
+                     audio: bool = False) -> dict:
     """Manage QAJev's own Chrome. action: status | start | stop | login | reap. `login` opens a visible window on
-    `url` so the PERSON can sign in once; the profile keeps the session. Never type credentials yourself."""
+    `url` so the PERSON can sign in once; the profile keeps the session. Never type credentials yourself.
+    audio: start a Chrome that plays sound (muted by default)."""
     if action not in {"status", "start", "stop", "login", "reap"}:
         raise ToolError("action must be status, start, stop, login or reap")
     args = ["browser", action, "--profile", profile, "--json"]
@@ -438,6 +452,8 @@ async def qa_browser(action: str, profile: str = "default", url: str | None = No
         args += ["--url", url]
     if headless:
         args.append("--headless")
+    if audio:
+        args.append("--audio")
     code, text, tail = await _spawn(args)
     try:
         data = json.loads(text) if text else {}
@@ -462,6 +478,7 @@ async def qa_project_run(
     expect_url: str | None = None,
     profile: str | None = None,
     headless: bool = True,
+    audio: bool = False,
     verbose: bool = False,
     background: bool = False,
     devices: list[str] | None = None,
@@ -478,10 +495,12 @@ async def qa_project_run(
     with mode = "mutate" on a production host is refused. allow_destructive: show delete/remove/refund/cancel...
     controls (a local dev env only).
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    audio: let Chrome play sound. It is muted by default: ask only when the test must hear the page (a page
+    still plays its media and Web Audio while muted, so a check that a sound starts needs no audio).
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     """
-    args = ["run", "--project", project, *_browser_args(profile, None, headless)]
+    args = ["run", "--project", project, *_browser_args(profile, None, headless, audio)]
     for flag, value in (("--env", env), ("--objective", objective), ("--suite", suite), ("--url", url),
                         ("--expect-url", expect_url), ("--about", about)):
         if value:
@@ -565,6 +584,7 @@ async def qa_play(
     max_actions: int = 20,
     max_seconds: float = 90,
     headless: bool = True,
+    audio: bool = False,
     shots: bool = True,
     cost_cap: float | None = None,
     out_dir: str | None = None,
@@ -594,6 +614,8 @@ async def qa_play(
     default when Clef decides and the game has a window (Electron, mobile, a windowed Godot game); vision=false
     turns it off, vision=true refuses to run without Clef. about: what this test proves and why, in plain words (with
     a suite: the whole run; each step can carry its own `about:`).
+    audio: let the game or app play sound (Electron, Godot). Muted by default; the Android emulator never plays
+    sound.
     plan: the approved test plan this run follows (a Markdown file; overrides the suite's `plan:`). Without an
     approved one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan)."""
     args = ["play", project, "--max-actions", str(max_actions), "--max-seconds", str(max_seconds),
@@ -628,6 +650,8 @@ async def qa_play(
         args.append("--vision" if vision else "--no-vision")
     if headless and not (vision or expect_looks):  # a headless Godot game draws nothing to look at
         args.append("--headless")
+    if audio:
+        args.append("--audio")
     if not shots:
         args.append("--no-shots")
     if cost_cap is not None:

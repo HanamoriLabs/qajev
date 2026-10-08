@@ -93,6 +93,9 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   (empty it first).
 - Website tools also take `devices` (default desktop and phone: every website test also runs in a phone view),
   and `cpu_throttle` (run the page's CPU 1 to 8 times slower, e.g. 4 for a phone-like phone pass).
+- Every run tool (`qa_check`, `qa_run_suite`, `qa_smoke`, `qa_project_run`, `qa_play`, `qa_browser start`) is muted
+  by default. Pass `audio=true` only when the test must hear the page or game. Muted, a page still plays its media
+  and Web Audio, so a check that a sound starts needs no `audio`.
   `qa_check`, `qa_run_suite` and `qa_project_run` take `real_devices` (`["ios"]`, `["android"]` or both) to
   also run in Chrome on an Android emulator (iOS Safari cannot read page content yet): opt-in, read-only, and slower
   (see [Mobile](mobile.md)).

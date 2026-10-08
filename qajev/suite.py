@@ -66,7 +66,7 @@ STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
-    "cpu_throttle", "plan",
+    "cpu_throttle", "plan", "audio",
 }
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
@@ -137,6 +137,7 @@ class Suite:
     path: Path | None = None
     motion: str = "reduce"
     cpu_throttle: int = 1  # Chrome runs the page's CPU this many times slower (a phone-like phone pass)
+    audio: bool = False  # Chrome plays sound; QAJev's Chrome is muted unless a test needs to hear the page
     real_devices: list = field(default_factory=list)  # also run in a real device browser: "ios", "android"
     account: dict | None = None  # signed in once before the scenarios; its password is a vault reference
     about: str | None = None  # what the run as a whole proves
@@ -435,6 +436,9 @@ def parse(data, path=None, devices=None):
     if motion not in MOTIONS:
         raise SuiteError(f"motion must be one of {MOTIONS}")
     cpu_throttle = cpu_rate(data.get("cpu_throttle", 1))
+    audio = data.get("audio", False)
+    if not isinstance(audio, bool):
+        raise SuiteError("audio must be true or false (true: Chrome plays sound; it is muted by default)")
     suite_budget = {**DEFAULT_BUDGET, **(data.get("budget") or {})}
     raw = data.get("scenarios")
     if not isinstance(raw, list) or not raw:
@@ -555,6 +559,7 @@ def parse(data, path=None, devices=None):
         path=path,
         motion=motion,
         cpu_throttle=cpu_throttle,
+        audio=audio,
         real_devices=_real_devices(data.get("real_devices") or os.environ.get("QAJEV_REAL_DEVICES")),
         account=account,
         about=about(data.get("about"), "about"),

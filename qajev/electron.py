@@ -162,7 +162,7 @@ class ElectronGame:
     engine = "electron"
 
     def __init__(self, app, *, adapter=None, args=(), headless=False, size=(1280, 800), start_wait=60.0, env=None,
-                 hide=None, allow=None, profile=None, reset_profile=False):
+                 hide=None, allow=None, profile=None, reset_profile=False, audio=False):
         self.project = Path(app).expanduser().resolve()
         if not self.project.exists():
             raise NativeError(f"no app at {self.project}")
@@ -188,6 +188,7 @@ class ElectronGame:
         except game_profile.ProfileError as e:
             raise NativeError(str(e)) from None
         self.headless, self.size, self.start_wait = headless, size, start_wait
+        self.audio = audio  # muted (Chromium's --mute-audio) unless the test asks for sound
         self.env = dict(env or {})
         self.proc = self.ws = None
         self.errors, self.log = [], []
@@ -213,7 +214,8 @@ class ElectronGame:
         self.user_dir = str(self.kept) if self.kept else tempfile.mkdtemp(prefix=f"qajev-native-{os.getpid()}-",
                                                                           dir=HOME / "tmp")
         cmd = [*command_for(self.project), f"--profile={self.user_dir}", f"--user-data-dir={self.user_dir}",
-               f"--remote-debugging-port={self.port}", "--remote-debugging-address=127.0.0.1", *self.args]
+               f"--remote-debugging-port={self.port}", "--remote-debugging-address=127.0.0.1",
+               *([] if self.audio else ["--mute-audio"]), *self.args]
         self.proc = subprocess.Popen(cmd, env={**os.environ, **self.env}, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, text=True, stdin=subprocess.DEVNULL,
                                      start_new_session=True, preexec_fn=lambda: os.nice(10))

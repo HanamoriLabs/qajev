@@ -188,8 +188,9 @@ def free_port():
     raise ChromeError(f"no free port in {PORTS.start}-{PORTS.stop - 1}")
 
 
-def start(profile="default", *, headless=False, port=None, ephemeral=False, visible=False, wait=None):
-    """Start (or reuse) the Chrome for a profile. Returns its record."""
+def start(profile="default", *, headless=False, port=None, ephemeral=False, visible=False, wait=None, audio=False):
+    """Start (or reuse) the Chrome for a profile. Returns its record. Muted unless `audio` (José, 8 Oct): a page still
+    plays its media and Web Audio, only the sound out is off."""
     if not ephemeral:
         running = [r for r in status(profile) if not r.get("ephemeral")]
         if running and running[0]["alive"]:
@@ -198,6 +199,9 @@ def start(profile="default", *, headless=False, port=None, ephemeral=False, visi
                     f"profile {profile!r} already runs {'headless' if running[0]['headless'] else 'headed'} "
                     f"on port {running[0]['port']}; stop it first"
                 )
+            if audio and not running[0].get("audio", True):  # a Chrome an older QAJev started plays sound
+                raise ChromeError(f"profile {profile!r} runs muted on port {running[0]['port']}; stop it first to "
+                                  "run a test with sound")
             return running[0]
     # A loaded machine (load 300+) has taken over 30 s to open the debugging port.
     wait = wait or float(os.environ.get("QAJEV_CHROME_START_WAIT", "60"))
@@ -212,7 +216,7 @@ def start(profile="default", *, headless=False, port=None, ephemeral=False, visi
         profile_dir = PROFILES / profile
         profile_dir.mkdir(parents=True, exist_ok=True)
     try:
-        return _launch(profile, profile_dir, port, headless, visible, ephemeral, wait)
+        return _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, audio=audio)
     except BaseException:
         if ephemeral:
             shutil.rmtree(profile_dir, ignore_errors=True)  # a failed start must not leave its temp profile
@@ -223,11 +227,13 @@ def run_record(owned):
     """What a run's report says about the Chrome it started (or reused): a throwaway one is called that, not by the
     profile name it was started under."""
     return {"cdp_url": owned["cdp_url"], "managed": True, "profile": owned["profile"], "headless": owned["headless"],
-            "port": owned["port"], "ephemeral": bool(owned.get("ephemeral"))}
+            "port": owned["port"], "ephemeral": bool(owned.get("ephemeral")), "audio": owned.get("audio", True)}
 
 
-def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait):
+def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, audio=False):
     args = [binary(), f"--user-data-dir={profile_dir}", f"--remote-debugging-port={port}", *flags()]
+    if not audio:  # no sound unless the test asks for it: runs happen on the person's machine, during their calls
+        args.append("--mute-audio")
     if headless:
         args.append("--headless=new")
     elif not visible:
@@ -255,7 +261,7 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait):
     record = {
         "profile": profile, "state_key": state_key, "pid": proc.pid, "port": port, "cdp_url": cdp_url,
         "profile_dir": str(profile_dir), "headless": headless, "ephemeral": ephemeral, "owner_pid": os.getpid(),
-        "started_at": time.time(),
+        "started_at": time.time(), "audio": audio,
     }
     _state_file(state_key).write_text(json.dumps(record, indent=2))
     return {**record, "alive": True}

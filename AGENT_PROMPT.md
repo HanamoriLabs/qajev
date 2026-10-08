@@ -61,6 +61,10 @@ slower, so only when the person asks or a bug may be device-specific. Those copi
 and only run read-only scenarios. iOS Safari (`ios`) cannot read page content yet: its copies come out `harness`;
 never report that as a site bug.
 
+QAJev's Chrome and games are **muted by default**: runs happen on the person's machine, often during their calls.
+Pass `audio=true` (CLI `--audio`, suite `audio: true`) only when the test must hear the page or game. A page still
+plays its media while muted, so checking that a sound starts needs no `audio`.
+
 ### How to read the result
 
 Each scenario has one outcome:

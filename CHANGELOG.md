@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Muted by default (José, 8 Oct): QAJev's Chrome starts with `--mute-audio`, Electron apps with `--mute-audio`,
+  and Godot games with their silent audio driver. A test that must hear the page or game asks for sound:
+  `--audio` on `check`, `run`, `smoke`, `play` and `browser start`, `audio: true` in a suite or project, and
+  `audio=true` on the MCP run tools. Muted, a page still plays its media and Web Audio (only the output is
+  silent), so a check that a sound starts keeps working. A test that asks for sound never reuses a muted Chrome
+  ("stop it first"). The report says "Sound: muted" or "on" under Run (`browser.audio`). The Android emulator
+  was already silent. QAJev cannot mute the iOS Simulator.
+  ([CLI](docs/cli.md#options-shared-by-check-run-and-smoke))
 - An approved test plan for every run (José, 8 Oct: no run without a test plan the Orchestrator approved). A suite
   names it with `plan:`; `run`, `check`, `smoke` and `play` (and their MCP tools) take `--plan FILE` / `plan`. The
   plan is a Markdown file whose last line is "Approved by the Orchestrator <date> <time> sha256:..." with the sha256

@@ -339,6 +339,14 @@ def decider(data):
     return (data.get("models") or {}).get("decider") or "Jev"
 
 
+def sound(browser):
+    """The run's sound in words: QAJev mutes its Chrome and games unless the test asks for sound. None when the run
+    said nothing about it (an attached Chrome, a mobile device, a report from an older QAJev)."""
+    if not isinstance(browser, dict) or "audio" not in browser:
+        return None
+    return "on (the test asked for it)" if browser["audio"] else "muted (QAJev's default)"
+
+
 def game_profile(browser):
     """A game's save folder, in one line: kept (a test profile, game_profile.py) or a throwaway. Or None."""
     p = browser.get("game_profile")
@@ -491,6 +499,8 @@ def render(data):
                     if data["motion"] == "reduce" else "full (as-is)"))
     if (data.get("cpu_throttle") or 1) > 1:
         run.append(("CPU", _e(f"{data['cpu_throttle']}× slower (Chrome's CPU throttling)")))
+    if sound(data.get("browser")):
+        run.append(("Sound", _e(sound(data.get("browser")))))
     if data.get("watched_live_s"):
         run.append(("Watched live", f"{data['watched_live_s']:.0f} s in the dashboard"))
     if data.get("sign_in"):

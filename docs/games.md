@@ -15,6 +15,8 @@ QAJev talks to the game itself, not to its pixels.
   logs) is moved there by giving the game its own `HOME`, and QAJev's boot script refuses to start the game when
   `user://` is anywhere else. A game that keeps files outside `user://` can read the folder from `QAJEV_USER_DIR`.
 - **Input goes into the game only**, never to your real mouse or keyboard.
+- **No sound by default**: QAJev starts Electron with `--mute-audio` and Godot with its silent audio driver. A test
+  that must hear the game asks with `--audio` (MCP `audio=true`, `audio: true` in a suite).
 - **Verdicts come from the game's state**: which screen is up, what it says, state values (`game_over=false`,
   `kills=">= 20"`), frame rate, memory, and script or engine errors.
 - **Never offered to Jev**: quit, exit to desktop, buy, delete or reset saves or progress, plus anything the game's

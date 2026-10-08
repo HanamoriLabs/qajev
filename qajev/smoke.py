@@ -236,7 +236,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
             raise ConfigError(f"no Chrome DevTools endpoint at {cdp_url}")
         browser = {"cdp_url": cdp_url, "managed": False}
     else:
-        owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral)
+        owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral, audio=opts.audio)
         cdp_url = owned["cdp_url"]
         browser = chrome.run_record(owned)
 

@@ -72,6 +72,9 @@ def _common(p):
     g.add_argument("--profile", default=os.environ.get("QAJEV_PROFILE", "default"),
                    help="QAJev Chrome profile (sign in once with `qajev browser login`)")
     g.add_argument("--headless", action="store_true", help="run QAJev's Chrome headless")
+    g.add_argument("--audio", action="store_true",
+                   help="let QAJev's Chrome play sound. It is muted by default: ask only when the test needs to hear "
+                        "the page (a page still plays its media and Web Audio while muted)")
     g.add_argument("--ephemeral", action="store_true", help="throwaway profile, deleted after the run")
     g.add_argument("--plan", type=Path, help=PLAN_HELP)
     g.add_argument("--real-devices", help="also run each website scenario in a real device browser: android (Chrome "
@@ -242,6 +245,9 @@ def build_parser():
     play.add_argument("--max-seconds", type=float, default=90)
     play.add_argument("--headless", action="store_true",
                       help="Godot: no window, fastest, no screenshots (Electron apps always open a window)")
+    play.add_argument("--audio", action="store_true",
+                      help="let the game or app play sound (Electron, Godot). Muted by default. The Android emulator "
+                           "never plays sound")
     play.add_argument("--no-shots", action="store_true", help="skip the end screenshot")
     play.add_argument("--out", type=Path, default=Path(os.environ.get("QAJEV_OUT", "qajev-runs")))
     play.add_argument("--env-file")
@@ -258,6 +264,7 @@ def build_parser():
     browser.add_argument("action", choices=["start", "stop", "status", "login", "reap"])
     browser.add_argument("--profile", default=os.environ.get("QAJEV_PROFILE", "default"))
     browser.add_argument("--headless", action="store_true")
+    browser.add_argument("--audio", action="store_true", help="start: let this Chrome play sound (muted by default)")
     browser.add_argument("--url", help="for login: the page to sign in on")
     browser.add_argument("--json", action="store_true")
 
@@ -466,7 +473,7 @@ def _options(args):
         cost_cap_usd=args.cost_cap, load_high=args.load_high or None, load_ok=args.load_ok,
         load_wait=args.load_wait, only=getattr(args, "only", []), shots=not args.no_shots, emit=_printer(args),
         ux=not getattr(args, "no_ux", False),
-        motion=args.motion, cpu_throttle=args.cpu_throttle,
+        motion=args.motion, cpu_throttle=args.cpu_throttle, audio=getattr(args, "audio", False),
     )
 
 
@@ -840,6 +847,7 @@ def cmd_play(args):
         except providers.ProviderError as e:
             return _fail(args, str(e), EXIT_CONFIG)
     session_steps, game_env, adapter, headless, asked = None, {}, args.adapter, args.headless, args.vision
+    audio = args.audio
     run_about = None  # with a suite, --about (or its about:) is the whole run's; without, the one test's
     game_args = []
     spec = {}
@@ -883,6 +891,7 @@ def cmd_play(args):
         game_args += [str(a) for a in spec.get("args") or []]
         adapter = adapter or spec.get("adapter")
         headless = headless or bool(spec.get("headless"))
+        audio = audio or bool(spec.get("audio"))
         if asked is None and spec.get("vision") is not None:
             asked = bool(spec["vision"])
         if spec.get("seed") and (mobile.is_mobile(args.project) or electron.is_electron(args.project)):
@@ -949,17 +958,19 @@ def cmd_play(args):
                 game_cm = electron.ElectronGame(args.project, adapter=adapter, args=game_args, env=game_env,
                                                 hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
                                                 allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow],
-                                                profile=game_profile_name, reset_profile=reset_profile)
+                                                profile=game_profile_name, reset_profile=reset_profile, audio=audio)
             else:
                 game_cm = native.GodotGame(args.project, adapter=adapter, headless=headless, env=game_env,
                                             hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
                                             allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow],
-                                            seed=spec.get("seed") if args.suite else None)
+                                            seed=spec.get("seed") if args.suite else None, audio=audio)
             with game_cm as game:
+                browser_engine = getattr(game, "engine", "godot")
                 browser = {"surface": "native", "engine": getattr(game, "engine", "godot"),
                            "project": str(game.project), "adapter": game.adapter.stem if game.adapter else None,
                            "headless": headless, "env": game_env, "args": game_args,
-                           "managed": True, "pid": game.proc.pid if game.proc else None, "vision": sees}
+                           "managed": True, "pid": game.proc.pid if game.proc else None, "vision": sees,
+                           **({"audio": audio} if browser_engine in ("electron", "godot") else {})}
                 if getattr(game, "record", None) and game.record.get("profile"):  # the save folder, kept or not
                     browser["game_profile"] = game.record["profile"]
                 emit({"event": "run", "suite": f"play {name}", "run_dir": str(run_dir), "browser": browser,
@@ -1002,7 +1013,7 @@ def cmd_browser(args):
 
     try:
         if args.action == "start":
-            out = chrome.start(args.profile, headless=args.headless)
+            out = chrome.start(args.profile, headless=args.headless, audio=args.audio)
         elif args.action == "stop":
             out = {"profile": args.profile, "stopped": chrome.stop(args.profile)}
         elif args.action == "status":

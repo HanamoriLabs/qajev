@@ -76,7 +76,8 @@ that line gives the site's reason and every scenario is **harness**: nothing was
 
 **Run** also says where each of QAJev's keys came from ("Keys": the file or the shell, names only, never values),
 how long someone watched the run live in the dashboard ("Watched live", `watched_live_s` in `report.json`), how much
-slower the page's CPU ran when the run throttled it ("CPU: 4× slower", `cpu_throttle`), and, for
+slower the page's CPU ran when the run throttled it ("CPU: 4× slower", `cpu_throttle`), whether QAJev's Chrome or
+game played sound ("Sound: muted (QAJev's default)" or "on (the test asked for it)", `browser.audio`), and, for
 an Electron game run with `--game-profile`, which save folder was used and that it was kept ("Game profile").
 
 A scenario that ended on a sign-in page it did not start on is **harness** too ("needs sign-in: ..."), and the

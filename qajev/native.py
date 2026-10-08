@@ -146,7 +146,7 @@ class GodotGame:
     """A Godot game started by QAJev, with its bridge. Use as a context manager."""
 
     def __init__(self, project, *, adapter=None, headless=False, size=(1280, 720), start_wait=60.0, env=None,
-                 hide=None, allow=None, seed=None):
+                 hide=None, allow=None, seed=None, audio=False):
         self.project = Path(project).expanduser().resolve()
         if not (self.project / "project.godot").is_file():
             raise NativeError(f"{self.project} is not a Godot project (no project.godot)")
@@ -154,6 +154,7 @@ class GodotGame:
         self.adapter = adapter_path(adapter)
         self.hide, self.allow = list(hide or []), list(allow or [])
         self.headless, self.size, self.start_wait = headless, size, start_wait
+        self.audio = audio  # Godot's silent audio driver unless the test asks for sound
         self.env = dict(env or {})  # extra settings for the game, e.g. SUHO_FORCE_MOBILE=1
         self.proc = self.sock = self.file = None
         self.errors, self.log = [], []
@@ -184,6 +185,7 @@ class GodotGame:
         self.errors, self.log = [], []
         args = [GODOT, "--path", str(self.project), "--script", str(godot_dir / "qajev_boot.gd")]
         args += ["--headless"] if self.headless else ["--resolution", f"{self.size[0]}x{self.size[1]}"]
+        args += [] if self.audio else ["--audio-driver", "Dummy"]
         self.proc = subprocess.Popen(args, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                      stdin=subprocess.DEVNULL, start_new_session=True,
                                      preexec_fn=lambda: os.nice(10))

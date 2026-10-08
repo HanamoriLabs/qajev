@@ -46,6 +46,7 @@ class Options:
     ux: bool = True  # smoke: measure each page's UX (contrast, keyboard, zoom, dialogs, design consistency): free
     motion: str | None = None  # overrides the suite's motion (reduce | full)
     cpu_throttle: int | None = None  # overrides the suite's cpu_throttle (1 to 8)
+    audio: bool = False  # let Chrome play sound (muted unless the test asks); a suite's audio: true asks too
     emit: object = None
     load_waited: float = 0.0  # seconds already spent waiting; load_wait is a budget for the whole run
     account: str | None = None  # the stored test account this run signed in with
@@ -641,7 +642,8 @@ def run(suite, opts):
             raise ConfigError(f"no Chrome DevTools endpoint at {cdp_url}")
         browser = {"cdp_url": cdp_url, "managed": False}
     else:
-        owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral)
+        owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral,
+                             audio=opts.audio or getattr(suite, "audio", False))
         cdp_url = owned["cdp_url"]
         browser = chrome.run_record(owned)
     _emit(opts, "run", suite=suite.name, run_dir=str(run_dir), browser=browser, scenarios=len(scenarios),

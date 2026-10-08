@@ -347,6 +347,7 @@ def markdown(data):
         *([f"- Motion: {MOTION[data['motion']]}"] if data.get("motion") in MOTION else []),
         *([f"- CPU: {data['cpu_throttle']}× slower (Chrome's CPU throttling)"]
           if (data.get("cpu_throttle") or 1) > 1 else []),
+        *([f"- Sound: {report_html.sound(browser)}"] if report_html.sound(browser) else []),
         *([f"- Watched live: {data['watched_live_s']:.0f} s in the dashboard"] if data.get("watched_live_s") else []),
         *([f"- Sign-in: {report_html.signed_in(data['sign_in'])}"] if data.get("sign_in") else []),
         f"- QAJev {data['qajev']}" + (f" ({data['qajev_commit']})" if data.get("qajev_commit") else ""),
