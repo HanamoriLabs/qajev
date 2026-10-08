@@ -59,6 +59,13 @@ the test tool are kept apart.**
 
 `--strict` counts **stuck** as a failure.
 
+A page that never stops moving (a frame counter, a 3D scene, an animated tool) can make each of Jev's moves stale: the
+page changes between Jev's choice and its click. After the first stale move, QAJev holds the page's animation frames
+while Jev looks and chooses, and lets them run again once it has acted, as a background tab would. Timers, network
+messages and input run on, so a multiplayer page keeps its feed. The report says how many decisions it held ("The page
+kept moving, so QAJev held its animation while Jev chose"). Changes that come from the network still count as the page
+moving on.
+
 A run that would have changed a production site never gets as far as an outcome: it is **refused** before Chrome
 starts (exit code 5, `{"outcome": "refused", "reason": ...}` with `--json`), and nothing is reported because nothing
 ran ([Safety](safety.md)).

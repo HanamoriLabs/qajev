@@ -292,6 +292,30 @@ FIND_JS = Template("""(() => {
 
 # Why a decision went stale, read before Jev looks again: Jev's freshness keys now (its pageKey and the target's
 # guard, as Browser.fresh compares them) and the first of Browser.act's target checks that fails.
+# While Jev looks and chooses on a page that keeps moving, its animation frames wait, as in a background tab: the frame
+# counter and the 3D scene stop, so the page Jev decided on is the page it acts on. Timers, network messages and input
+# still run, so a multiplayer page keeps its feed (8 Oct: 29 feed messages arrived during a 3 s hold). release() runs
+# the frames that waited. Only window.requestAnimationFrame and the page's CSS animations are held.
+HOLD_JS = """(() => {
+  if (window.__qajevHold) return;
+  const raf = window.requestAnimationFrame.bind(window), caf = window.cancelAnimationFrame.bind(window);
+  let held = false, waiting = new Map(), next = -1;
+  window.requestAnimationFrame = (cb) => {
+    if (!held) return raf(cb);
+    const id = next--; waiting.set(id, cb); return id;
+  };
+  window.cancelAnimationFrame = (id) => { if (waiting.has(id)) waiting.delete(id); else caf(id); };
+  window.__qajevHold = {
+    hold() { held = true; document.getAnimations().forEach((a) => { try { a.pause(); } catch (e) {} }); },
+    release() {
+      held = false;
+      document.getAnimations().forEach((a) => { try { if (a.playState === 'paused') a.play(); } catch (e) {} });
+      const cbs = [...waiting.values()]; waiting = new Map();
+      cbs.forEach((cb) => raf(cb));
+    },
+  };
+})()"""
+
 STALE_JS = Template("""(() => {
   const c = window.__jevFast;
   if (!c) return { target: null, key: null, guard: null };
@@ -480,6 +504,8 @@ class Session:
         self.device = None
         self.assists = []
         self.last_stale = None
+        self.holding = False  # the page keeps moving: hold its frames while Jev decides (HOLD_JS)
+        self.held = 0  # decisions made on a held page
         self.net = None
         self.carried = {}  # what a page's guard recorded before the tab left it, for the next probe
         # Jev's agent and its Browser; a multiplayer client has a Tab and no agent (only Jev's own paths use one)
@@ -748,13 +774,20 @@ class Session:
         stale = self.jev.browser.StalePage
         state = self.agent.state
         made = len(state["decisions"])
+        held = self.holding and self._hold("hold")
         try:
-            self.agent.command("predict")
-            self.require_guard()
-            self.agent.command("act", {"fingerprint": state["page"]["fingerprint"]})
+            try:
+                self.agent.command("predict")
+                self.require_guard()
+                self.agent.command("act", {"fingerprint": state["page"]["fingerprint"]})
+                self.held += bool(held)
+            finally:
+                if held:  # the action's own effects draw now, before the page is read again; on any error too
+                    self._hold("release")
             self.settle_scroll()
             return True
         except stale as e:
+            self.hold_moving_page()  # it moved under Jev: from now on, its frames wait while Jev decides
             decision = state["decisions"][-1] if len(state["decisions"]) > made else None
             before = state["page"]
             why, now, node = self.why_stale(str(e), before, decision)
@@ -765,6 +798,24 @@ class Session:
             self.last_stale = why
             if decision is not None:
                 decision["stale"] = why
+            return False
+
+    def hold_moving_page(self):
+        """Hold this page's frames while Jev decides, from its next decision on (HOLD_JS), in each document it loads."""
+        if self.holding:
+            return
+        self.holding = True
+        with contextlib.suppress(RuntimeError, TimeoutError):
+            self.call("Page.addScriptToEvaluateOnNewDocument", source=HOLD_JS)
+        with contextlib.suppress(RuntimeError, TimeoutError):
+            self.evaluate(HOLD_JS)
+
+    def _hold(self, op):
+        """Hold or release the page's frames. -> True when the page has the hold (a page that blocks it moves on)."""
+        try:
+            return bool(self.evaluate(f"!!(window.__qajevHold && (window.__qajevHold.{op}(), true))",
+                                      timeout_ms=3000))
+        except (RuntimeError, TimeoutError):
             return False
 
     def why_stale(self, reason, page, decision):

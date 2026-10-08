@@ -320,6 +320,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     if outcome not in {"pass", "skipped"} and wall:
         result["needs_sign_in"] = wall
         return _finish(result, "harness", wall["reason"], started)
+    if scenario.goal and getattr(session, "held", 0):  # the page kept moving: its frames waited while Jev decided
+        result["held_decisions"] = session.held
     assists = getattr(session, "assists", []) if scenario.goal else []
     if assists:
         result["assists"] = assists

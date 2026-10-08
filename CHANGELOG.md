@@ -14,6 +14,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - QAJev never minimises its Chrome window. A minimised window draws no frames, so a 3D page stays on its loading
   screen. On a local Verse 3D page: 182 frames a second with the hidden start, 0 minimised. The minimise did not
   take effect in real runs (a headed run drew 94 frames a second), so results so far stand.
+- On a page that never stops moving, Jev's moves no longer go stale one after another. After the first stale move,
+  QAJev holds the page's animation frames while Jev chooses, then lets them run once it has acted. Network messages
+  and timers run on, so a multiplayer page keeps its feed (29 messages arrived during a 3 s hold in a test). The rig
+  tool's run went harness with 9 stale decisions ("217 fps" became "201 fps" each time). The report counts the held
+  decisions. ([Reports](docs/reports.md#outcomes))
 - A check on a page the browser reports hidden is **harness**: "the page was hidden and drew no frames". Before, a
   hidden page could pass or fail with no frames drawn. ([Reports](docs/reports.md#outcomes))
 - A virtual gamepad: `pad` hooks in web suites and `pad:` steps in Electron game suites press buttons, push sticks and
