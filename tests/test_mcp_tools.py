@@ -96,6 +96,26 @@ def test_website_tools_pass_devices_and_real_devices_to_the_cli(monkeypatch):
     assert project[project.index("--real-devices") + 1] == "android"
 
 
+def test_every_tool_that_runs_passes_the_approved_test_plan_to_the_cli(monkeypatch):
+    # José, 8 Oct: no run without a test plan the Orchestrator approved; an agent names it on any run tool.
+    seen = []
+
+    async def fake_report(args, ctx, background, title=None):
+        seen.append(args)
+        return {"gate": "PASS", "run_dir": "/runs/x", "scenarios": []}
+
+    monkeypatch.setattr(mcp_server, "_run_report", fake_report)
+    plan = "/repo/tools/qa/plans/2026-10-08-shop.md"
+    asyncio.run(mcp_server.qa_check("http://127.0.0.1:8765/", None, plan=plan))
+    asyncio.run(mcp_server.qa_run_suite(None, suite_path="s.yaml", plan=plan))
+    asyncio.run(mcp_server.qa_smoke("http://127.0.0.1:8765/", None, plan=plan))
+    asyncio.run(mcp_server.qa_project_run("demo", None, plan=plan))
+    asyncio.run(mcp_server.qa_play("/games/boss", None, plan=plan))
+    assert len(seen) == 5 and all(args[args.index("--plan") + 1] == plan for args in seen)
+    asyncio.run(mcp_server.qa_check("http://127.0.0.1:8765/", None))
+    assert "--plan" not in seen[-1]
+
+
 def test_rerun_never_brings_shell_commands_this_server_does_not_allow(monkeypatch):
     # A terminal run with --allow-commands, rerun from MCP: that permission was the person's, not this server's.
     from qajev import jobs

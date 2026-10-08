@@ -221,6 +221,11 @@ def _trim(report, verbose):
     return out
 
 
+def _plan_args(plan):
+    """--plan: the approved test plan (planfile.py) a run follows."""
+    return ["--plan", str(Path(plan).expanduser())] if plan else []
+
+
 def _devices_args(devices, real_devices=None):
     """Every website test runs on desktop and on a phone by default; `devices` narrows or widens that.
     `real_devices` (opt-in) also runs it in a real device browser: "android" (Chrome), "ios" (Safari: page content
@@ -262,6 +267,7 @@ async def qa_check(
     motion: str | None = None,
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
+    plan: str | None = None,
 ) -> dict:
     """Run one QA scenario: open `url`, optionally let Jev pursue `goal`, then judge the page.
 
@@ -279,6 +285,8 @@ async def qa_check(
     about: what this test proves and why, in plain words, for the person reading the report (always give it).
     Returns the report with a gate and findings.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
+    one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     """
     args = ["check", url, "--mode", mode, *(["--device", device] if device else []), "--max-actions",
             str(max_actions),
@@ -313,6 +321,7 @@ async def qa_check(
     args += _motion_args(motion)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
+    args += _plan_args(plan)
     return _trim(await _run_report(args, ctx, background), verbose)
 
 
@@ -335,11 +344,15 @@ async def qa_run_suite(
     motion: str | None = None,
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
+    plan: str | None = None,
 ) -> dict:
     """Run a QAJev suite (YAML/JSON) from a file path or inline text. `only` limits to named scenarios
     (plus their dependencies). jobs > 1 runs independent chains in parallel; keep 1 on a busy machine.
     allow_destructive: show delete/remove/refund/cancel... controls (every host a local dev host, or refused).
-    background: return a job id at once instead (follow with qa_job, stop with qa_stop)."""
+    background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
+    one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
+    """
     if bool(suite_path) == bool(suite_yaml):
         raise ToolError("give exactly one of suite_path or suite_yaml")
     if suite_yaml:
@@ -368,6 +381,7 @@ async def qa_run_suite(
     args += _motion_args(motion)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
+    args += _plan_args(plan)
     return _trim(await _run_report(args, ctx, background, title), verbose)
 
 
@@ -388,13 +402,17 @@ async def qa_smoke(
     motion: str | None = None,
     cpu_throttle: int | None = None,
     ux: bool = True,
+    plan: str | None = None,
 ) -> dict:
     """Crawl same-origin pages from `url` with NO model calls and lint each one: HTTP status, script
     errors, failed requests, CSP blocks and report-only violations, broken images, unlabeled fields,
     unnamed buttons, overflow, SEO basics. ux (default on, free): measured UX notes per page (WCAG AA
     contrast, keyboard reach and visible focus, 200% zoom, cut-off or overlapping text, open dialogs) and
     a design-consistency comparison across pages; they never change the gate.
-    background: return a job id at once instead (follow with qa_job, stop with qa_stop)."""
+    background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
+    one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
+    """
     args = ["smoke", url, "--max-pages", str(max_pages), *(["--device", device] if device else []),
             "--out", out_dir or str(DEFAULT_OUT),
             *_browser_args(profile, cdp_url, headless)]
@@ -405,6 +423,7 @@ async def qa_smoke(
     args += _motion_args(motion)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices)
+    args += _plan_args(plan)
     return _trim(await _run_report(args, ctx, background), verbose)
 
 
@@ -450,6 +469,7 @@ async def qa_project_run(
     motion: str | None = None,
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
+    plan: str | None = None,
 ) -> dict:
     """Prove a product works: run a project's stored objectives (optionally only those tagged `suite`, or named
     in `names`), or one ad-hoc `objective` in plain words with `expect_text`/`expect_url` checks and an `about` (what
@@ -457,7 +477,10 @@ async def qa_project_run(
     filed with the project and in the cross-project index. Production environments are always read-only: an env
     with mode = "mutate" on a production host is refused. allow_destructive: show delete/remove/refund/cancel...
     controls (a local dev env only).
-    background: return a job id at once instead (follow with qa_job, stop with qa_stop)."""
+    background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
+    one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
+    """
     args = ["run", "--project", project, *_browser_args(profile, None, headless)]
     for flag, value in (("--env", env), ("--objective", objective), ("--suite", suite), ("--url", url),
                         ("--expect-url", expect_url), ("--about", about)):
@@ -472,6 +495,7 @@ async def qa_project_run(
     args += _motion_args(motion)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
+    args += _plan_args(plan)
     return _trim(await _run_report(args, ctx, background), verbose)
 
 
@@ -494,7 +518,9 @@ async def qa_reports(project: str | None = None, limit: int = 20) -> dict:
 async def qa_plan(suite: str) -> dict:
     """A suite's test plan without running it (free, no browser): each test's about and its checks in plain words,
     and `not_described`, the tests that do not say what they prove (a run would be INCOMPLETE). `suite`: a suite file
-    (scenarios:) or a game's steps suite (steps:). Lint a suite with it before running or sending a PR."""
+    (scenarios:) or a game's steps suite (steps:). Lint a suite with it before running or sending a PR.
+    `test_plan`: the approved test plan file the suite names (`plan:`): its path, whether it is approved, the
+    approval line, the sha256 of the plan text above that line, and the problem when it is not approved."""
     code, text, tail = await _spawn(["plan", str(Path(suite).expanduser()), "--json"])
     data = json.loads(text or "{}")
     if code not in (0, 2) or "plan" not in data:
@@ -544,6 +570,7 @@ async def qa_play(
     out_dir: str | None = None,
     verbose: bool = False,
     background: bool = False,
+    plan: str | None = None,
 ) -> dict:
     """Native: QA a game or a mobile app through QAJev's bridge: a Godot project folder, an Electron .app or project
     folder, or a mobile target (ios:<bundle id or URL>, android:<package or URL>). Jev plays the UI a player uses
@@ -566,7 +593,9 @@ async def qa_play(
     decision. Both need Clef as the decision model and a picture, so they run the game windowed. vision is on by
     default when Clef decides and the game has a window (Electron, mobile, a windowed Godot game); vision=false
     turns it off, vision=true refuses to run without Clef. about: what this test proves and why, in plain words (with
-    a suite: the whole run; each step can carry its own `about:`)."""
+    a suite: the whole run; each step can carry its own `about:`).
+    plan: the approved test plan this run follows (a Markdown file; overrides the suite's `plan:`). Without an
+    approved one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan)."""
     args = ["play", project, "--max-actions", str(max_actions), "--max-seconds", str(max_seconds),
             "--out", out_dir or str(DEFAULT_OUT)]
     for flag, value in (("--goal", goal), ("--adapter", adapter), ("--suite", suite),
@@ -603,6 +632,7 @@ async def qa_play(
         args.append("--no-shots")
     if cost_cap is not None:
         args += ["--cost-cap", str(cost_cap)]
+    args += _plan_args(plan)
     return _trim(await _run_report(args, ctx, background), verbose)  # titled like the CLI: game and test name
 
 

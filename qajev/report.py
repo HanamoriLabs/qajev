@@ -5,7 +5,7 @@ import os
 import time
 from urllib.parse import urlsplit
 
-from . import __version__, config, plan, report_html, verdict
+from . import __version__, config, plan, planfile, report_html, verdict
 
 OBVIOUS = 0.8
 MOTION = {
@@ -74,6 +74,8 @@ def build(suite, results, ledgers, *, browser, started_at, strict, interrupted, 
         **({"not_described": missing} if missing else {}),
         **({"needs_sign_in": verdict.sign_in_next_step(walls)} if walls else {}),
         **({"allow_destructive": True} if (getattr(suite, "guard", None) or {}).get("allow_destructive") else {}),
+        # the approved test plan this run followed (planfile.py; José, 8 Oct: no run without one)
+        **({"test_plan": suite.test_plan} if getattr(suite, "test_plan", None) else {}),
         "qajev": __version__,
         "qajev_commit": config.qajev_commit(),  # which rules judged this run
         "suite": suite.name,
@@ -227,6 +229,8 @@ def markdown(data):
         f"# QAJev report: {data['suite']}",
         "",
         *([data["about"], ""] if data.get("about") else []),
+        *([f"Test plan: {data['test_plan']['path'] or 'none'}, {planfile.words(data['test_plan'])}", ""]
+          if data.get("test_plan") else []),
         f"**Gate: {data['gate']}**" + (" (interrupted)" if data.get("interrupted") else ""),
         "",
         *([f"> **{report_html.DESTRUCTIVE}**", ""] if data.get("allow_destructive") else []),

@@ -24,7 +24,7 @@ Use it to check that a change actually works for a user, before you say it does.
 | Do *several* things work, in order? | `qa_run_suite` / `qajev run suite.yaml` | a few cents |
 | Does a known product still meet its stored objectives? | `qa_project_run` / `qajev run --project NAME` | a few cents |
 | Does a mobile app or a game work? | `qa_play` / `qajev play ios:BUNDLE_ID`, `android:PACKAGE`, `path/to/game` | a few cents |
-| Does each test in a suite say what it proves? (lint it before running) | `qa_plan` / `qajev plan suite.yaml` | free |
+| Does each test in a suite say what it proves, and is its test plan approved? (lint it before running) | `qa_plan` / `qajev plan suite.yaml` | free |
 | Run again only what did not pass | `qa_rerun` / `qajev rerun JOB --failed` | a few cents |
 | What did a run find? | `qa_report`, `qa_screenshot` / `qajev report RUN_DIR` | free |
 | What is running right now, and can I stop it? | `qa_jobs`, `qa_job`, `qa_stop` / `qajev jobs`, `qajev stop ID` | free |
@@ -49,6 +49,10 @@ With MCP, call the `qa_*` tools. Without MCP, run the `qajev` command with `--js
    Make them specific: a word that also appears elsewhere on the page proves nothing.
 4. **Give every value Jev must type**, and make it differ from the field's placeholder.
 5. **Use a start `url` close to the target.** Jev does not scroll far on its own.
+6. **Name the approved test plan.** A run follows a plan the Orchestrator approved: a Markdown file in the project
+   (`tools/qa/plans/<date>-<name>.md`) whose last line is "Approved by the Orchestrator <date> <time>
+   sha256:<qajev plan-hash FILE>". Give it as `plan:` in a suite or `plan` on any run tool (`--plan FILE`). A plan
+   edited after its approval is not approved. Without one the run warns; with `QAJEV_REQUIRE_PLAN=1` it is refused.
 
 Every website test also runs in a phone view by default: a scenario's phone copy is named `... (phone)`. A
 failure that only shows on the phone is a real mobile bug; report it as such. To also test in a phone's real

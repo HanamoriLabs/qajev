@@ -108,6 +108,30 @@ For a phone's real browser (Chrome on an Android emulator; iOS Safari is not rea
   INCOMPLETE), because its pass would not say what it proved. `qajev plan FILE` shows the plan and lists them
   without running anything ([CLI](cli.md#qajev-plan)).
 
+## An approved test plan
+
+Before a run, write down what it will prove and have it approved. The plan is a Markdown file in the project, for
+example `tools/qa/plans/2026-10-08-checkout.md`: why the run exists, each test and what a pass means, the fault each
+test catches, and what you expect. The approver adds one line at the end:
+
+```text
+Approved by the Orchestrator 8 Oct 2026 10:34 sha256:<qajev plan-hash FILE>
+```
+
+The sha256 is of the plan text above that line, so a plan edited after its approval is **not approved** until it is
+approved again. The last approval line counts: an addition below an earlier approval gets its own line, which then
+covers the whole plan. Text below the last approval line is not approved.
+
+A suite names its plan with `plan:` (from the suite's folder, or a folder above it up to the project root: the folder with `.qajev/` or `.git`, never above it); a
+check, a smoke or a play takes `--plan FILE` ([CLI](cli.md#the-approved-test-plan-on-a-run)). `qajev plan FILE`
+checks it without running anything. A run without an approved plan warns today; `QAJEV_REQUIRE_PLAN=1` refuses it.
+`QAJEV_PLAN_APPROVER` changes the name the approval line must carry (default: `the Orchestrator`).
+
+```yaml
+name: checkout
+plan: tools/qa/plans/2026-10-08-checkout.md
+```
+
 ## A suite: several scenarios in one file
 
 Start from a template:

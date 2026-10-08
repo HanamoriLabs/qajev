@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- An approved test plan for every run (José, 8 Oct: no run without a test plan the Orchestrator approved). A suite
+  names it with `plan:`; `run`, `check`, `smoke` and `play` (and their MCP tools) take `--plan FILE` / `plan`. The
+  plan is a Markdown file whose last line is "Approved by the Orchestrator <date> <time> sha256:..." with the sha256
+  of the plan text above it (`qajev plan-hash FILE` prints it), so an edit after the approval is not approved.
+  `qajev plan` / `qa_plan` show whether it is approved (`test_plan` in the JSON). The report shows the plan's path and
+  approval line, or a banner "No approved test plan". A run without one warns; `QAJEV_REQUIRE_PLAN=1` refuses it
+  before Chrome starts (exit 3). `qajev doctor` says which rule is on.
+  ([Writing tests](docs/writing-tests.md#an-approved-test-plan))
 - A virtual gamepad: `pad` hooks in web suites and `pad:` steps in Electron game suites press buttons, push sticks and
   pull triggers, with no real device (I'M HIM supports a controller and key rebinding, but no plan could test it).
   Chrome has no gamepad input, so QAJev puts one virtual pad in the page. It has the standard mapping, is connected,

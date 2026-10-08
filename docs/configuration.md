@@ -27,6 +27,8 @@ values), and a key the model refused (HTTP 401 or 403) points you there.
 | `TYPESAFE_MODEL` | Jev's model on TypeSafe | `jev-latest` |
 | `QAJEV_OPENROUTER_JEV_MODEL` | Jev's model on OpenRouter | `~typesafe/jev-latest` |
 | `QAJEV_CLEF_MODEL` | Clef's model on Cloudflare: `clef-flash` or `clef` | `clef-flash` |
+| `QAJEV_REQUIRE_PLAN` | `1`: refuse a run without an approved test plan ([Writing tests](writing-tests.md#an-approved-test-plan)) | off: such a run warns |
+| `QAJEV_PLAN_APPROVER` | the name an approval line must carry ("Approved by ...") | `the Orchestrator` |
 
 **One OpenRouter key runs everything.** The report says which route each run used.
 
