@@ -1,6 +1,7 @@
 """A page that never stops moving (the rig tool: "217 fps" became "201 fps" before every move) made each of Jev's
 decisions stale. After the first stale move, QAJev holds the page's animation frames while Jev looks and chooses, and
-releases them once it has acted. Network messages and timers run on, so a multiplayer page keeps its feed."""
+releases them once it has acted. A server message that comes during the hold waits, and the page handles it in
+order on release. Timers run on."""
 
 import json
 import shutil
@@ -128,7 +129,7 @@ def test_held_frames_wait_and_run_on_release_while_timers_and_messages_go_on():
       const before = drawn;
       window.__qajevHold.hold();
       frame(); frame(); frame();
-      messages += 3;  // a socket's messages are events, not frames: the hold does not touch them
+      messages += 3;  // a timer's work is not a frame: the hold does not touch it
       const during = drawn - before, paused = anims[0].playState;
       window.__qajevHold.release();
       frame(); frame();
@@ -139,6 +140,63 @@ def test_held_frames_wait_and_run_on_release_while_timers_and_messages_go_on():
     assert out.returncode == 0, out.stderr
     seen = json.loads(out.stdout)
     assert seen == {"before": 2, "during": 1, "after": 2, "paused": "paused", "played": "running", "messages": 3}
+
+
+SOCKET = """
+class FakeSocket {  // a WebSocket's message surface: onmessage, then each listener, per message
+  constructor() { this.listeners = []; this.handler = null; }
+  addEventListener(type, fn) { if (type === 'message') this.listeners.push(fn); }
+  removeEventListener(type, fn) { this.listeners = this.listeners.filter((x) => x !== fn); }
+  emit(data) {
+    const e = { data };
+    if (this.handler) this.handler.call(this, e);
+    this.listeners.forEach((fn) => fn.call(this, e));
+  }
+}
+Object.defineProperty(FakeSocket.prototype, 'onmessage', { configurable: true,
+  get() { return this.handler; }, set(fn) { this.handler = fn; } });
+global.WebSocket = FakeSocket;
+"""
+
+
+@pytest.mark.skipif(not NODE, reason="needs node to run the page script")
+def test_server_messages_during_a_hold_wait_in_order_and_none_is_lost():
+    # A chat or a scoreboard writes each server message into the page. Held, the page must not change under Jev, so
+    # each message waits and the page handles it, in order, on release.
+    assert NODE
+    script = STAGE + SOCKET + session.HOLD_JS + """;
+      const got = [], ws = new WebSocket();
+      const own = (e) => got.push('on ' + e.data);
+      ws.onmessage = own;
+      ws.addEventListener('message', (e) => got.push('listener ' + e.data));
+      const gone = () => got.push('removed');
+      ws.addEventListener('message', gone); ws.removeEventListener('message', gone);
+      ws.emit(1);
+      window.__qajevHold.hold();
+      ws.emit(2); ws.emit(3);
+      const during = got.length;
+      window.__qajevHold.release();
+      console.log(JSON.stringify({ got, during, same: ws.onmessage === own }));
+    """
+    out = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    assert json.loads(out.stdout) == {"got": ["on 1", "listener 1", "on 2", "listener 2", "on 3", "listener 3"],
+                                      "during": 2, "same": True}
+
+
+@pytest.mark.skipif(not NODE, reason="needs node to run the page script")
+def test_a_message_handler_that_throws_on_release_does_not_stop_the_others():
+    assert NODE
+    script = STAGE + SOCKET + session.HOLD_JS + """;
+      const got = [], ws = new WebSocket();
+      ws.onmessage = (e) => { if (e.data === 2) throw new Error('bad message'); got.push(e.data); };
+      process.on('uncaughtException', (err) => got.push(err.message));
+      window.__qajevHold.hold(); ws.emit(2); ws.emit(3); window.__qajevHold.release();
+      setTimeout(() => console.log(JSON.stringify(got)), 10);
+    """
+    out = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    assert json.loads(out.stdout) == [3, "bad message"]  # 3 still handled; the error still surfaces, as the page's own
 
 
 @pytest.mark.skipif(not NODE, reason="needs node to run the page script")

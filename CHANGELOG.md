@@ -15,8 +15,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   screen. On a local Verse 3D page: 182 frames a second with the hidden start, 0 minimised. The minimise did not
   take effect in real runs (a headed run drew 94 frames a second), so results so far stand.
 - On a page that never stops moving, Jev's moves no longer go stale one after another. After the first stale move,
-  QAJev holds the page's animation frames while Jev chooses, then lets them run once it has acted. Network messages
-  and timers run on, so a multiplayer page keeps its feed (29 messages arrived during a 3 s hold in a test). The rig
+  QAJev holds the page's animation frames while Jev chooses, then lets them run once it has acted. A server message
+  (WebSocket or EventSource) that comes during the hold waits, and the page handles it in order on release, so none
+  is lost and a chat or scoreboard beside the buttons no longer makes the move stale. QAJev adds the hold script to
+  each page before the page's own code, unused until a hold. Timers run on. The rig
   tool's run went harness with 9 stale decisions ("217 fps" became "201 fps" each time). QAJev reads the page again
   once it is held, so Jev chooses on the page it clicks. The report gives the held decisions and their time
   (`held_decisions`, `held_seconds`). A page's own frame-rate check can leave out the held time with

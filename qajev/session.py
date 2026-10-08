@@ -299,12 +299,36 @@ FIND_JS = Template("""(() => {
 HOLD_JS = """(() => {
   if (window.__qajevHold) return;
   const raf = window.requestAnimationFrame.bind(window), caf = window.cancelAnimationFrame.bind(window);
-  let on = false, since = 0, waiting = new Map(), next = -1;
+  let on = false, since = 0, waiting = new Map(), next = -1, inbox = [];
   window.requestAnimationFrame = (cb) => {
     if (!on) return raf(cb);
     const id = next--; waiting.set(id, cb); return id;
   };
   window.cancelAnimationFrame = (id) => { if (waiting.has(id)) waiting.delete(id); else caf(id); };
+  // A server message that comes during a hold waits, and the page handles it in order on release: none is lost, and
+  // the page Jev reads does not change under it. The socket itself keeps receiving. Only for sockets the page opens
+  // after this script, so QAJev adds it to each document before the page's own code.
+  const later = (fn) => function (e) { if (on) inbox.push([fn, this, e]); else return fn.call(this, e); };
+  [window.WebSocket, window.EventSource].forEach((Kind) => {
+    if (!Kind) return;
+    const proto = Kind.prototype, add = proto.addEventListener, remove = proto.removeEventListener;
+    const wraps = new WeakMap(), owners = new WeakMap();
+    const wrap = (fn) => { if (!wraps.has(fn)) wraps.set(fn, later(fn)); return wraps.get(fn); };
+    const message = (type, fn) => type === 'message' && typeof fn === 'function';
+    proto.addEventListener = function (type, fn, opts) {
+      return add.call(this, type, message(type, fn) ? wrap(fn) : fn, opts);
+    };
+    proto.removeEventListener = function (type, fn, opts) {
+      return remove.call(this, type, message(type, fn) ? wrap(fn) : fn, opts);
+    };
+    const d = Object.getOwnPropertyDescriptor(proto, 'onmessage');
+    if (d && d.get && d.set) Object.defineProperty(proto, 'onmessage', { configurable: true, enumerable: d.enumerable,
+      get() { const fn = d.get.call(this); return owners.get(fn) || fn; },
+      set(fn) {
+        if (typeof fn !== 'function') return d.set.call(this, fn);
+        const w = later(fn); owners.set(w, fn); d.set.call(this, w);
+      } });
+  });
   // held: how many holds, heldMs: their time. A page's own frame-rate check divides by the time it was not held.
   window.__qajevHold = {
     held: 0,
@@ -318,6 +342,8 @@ HOLD_JS = """(() => {
     release() {
       if (on) this.heldMs += performance.now() - since;
       on = false;
+      const mail = inbox; inbox = [];  // a throwing handler surfaces as the page's own error; the rest still run
+      mail.forEach(([fn, self, e]) => { try { fn.call(self, e); } catch (err) { setTimeout(() => { throw err; }); } });
       document.getAnimations().forEach((a) => { try { if (a.playState === 'paused') a.play(); } catch (e) {} });
       const cbs = [...waiting.values()]; waiting = new Map();
       cbs.forEach((cb) => raf(cb));
@@ -533,6 +559,9 @@ class Session:
             self.browser.fresh = functools.partial(fresh_past_ticks, self.browser, self.jev.browser.MARKER)
         try:
             self.call("Page.enable")  # must precede addScriptToEvaluateOnNewDocument
+            if self.agent is not None:  # before the page's own code, so its sockets' messages can wait out a hold
+                self.call("Page.addScriptToEvaluateOnNewDocument", source=HOLD_JS)
+                self.hold_loaded = True
             if motion == "reduce":  # before the first navigation, so the first paint already honours it
                 self.call("Emulation.setEmulatedMedia",
                           features=[{"name": "prefers-reduced-motion", "value": "reduce"}])

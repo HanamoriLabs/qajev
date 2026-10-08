@@ -62,10 +62,12 @@ the test tool are kept apart.**
 A page that never stops moving (a frame counter, a 3D scene, an animated tool) can make each of Jev's moves stale: the
 page changes between Jev's choice and its click. After the first stale move, QAJev holds the page's animation frames
 while Jev looks and chooses, and lets them run again once it has acted, as a background tab would. QAJev reads the
-page again once it is held, so Jev chooses on the page it will click. Timers, network messages and input run on, so a
-multiplayer page keeps its feed. The report says how many decisions it held and for how long ("The page kept moving,
+page again once it is held, so Jev chooses on the page it will click. A server message (WebSocket or EventSource)
+that comes during the hold waits, and the page handles it in order on release, so none is lost and the page does not
+change under Jev. The socket keeps receiving the whole time. Timers and input run on. The report says how many decisions it held and for how long ("The page kept moving,
 so QAJev held its animation while Jev chose (3 decision(s), 1.4 s)"); the JSON has `held_decisions` and
-`held_seconds`. Changes that come from the network still count as the page moving on.
+`held_seconds`. A timer that writes the page (a countdown, a clock beside the buttons) still counts as the page
+moving on.
 
 A held page draws no frames, so a frame rate the page counts itself reads low across a hold. The page can correct it:
 `window.__qajevHold` (present only once QAJev held the page) has `held` (how many holds) and `heldMs` (their time).
