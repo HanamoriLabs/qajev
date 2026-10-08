@@ -62,6 +62,10 @@ def _load_flags(g):
                    help="seconds of waiting allowed per run (default $QAJEV_LOAD_WAIT or 600)")
 
 
+PLAN_HELP = ("the approved test plan this run follows (Markdown; overrides the suite's plan:). Without one the run "
+             "warns; with QAJEV_REQUIRE_PLAN=1 it is refused")
+
+
 def _common(p):
     g = p.add_argument_group("browser and run")
     g.add_argument("--cdp-url", help="attach to an existing Chrome DevTools endpoint instead of QAJev's own Chrome")
@@ -69,6 +73,7 @@ def _common(p):
                    help="QAJev Chrome profile (sign in once with `qajev browser login`)")
     g.add_argument("--headless", action="store_true", help="run QAJev's Chrome headless")
     g.add_argument("--ephemeral", action="store_true", help="throwaway profile, deleted after the run")
+    g.add_argument("--plan", type=Path, help=PLAN_HELP)
     g.add_argument("--real-devices", help="also run each website scenario in a real device browser: android (Chrome "
                                           "on a read-only emulator), ios (Safari on a throwaway simulator clone; "
                                           "page content not readable yet, comes out harness); comma-separated, off "
@@ -212,6 +217,7 @@ def build_parser():
                       help="empty the kept game profile before this run starts")
     play.add_argument("--goal", "-g", help="what a player wants, in plain words; end with 'Stop when ...'")
     play.add_argument("--about", help="what this test proves and why, in plain words (with --suite: the whole run)")
+    play.add_argument("--plan", type=Path, help=PLAN_HELP)
     play.add_argument("--expect-screen", help="the screen the game must be on at the end (from the bridge)")
     play.add_argument("--expect-text", "-t", action="append", default=[], help="the game must show this text")
     play.add_argument("--expect-state", action="append", default=[], metavar="KEY=VALUE",
@@ -284,6 +290,9 @@ def build_parser():
                                        "without running anything (exit 2 while any is NOT DESCRIBED)")
     plan.add_argument("file", type=Path, help="a suite (scenarios:) or a game's steps suite (steps:)")
     plan.add_argument("--json", action="store_true")
+    plan_hash = sub.add_parser("plan-hash", help="print the sha256 an approver puts on a test plan's approval line "
+                                                 "(\"Approved by the Orchestrator <d Mon yyyy hh:mm> sha256:...\")")
+    plan_hash.add_argument("file", type=Path, help="the test plan (Markdown), as it stands above the new line")
 
     doctor = sub.add_parser("doctor", help="check keys and where each came from, Chrome, ports and load, and print the "
                                            "production rule (never prints secrets)")
@@ -556,6 +565,34 @@ def _wait_for_quiet(args):
                    f"{args.load_wait:.0f}s; nothing was started")
 
 
+def _test_plan(args, named, base):
+    """The approved test plan for this run (planfile.py): --plan, else the suite's `plan:`. Not approved: a warning, or
+    with QAJEV_REQUIRE_PLAN=1 a SuiteError (exit 3) before the queue and Chrome. -> the plan's check"""
+    from . import planfile
+    from .suite import SuiteError
+
+    flag = getattr(args, "plan", None)
+    path = flag.expanduser() if flag else planfile.resolve(named, base) if named else None
+    status = planfile.check(path)
+    if not status["approved"]:
+        where = f" ({status['path']})" if status["path"] else ""
+        if planfile.required():
+            raise SuiteError(f"needs an approved test plan: {status['problem']}{where}")
+        print(f"qajev: warning: no approved test plan: {status['problem']}{where}", file=sys.stderr)
+    return status
+
+
+def cmd_plan_hash(args):
+    """The sha256 for a test plan's approval line: of the plan's text as it stands (planfile.digest)."""
+    from . import planfile
+
+    try:
+        print(f"sha256:{planfile.digest(args.file.read_text())}")
+    except OSError as e:
+        return _fail(args, f"{args.file}: {e}", EXIT_CONFIG)
+    return 0
+
+
 def cmd_run(args):
     from .chrome import ChromeError
     from .config import load_env
@@ -570,6 +607,7 @@ def cmd_run(args):
         load_env(args.env_file)
         if args.command == "run" and getattr(args, "project", None):
             proj, env, suite = _project_suite(args)  # refused before the queue and before Chrome
+            suite.test_plan = _test_plan(args, suite.plan, proj.config_path.parent)
             with _machine_lock(args):
                 return _run_project(args, proj, env, suite)
         if args.command == "run" and not args.suite:
@@ -580,6 +618,7 @@ def cmd_run(args):
             from .suite import _real_devices
 
             suite.real_devices = _real_devices(args.real_devices)
+        suite.test_plan = _test_plan(args, suite.plan, suite.path.parent if suite.path else Path.cwd())
         with _machine_lock(args):
             report = run(suite, _options(args))
     except Refused as e:
@@ -728,10 +767,15 @@ def cmd_smoke(args):
             opts.out_dir = project_mod.run_dir_parent(proj)
         if not url:
             return _fail(args, "give a URL or --project", EXIT_CONFIG)
+        test_plan = _test_plan(args, None, Path.cwd())
         with _machine_lock(args):
             _wait_for_quiet(args)
             report = smoke.run(url, opts, max_pages=args.max_pages, device=args.device, devices=args.devices,
                                check_links=args.check_links, delay=args.delay)
+        report["test_plan"] = test_plan
+        from . import report as report_mod
+
+        report_mod.write(Path(report["run_dir"]), report)
         if proj:
             report["project"] = {"name": proj.name, "env": env, "config": str(proj.config_path)}
             _file_known(proj, report)
@@ -798,6 +842,7 @@ def cmd_play(args):
     session_steps, game_env, adapter, headless, asked = None, {}, args.adapter, args.headless, args.vision
     run_about = None  # with a suite, --about (or its about:) is the whole run's; without, the one test's
     game_args = []
+    spec = {}
     if args.suite:
         import yaml
 
@@ -849,6 +894,13 @@ def cmd_play(args):
                 return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
     elif args.only:
         return _fail(args, "--only picks steps of a session: it needs --suite", EXIT_CONFIG)
+    from .suite import SuiteError
+
+    try:
+        test_plan = _test_plan(args, spec.get("plan") if args.suite else None,
+                               args.suite.parent if args.suite else Path.cwd())
+    except SuiteError as e:
+        return _fail(args, str(e), EXIT_CONFIG)
     from . import vision
 
     # Vision is on by default for a game (José, 3 Oct): with Clef and a window to look at; else off, quietly.
@@ -933,8 +985,8 @@ def cmd_play(args):
         return _fail(args, str(e), EXIT_BROWSER)
     except KeyboardInterrupt:
         interrupted = True
-    built = report_mod.build(SimpleNamespace(name=f"play {name}", about=run_about), results, [ledger.summary()],
-                             browser=browser,
+    built = report_mod.build(SimpleNamespace(name=f"play {name}", about=run_about, test_plan=test_plan), results,
+                             [ledger.summary()], browser=browser,
                              started_at=started_at, strict=False, interrupted=interrupted, run_dir=run_dir)
     if args.goal or session_steps:
         built["models"] = providers.describe(providers.resolve())
@@ -1088,6 +1140,11 @@ def cmd_doctor(args):
         add(key, True, "set" if os.environ.get(key) else "not set")
     for line in key_sources():  # where QAJev's own keys came from: names only (Foley1, 6 Oct)
         add("key source", True, line)
+    from . import planfile
+
+    add("test plan", True, "required: a run without an approved test plan is refused (QAJEV_REQUIRE_PLAN=1)"
+        if planfile.required() else "a run without an approved test plan warns (QAJEV_REQUIRE_PLAN=1 refuses it); "
+        f"approver: {planfile.APPROVER}")
     try:
         resolved = providers.resolve()
         models = providers.describe(resolved)
@@ -1465,10 +1522,11 @@ def _refused(args, message):
 
 def cmd_plan(args):
     """A suite's test plan, without running anything: each test's about and its checks in plain words, and the tests
-    that are NOT DESCRIBED (a run of it would be INCOMPLETE, never PASS). Exit 0 when all are described, 2 if not."""
+    that are NOT DESCRIBED (a run of it would be INCOMPLETE, never PASS), and its approved test plan file (planfile.py).
+    Exit 0 when all are described, 2 if not, or when QAJEV_REQUIRE_PLAN=1 and the plan file is not approved."""
     import yaml
 
-    from . import native
+    from . import native, planfile
     from . import plan as plan_mod
     from .suite import SuiteError, about, load
 
@@ -1479,16 +1537,22 @@ def cmd_plan(args):
             native.check_window(spec["steps"])
             native.check_pad(spec["steps"])
             items = plan_mod.from_steps(native.check_judged_by(spec["steps"]))
+            named = spec.get("plan")
         else:
             suite = load(args.file)
             name, run_about, items = suite.name, suite.about, plan_mod.from_suite(suite.scenarios)
+            named = suite.plan
     except (OSError, yaml.YAMLError, SuiteError, native.NativeError) as e:
         return _fail(args, f"{args.file}: {e}", EXIT_CONFIG)
     missing = plan_mod.not_described(items)
+    test_plan = planfile.check(planfile.resolve(named, args.file.parent) if named else None)
+    unapproved = planfile.required() and not test_plan["approved"]
     if args.json:
-        print(json.dumps({"name": name, "about": run_about, "plan": items, "not_described": missing}))
+        print(json.dumps({"name": name, "about": run_about, "plan": items, "not_described": missing,
+                          "test_plan": test_plan}))
     else:
         print(f"Test plan: {name}" + (f" — {run_about}" if run_about else ""))
+        print(f"Plan file: {test_plan['path'] + ', ' if test_plan['path'] else ''}{planfile.words(test_plan)}")
         for it in items:
             print(f"{it['n']}. {it['name']}: {it['about'] or 'NOT DESCRIBED (no about)'}")
             for line in it["checks"]:
@@ -1496,7 +1560,7 @@ def cmd_plan(args):
         described = len(items) - len(missing)
         print(f"{described} of {len(items)} tests say what they prove"
               + (f"; NOT DESCRIBED: {', '.join(missing)} (a run would be INCOMPLETE)" if missing else ""))
-    return 2 if missing else 0
+    return 2 if missing or unapproved else 0
 
 
 def _fail(args, message, code):
@@ -1527,7 +1591,7 @@ def main(argv=None):
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
                 "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
                 "top": cmd_top, "nightly": cmd_nightly, "rerun": cmd_rerun, "dashboard": cmd_dashboard,
-                "play": cmd_play, "plan": cmd_plan}
+                "play": cmd_play, "plan": cmd_plan, "plan-hash": cmd_plan_hash}
     code = 1  # a crash on the way out still leaves an exit code for `qajev jobs`
     try:
         code = handlers[args.command](args)

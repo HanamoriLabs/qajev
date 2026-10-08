@@ -66,7 +66,7 @@ STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
-    "cpu_throttle",
+    "cpu_throttle", "plan",
 }
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
@@ -140,6 +140,8 @@ class Suite:
     real_devices: list = field(default_factory=list)  # also run in a real device browser: "ios", "android"
     account: dict | None = None  # signed in once before the scenarios; its password is a vault reference
     about: str | None = None  # what the run as a whole proves
+    plan: str | None = None  # the approved test plan this run follows (planfile.py), as the suite names it
+    test_plan: dict | None = None  # that plan's check (planfile.check), set before the run
 
     @property
     def mutates(self):
@@ -556,9 +558,19 @@ def parse(data, path=None, devices=None):
         real_devices=_real_devices(data.get("real_devices") or os.environ.get("QAJEV_REAL_DEVICES")),
         account=account,
         about=about(data.get("about"), "about"),
+        plan=_plan_path(data.get("plan")),
     )
     check_safety(suite)
     return suite
+
+
+def _plan_path(value):
+    """`plan:`: the approved test plan's path (Markdown), from the suite's folder or the project root."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise SuiteError("plan must be the path of the approved test plan, e.g. tools/qa/plans/2026-10-08-checkout.md")
+    return value.strip()
 
 
 def cpu_rate(value):

@@ -301,6 +301,17 @@ def _clients_html(r):
     return "".join(out)
 
 
+def _test_plan(tp):
+    """The approved test plan this run followed: its path and approval line (with the plan's sha256), or a banner."""
+    if not tp:
+        return ""
+    if tp.get("approved"):
+        return f'<div class="sub">Test plan: {_e(tp["path"])} · {_e(tp["approval"])}</div>'
+    where = f" ({_e(tp['path'])})" if tp.get("path") else ""
+    return (f'<div class="box warn" role="alert"><strong>No approved test plan</strong>: {_e(tp.get("problem"))}'
+            f"{where}</div>")
+
+
 def _changes(ch):
     if not ch:
         return ""
@@ -413,6 +424,7 @@ def render(data):
         f'<div class="gate {_e(data["gate"])}">Gate: {_e(data["gate"])}{interrupted}</div>',
         f'<div class="counts">{counts}</div><div class="muted">{_e(summary)}</div>',
     ]
+    out.append(_test_plan(data.get("test_plan")))
     if data.get("allow_destructive"):
         out.append(f'<div class="box fail" role="alert"><strong>{_e(DESTRUCTIVE)}</strong></div>')
     wall = data.get("needs_sign_in")

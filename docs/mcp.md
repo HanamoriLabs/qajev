@@ -52,7 +52,7 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 | `qa_run_suite` | a suite, from a file or inline YAML | Jev decisions |
 | `qa_project_run` | a project's stored objectives, or one ad-hoc objective | Jev decisions |
 | `qa_play` | test a game (Godot or Electron) or a mobile app: menus with Jev, real-time play with the game's pilot | Jev decisions |
-| `qa_plan` | a suite's test plan without running it, and the tests that do not say what they prove (a lint) | free |
+| `qa_plan` | a suite's test plan without running it, the tests that do not say what they prove (a lint), and whether its approved test plan file (`test_plan`) is approved | free |
 | `qa_projects` | the projects QAJev knows | free |
 | `qa_reports` | recent project runs | free |
 | `qa_report` | read a run's report (JSON or Markdown) | free |

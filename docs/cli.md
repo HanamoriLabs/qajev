@@ -199,6 +199,33 @@ qajev plan shop.qajev.yaml --json     # {name, about, plan, not_described}
 It exits `0` when every test says what it proves and `2` while any is NOT DESCRIBED (a run of it would be
 INCOMPLETE, never PASS). `qa_plan` is the same for agents.
 
+It also checks the suite's **approved test plan** (`plan:`, see [Writing tests](writing-tests.md#an-approved-test-plan)):
+the line `Plan file: ...` says whether it is approved, and the JSON has `test_plan` (`path`, `approved`, `approval`,
+`sha256`, `problem`). A plan that is missing or not approved is listed, and the exit code stays `0`. With
+`QAJEV_REQUIRE_PLAN=1` it exits `2`.
+
+## `qajev plan-hash`
+
+Prints the sha256 an approver puts on a test plan's approval line, from the plan's text as it stands:
+
+```bash
+qajev plan-hash tools/qa/plans/2026-10-08-checkout.md   # sha256:3f1c...
+```
+
+The approver then adds, as the last line of the plan:
+
+```text
+Approved by the Orchestrator 8 Oct 2026 10:34 sha256:3f1c...
+```
+
+## The approved test plan on a run
+
+`qajev run`, `check`, `smoke` and `play` take `--plan FILE`: the approved test plan this run follows. It overrides a
+suite's `plan:`. A run without an approved plan prints `qajev: warning: no approved test plan: ...` and runs; with
+`QAJEV_REQUIRE_PLAN=1` it is refused before the queue and before Chrome (exit `3`, "needs an approved test plan"). The
+report shows the plan's path and its approval line, or a banner "No approved test plan". `qajev doctor` says which
+rule is on.
+
 ## `qajev report`
 
 ```bash
