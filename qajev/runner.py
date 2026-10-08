@@ -322,6 +322,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         return _finish(result, "harness", wall["reason"], started)
     if scenario.goal and getattr(session, "held", 0):  # the page kept moving: its frames waited while Jev decided
         result["held_decisions"] = session.held
+        result["held_seconds"] = round(session.held_s, 1)
     assists = getattr(session, "assists", []) if scenario.goal else []
     if assists:
         result["assists"] = assists

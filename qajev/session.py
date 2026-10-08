@@ -299,16 +299,25 @@ FIND_JS = Template("""(() => {
 HOLD_JS = """(() => {
   if (window.__qajevHold) return;
   const raf = window.requestAnimationFrame.bind(window), caf = window.cancelAnimationFrame.bind(window);
-  let held = false, waiting = new Map(), next = -1;
+  let on = false, since = 0, waiting = new Map(), next = -1;
   window.requestAnimationFrame = (cb) => {
-    if (!held) return raf(cb);
+    if (!on) return raf(cb);
     const id = next--; waiting.set(id, cb); return id;
   };
   window.cancelAnimationFrame = (id) => { if (waiting.has(id)) waiting.delete(id); else caf(id); };
+  // held: how many holds, heldMs: their time. A page's own frame-rate check divides by the time it was not held.
   window.__qajevHold = {
-    hold() { held = true; document.getAnimations().forEach((a) => { try { a.pause(); } catch (e) {} }); },
+    held: 0,
+    heldMs: 0,
+    hold() {
+      if (!on) { on = true; since = performance.now(); this.held++; }
+      document.getAnimations().forEach((a) => { try { a.pause(); } catch (e) {} });
+      // A frame the page asked for before the hold still draws once: answer after it, so the page is still when read.
+      return new Promise((done) => { raf(() => done(true)); setTimeout(() => done(true), 100); });
+    },
     release() {
-      held = false;
+      if (on) this.heldMs += performance.now() - since;
+      on = false;
       document.getAnimations().forEach((a) => { try { if (a.playState === 'paused') a.play(); } catch (e) {} });
       const cbs = [...waiting.values()]; waiting = new Map();
       cbs.forEach((cb) => raf(cb));
@@ -506,6 +515,8 @@ class Session:
         self.last_stale = None
         self.holding = False  # the page keeps moving: hold its frames while Jev decides (HOLD_JS)
         self.held = 0  # decisions made on a held page
+        self.held_s = 0.0  # and how long the page was held for them
+        self.hold_loaded = False  # HOLD_JS is added to each new document of this tab
         self.net = None
         self.carried = {}  # what a page's guard recorded before the tab left it, for the next probe
         # Jev's agent and its Browser; a multiplayer client has a Tab and no agent (only Jev's own paths use one)
@@ -766,6 +777,7 @@ class Session:
         self.agent.pending_text = None
         self.agent.state.update(goal=goal, plan=[goal], plan_index=0, history=[], decisions=[], text_calls=[],
                                 status="ready", decision=None, started_at=None, elapsed_ms=0)
+        self.holding, self.held, self.held_s = False, 0, 0.0  # held again only after this goal's own stale move
         self.observe()
 
     def tick(self):
@@ -774,9 +786,12 @@ class Session:
         stale = self.jev.browser.StalePage
         state = self.agent.state
         made = len(state["decisions"])
+        start = time.monotonic() if self.holding else 0.0
         held = self.holding and self._hold("hold")
         try:
             try:
+                if held:  # read the held page: frames drawn since the last read must not make the choice stale
+                    self.observe()
                 self.agent.command("predict")
                 self.require_guard()
                 self.agent.command("act", {"fingerprint": state["page"]["fingerprint"]})
@@ -784,6 +799,7 @@ class Session:
             finally:
                 if held:  # the action's own effects draw now, before the page is read again; on any error too
                     self._hold("release")
+                    self.held_s += time.monotonic() - start
             self.settle_scroll()
             return True
         except stale as e:
@@ -805,15 +821,17 @@ class Session:
         if self.holding:
             return
         self.holding = True
-        with contextlib.suppress(RuntimeError, TimeoutError):
-            self.call("Page.addScriptToEvaluateOnNewDocument", source=HOLD_JS)
+        if not self.hold_loaded:  # once per tab: in a later goal's documents it waits, unused, until a hold
+            self.hold_loaded = True
+            with contextlib.suppress(RuntimeError, TimeoutError):
+                self.call("Page.addScriptToEvaluateOnNewDocument", source=HOLD_JS)
         with contextlib.suppress(RuntimeError, TimeoutError):
             self.evaluate(HOLD_JS)
 
     def _hold(self, op):
         """Hold or release the page's frames. -> True when the page has the hold (a page that blocks it moves on)."""
         try:
-            return bool(self.evaluate(f"!!(window.__qajevHold && (window.__qajevHold.{op}(), true))",
+            return bool(self.evaluate(f"(async (h) => !!h && (await h.{op}(), true))(window.__qajevHold)",
                                       timeout_ms=3000))
         except (RuntimeError, TimeoutError):
             return False

@@ -17,8 +17,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - On a page that never stops moving, Jev's moves no longer go stale one after another. After the first stale move,
   QAJev holds the page's animation frames while Jev chooses, then lets them run once it has acted. Network messages
   and timers run on, so a multiplayer page keeps its feed (29 messages arrived during a 3 s hold in a test). The rig
-  tool's run went harness with 9 stale decisions ("217 fps" became "201 fps" each time). The report counts the held
-  decisions. ([Reports](docs/reports.md#outcomes))
+  tool's run went harness with 9 stale decisions ("217 fps" became "201 fps" each time). QAJev reads the page again
+  once it is held, so Jev chooses on the page it clicks. The report gives the held decisions and their time
+  (`held_decisions`, `held_seconds`). A page's own frame-rate check can leave out the held time with
+  `window.__qajevHold.heldMs`. ([Reports](docs/reports.md#outcomes))
 - A check on a page the browser reports hidden is **harness**: "the page was hidden and drew no frames". Before, a
   hidden page could pass or fail with no frames drawn. ([Reports](docs/reports.md#outcomes))
 - A virtual gamepad: `pad` hooks in web suites and `pad:` steps in Electron game suites press buttons, push sticks and
