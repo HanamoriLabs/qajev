@@ -1547,20 +1547,29 @@ def cmd_plan(args):
     missing = plan_mod.not_described(items)
     test_plan = planfile.check(planfile.resolve(named, args.file.parent) if named else None)
     unapproved = planfile.required() and not test_plan["approved"]
+    silent = plan_mod.fails_when_missing(items)  # the tests that do not say the broken state they catch
+    still = plan_mod.still_state(items)
     if args.json:
         print(json.dumps({"name": name, "about": run_about, "plan": items, "not_described": missing,
-                          "test_plan": test_plan}))
+                          "fails_when_missing": silent, "still_state": still, "test_plan": test_plan}))
     else:
         print(f"Test plan: {name}" + (f" — {run_about}" if run_about else ""))
         print(f"Plan file: {test_plan['path'] + ', ' if test_plan['path'] else ''}{planfile.words(test_plan)}")
         for it in items:
             print(f"{it['n']}. {it['name']}: {it['about'] or 'NOT DESCRIBED (no about)'}")
+            print(f"     fails when: {it['fails_when'] or 'NOT STATED'}")
             for line in it["checks"]:
                 print(f"     - {line['words'] or 'NOT DESCRIBED: ' + str(line['check'])}")
+            for flag in it.get("flags") or []:
+                print(f"     ! {flag}")
         described = len(items) - len(missing)
         print(f"{described} of {len(items)} tests say what they prove"
               + (f"; NOT DESCRIBED: {', '.join(missing)} (a run would be INCOMPLETE)" if missing else ""))
-    return 2 if missing or unapproved else 0
+        if silent:
+            print(f"FAILS WHEN NOT STATED: {', '.join(silent)} (say the broken state each test catches: fails_when)")
+        if still:
+            print(f"Still state only: {', '.join(still)} (a flag, not a failure)")
+    return 2 if missing or silent or unapproved else 0
 
 
 def _fail(args, message, code):

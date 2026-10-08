@@ -56,7 +56,7 @@ EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", 
 SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
-    "persona", "speech", "vision", "about", "clients", "steps", "state", "seed",
+    "persona", "speech", "vision", "about", "clients", "steps", "state", "seed", "fails_when",
 }
 # A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
 MAX_CLIENTS = 12
@@ -113,6 +113,7 @@ class Scenario:
     steps: list = field(default_factory=list)  # its steps, in order (see _steps)
     state: str | None = None  # JS read on every client for the across checks and snapshots
     seed: int | None = None  # for `jitter`: the same seed gives the same offsets
+    fails_when: str | None = None  # the broken state this test catches, in plain words (José, 8 Oct)
 
     @property
     def task(self):
@@ -519,6 +520,7 @@ def parse(data, path=None, devices=None):
             speech=item.get("speech", data.get("speech")),
             vision=bool(item.get("vision", data.get("vision", False))),
             about=about(item.get("about"), f"{where}.about"),
+            fails_when=fails_when(item.get("fails_when"), f"{where}.fails_when"),
             clients=clients,
             steps=_steps(item.get("steps"), [c["name"] for c in clients], f"{where}.steps") if clients else [],
             state=item.get("state"),
@@ -586,6 +588,15 @@ def about(value, where):
         return None
     if not isinstance(value, str):
         raise SuiteError(f"{where} must be text: what the test proves and why")
+    return " ".join(value.split()) or None
+
+
+def fails_when(value, where):
+    """`fails_when`: the broken state a test catches, in plain words ("the order is not saved"). -> text or None"""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise SuiteError(f"{where}: fails_when must be text: the broken state this test catches")
     return " ".join(value.split()) or None
 
 

@@ -87,7 +87,8 @@ def test_a_suite_names_its_plan_from_its_folder_or_the_project_root(tmp_path):
 def _suite(tmp_path, plan_line=""):
     suite = tmp_path / "shop.qajev.yaml"
     suite.write_text(f"name: shop\n{plan_line}base_url: http://127.0.0.1:9\nscenarios:\n"
-                     "  - name: pay\n    about: Paying adds the order\n    url: /\n    expect: {text: [Paid]}\n")
+                     "  - name: pay\n    about: Paying adds the order\n    fails_when: the order is not saved\n"
+                     "    url: /\n    expect: {text: [Paid]}\n")
     return suite
 
 

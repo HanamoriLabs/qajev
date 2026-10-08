@@ -66,6 +66,8 @@ def test_qajev_plan_lists_a_suites_plan_and_its_not_described_tests_without_runn
     assert fight["checks"][0]["words"] == "the game reaches boss_hp <= 0 in time"
     site.write_text(site.read_text().replace("expect: {js: 'window.ok === true'}",
                                              "about: the home page opens\n    expect: {text: [Welcome]}"))
+    assert cli.main(["plan", str(site)]) == 2  # every test also says the broken state it catches (fails_when)
+    site.write_text(site.read_text().replace("    url: /\n", "    fails_when: it does not\n    url: /\n"))
     assert cli.main(["plan", str(site)]) == 0
 
 

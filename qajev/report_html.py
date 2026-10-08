@@ -146,8 +146,9 @@ def _plan(items, scenarios):
         details = {c.get("check"): c.get("detail") for c in (scenarios[i].get("checks") or [])} if i < len(
             scenarios) else {}
         lines = "".join(_line({**c, "detail": details.get(c["check"])}) for c in it["checks"])
+        catches = (f'<div class="muted">Fails when: {_e(it["fails_when"])}</div>' if it.get("fails_when") else "")
         out.append(f'<li class="plan-item {it["state"]}"><span class="box {it["state"]}">{BOX[it["state"]]}</span>'
-                   f'<div><a href="#s{i}"><strong>{it["n"]}. {_e(it["name"])}</strong></a><div>{about}</div>'
+                   f'<div><a href="#s{i}"><strong>{it["n"]}. {_e(it["name"])}</strong></a><div>{about}</div>{catches}'
                    + (f"<ul>{lines}</ul>" if lines else "") + "</div></li>")
     missing = plan_mod.not_described(items)
     out.append("</ol>" + (f'<p class="nd">{len(missing)} test(s) NOT DESCRIBED: a pass would not say what it proved, '

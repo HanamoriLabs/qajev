@@ -58,9 +58,12 @@ def build(suite, results, ledgers, *, browser, started_at, strict, interrupted, 
     screens = [s for r in results for s in r.get("screens", []) if s.get("p") is not None]
     walls = [r["needs_sign_in"] for r in results if r.get("needs_sign_in")]
     abouts = {s.name: s.about for s in getattr(suite, "scenarios", None) or [] if getattr(s, "about", None)}
-    for r in results:  # every test, skipped ones too, says what it would prove
+    catches = {s.name: s.fails_when for s in getattr(suite, "scenarios", None) or [] if getattr(s, "fails_when", None)}
+    for r in results:  # every test, skipped ones too, says what it would prove and the broken state it catches
         if not r.get("about") and abouts.get(r["name"]):
             r["about"] = abouts[r["name"]]
+        if not r.get("fails_when") and catches.get(r["name"]):
+            r["fails_when"] = catches[r["name"]]
     about = getattr(suite, "about", None)
     # The test plan (José, 6 Oct): each test's about and checks in plain words. A test or check without them is NOT
     # DESCRIBED, and a pass that cannot say what it proved is no PASS.

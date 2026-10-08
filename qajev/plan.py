@@ -13,6 +13,12 @@ import re
 from . import verdict
 
 NOT_DESCRIBED = "NOT DESCRIBED"
+# A claim about motion or the network, judged from one still moment at the end (José, 8 Oct): the lint flags it.
+STILL_STATE = ("reads only a still state; its claim is about motion or the network: check it over time (a react "
+               "hook, a play or idle step, a multiplayer snapshot, or a measure the page keeps, such as frames per "
+               "second)")
+_MOTION = re.compile(r"\b(mov(e|es|ing)|frames?|fps|animat\w*|live|feeds?|sync\w*|real[- ]?time|stream\w*|ticks?)\b",
+                     re.I)
 
 # A check that describes itself -> its sentence. Checks only their author can describe have no entry here.
 _SELF = [
@@ -62,11 +68,17 @@ def state(outcome):
     return {"pass": "pass", "fail": "fail", "stuck": "warn", "harness": "warn"}.get(outcome or "", "todo")
 
 
-def item(n, name, about, checks, outcome=None):
+def item(n, name, about, checks, outcome=None, fails_when=None, flags=None):
     lines = [{"words": words(c), "check": c.get("check"), **({"ok": c["ok"]} if "ok" in c else {})} for c in checks]
     described = bool(about) and all(line["words"] for line in lines)
-    return {"n": n, "name": name, "about": about or None, "checks": lines, "described": described,
-            "state": state(outcome)}
+    return {"n": n, "name": name, "about": about or None, "fails_when": fails_when or None, "checks": lines,
+            "described": described, "state": state(outcome), **({"flags": flags} if flags else {})}
+
+
+def _still(about, fails_when, over_time):
+    """[STILL_STATE] when the claim speaks of motion or the network and nothing watches it over time."""
+    claim = f"{about or ''} {fails_when or ''}"
+    return [STILL_STATE] if _MOTION.search(claim) and not over_time else []
 
 
 def from_suite(scenarios):
@@ -83,7 +95,9 @@ def from_suite(scenarios):
                 for c in step.get("expect") or [] if step.get("kind") == "snapshot" else []:
                     checks.append({"check": f"snapshot {step['name']}: {c['check']}",
                                    **({"says": c["says"]} if c.get("says") else {})})
-        out.append(item(i, s.name, s.about, checks))
+        over_time = bool(s.clients) or any("react" in h for h in [*s.before, *s.after])
+        out.append(item(i, s.name, s.about, checks, fails_when=s.fails_when,
+                        flags=_still(s.about, s.fails_when, over_time)))
     return out
 
 
@@ -126,7 +140,11 @@ def from_steps(steps):
             judges = [judges] if isinstance(judges, str) else list(judges)
             planned.append({"check": judged_words(judges), "says": f"Jev acted, and the later steps "
                                                                    f"{', '.join(judges)} passed"})
-        out.append(item(i, step.get("name") or f"step {i}", step.get("about"), planned))
+        over_time = any(step.get(k) is not None for k in ("play", "idle", "lasted")) or any(
+            expect.get(k) is not None for k in ("min_fps", "max_memory_growth_mb"))
+        out.append(item(i, step.get("name") or f"step {i}", step.get("about"), planned,
+                        fails_when=step.get("fails_when"), flags=_still(step.get("about"), step.get("fails_when"),
+                                                                        over_time)))
     return out
 
 
@@ -136,19 +154,30 @@ def merge(planned, results):
     out = []
     for it in planned:
         r = done.get(it["name"])
-        out.append(item(it["n"], it["name"], it["about"], r.get("checks") or [], r.get("outcome")) if r else it)
+        out.append(item(it["n"], it["name"], it["about"], r.get("checks") or [], r.get("outcome"),
+                        fails_when=it.get("fails_when"), flags=it.get("flags")) if r else it)
     return out
 
 
 def from_results(scenarios):
     """The plan of a finished (or running) run, from its results: each test with its outcome and its checks."""
-    return [item(i, s.get("name"), s.get("about"), s.get("checks") or [], s.get("outcome"))
-            for i, s in enumerate(scenarios, 1)]
+    return [item(i, s.get("name"), s.get("about"), s.get("checks") or [], s.get("outcome"),
+                 fails_when=s.get("fails_when")) for i, s in enumerate(scenarios, 1)]
 
 
 def not_described(plan):
     """The tests the plan flags: no `about`, or a check without plain words. -> [name]"""
     return [it["name"] for it in plan if not it["described"]]
+
+
+def fails_when_missing(plan):
+    """The tests that do not say the broken state they catch (`fails_when`). -> [name]"""
+    return [it["name"] for it in plan if not it.get("fails_when")]
+
+
+def still_state(plan):
+    """The tests whose claim is about motion or the network but whose checks read one still moment. -> [name]"""
+    return [it["name"] for it in plan if STILL_STATE in (it.get("flags") or [])]
 
 
 def proved(it):
