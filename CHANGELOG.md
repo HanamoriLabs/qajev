@@ -11,6 +11,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   because you asked for that window. Games (Electron, Godot) still open in front. Run Godot with `--headless` to
   avoid it.
   ([CLI](docs/cli.md#options-shared-by-check-run-and-smoke))
+- QAJev never minimises its Chrome window. A minimised window draws no frames, so a 3D page stays on its loading
+  screen. On a local Verse 3D page: 182 frames a second with the hidden start, 0 minimised. The minimise did not
+  take effect in real runs (a headed run drew 94 frames a second), so results so far stand.
+- A check on a page the browser reports hidden is **harness**: "the page was hidden and drew no frames". Before, a
+  hidden page could pass or fail with no frames drawn. ([Reports](docs/reports.md#outcomes))
 - A virtual gamepad: `pad` hooks in web suites and `pad:` steps in Electron game suites press buttons, push sticks and
   pull triggers, with no real device (I'M HIM supports a controller and key rebinding, but no plan could test it).
   Chrome has no gamepad input, so QAJev puts one virtual pad in the page. It has the standard mapping, is connected,

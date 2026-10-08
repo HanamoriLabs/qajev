@@ -236,8 +236,9 @@ def _open_behind(app, argv, log_path):
     """Start a new Chrome through LaunchServices, hidden (-j) and not brought forward (-g). Started directly, Chrome
     comes to the front, ignores --start-minimized, and what the person types lands in it (José, 7 Oct). Measured on
     one run each: Chrome held the front ~7.2 s started directly, ~5.9 s with -g alone, ~0.2 s with -g -j; pages and
-    screenshots worked in all three. -n: always a new instance, never the person's own Chrome. Returns the `open`
-    process, not Chrome's."""
+    screenshots worked in all three. Hidden, the window still draws: a Verse 3D page ran at 182 frames a second (8 Oct;
+    minimised, 0). -n: always a new instance, never the person's own Chrome. Returns the `open` process, not
+    Chrome's."""
     return subprocess.Popen(["/usr/bin/open", "-n", "-g", "-j", "-a", str(app), "--stderr", str(log_path), "--args",
                              *argv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
 
@@ -254,9 +255,8 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait):
     args = [binary(), f"--user-data-dir={profile_dir}", f"--remote-debugging-port={port}", *flags()]
     if headless:
         args.append("--headless=new")
-    elif not visible:
-        # Off-screen positions get clamped back onto the display on macOS; minimise over CDP instead.
-        args.append("--start-minimized")
+    # Never --start-minimized: a minimised window draws no frames, so a 3D page stalls (8 Oct). On a Mac the window
+    # stays off the person's screen because it starts hidden (_open_behind).
     args.append("about:blank")
     STATE.mkdir(parents=True, exist_ok=True)
     log_path = STATE / f"{profile}.log"

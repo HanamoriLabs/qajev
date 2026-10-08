@@ -310,7 +310,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),
                                        url=scenario.url)
     result.update({k: v for k, v in (("stop_detail", detail), ("not_run", not_run)) if v})
-    idle = verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
+    outcome, reason = verdict.hidden_page(outcome, reason, observed)
+    idle =verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
                                  session.agent.state["history"]) if scenario.goal else None
     if outcome in {"fail", "stuck"} and idle:
         outcome, reason = "harness", f"{idle}; {reason}"

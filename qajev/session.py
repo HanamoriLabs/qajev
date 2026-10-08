@@ -268,7 +268,7 @@ PROBE_JS = Template("""(async () => {
   let status = null;
   try { status = performance.getEntriesByType('navigation')[0].responseStatus || null; } catch (e) {}
   const seen = spec.visible.map(onScreen);
-  return { probe, url: location.href, title: document.title, status,
+  return { probe, url: location.href, title: document.title, status, hidden: document.hidden,
     text: spec.text.map(t => has(t)), absent: spec.absent.map(t => has(t)), visible: seen.map(s => s.ok),
     visible_why: seen.map(s => s.why),
     near: spec.text.map(t => has(t) ? null : nearest(t)), js, says: body.slice(0, 400) };
@@ -517,7 +517,8 @@ class Session:
                     self.jev.cdp("Browser.setPermission", permission={"name": name}, setting="denied")
                 except (RuntimeError, TimeoutError):
                     pass  # the in-page stub still refuses capture
-            self.minimize()
+            # Never minimised: a minimised window draws no frames, so a 3D page stalls (8 Oct). On a Mac the window
+            # stays off the person's screen because QAJev starts Chrome hidden (chrome._open_behind).
             self.net = netlog.start(self.page_socket())  # still on about:blank: it hears the site's first request
         except Exception:
             self.close()
@@ -539,15 +540,6 @@ class Session:
         """A condition's settled value is truthy (a throw, a rejection or no answer counts as not holding)."""
         r = self.evaluate(awaited(expression)) or {}
         return "error" not in r and bool(r.get("value"))
-
-    def minimize(self):
-        if self.headless or self.agent is None:  # a client's window stays up: a minimised page stops rendering
-            return
-        try:
-            window = self.jev.cdp("Browser.getWindowForTarget", targetId=self.browser.target)["windowId"]
-            self.jev.cdp("Browser.setWindowBounds", windowId=window, bounds={"windowState": "minimized"})
-        except (RuntimeError, KeyError, TimeoutError):
-            pass
 
     def _keep_safe(self):
         """Re-asserted whenever the guard is armed: another CDP session in the same browser can undo either."""
@@ -661,7 +653,6 @@ class Session:
         if self.guard_cfg is not None:
             with contextlib.suppress(RuntimeError):  # navigating on: the next page's guard is judged in its turn
                 self.guard_settled()
-        self.minimize()
         return None
 
     def reload(self, timeout=30.0):
