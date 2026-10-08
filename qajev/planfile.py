@@ -30,28 +30,51 @@ def digest(text):
     return hashlib.sha256((text.replace("\r\n", "\n").rstrip() + "\n").encode()).hexdigest()
 
 
+def project_root(base):
+    """The project the suite belongs to: the nearest folder at or above `base` with a .qajev/ config or a git checkout
+    (.git, a folder or a worktree's file). -> Path, or None outside any project"""
+    for folder in (base, *base.parents):
+        if (folder / ".qajev").is_dir() or (folder / ".git").exists():
+            return folder
+    return None
+
+
 def resolve(value, base):
-    """A plan path from a suite: absolute, or relative to the suite's folder or the nearest folder above it that has
-    it (the project root). -> Path (it may not exist)."""
+    """A plan path from a suite: absolute, or relative to the suite's folder or a folder above it up to the project
+    root, never above it (a plan of another project must not count). -> Path (it may not exist)."""
     path = Path(str(value)).expanduser()
     if path.is_absolute():
         return path
     base = Path(base).resolve()
-    for folder in (base, *base.parents):
+    root = project_root(base)
+    folders = [base, *base.parents]
+    for folder in folders[:folders.index(root) + 1] if root else [base]:
         if (folder / path).is_file():
             return folder / path
     return base / path
 
 
+def read(path):
+    """A plan's text. -> (text, None), or (None, problem) for a file that cannot be read or is not UTF-8."""
+    try:
+        return Path(path).read_text(encoding="utf-8"), None
+    except (OSError, UnicodeDecodeError) as e:
+        return None, f"cannot read the plan: {e}"
+
+
 def check(path):
     """-> {path, approved, approval (the line), sha256 (of the text above it), problem (None when approved)}"""
-    out = {"path": str(path) if path else None, "approved": False, "approval": None, "sha256": None, "problem": None}
+    out = {"path": str(path) if path else None, "approved": False, "approval": None, "approved_at": None,
+           "sha256": None, "problem": None}
     if not path:
         return {**out, "problem": NO_PLAN}
     path = Path(path)
     if not path.is_file():
         return {**out, "problem": "no such file"}
-    lines = path.read_text().replace("\r\n", "\n").split("\n")
+    text, problem = read(path)
+    if text is None:
+        return {**out, "problem": problem}
+    lines = text.replace("\r\n", "\n").split("\n")
     starts = f"Approved by {APPROVER}"
     marks = [i for i, line in enumerate(lines) if line.strip().startswith(starts)]
     if not marks:
@@ -59,7 +82,8 @@ def check(path):
     last = marks[-1]
     line = lines[last].strip()
     above = "\n".join(lines[:last])
-    out.update(approval=line, sha256=digest(above))
+    when = re.match(rf"{re.escape(starts)}\s+(\d{{1,2}} \w{{3}} \d{{4}} \d{{1,2}}:\d{{2}})", line)
+    out.update(approval=line, approved_at=when[1] if when else None, sha256=digest(above))
     stated = re.search(r"sha256:([0-9a-f]{64})\b", line)
     if not stated:
         return {**out, "problem": "its approval line has no sha256 of the plan (qajev plan-hash FILE prints it)"}

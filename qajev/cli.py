@@ -586,10 +586,10 @@ def cmd_plan_hash(args):
     """The sha256 for a test plan's approval line: of the plan's text as it stands (planfile.digest)."""
     from . import planfile
 
-    try:
-        print(f"sha256:{planfile.digest(args.file.read_text())}")
-    except OSError as e:
-        return _fail(args, f"{args.file}: {e}", EXIT_CONFIG)
+    text, problem = planfile.read(args.file)
+    if problem:
+        return _fail(args, f"{args.file}: {problem}", EXIT_CONFIG)
+    print(f"sha256:{planfile.digest(text)}")
     return 0
 
 

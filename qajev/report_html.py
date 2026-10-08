@@ -414,6 +414,9 @@ def render(data):
     sub = [f"{project['name']} · {project['env']}"] if project else []
     if data.get("started_at"):
         sub.append(time.strftime("%Y-%m-%d %H:%M", time.localtime(data["started_at"])))
+    approved = (data.get("test_plan") or {}).get("approved_at")
+    if approved and (data.get("test_plan") or {}).get("approved"):
+        sub.append(f"plan approved {approved}")
     out = [
         '<!doctype html><html lang="en"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',

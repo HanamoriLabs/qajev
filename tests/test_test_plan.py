@@ -63,12 +63,13 @@ def test_the_last_approval_line_covers_the_whole_plan_and_its_additions(tmp_path
 
 def test_a_missing_plan_file_or_no_plan_is_a_problem(tmp_path):
     assert planfile.check(tmp_path / "nope.md")["problem"] == "no such file"
-    assert planfile.check(None) == {"path": None, "approved": False, "approval": None, "sha256": None,
-                                    "problem": "no test plan named (plan: in the suite, or --plan)"}
+    assert planfile.check(None) == {"path": None, "approved": False, "approval": None, "approved_at": None,
+                                    "sha256": None, "problem": "no test plan named (plan: in the suite, or --plan)"}
 
 
 def test_a_suite_names_its_plan_from_its_folder_or_the_project_root(tmp_path):
     root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)  # the project root
     (root / "tools/qa/plans").mkdir(parents=True)
     (root / "tools/qa/plans/2026-10-08-checkout.md").write_text(approve(PLAN))
     (root / "qa").mkdir()
@@ -154,3 +155,40 @@ def test_the_report_shows_the_plan_its_approval_and_hash_or_a_banner(tmp_path):
                                                                                           "cost": saved["cost"]})
     page = report_html.render({**saved, "test_plan": planfile.check(None)})
     assert "No approved test plan" in page and "no test plan named" in page
+
+
+def test_a_plan_is_looked_for_up_to_the_project_root_never_above_it(tmp_path):
+    # Review of #73: a decoy plan in a folder above the project must never be found.
+    (tmp_path / "tools/qa/plans").mkdir(parents=True)
+    (tmp_path / "tools/qa/plans/decoy.md").write_text(approve(PLAN))
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    (root / "qa").mkdir()
+    found = planfile.resolve("tools/qa/plans/decoy.md", root / "qa")
+    assert found == root / "qa" / "tools/qa/plans/decoy.md" and not found.is_file()
+    assert planfile.check(found)["problem"] == "no such file"
+    (root / "tools/qa/plans").mkdir(parents=True)
+    (root / "tools/qa/plans/decoy.md").write_text(approve(PLAN))
+    assert planfile.resolve("tools/qa/plans/decoy.md", root / "qa") == root / "tools/qa/plans/decoy.md"
+
+
+def test_an_unreadable_plan_is_not_approved_and_never_crashes(tmp_path, capsys):
+    bad = tmp_path / "plan.md"
+    bad.write_bytes(b"# Plan\n\xff\xfe not utf-8\n")
+    got = planfile.check(bad)
+    assert got["approved"] is False and got["problem"].startswith("cannot read the plan")
+    assert cli.main(["plan-hash", str(bad)]) == 3
+    assert "cannot read the plan" in capsys.readouterr().err
+
+
+def test_the_report_header_says_when_the_plan_was_approved(tmp_path):
+    from pathlib import Path
+
+    p = tmp_path / "plan.md"
+    p.write_text(approve(PLAN, when="8 Oct 2026 10:34"))
+    status = planfile.check(p)
+    assert status["approved_at"] == "8 Oct 2026 10:34"
+    saved = json.loads((Path(__file__).parent / "fixtures" / "six-game-report.json").read_text())
+    page = report_html.render({**saved, "test_plan": status})
+    header = page[page.index("<h1"):page.index('<div class="gate')]
+    assert "plan approved 8 Oct 2026 10:34" in header

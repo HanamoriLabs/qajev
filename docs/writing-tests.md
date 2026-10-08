@@ -122,7 +122,7 @@ The sha256 is of the plan text above that line, so a plan edited after its appro
 approved again. The last approval line counts: an addition below an earlier approval gets its own line, which then
 covers the whole plan. Text below the last approval line is not approved.
 
-A suite names its plan with `plan:` (from the suite's folder, or any folder above it such as the project root); a
+A suite names its plan with `plan:` (from the suite's folder, or a folder above it up to the project root: the folder with `.qajev/` or `.git`, never above it); a
 check, a smoke or a play takes `--plan FILE` ([CLI](cli.md#the-approved-test-plan-on-a-run)). `qajev plan FILE`
 checks it without running anything. A run without an approved plan warns today; `QAJEV_REQUIRE_PLAN=1` refuses it.
 `QAJEV_PLAN_APPROVER` changes the name the approval line must carry (default: `the Orchestrator`).
