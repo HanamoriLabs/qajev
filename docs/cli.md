@@ -199,6 +199,10 @@ qajev plan shop.qajev.yaml --json     # {name, about, plan, not_described}
 It exits `0` when every test says what it proves and `2` while any is NOT DESCRIBED (a run of it would be
 INCOMPLETE, never PASS). `qa_plan` is the same for agents.
 
+Each test also prints `fails when:` (its `fails_when`, or `NOT STATED`), and a `!` line when it reads only a still
+state for a claim about motion. The JSON has `fails_when_missing` (the lint exits `2` while any) and `still_state` (a
+flag only).
+
 It also checks the suite's **approved test plan** (`plan:`, see [Writing tests](writing-tests.md#an-approved-test-plan)):
 the line `Plan file: ...` says whether it is approved, and the JSON has `test_plan` (`path`, `approved`, `approval`,
 `sha256`, `problem`). A plan that is missing or not approved is listed, and the exit code stays `0`. With

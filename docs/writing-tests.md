@@ -100,6 +100,15 @@ For a phone's real browser (Chrome on an Android emulator; iOS Safari is not rea
 - **Say what the test proves.** `about` (`--about` on the command line) is what a pass means and why it matters, in
   plain words: "a first-time visitor can find the Pro price without signing in". The report and the dashboard show
   it under the test's name, so whoever reads the result knows what was, and was not, proven.
+- **Say what the test catches.** `fails_when` is the broken state the test catches, in plain words: "the order is
+  not saved after paying", "the feed stops". `qajev plan` lists the tests without one (`fails_when_missing`) and exits
+  `2`, as it does for a test without `about`; a run never refuses for it. The report's test plan shows it under the
+  test's `about`. A game step takes `fails_when` too.
+- **Check motion over time.** A test whose `about` or `fails_when` speaks of motion or the network (moves, frames,
+  fps, animates, live, feed, sync, real time, stream, ticks) while every check reads one moment at the end gets a
+  flag in `qajev plan` (`still_state`): "reads only a still state". Watch it over time instead: a `react` hook, a
+  multiplayer snapshot, a game's `play` or `idle` step, or a measure the page keeps (frames in each second). The flag
+  never fails the lint.
 - **Say what each check proves.** A text, an address or an HTTP status says itself ("the page shows “Paid”"). A
   `js`, `url_regex`, `fetch` or `command` check does not: give it `says`, its words in plain language
   (`--says` with `--expect-js` on the command line). The report and the dashboard open with a **test plan**: each

@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Each test says the broken state it catches: `fails_when` on a scenario or a game step (José, 8 Oct: "how do we
+  know a test tests something?"). `qajev plan` / `qa_plan` list the tests without one (`fails_when_missing`, exit 2,
+  as for `about`); a run never refuses for it, and the report's test plan shows it. The lint also flags a test whose
+  claim is about motion or the network while every check reads one still moment (`still_state`; a flag, never a
+  failure). ([Writing tests](docs/writing-tests.md#writing-good-goals))
 - An approved test plan for every run (José, 8 Oct: no run without a test plan the Orchestrator approved). A suite
   names it with `plan:`; `run`, `check`, `smoke` and `play` (and their MCP tools) take `--plan FILE` / `plan`. The
   plan is a Markdown file whose last line is "Approved by the Orchestrator <date> <time> sha256:..." with the sha256

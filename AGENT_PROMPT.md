@@ -49,7 +49,9 @@ With MCP, call the `qa_*` tools. Without MCP, run the `qajev` command with `--js
    Make them specific: a word that also appears elsewhere on the page proves nothing.
 4. **Give every value Jev must type**, and make it differ from the field's placeholder.
 5. **Use a start `url` close to the target.** Jev does not scroll far on its own.
-6. **Name the approved test plan.** A run follows a plan the Orchestrator approved: a Markdown file in the project
+6. **Say what each test catches**: `fails_when:` on every test, the broken state it catches ("the order is not
+   saved"). A claim about motion or the network needs a check over time, not one still moment (`qa_plan` flags it).
+7. **Name the approved test plan.** A run follows a plan the Orchestrator approved: a Markdown file in the project
    (`tools/qa/plans/<date>-<name>.md`) whose last line is "Approved by the Orchestrator <date> <time>
    sha256:<qajev plan-hash FILE>". Give it as `plan:` in a suite or `plan` on any run tool (`--plan FILE`). A plan
    edited after its approval is not approved. Without one the run warns; with `QAJEV_REQUIRE_PLAN=1` it is refused.

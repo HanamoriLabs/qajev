@@ -87,7 +87,9 @@ How to write a check:
    `command` check (`says` with `expect_js` on `qa_check`). Without them the test is NOT DESCRIBED and the gate is
    INCOMPLETE, never PASS. Reports open with this test plan. Lint a suite first with `qa_plan` (CLI `qajev plan
    FILE`): free, no browser, and it lists the tests that are NOT DESCRIBED.
-6. Name the approved test plan the run follows: `plan:` in a suite, or `plan` on any run tool (CLI `--plan FILE`).
+6. Say the broken state each test catches: `fails_when:` ("the order is not saved"). `qa_plan` lists the tests
+   without one, and flags a test whose claim is about motion or the network but whose checks read one still moment.
+7. Name the approved test plan the run follows: `plan:` in a suite, or `plan` on any run tool (CLI `--plan FILE`).
    Its last line is "Approved by the Orchestrator <date> <time> sha256:<qajev plan-hash FILE>". A run without an
    approved plan warns; with QAJEV_REQUIRE_PLAN=1 it is refused.
 
