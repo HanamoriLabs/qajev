@@ -29,11 +29,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import vault
-from .config import HOME
+from .config import HOME, RUNNERS
 
 CONFIG_NAME = Path(".qajev") / "project.toml"
 PROJECT_KEYS = {"name", "repo", "default_env", "env", "accounts", "account", "budget", "guard", "persona", "device",
-                "objective", "known", "motion", "devices", "real_devices", "cpu_throttle"}
+                "objective", "known", "motion", "devices", "real_devices", "cpu_throttle", "runner"}
 KNOWN_KEYS = {"kind", "url", "note"}
 ENV_KEYS = {"base_url", "hosts", "mode", "device", "devices", "real_devices", "persona", "smoke_start", "motion",
             "cpu_throttle",
@@ -89,6 +89,7 @@ class Project:
     devices: list | None = None  # every objective runs on each (default desktop and phone)
     real_devices: list | None = None  # opt-in: also in a real device browser (ios, android)
     account: str | None = None  # the account every env signs in with, unless the env names its own
+    runner: str | None = None  # where its runs go when --runner and QAJEV_RUNNER do not say: local, cloud or auto
 
     @property
     def reports_dir(self):
@@ -170,6 +171,9 @@ def load(ref):
     for i, item in enumerate(known):
         if set(item) - KNOWN_KEYS or not item.get("kind") or not item.get("note"):
             raise ProjectError(f"{path}: known[{i}] needs kind and note (optionally url); keys {sorted(KNOWN_KEYS)}")
+    runner = data.get("runner")
+    if runner is not None and runner not in RUNNERS:
+        raise ProjectError(f"{path}: runner must be one of {list(RUNNERS)} (where its runs go; see --runner)")
     default_env = data.get("default_env") or next(iter(envs))
     if default_env not in envs:
         raise ProjectError(f"{path}: default_env {default_env!r} is not one of {sorted(envs)}")
@@ -179,6 +183,7 @@ def load(ref):
         guard=data.get("guard") or {}, persona=data.get("persona"), device=data.get("device"),
         devices=data.get("devices"), real_devices=data.get("real_devices"), objectives=objectives,
         known=known, motion=data.get("motion"), cpu_throttle=data.get("cpu_throttle"), account=data.get("account"),
+        runner=runner,
     )
 
 

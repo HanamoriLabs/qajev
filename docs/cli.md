@@ -27,7 +27,7 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | `1` | FAIL: the product is wrong somewhere |
 | `2` | INCOMPLETE: something could not be judged |
 | `3` | a mistake in the suite or the options |
-| `4` | no browser available (or the queue wait ran out) |
+| `4` | no browser available (or the queue wait ran out); for a cloud run: the dashboard did not answer, an upload was refused, or the wait ran out |
 | `5` | refused: the run would change a production site (`mode: mutate` or `--allow-destructive` on a host that is not a local dev host), or a play suite asked for `mode: mutate`. Nothing was started; `--json` prints `{"outcome": "refused", "reason": ...}` |
 | `130` | stopped (Ctrl-C or `qajev stop`) |
 
@@ -66,6 +66,14 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | `--jev-provider auto\|typesafe\|openrouter\|cloudflare` | who makes the decisions: Jev (TypeSafe, OpenRouter) or Clef (Cloudflare; see [Configuration](configuration.md)) |
 | `--usd-per-call USD` | the estimated TypeSafe cost per decision, for the ledger |
 | `--strict` | count `stuck` scenarios as failures |
+
+**Where it runs** (also on `play`: `--runner` only; see [QAJev Cloud](#qajev-cloud-where-a-run-goes))
+
+| Option | Does |
+|---|---|
+| `--runner local\|cloud\|auto` | `local`: this Mac, as today. `cloud`: QAJev Cloud; a run that cannot go is refused, never run here. `auto`: the cloud when it can, else this Mac, with one line saying why. Default: `$QAJEV_RUNNER` (the shell, then `~/.qajev/.env`), then the project's `runner`, else `local` |
+| `--serve DIR[:PORT]` | cloud runs: ship this built site folder; the cloud machine serves it on its own `127.0.0.1:PORT` (default: the port the run opens, else 8877) |
+| `--model clef\|clef-flash\|clef-omni\|jev\|jev-openrouter` | cloud runs: the model that decides (default: the dashboard's) |
 
 **Busy machines**
 
@@ -226,6 +234,39 @@ suite's `plan:`. A run without an approved plan prints `qajev: warning: no appro
 report shows the plan's path and its approval line, or a banner "No approved test plan". `qajev doctor` says which
 rule is on.
 
+## QAJev Cloud: where a run goes
+
+`--runner cloud` sends a `check`, `run` (a suite or a project) or `smoke` to QAJev Cloud (cloud.qajev.com) instead of
+this Mac. A cloud machine runs it with a headless, throwaway Chrome.
+
+```bash
+qajev check https://shop.example/pricing -g "Find the Pro price. Stop when it shows." -t '$29' --runner cloud
+qajev run suites/shop.yaml --runner cloud --model clef --json
+qajev run suites/local.yaml --runner cloud --serve dist:5173     # the suite opens http://127.0.0.1:5173
+QAJEV_RUNNER=auto qajev smoke https://shop.example/
+```
+
+- **The key.** `QAJEV_CLOUD_KEY`, else macOS Keychain (service `qajev-cloud-agent`). QAJev never prints it.
+  `QAJEV_CLOUD_URL` names another dashboard (default `https://cloud.qajev.com`). `qajev doctor` checks both.
+- **What it prints.** The run's address at once, its progress, then each test's outcome and reason, the gate and
+  the report's address. `--json` prints one object: `{"runner": "cloud", "run_id", "url", "gate", "counts",
+  "tests": [{"name", "outcome", "about", "reason", "wrong"}], "report_url", "reason"}`. The exit code is as for a
+  run here: `0` only on PASS.
+- **`--background`** returns the cloud run's id (`r_...`) and address at once. `qajev jobs r_...` shows its state;
+  `qajev stop r_...` stops it.
+- **What stays on this Mac.** `--runner cloud` refuses these, with the reason and exit `3`, and runs nothing here.
+  `--runner auto` runs them here, with one line saying why:
+  - a signed-in run: `--profile`, or a suite or project that signs in with an account;
+  - a target on this Mac (`127.0.0.1`, `localhost`, `::1`, `*.localhost`) without `--serve`: a cloud machine cannot
+    reach it. Ship the built site with `--serve DIR[:PORT]`;
+  - `play` (games, native and mobile apps), `--real-devices`, `--cdp-url` and `--allow-commands`.
+- **A cloud failure never runs here instead**, also with `auto`: no key, no answer from the dashboard (exit `3` or
+  `4`), a refused upload (QAJev stops that run), a run stopped on the dashboard, or a wait that runs out
+  (`QAJEV_CLOUD_WAIT`, default 2 hours; the run goes on in the cloud). Each says why, with the run's address when it
+  has one.
+- The suite file, a project's `.toml` and the `--plan` file go with the run. A folder of more than 150 files, or
+  with a file over 45 MB, ships as tar parts (at most 500 MB in all).
+
 ## `qajev report`
 
 ```bash
@@ -254,12 +295,14 @@ job's progress, the scenarios finished so far, and its report once done. See [Jo
 ```bash
 qajev jobs
 qajev jobs 20261001-101502-a3f9
+qajev jobs r_01k7c2...          # a cloud run: its state and tests from QAJev Cloud
 ```
 
 ## `qajev stop`
 
 ```bash
 qajev stop 20261001-101502-a3f9
+qajev stop r_01k7c2...          # a cloud run: QAJev Cloud stops it
 ```
 
 The run closes its browser, keeps the scenarios that finished and writes its report (INCOMPLETE). QAJev signals
@@ -356,7 +399,9 @@ longer stores a password; sign in once yourself with `qajev browser login --url 
 
 Checks your keys (present and valid, never printed), Chrome, a free port and the machine's load, and prints the
 QAJev version with the commit it runs from (`+dirty` when its code has uncommitted changes) and the production rule
-with the hosts that count as local dev hosts. `--offline` skips the key validity check.
+with the hosts that count as local dev hosts. Its `cloud` line says whether the QAJev Cloud key is found (never its
+value), the default runner and where it came from, and whether the dashboard answers. `--offline` skips the key
+validity check and the dashboard check.
 
 ## `qajev init`
 

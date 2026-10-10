@@ -99,6 +99,12 @@ the gate, each non-pass outcome with its reason, the findings, the cost and the 
 Long runs: pass `background: true` (CLI `--background`), then follow with `qa_job` and stop with `qa_stop`. Runs
 take turns, one at a time per machine; never start a second copy of a queued run.
 
+Where it runs: `runner: "cloud"` (CLI `--runner cloud`) sends `qa_check`, `qa_run_suite`, `qa_smoke` and
+`qa_project_run` to QAJev Cloud instead of this machine; `"auto"` uses the cloud when it can. Default: `QAJEV_RUNNER`,
+else local. A cloud run never falls back to this machine: a signed-in run is refused, and a site on this machine's
+127.0.0.1 needs `serve: "DIR[:PORT]"` (CLI `--serve`). The key is `QAJEV_CLOUD_KEY` or Keychain `qajev-cloud-agent`;
+`qa_doctor` checks it. A cloud run's id starts with `r_`; `qa_job` and `qa_stop` take it.
+
 Rules: never type, ask for or write down passwords, one-time codes or payment details (for a signed-in test,
 the person signs in once with `qa_browser(action="login", profile=NAME, url=LOGIN_URL)`, or, on a local dev host
 only, the suite names a seeded TEST account, `account: {email: ..., password: seed:FILE#KEY, login: {url: /login}}`,

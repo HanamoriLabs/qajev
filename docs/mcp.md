@@ -58,12 +58,12 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 | `qa_report` | read a run's report (JSON or Markdown) | free |
 | `qa_screenshot` | see a run's screenshots as images (default: the first scenario that did not pass) | free |
 | `qa_jobs` | every run on the machine: queued, running, recent (anyone's) | free |
-| `qa_job` | one run: progress, what Jev is doing now, scenarios finished so far, the report once done | free |
-| `qa_stop` | stop a run (it cleans up and keeps what finished) | free |
+| `qa_job` | one run: progress, what Jev is doing now, scenarios finished so far, the report once done (a cloud run's `r_...` id: its state from QAJev Cloud) | free |
+| `qa_stop` | stop a run (it cleans up and keeps what finished; a cloud run's `r_...` id: QAJev Cloud stops it) | free |
 | `qa_rerun` | run a finished job again: by default only its failed, stuck and harness tests | as the run |
 | `qa_nightly` | the latest nightly digest: what changed per project | free |
 | `qa_browser` | QAJev's own Chrome: status, start, stop, **login** (the person signs in), reap | free |
-| `qa_doctor` | check the setup (never shows key values) | free |
+| `qa_doctor` | check the setup (never shows key values), including the QAJev Cloud key and default runner | free |
 
 ### Main parameters
 
@@ -97,6 +97,14 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   also run in Chrome on an Android emulator (iOS Safari cannot read page content yet): opt-in, read-only, and slower
   (see [Mobile](mobile.md)).
 - All run tools take `verbose` (include Jev's steps) and `background` (return a job id at once).
+- `qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run` take `runner`: `"local"` (this machine), `"cloud"`
+  (QAJev Cloud: refused with the reason when the run cannot go, never run here instead) or `"auto"` (the cloud when it
+  can; a signed-in profile or a site on this machine's 127.0.0.1 runs here, and `runner_note` says why). Default:
+  `QAJEV_RUNNER`, else local (for `qa_project_run`, the project's `runner` comes after `QAJEV_RUNNER`). `serve`
+  (`"DIR"` or `"DIR:PORT"`) ships a built site with a cloud run, served on the cloud machine's own 127.0.0.1.
+  `model` picks the cloud run's model. A cloud run returns `{"runner": "cloud", "run_id", "url", "gate", "counts",
+  "tests", "report_url", "reason"}`; with `background` its id (`r_...`) and address at once. `qa_job` and `qa_stop`
+  take that id. See [CLI: QAJev Cloud](cli.md#qajev-cloud-where-a-run-goes).
 - `about`: what the test proves and why, in plain words. The server's instructions ask agents to give it on every
   test (and `about:` on each scenario or step of a suite); a result lists the tests without one, or with a check
   without words, under `about_missing`. The report and `qajev dashboard` show it under each test's name.

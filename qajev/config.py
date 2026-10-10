@@ -48,6 +48,10 @@ DEFAULTS = {
 }
 SECRET_NAME = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|PASS\b|CREDENTIAL", re.I)
 ROUTING_PLACEHOLDER = "routed-to-openrouter"
+# Where a run goes (--runner, cloud.py), and the models a QAJev Cloud run can decide with. Here so `qajev --help` lists
+# them without importing cloud.py.
+RUNNERS = ("local", "cloud", "auto")
+CLOUD_MODELS = ("clef", "clef-flash", "clef-omni", "jev", "jev-openrouter")
 LOOPBACK = re.compile(r"^(localhost|127(\.\d+){3}|::1|\[::1\]|[^.]+\.localhost)$", re.I)
 
 
