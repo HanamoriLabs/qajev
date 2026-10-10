@@ -5,8 +5,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 ## Unreleased
 
 - Fixed: Chrome, Electron, Godot and the Android emulator start through `/usr/bin/nice -n 10` instead of a Python
-  `preexec_fn`. A preexec_fn is unsafe in a process with threads, and Chrome's start failed now and then with
-  "Exception occurred in preexec_fn". The priority is unchanged.
+  `preexec_fn`. Run at the lowest priority (machine-lane at nice 19, then QAJev's own +10), macOS refuses every
+  `os.nice()` call, so each Chrome start failed with "Exception occurred in preexec_fn". The priority is unchanged.
 - An approved test plan for every run (José, 8 Oct: no run without a test plan the Orchestrator approved). A suite
   names it with `plan:`; `run`, `check`, `smoke` and `play` (and their MCP tools) take `--plan FILE` / `plan`. The
   plan is a Markdown file whose last line is "Approved by the Orchestrator <date> <time> sha256:..." with the sha256
