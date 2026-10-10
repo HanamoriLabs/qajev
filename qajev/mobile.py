@@ -26,6 +26,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from .config import HOME
+from .lowprio import niced
 from .native import STATE, NativeError
 
 SDK = Path(os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT") or Path.home() / "Library/Android/sdk")
@@ -382,12 +383,11 @@ class MobileApp:
         if self.headless:
             args.append("-no-window")
         self.proc = subprocess.Popen(
-            args,
+            niced(args),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
-            preexec_fn=lambda: os.nice(10),
         )
         self._record()  # from here on, a run that dies leaves a record the reaper can act on
         deadline = time.monotonic() + self.start_wait

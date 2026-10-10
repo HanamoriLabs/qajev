@@ -23,6 +23,7 @@ from pathlib import Path
 from . import chrome, verdict
 from .config import HOME
 from .ledger import CostCapReached
+from .lowprio import niced
 
 BRIDGES = Path(__file__).parent / "bridges"
 ADAPTERS = BRIDGES / "godot" / "adapters"
@@ -184,9 +185,8 @@ class GodotGame:
         self.errors, self.log = [], []
         args = [GODOT, "--path", str(self.project), "--script", str(godot_dir / "qajev_boot.gd")]
         args += ["--headless"] if self.headless else ["--resolution", f"{self.size[0]}x{self.size[1]}"]
-        self.proc = subprocess.Popen(args, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                     stdin=subprocess.DEVNULL, start_new_session=True,
-                                     preexec_fn=lambda: os.nice(10))
+        self.proc = subprocess.Popen(niced(args), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                     stdin=subprocess.DEVNULL, start_new_session=True)
         threading.Thread(target=self._read_output, daemon=True).start()
         self.record = {"pid": self.proc.pid, "owner_pid": os.getpid(), "engine": "godot", "project": str(self.project),
                        "adapter": self.adapter.stem if self.adapter else None, "port": self.port,
