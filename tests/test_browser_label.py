@@ -10,7 +10,7 @@ from qajev import chrome, cli, report
 
 def owned(ephemeral):
     return {"profile": "default", "port": 9351, "cdp_url": "http://127.0.0.1:9351", "headless": True, "pid": 1,
-            "ephemeral": ephemeral}
+            "ephemeral": ephemeral, "audio": False}  # muted, as QAJev starts it unless a test asks for sound
 
 
 def written(tmp_path, browser):
@@ -27,7 +27,7 @@ def written(tmp_path, browser):
 def test_a_throwaway_chromes_run_record_and_report_say_so(tmp_path):
     record = chrome.run_record(owned(True))
     assert record == {"cdp_url": "http://127.0.0.1:9351", "managed": True, "profile": "default", "headless": True,
-                      "port": 9351, "ephemeral": True}
+                      "port": 9351, "ephemeral": True, "audio": False}
     md, html = written(tmp_path, record)
     assert "QAJev throwaway profile (deleted after the run)" in md and "profile default" not in md
     assert "QAJev throwaway profile (deleted after the run)" in html and "profile default" not in html
