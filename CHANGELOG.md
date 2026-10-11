@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- A text check that fails only because QAJev's guard hid the text now says so: "hidden by QAJev's guard (danger:
+  ...); if it is safe, allow it in the suite: guard: {allow: [...]}". Its outcome is harness, not fail: the guard's
+  choice says nothing about the page. ([Troubleshooting](docs/troubleshooting.md))
+
 ## 0.4.4: 11 Oct 2026
 
 - `qajev mode` switches where runs go: `qajev mode cloud` sends this Mac's next runs to QAJev Cloud, `qajev mode local`

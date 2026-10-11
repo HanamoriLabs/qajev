@@ -48,6 +48,12 @@ host, with a `seed:FILE#KEY` password; a `keychain:`, `op://` or `env:` password
 are unusual, name them in the account's `login:` (`email_field`, `password_field`, `next`, `submit`) and say how to
 tell it worked (`signed_in`).
 
+**"hidden by QAJev's guard (danger: ...)" (harness)**
+The text is on the page, inside a control QAJev's guard hid because it holds a risky word ("billing", "delete",
+"sign out"...), so no test presses it by mistake. The result is harness: it says nothing about the page. If that
+control is safe to show (a plain link whose name holds the word), allow it in the suite:
+`guard: {allow: ["billing, signed in"]}`.
+
 **"refused: QAJev never changes a production site ..." (exit code 5)**
 The run asked to change a site that is not a local dev host (`mode: mutate` or `--allow-destructive`), so nothing
 started. Run it read-only, or against a local copy (`localhost`, `*.test`, `*.localhost`). There is no override
