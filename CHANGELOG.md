@@ -9,6 +9,18 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   20 raises EPERM. Now QAJev goes to nice 10 only when it runs above that priority and changes nothing at 10 or
   more; Chrome, Electron, Godot and the Android emulator start without a Python preexec_fn and inherit it. Nice never
   fails a run: a refusal is a warning.
+- Runs can go to QAJev Cloud instead of this Mac: `--runner cloud|local|auto` on `check`, `run` (a suite or a
+  project) and `smoke`, and `runner` on `qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run`. `local` is the
+  default and works as before. `cloud` sends the run or fails with the reason; it never runs it here instead. It
+  refuses a signed-in run, a run that writes to a dev server on this Mac, and `play`. A read-only run on one
+  127.0.0.1 or localhost port goes through QAJev Cloud's read-only tunnel to this Mac; `--serve DIR[:PORT]` ships a
+  built site instead. `auto` runs those here, with one line saying why. A cloud failure (no key, no answer, a refused
+  upload, a stopped run, a wait that runs out) is never run here either. The default comes from `QAJEV_RUNNER` (the
+  shell, then `~/.qajev/.env`), then `runner` in project.toml. `--model` picks the cloud run's model. The run's
+  address shows at once; `--json` prints one object with the gate, each test's reason and the report's address.
+  `qajev jobs`/`stop` and `qa_job`/`qa_stop` take a cloud run's id (`r_...`). The key comes from `QAJEV_CLOUD_KEY`
+  or Keychain (`qajev-cloud-agent`) and is never printed. `qajev doctor` has a `cloud` line.
+  ([CLI](docs/cli.md#qajev-cloud-where-a-run-goes), [MCP](docs/mcp.md), [Configuration](docs/configuration.md#qajev-cloud))
 - An approved test plan for every run (José, 8 Oct: no run without a test plan the Orchestrator approved). A suite
   names it with `plan:`; `run`, `check`, `smoke` and `play` (and their MCP tools) take `--plan FILE` / `plan`. The
   plan is a Markdown file whose last line is "Approved by the Orchestrator <date> <time> sha256:..." with the sha256

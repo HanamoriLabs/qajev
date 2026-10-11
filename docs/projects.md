@@ -27,6 +27,7 @@ the repository, its name is enough.
 ```toml
 name = "shop"
 default_env = "prod"
+runner = "auto"                  # where its runs go: local (default), cloud or auto; --runner and QAJEV_RUNNER win
 
 [env.prod]                       # production is always read-only: mode = "mutate" here is refused (exit 5)
 base_url = "https://shop.example"
@@ -102,6 +103,10 @@ qajev reports --project shop                          # recent runs: gate, outco
 ```
 
 An ad-hoc `--objective` without expectations comes out **unverified**: Jev's own "done" is never proof.
+
+`runner = "cloud"` (or `--runner cloud`) sends the project's runs to QAJev Cloud; the project file goes with the run.
+An environment on this Mac (`http://localhost:3000`) or one that signs in with an account stays here: `cloud`
+refuses it and `auto` runs it here, saying why ([CLI: QAJev Cloud](cli.md#qajev-cloud-where-a-run-goes)).
 
 ## What gets written
 

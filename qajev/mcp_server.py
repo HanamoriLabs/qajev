@@ -40,6 +40,11 @@ something on a site, and to catch errors a browser can see.
   Only one browser run executes at a time machine-wide; the others queue.
 - Specific tests: qa_run_suite(only=[...]) and qa_play(suite=..., only=[...]) run chosen scenarios or game steps
   (with what they depend on); qa_rerun(job) runs a finished job's failed, stuck and harness tests again.
+- Where it runs: runner="cloud" sends qa_check, qa_run_suite, qa_smoke and qa_project_run to QAJev Cloud instead of
+  this machine; runner="auto" uses the cloud when it can, else this machine (the result's runner_note says why). A
+  cloud run never falls back to this machine. A signed-in profile stays here, and a site on this machine's 127.0.0.1
+  needs its built folder shipped with serve="DIR[:PORT]". A cloud run's id starts with r_; qa_job and qa_stop take it.
+  The default is QAJEV_RUNNER, else local; qa_doctor shows it and whether the cloud key is found.
 - Every run writes report.html for the person (its path is in the result as report_html).
 - ALWAYS say what each test proves and why, in plain words: `about` on qa_check, qa_play and qa_project_run, and
   `about:` on each scenario or step of a suite (and on the suite). The person reads it next to the result, so a
@@ -197,6 +202,106 @@ async def _run_report(args, ctx, background=False, title=None, cwd=None, rerun=N
     return data
 
 
+def _runner_args(runner, serve, model):
+    if runner not in (None, "", "local", "cloud", "auto"):
+        raise ToolError("runner must be local, cloud or auto")
+    return [*(["--runner", runner] if runner else []), *(["--serve", serve] if serve else []),
+            *(["--model", model] if model else [])]
+
+
+async def _dispatch(args, where, ctx, background, title=None):
+    """A browser run where `where` (the --runner, --serve and --model flags) and the defaults send it: this machine
+    as a QAJev job (_run_report, `args` unchanged), or QAJev Cloud (_cloud_report). A refusal is a ToolError."""
+    from . import cloud
+    from .cli import build_parser
+
+    try:
+        parsed = build_parser().parse_args([*args, *where])
+    except SystemExit:
+        raise ToolError(f"qajev cannot read these arguments: {[*args, *where]}") from None
+    parsed.argv = [*args, *where]
+    note = None
+    try:
+        runner, source = cloud.runner_for(parsed)
+        if runner != "local":
+            try:
+                plan = await asyncio.to_thread(cloud.plan, parsed)
+            except cloud.NotAllowed as e:
+                if runner == "cloud":
+                    raise ToolError(f"runner cloud{'' if source == '--runner' else f' ({source})'}: {e}") from None
+                note = f"runner auto: this run stays on this machine: {e}"
+            else:
+                return await _cloud_report(plan, ctx, background)
+    except cloud.CloudError as e:
+        raise ToolError(str(e) + (f" ({e.url})" if e.url and e.url not in str(e) else "")) from None
+    if parsed.serve or parsed.model:
+        raise ToolError("serve and model go with cloud runs, and this one runs on this machine"
+                        + (f" ({note.split(': ', 1)[1]})" if note else ""))
+    report = await _run_report(args, ctx, background, title)
+    if note:
+        report["runner_note"] = note
+    return report
+
+
+async def _cloud_report(plan, ctx, background):
+    """Send the run to QAJev Cloud. background: its id and address at once. Otherwise follow it (relaying its progress)
+    to its gate; cancelling the call stops the cloud run."""
+    from . import cloud
+
+    client = await asyncio.to_thread(cloud.connect)
+    run_id = await asyncio.to_thread(cloud.submit, client, plan)
+    url = cloud.run_url(client.base, run_id)
+    if background:
+        return {"runner": "cloud", "job": run_id, "run_id": run_id, "url": url, "state": "queued",
+                "warnings": plan.warnings, "next": "qa_job(job) for progress and the result; qa_stop(job) to stop it"}
+    if ctx is not None:
+        await ctx.report_progress(0, None, f"cloud run {run_id}: {url}")
+    deadline, last, misses = time.monotonic() + cloud.wait_seconds(), None, 0
+    try:
+        while True:
+            try:
+                run = await asyncio.to_thread(cloud.status, client, run_id)
+                misses = 0
+            except cloud.CloudError as e:
+                misses += 1
+                if misses >= 3:
+                    raise ToolError(f"{e} ({url})") from None
+                await asyncio.sleep(cloud.POLL_S)
+                continue
+            seen = (run.get("gate"), run.get("progress"), run.get("now_test"))
+            if ctx is not None and seen != last:
+                await ctx.report_progress(0, None, " · ".join(str(x) for x in seen if x))
+            last = seen
+            if cloud.done(run):
+                return {**cloud.result(client.base, run), **({"warnings": plan.warnings} if plan.warnings else {})}
+            if time.monotonic() >= deadline:
+                raise ToolError(f"waited {cloud.wait_seconds() / 60:.0f} min and the run has not finished; it goes on "
+                                f"in the cloud: qa_job({run_id!r}) follows it ({url})")
+            await asyncio.sleep(cloud.POLL_S)
+    except asyncio.CancelledError:
+        with contextlib.suppress(cloud.CloudError):
+            await asyncio.to_thread(cloud.stop, client, run_id)
+        raise
+
+
+async def _cloud_job(run_id, stopping=False):
+    from . import cloud
+
+    try:
+        client = await asyncio.to_thread(cloud.connect)
+        if stopping:
+            await asyncio.to_thread(cloud.stop, client, run_id)
+        run = await asyncio.to_thread(cloud.status, client, run_id)
+    except cloud.CloudError as e:
+        raise ToolError(str(e)) from None
+    out = cloud.result(client.base, run)
+    out["state"] = run.get("gate")
+    for key in ("progress", "now_test", "now_step"):
+        if run.get(key):
+            out[key] = run[key]
+    return out
+
+
 def _trim(report, verbose):
     """Keep tool results small enough for a model's context; the full report stays on disk."""
     if verbose or "scenarios" not in report:
@@ -268,6 +373,9 @@ async def qa_check(
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
     plan: str | None = None,
+    runner: str | None = None,
+    serve: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """Run one QA scenario: open `url`, optionally let Jev pursue `goal`, then judge the page.
 
@@ -285,9 +393,17 @@ async def qa_check(
     about: what this test proves and why, in plain words, for the person reading the report (always give it).
     Returns the report with a gate and findings.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot
+    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a
+    dev server here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only
+    tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
+    site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud run's
+    decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
+    background returns its id (r_...) and address at once.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     """
+    where = _runner_args(runner, serve, model)
     args = ["check", url, "--mode", mode, *(["--device", device] if device else []), "--max-actions",
             str(max_actions),
             "--max-seconds", str(max_seconds), "--settle", str(settle), "--out", out_dir or str(DEFAULT_OUT),
@@ -322,7 +438,7 @@ async def qa_check(
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)
-    return _trim(await _run_report(args, ctx, background), verbose)
+    return _trim(await _dispatch(args, where, ctx, background), verbose)
 
 
 @server.tool()
@@ -345,14 +461,25 @@ async def qa_run_suite(
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
     plan: str | None = None,
+    runner: str | None = None,
+    serve: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """Run a QAJev suite (YAML/JSON) from a file path or inline text. `only` limits to named scenarios
     (plus their dependencies). jobs > 1 runs independent chains in parallel; keep 1 on a busy machine.
     allow_destructive: show delete/remove/refund/cancel... controls (every host a local dev host, or refused).
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot
+    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a
+    dev server here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only
+    tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
+    site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud run's
+    decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
+    background returns its id (r_...) and address at once.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     """
+    where = _runner_args(runner, serve, model)
     if bool(suite_path) == bool(suite_yaml):
         raise ToolError("give exactly one of suite_path or suite_yaml")
     if suite_yaml:
@@ -382,7 +509,7 @@ async def qa_run_suite(
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)
-    return _trim(await _run_report(args, ctx, background, title), verbose)
+    return _trim(await _dispatch(args, where, ctx, background, title), verbose)
 
 
 @server.tool()
@@ -403,6 +530,9 @@ async def qa_smoke(
     cpu_throttle: int | None = None,
     ux: bool = True,
     plan: str | None = None,
+    runner: str | None = None,
+    serve: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """Crawl same-origin pages from `url` with NO model calls and lint each one: HTTP status, script
     errors, failed requests, CSP blocks and report-only violations, broken images, unlabeled fields,
@@ -410,9 +540,17 @@ async def qa_smoke(
     contrast, keyboard reach and visible focus, 200% zoom, cut-off or overlapping text, open dialogs) and
     a design-consistency comparison across pages; they never change the gate.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot
+    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a
+    dev server here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only
+    tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
+    site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud run's
+    decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
+    background returns its id (r_...) and address at once.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     """
+    where = _runner_args(runner, serve, model)
     args = ["smoke", url, "--max-pages", str(max_pages), *(["--device", device] if device else []),
             "--out", out_dir or str(DEFAULT_OUT),
             *_browser_args(profile, cdp_url, headless)]
@@ -424,7 +562,7 @@ async def qa_smoke(
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices)
     args += _plan_args(plan)
-    return _trim(await _run_report(args, ctx, background), verbose)
+    return _trim(await _dispatch(args, where, ctx, background), verbose)
 
 
 @server.tool()
@@ -470,6 +608,9 @@ async def qa_project_run(
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
     plan: str | None = None,
+    runner: str | None = None,
+    serve: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """Prove a product works: run a project's stored objectives (optionally only those tagged `suite`, or named
     in `names`), or one ad-hoc `objective` in plain words with `expect_text`/`expect_url` checks and an `about` (what
@@ -478,9 +619,18 @@ async def qa_project_run(
     with mode = "mutate" on a production host is refused. allow_destructive: show delete/remove/refund/cancel...
     controls (a local dev env only).
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
+    runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot
+    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a
+    dev server here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only
+    tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
+    site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud run's
+    decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
+    background returns its id (r_...) and address at once.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
+    Without runner, the project's `runner` in project.toml counts after QAJEV_RUNNER.
     """
+    where = _runner_args(runner, serve, model)
     args = ["run", "--project", project, *_browser_args(profile, None, headless)]
     for flag, value in (("--env", env), ("--objective", objective), ("--suite", suite), ("--url", url),
                         ("--expect-url", expect_url), ("--about", about)):
@@ -496,7 +646,7 @@ async def qa_project_run(
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)
-    return _trim(await _run_report(args, ctx, background), verbose)
+    return _trim(await _dispatch(args, where, ctx, background), verbose)
 
 
 @server.tool()
@@ -675,7 +825,10 @@ async def qa_jobs(limit: int = 20) -> dict:
 @server.tool()
 async def qa_job(job: str, verbose: bool = False) -> dict:
     """One job in detail: state, progress, the scenarios finished so far (partial results while it runs) and,
-    once done, the report (trimmed unless verbose)."""
+    once done, the report (trimmed unless verbose). A cloud run's id (r_...): its state, tests and report address
+    from QAJev Cloud."""
+    if job.startswith("r_"):
+        return await _cloud_job(job)
     try:
         st = await asyncio.to_thread(jobs.status, job, True)
     except jobs.NoSuchJob:
@@ -712,7 +865,9 @@ async def qa_rerun(ctx: Context, job: str, failed: bool = True, background: bool
 @server.tool()
 async def qa_stop(job: str) -> dict:
     """Stop a job (any agent's). It closes its tabs, Chrome and daemon and keeps the scenarios that finished;
-    the partial report stays in its run folder."""
+    the partial report stays in its run folder. A cloud run's id (r_...): QAJev Cloud stops that run."""
+    if job.startswith("r_"):
+        return await _cloud_job(job, stopping=True)
     try:
         return await asyncio.to_thread(jobs.stop, job)
     except jobs.NoSuchJob:

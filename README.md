@@ -76,6 +76,7 @@ Every run writes `report.html` (open it in a browser), `report.md` and `report.j
 | **Prove a product works** | store its objectives once, run them any time, see what changed since last time ([Projects](docs/projects.md)) |
 | **Every night** | `qajev nightly --install`: runs every project, tells you only when something changed |
 | **From AI agents** | `qajev mcp` ([MCP](docs/mcp.md), [agents](docs/agents.md), [prompt](AGENT_PROMPT.md)) |
+| **Run in the cloud, not on this Mac** | `--runner cloud` (or `QAJEV_RUNNER=cloud`) sends `check`, `run` and `smoke` to QAJev Cloud; this Mac's dev servers go through a read-only tunnel; `auto` keeps signed-in runs and runs that write to a dev server here ([CLI](docs/cli.md#qajev-cloud-where-a-run-goes)) |
 | **Watch and control runs** | `qajev top`, `qajev dashboard`, `qajev jobs`, `qajev stop` ([Jobs and top](docs/jobs-and-top.md), [The dashboard](docs/dashboard.md)) |
 | **Test a game** | `qajev play path/to/game` ([Games](docs/games.md)) |
 | **Test a mobile app** | `qajev play ios:com.example.app` or `android:com.example.app` ([Mobile](docs/mobile.md)) |

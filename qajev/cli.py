@@ -64,6 +64,22 @@ def _load_flags(g):
 
 PLAN_HELP = ("the approved test plan this run follows (Markdown; overrides the suite's plan:). Without one the run "
              "warns; with QAJEV_REQUIRE_PLAN=1 it is refused")
+RUNNER_HELP = ("where the run goes: local (this Mac), cloud (QAJev Cloud; a run that cannot go is refused, never run "
+               "here), auto (the cloud when it can, else this Mac, saying why). Default: $QAJEV_RUNNER (the shell, "
+               "then ~/.qajev/.env), then the project's runner, else local")
+
+
+def _runner_flags(p, website=True):
+    from .config import CLOUD_MODELS, RUNNERS
+
+    g = p.add_argument_group("where it runs")
+    g.add_argument("--runner", choices=RUNNERS, help=RUNNER_HELP)
+    if website:
+        g.add_argument("--serve", metavar="DIR[:PORT]",
+                       help="cloud runs: ship this built site folder; the cloud machine serves it on its own "
+                            "127.0.0.1:PORT (default: the port the run opens, else 8877)")
+        g.add_argument("--model", choices=CLOUD_MODELS,
+                       help="cloud runs: the model that decides (default: the dashboard's)")
 
 
 def _common(p):
@@ -104,6 +120,7 @@ def _common(p):
     g.add_argument("--background", action="store_true",
                    help="start the run as a job and return at once; follow it with `qajev jobs`, stop it with "
                         "`qajev stop`")
+    _runner_flags(p)
 
 
 ALLOW_DESTRUCTIVE_HELP = ("show delete, remove, refund, cancel... controls, hidden by default everywhere; local dev "
@@ -253,6 +270,7 @@ def build_parser():
     play.add_argument("--events", action="store_true")
     play.add_argument("--quiet", "-q", action="store_true")
     play.add_argument("--background", action="store_true", help="start as a job and return at once")
+    _runner_flags(play, website=False)  # the cloud does not take play runs yet: cloud refuses, auto runs here
 
     browser = sub.add_parser("browser", help="QAJev's own Chrome: start, stop, status, login")
     browser.add_argument("action", choices=["start", "stop", "status", "login", "reap"])
@@ -294,10 +312,11 @@ def build_parser():
                                                  "(\"Approved by the Orchestrator <d Mon yyyy hh:mm> sha256:...\")")
     plan_hash.add_argument("file", type=Path, help="the test plan (Markdown), as it stands above the new line")
 
-    doctor = sub.add_parser("doctor", help="check keys and where each came from, Chrome, ports and load, and print the "
-                                           "production rule (never prints secrets)")
+    doctor = sub.add_parser("doctor", help="check keys and where each came from, Chrome, ports and load, QAJev Cloud, "
+                                           "and print the production rule (never prints secrets)")
     doctor.add_argument("--env-file")
-    doctor.add_argument("--offline", action="store_true", help="skip the free OpenRouter key validity check")
+    doctor.add_argument("--offline", action="store_true",
+                        help="skip the free OpenRouter key validity check and the QAJev Cloud check")
     doctor.add_argument("--json", action="store_true")
 
     rep = sub.add_parser("report", help="print a run's report (Markdown, or JSON with --json)")
@@ -315,12 +334,13 @@ def build_parser():
     reports.add_argument("--json", action="store_true")
 
     jobs = sub.add_parser("jobs", help="QAJev runs on this machine: queued, running and recent (or one job in detail)")
-    jobs.add_argument("job", nargs="?", help="a job id: show its progress, finished scenarios and result")
+    jobs.add_argument("job", nargs="?", help="a job id: show its progress, finished scenarios and result (a cloud "
+                                             "run's id, r_..., asks QAJev Cloud)")
     jobs.add_argument("--limit", type=int, default=20)
     jobs.add_argument("--json", action="store_true")
 
     stop = sub.add_parser("stop", help="stop a job (it closes its browser and keeps the scenarios that finished)")
-    stop.add_argument("job")
+    stop.add_argument("job", help="a job id, or a cloud run's id (r_...)")
     stop.add_argument("--json", action="store_true")
 
     nightly = sub.add_parser("nightly", help="each project's core objectives + a smoke crawl, compared with the "
@@ -1184,6 +1204,9 @@ def cmd_doctor(args):
         add("jev-ultrafast", False, str(e))
     add("production", True, "read-only, destructive never: only a local dev host may change ("
         + ", ".join(LOCAL_DEV_HOSTS) + "); mutate or --allow-destructive anywhere else is refused (exit 5)")
+    from . import cloud
+
+    add("cloud", *cloud.doctor(args.env_file, offline=args.offline))  # never the key, only where it is
     load1 = os.getloadavg()[0]
     add("load average", load1 < 150, f"{load1:.0f} (runs wait while >= 150)")
     ok = all(c["ok"] for c in checks)
@@ -1238,6 +1261,8 @@ def _job_line(j):
 def cmd_jobs(args):
     from . import jobs
 
+    if args.job and args.job.startswith("r_"):  # a QAJev Cloud run
+        return _cloud_job(args)
     if args.job:
         try:
             job = jobs.status(args.job, detail=True)
@@ -1298,6 +1323,8 @@ def cmd_rerun(args):
 def cmd_stop(args):
     from . import jobs
 
+    if args.job.startswith("r_"):  # a QAJev Cloud run: the dashboard stops it
+        return _cloud_job(args, stopping=True)
     try:
         job = jobs.stop(args.job)
     except jobs.NoSuchJob:
@@ -1568,9 +1595,164 @@ def _fail(args, message, code):
     return code
 
 
+def _route(args):
+    """--runner: where this run goes (cloud.py). -> an exit code when the cloud took or refused it, None to run here.
+    cloud never falls back to this Mac; auto runs here, saying why, only a run the cloud may not take."""
+    from . import cloud
+
+    try:
+        runner, source = cloud.runner_for(args)
+    except cloud.CloudError as e:
+        return _cloud_fail(args, str(e), e.code)
+    cloud_only = [flag for flag, on in (("--serve", getattr(args, "serve", None)),
+                                        ("--model", getattr(args, "model", None))) if on]
+    if runner == "local":
+        if cloud_only:
+            return _fail(args, f"{' and '.join(cloud_only)} go with cloud runs (--runner cloud or auto); this run "
+                               "stays on this Mac", EXIT_CONFIG)
+        return None
+    try:
+        from .config import load_env
+
+        load_env(args.env_file)  # QAJEV_CLOUD_URL and QAJEV_CLOUD_KEY may live in ~/.qajev/.env
+        plan = cloud.plan(args)
+    except FileNotFoundError as e:
+        return _cloud_fail(args, str(e), EXIT_CONFIG)
+    except cloud.NotAllowed as e:
+        if runner == "cloud":
+            said = "" if source == "--runner" else f" ({source})"
+            return _cloud_fail(args, f"--runner cloud{said}: {e}", EXIT_CONFIG)
+        if cloud_only:
+            return _fail(args, f"{' and '.join(cloud_only)} go with cloud runs, and this one runs on this Mac: {e}",
+                         EXIT_CONFIG)
+        if not args.quiet:
+            print(f"qajev: --runner auto: this run stays on this Mac: {e}", file=sys.stderr, flush=True)
+        return None
+    except cloud.CloudError as e:
+        return _cloud_fail(args, str(e), e.code)
+    return cmd_cloud(args, plan)
+
+
+def _cloud_fail(args, message, code, run_id=None, url=None):
+    """A cloud run that was refused or failed: nothing ran on this Mac. Says the run's address when it has one."""
+    out = {"runner": "cloud", "error": message, "reason": message, "exit_code": code}
+    if run_id:
+        out.update(run_id=run_id, url=url)
+    if getattr(args, "json", False):
+        print(json.dumps(out))
+    print(f"qajev: {message}" + (f" ({url})" if url and url not in message else ""), file=sys.stderr)
+    return code
+
+
+def cmd_cloud(args, plan):
+    """Send the run to QAJev Cloud, then (unless --background) follow it to its gate."""
+    from . import cloud
+
+    for warning in plan.warnings:
+        print(f"qajev: warning: {warning}", file=sys.stderr)
+    try:
+        client = cloud.connect(args.env_file)
+        run_id = cloud.submit(client, plan)
+    except cloud.CloudError as e:
+        return _cloud_fail(args, str(e), e.code, e.run_id, e.url)
+    url = cloud.run_url(client.base, run_id)
+    if args.background:
+        if args.json:
+            print(json.dumps({"runner": "cloud", "run_id": run_id, "url": url, "gate": "QUEUED"}))
+        else:
+            print(f"cloud run {run_id} queued: {url}\n  follow: qajev jobs {run_id}\n  stop:   qajev stop {run_id}")
+        return 0
+    say = _cloud_printer(args)
+    say({"event": "cloud", "run_id": run_id, "url": url, "gate": "queued"})
+    signal.signal(signal.SIGTERM, _interrupt)  # a stop by signal stops the cloud run too, like Ctrl-C
+    signal.signal(signal.SIGINT, _interrupt)
+    _stop_when_orphaned()
+    try:
+        run = cloud.wait(client, run_id, on_change=lambda r: say({"event": "cloud", "run_id": run_id, "url": url,
+                                                                  "gate": r.get("gate"), "progress": r.get("progress"),
+                                                                  "now_test": r.get("now_test")}))
+    except KeyboardInterrupt:
+        with contextlib.suppress(cloud.CloudError):
+            cloud.stop(client, run_id)
+        print(f"qajev: stopped cloud run {run_id}: {url}", file=sys.stderr)
+        return EXIT_INTERRUPTED
+    except cloud.CloudError as e:
+        return _cloud_fail(args, str(e), e.code, run_id, url)
+    out = cloud.result(client.base, run)
+    if args.json:
+        print(json.dumps(out, indent=2))
+    elif not args.quiet:
+        _cloud_summary(out)
+    return cloud.exit_code(out["gate"])
+
+
+def _cloud_printer(args):
+    """Progress of a cloud run on stderr: a line when its gate, progress or test changes (JSON lines with --events)."""
+    if args.events:
+        return _safe(lambda event: print(json.dumps(event, default=str), file=sys.stderr, flush=True))
+    if args.quiet or args.json:
+        return lambda _event: None
+
+    def emit(event):
+        gate = event.get("gate")
+        if "progress" not in event:  # the first line: where a person can watch it
+            print(f"qajev: cloud run {event['run_id']}: {event['url']}", file=sys.stderr, flush=True)
+        elif gate == "queued":
+            print("  queued: waiting for a cloud machine", file=sys.stderr, flush=True)
+        elif gate == "running":
+            now = " · ".join(str(x) for x in (event.get("progress"), event.get("now_test")) if x)
+            print(f"  running{': ' + now if now else ''}", file=sys.stderr, flush=True)
+
+    return _safe(emit)
+
+
+def _cloud_summary(out):
+    marks = {"pass": "✓", "fail": "✗", "stuck": "…", "harness": "!", "todo": "-"}
+    for t in out["tests"]:
+        print(f"  {marks.get(t['outcome'], '?')} {str(t['outcome']):<10} {t['name']}"
+              + (f"  {t['reason']}" if t.get("reason") else ""), file=sys.stderr)
+    c = out["counts"]
+    counts = ", ".join(f"{c[k]} {k}" for k in ("pass", "fail", "stuck", "harness") if k in c)
+    print(f"\nGate: {out['gate']}" + (f"  ({counts})" if counts else ""), file=sys.stderr)
+    if out.get("reason"):
+        print(f"Reason: {out['reason']}", file=sys.stderr)
+    print(f"Run: {out['url']}", file=sys.stderr)
+    if out.get("report_url"):
+        print(f"Report: {out['report_url']}", file=sys.stderr)
+
+
+def _cloud_job(args, stopping=False):
+    """`qajev jobs r_...` / `qajev stop r_...`: a cloud run's state, from the dashboard."""
+    from . import cloud
+
+    try:
+        client = cloud.connect()
+        if stopping:
+            cloud.stop(client, args.job)
+        out = cloud.result(client.base, cloud.status(client, args.job))
+    except cloud.CloudError as e:
+        return _cloud_fail(args, str(e), e.code, args.job, None)
+    if args.json:
+        print(json.dumps(out, indent=2))
+        return 0
+    print(f"{out['run_id']}  {out['gate']}  {out['url']}")
+    for t in out["tests"]:
+        print(f"  {str(t['outcome']):<10} {str(t['name'])[:60]}  {(t.get('reason') or '')[:100]}")
+    if out.get("reason"):
+        print(f"  reason: {out['reason']}")
+    if out.get("report_url"):
+        print(f"  report: {out['report_url']}")
+    return 0
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     args.argv = list(sys.argv[1:] if argv is None else argv)
+    # Where it runs, before anything starts here. A background job's run was routed when it started.
+    if args.command in {"check", "run", "smoke", "play"} and not os.environ.get("QAJEV_JOB"):
+        routed = _route(args)
+        if routed is not None:
+            return routed
     if getattr(args, "background", False):
         return cmd_background(args)
     global _job_dir
