@@ -272,7 +272,9 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
     one run. A read-only run on one `127.0.0.1` or `localhost` port goes to the cloud only when the command itself
     says `--runner cloud`: the dispatcher on this Mac then opens a read-only tunnel to that port for the run (only
     GET, HEAD and OPTIONS pass; a page's POST or WebSocket does not). With `auto`, or a mode of `cloud`, it stays here
-    or stops with the reason. Or ship the built site with `--serve DIR[:PORT]`;
+    or stops with the reason. Or ship the built site with `--serve DIR[:PORT]`. The folder must be a clean build
+    (`git archive`): one holding an env file (`.env`, `.dev.vars`), a key (`*.pem`, `*.key`, `id_ed25519`),
+    credentials JSON, `.npmrc` or a `.git` folder is refused with their names;
   - a held run: its suite path, project or target holds a word from `QAJEV_CLOUD_HOLD` (comma-separated, any case,
     for example `figgyz,verse`). It goes to the cloud only when the command says `--runner cloud`;
   - `play` (games, native and mobile apps), `--real-devices`, `--cdp-url` and `--allow-commands`.

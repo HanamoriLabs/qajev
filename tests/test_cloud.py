@@ -231,6 +231,21 @@ def test_a_held_suite_stays_here_unless_the_command_says_runner_cloud(dash, loca
     assert cli.main(["check", "https://shop.example/"]) == 0  # nothing held there: it goes
 
 
+@pytest.mark.parametrize("secret", [".env", ".dev.vars", ".env.production", "certs/server.pem", "deploy.key",
+                                    "config/service-account.json", ".npmrc", ".git/config", "id_ed25519"])
+def test_a_served_folder_that_holds_a_secret_is_refused(dash, local, capsys, tmp_path, secret):
+    # Orchestrator, 11 Oct: a Verse build shipped with --serve must be a git-archive build with no .dev.vars, .env or
+    # keys. The folder goes to a cloud machine, so one is refused with its name and nothing is sent.
+    built = site(tmp_path)
+    (built / secret).parent.mkdir(parents=True, exist_ok=True)
+    (built / secret).write_text("TOKEN=x")
+    code = cli.main(["check", "http://127.0.0.1:8877/", "--serve", str(built), "--runner", "cloud"])
+    err = capsys.readouterr().err
+    shown = ".git/" if secret.startswith(".git/") else secret
+    assert code == cli.EXIT_CONFIG and shown in err and "git archive" in err
+    assert dash.calls == [] and local == []
+
+
 def test_a_public_target_needs_no_tunnel_and_a_shipped_build_never_gets_one(dash, local, tmp_path):
     assert cli.main(["check", "https://shop.example/", "--runner", "cloud"]) == 0
     assert "tunnel" not in dash.created()

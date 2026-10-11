@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- `--serve DIR` refuses a folder that holds a secret: an env file (`.env`, `.dev.vars`), a key (`*.pem`, `*.key`,
+  `id_ed25519`), credentials JSON, `.npmrc` or a `.git` folder. It names them and asks for a clean build
+  (`git archive`): the folder goes to a cloud machine.
+
 ## 0.4.7: 11 Oct 2026
 
 - A failed test now names what QAJev's guard hid on its page too ("guard hid: 'Roll back to this' (danger: Roll back);
