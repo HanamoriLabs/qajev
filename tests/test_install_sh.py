@@ -57,8 +57,12 @@ def install(tmp_path, *, system="Linux", proc_version="Linux version 6.8", uv_pr
     if chrome:
         tool(bin_dir, "chromium", "#!/bin/sh\nexit 0\n")
     (tmp_path / "proc_version").write_text(proc_version)
-    keep = "/usr/bin:/bin"  # sed, grep, mkdir, cat and the like; no uv, curl or chrome lives there on a test machine
-    run_env = {"HOME": str(home), "PATH": f"{bin_dir}:{keep}", "LOG": str(log),
+    # Only the system tools the scripts use: a CI runner's /usr/bin also holds Chrome, curl and more.
+    system = tmp_path / "system"
+    system.mkdir()
+    for name in ("sh", "env", "grep", "cat", "mkdir", "chmod"):
+        (system / name).symlink_to(shutil.which(name))
+    run_env = {"HOME": str(home), "PATH": f"{bin_dir}:{system}", "LOG": str(log),
                "UV_INSTALLER_FILE": str(tmp_path / "uv-installer.sh"),
                "QAJEV_PROC_VERSION": str(tmp_path / "proc_version"), **(env or {})}
     out = subprocess.run([SH, str(SCRIPT)], capture_output=True, text=True, env=run_env, timeout=30)
