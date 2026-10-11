@@ -149,6 +149,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         findings.extend(verdict.findings_from_probe(probe, scenario=scenario.name, url=obs.get("url"),
                                                     first_party_hosts=hosts, why=getattr(session, "why_failed", None)))
         result["blocked_writes"].extend(probe.get("blocked") or [])
+        if "block_list" in probe:  # block_urls set: every request to a blocked address, even none
+            result.setdefault("block_list_requests", []).extend(probe["block_list"])
         for key, out in (("allowed", "allowed_writes"), ("dialogs", "dialogs")):  # what production let through, asked
             if probe.get(key):
                 result.setdefault(out, []).extend(probe[key])

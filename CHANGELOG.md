@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- A run with `block_urls` lists every request to a blocked address, from the page and every frame in it:
+  `block_list_requests` in `report.json`, with the method, the address, the frame that sent it and whether Chrome
+  blocked it. Before, a blocked GET was listed nowhere (verse-workshop, 12 Oct).
+- `blocked_writes` now holds the writes the read-only guard stopped inside frames too, each with its `frame`. Before,
+  QAJev read only the top page's record, so a framed page on another origin could try to save and the report said
+  nothing.
 - One-line installer: `curl -LsSf https://qajev.com/install.sh | sh` on macOS and Linux. It installs uv when it is
   missing (the old `uv tool install` line failed with "command not found: uv" on a new machine), then QAJev, puts it on
   the PATH and checks for Chrome. `QAJEV_VERSION` pins a release; `QAJEV_NO_MODIFY_PATH=1` changes no shell file.

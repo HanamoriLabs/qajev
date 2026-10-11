@@ -185,6 +185,9 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
                                                     url=observed.get("url"), first_party_hosts=hosts,
                                                     why=client.session.why_failed))
         result["blocked_writes"].extend(probe.get("blocked") or [])
+        if "block_list" in probe:  # block_urls set: every request to a blocked address, even none
+            result.setdefault("block_list_requests", []).extend(
+                dict(r, client=client.name) for r in probe["block_list"])
         result["guard_hidden"] = max(result["guard_hidden"], probe.get("hidden") or 0)
         return observed
 

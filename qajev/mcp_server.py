@@ -309,7 +309,7 @@ def _trim(report, verbose):
         return report
     keep = ("name", "about", "outcome", "reason", "stop", "stop_detail", "not_run", "seconds", "cost_usd", "end_url",
             "checks", "findings", "shot", "jev", "blocked_writes", "allowed_writes", "dialogs", "page_says",
-            "needs_sign_in")
+            "needs_sign_in", "block_list_requests")
     out = {k: v for k, v in report.items() if k not in ("scenarios", "plan")}  # the plan repeats the scenarios
     out["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [], {})} for r in report["scenarios"]]
     for r in out["scenarios"]:
