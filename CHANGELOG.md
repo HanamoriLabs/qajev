@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- `qajev mode` switches where runs go: `qajev mode cloud` sends this Mac's next runs to QAJev Cloud, `qajev mode local`
+  keeps them here, `qajev mode auto` uses the cloud when it can, and `qajev mode dashboard` follows the dashboard's
+  "Where runs go by default" (looked up once a minute), so a person can switch every agent from the dashboard.
+  `qajev mode` alone says where runs go and why. `--project NAME` sets one project's `runner` (`default` removes it).
+  MCP: `qa_mode`. `qajev runner` is the same command. ([CLI](docs/cli.md#qajev-cloud-where-a-run-goes))
+- Changed: a project's `runner` now wins over this Mac's mode (`QAJEV_RUNNER`). Only `--runner` comes before it.
+
 ## 0.4.3: 11 Oct 2026
 
 - Fixed: every QAJev browser run inside machine-lane failed at Chrome's start with "Exception occurred in

@@ -312,6 +312,17 @@ def build_parser():
                                                  "(\"Approved by the Orchestrator <d Mon yyyy hh:mm> sha256:...\")")
     plan_hash.add_argument("file", type=Path, help="the test plan (Markdown), as it stands above the new line")
 
+    mode = sub.add_parser("mode", aliases=["runner"],
+                          help="show where runs go (this Mac or QAJev Cloud), or switch it: local, cloud, auto, or "
+                               "dashboard (follow the dashboard's Settings page); --project for one project")
+    mode.add_argument("where", nargs="?", choices=["local", "cloud", "auto", "dashboard", "default"],
+                      help="local: this Mac; cloud: always the cloud; auto: the cloud when it can, else here; "
+                           "dashboard: whatever the dashboard's \"Where runs go by default\" says; default (with "
+                           "--project): the project follows this Mac's mode again")
+    mode.add_argument("--project", help="set this project only (a name or a path): its runs go there whatever this "
+                                        "Mac's mode is")
+    mode.add_argument("--json", action="store_true")
+
     doctor = sub.add_parser("doctor", help="check keys and where each came from, Chrome, ports and load, QAJev Cloud, "
                                            "and print the production rule (never prints secrets)")
     doctor.add_argument("--env-file")
@@ -600,6 +611,53 @@ def _test_plan(args, named, base):
             raise SuiteError(f"needs an approved test plan: {status['problem']}{where}")
         print(f"qajev: warning: no approved test plan: {status['problem']}{where}", file=sys.stderr)
     return status
+
+
+def cmd_runner(args):
+    """`qajev mode`: where runs go now, and why. With a value, this Mac's mode (QAJEV_RUNNER in ~/.qajev/.env) or
+    one project's `runner` (--project) changes first."""
+    from types import SimpleNamespace
+
+    from . import cloud, config
+
+    if args.project:
+        from . import project as project_mod
+
+        if args.where == "dashboard":
+            return _fail(args, "a project takes local, cloud, auto or default; dashboard is for this Mac's mode",
+                         EXIT_CONFIG)
+        try:
+            proj = project_mod.set_runner(args.project, args.where) if args.where else project_mod.load(args.project)
+        except project_mod.ProjectError as e:
+            return _fail(args, str(e), EXIT_CONFIG)
+    elif args.where == "default":
+        return _fail(args, "default is for a project (--project NAME): this Mac's mode is local, cloud, auto or "
+                           "dashboard", EXIT_CONFIG)
+    elif args.where:
+        config.set_value(config.HOME / ".env", "QAJEV_RUNNER", args.where)
+        cloud._dashboard_cache.clear()
+    try:
+        runner, source = cloud.runner_for(SimpleNamespace(runner=None, env_file=None, command="run",
+                                                          project=args.project and str(proj.config_path)))
+    except cloud.CloudError as e:
+        return _fail(args, str(e), EXIT_CONFIG)
+    setting = (cloud.setting("QAJEV_RUNNER")[0] or "local").strip().lower()
+    shell = os.environ.get("QAJEV_RUNNER")
+    note = (f"the shell sets QAJEV_RUNNER={shell}, which wins over ~/.qajev/.env: unset it to use {args.where}"
+            if args.where and shell and shell.strip().lower() != args.where else None)
+    if args.json:
+        print(json.dumps({"runner": runner, "setting": setting, "source": source, "dashboard": cloud.dashboard_url(),
+                          **({"note": note} if note else {})}))
+        return 0
+    whose = f"{proj.name}'s runs go to" if args.project else "Runs go to"
+    print(f"{whose}: {'this Mac' if runner == 'local' else runner} ({source})")
+    if setting == "dashboard":
+        print(f"Change it on the dashboard: {cloud.dashboard_url()}/settings.html, \"Where runs go by default\".")
+    print("Switch: qajev mode local | cloud | auto | dashboard, or --project NAME for one project. "
+          "A run can still say --runner.")
+    if note:
+        print(f"qajev: warning: {note}", file=sys.stderr)
+    return 0
 
 
 def cmd_plan_hash(args):
@@ -1770,7 +1828,8 @@ def main(argv=None):
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
                 "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
                 "top": cmd_top, "nightly": cmd_nightly, "rerun": cmd_rerun, "dashboard": cmd_dashboard,
-                "play": cmd_play, "plan": cmd_plan, "plan-hash": cmd_plan_hash}
+                "play": cmd_play, "plan": cmd_plan, "plan-hash": cmd_plan_hash, "mode": cmd_runner,
+                "runner": cmd_runner}
     code = 1  # a crash on the way out still leaves an exit code for `qajev jobs`
     try:
         code = handlers[args.command](args)

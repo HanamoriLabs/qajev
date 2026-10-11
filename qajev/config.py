@@ -83,6 +83,30 @@ def _read(path):
     return out
 
 
+def set_value(path, name, value):
+    """Sets NAME=value in an env file: its own line replaced (or added at the end); every other line stays as it is."""
+    path = Path(path)
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    out, done = [], False
+    for line in lines:
+        bare = line.strip()
+        setting = "=" in bare and not bare.startswith("#")
+        key = bare.split("=", 1)[0].strip().removeprefix("export ").strip() if setting else None
+        if key == name:
+            if not done:
+                out.append(f"{name}={value}")
+                done = True
+            continue
+        out.append(line)
+    if not done:
+        out.append(f"{name}={value}")
+    new = not path.is_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    if new:
+        path.chmod(0o600)  # it holds keys
+
+
 def load_env(explicit=None):
     """First file wins per key. Other settings: the shell wins over files. QAJev's own keys (OWN_KEYS): its files win
     over the shell, and `QAJEV_<NAME>` wins over both."""

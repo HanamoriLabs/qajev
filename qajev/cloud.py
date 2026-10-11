@@ -26,6 +26,10 @@ from pathlib import Path
 from . import config
 
 RUNNERS, MODELS = config.RUNNERS, config.CLOUD_MODELS
+# QAJEV_RUNNER may also say `dashboard`: follow the Settings page's "Where runs go by default" (`qajev runner`).
+RUNNER_SETTINGS = (*RUNNERS, "dashboard")
+DASHBOARD_TTL_S = 60  # one look at the dashboard serves a minute of runs
+_dashboard_cache: dict = {}
 DEFAULT_URL = "https://cloud.qajev.com"
 KEYCHAIN_SERVICE = "qajev-cloud-agent"
 KINDS = ("check", "run", "smoke")  # websites; play (games, native and mobile apps) stays on this Mac for now
@@ -80,30 +84,53 @@ def setting(name, env_file=None):
 
 
 def runner_for(args):
-    """Where a run goes, and why: --runner, QAJEV_RUNNER (the shell, then ~/.qajev/.env), the project's `runner`
-    (project runs), else this Mac. -> (runner, source)"""
+    """Where a run goes, and why: --runner, the project's `runner` (project runs), this Mac's mode (QAJEV_RUNNER: the
+    shell, then ~/.qajev/.env; `dashboard` follows the dashboard's Settings page), else this Mac. -> (runner, source)"""
     if getattr(args, "runner", None):
         return args.runner, "--runner"
-    value, where = setting("QAJEV_RUNNER", getattr(args, "env_file", None))
-    if value:
-        value = value.strip().lower()
-        if value not in RUNNERS:
-            raise CloudError(f"QAJEV_RUNNER={value!r} ({where}): use local, cloud or auto", EXIT_CONFIG)
-        return value, f"QAJEV_RUNNER from {where}"
     if getattr(args, "command", None) in ("run", "smoke") and getattr(args, "project", None):
         from . import project as project_mod
 
         try:
             proj = project_mod.load(args.project)
         except project_mod.ProjectError:
-            return "local", "default"  # the run itself reports the broken project
-        if proj.runner:
+            proj = None  # the run itself reports the broken project
+        if proj and proj.runner:
             return proj.runner, f"runner in {proj.config_path}"
+    value, where = setting("QAJEV_RUNNER", getattr(args, "env_file", None))
+    if value:
+        value = value.strip().lower()
+        if value not in RUNNER_SETTINGS:
+            raise CloudError(f"QAJEV_RUNNER={value!r} ({where}): use local, cloud, auto or dashboard", EXIT_CONFIG)
+        if value == "dashboard":
+            return dashboard_runner(getattr(args, "env_file", None))
+        return value, f"QAJEV_RUNNER from {where}"
     return "local", "default"
 
 
 def dashboard_url(env_file=None):
     return (setting("QAJEV_CLOUD_URL", env_file)[0] or DEFAULT_URL).rstrip("/")
+
+
+def dashboard_runner(env_file=None):
+    """The dashboard's "Where runs go by default", for QAJEV_RUNNER=dashboard: one look a minute. A dashboard that
+    cannot say keeps the run on this Mac, and the source says why. -> (runner, source)"""
+    url = dashboard_url(env_file)
+    hit = _dashboard_cache.get(url)
+    if hit and time.monotonic() - hit[0] < DASHBOARD_TTL_S:
+        return hit[1]
+    key, _ = agent_key()
+    if not key:
+        found = ("local", "QAJEV_RUNNER=dashboard, but no QAJev Cloud key: this Mac")
+    else:
+        try:
+            value = (Client(url, key, timeout=5).get("/api/v1/me") or {}).get("default_runner")
+            found = ((value, f"the dashboard's default ({url})") if value in RUNNERS
+                     else ("local", f"the dashboard ({url}) names no default runner: this Mac"))
+        except CloudError as e:
+            found = ("local", f"the dashboard did not answer ({e}): this Mac")
+    _dashboard_cache[url] = (time.monotonic(), found)
+    return found
 
 
 def _security(args):

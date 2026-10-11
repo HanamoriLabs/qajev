@@ -246,6 +246,15 @@ qajev run suites/local.yaml --runner cloud --serve dist:5173     # the suite ope
 QAJEV_RUNNER=auto qajev smoke https://shop.example/
 ```
 
+- **Switch with `qajev mode`.** `qajev mode cloud` sends this Mac's next runs to the cloud. `qajev mode local` keeps
+  them here, and the cloud gets nothing new (its warm machines go off when idle). `qajev mode auto` uses the cloud when
+  it can. `qajev mode dashboard` follows the dashboard's Settings page, "Where runs go by default", so a person can
+  switch every agent on this Mac from the dashboard (QAJev looks once a minute). `qajev mode` alone says where runs go
+  and why. It writes `QAJEV_RUNNER` in `~/.qajev/.env`; a `QAJEV_RUNNER` set in the shell still wins, and it warns.
+- **One project.** `qajev mode cloud --project shop` writes `runner = "cloud"` in that project's `project.toml`;
+  `qajev mode default --project shop` removes it. The order: `--runner`, then the project's `runner`, then this
+  Mac's mode, else this Mac.
+
 - **The key.** `QAJEV_CLOUD_KEY`, else macOS Keychain (service `qajev-cloud-agent`). QAJev never prints it.
   `QAJEV_CLOUD_URL` names another dashboard (default `https://cloud.qajev.com`). `qajev doctor` checks both.
 - **What it prints.** The run's address at once, its progress, then each test's outcome and reason, the gate and

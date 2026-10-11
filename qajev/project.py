@@ -365,3 +365,24 @@ def listing():
                         "envs": {k: v["base_url"] for k, v in p.envs.items()}, "objectives": len(p.objectives),
                         "reports": str(p.reports_dir)})
     return out
+
+
+def set_runner(ref, value):
+    """Where a project's runs go: `runner = "<value>"` at the top of its project.toml, or no line ("default": this
+    Mac's mode decides). Every other line stays as it is. -> the project (as loaded again)."""
+    import re  # noqa: PLC0415
+
+    proj = load(ref)
+    path = proj.config_path
+    lines = path.read_text(encoding="utf-8").splitlines()
+    first_table = next((i for i, line in enumerate(lines) if line.lstrip().startswith("[")), len(lines))
+    top = [line for line in lines[:first_table] if not re.match(r"\s*runner\s*=", line)]
+    if value != "default":
+        while top and not top[-1].strip():  # the new key sits right after the last top-level line
+            top.pop()
+        top.append(f'runner = "{value}"')
+        if first_table < len(lines):
+            top.append("")
+    rest = lines[first_table:]
+    path.write_text("\n".join(top + rest) + "\n", encoding="utf-8")
+    return load(ref)
