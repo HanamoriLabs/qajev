@@ -222,9 +222,11 @@ PROBE_JS = Template("""(async () => {
     for (const e of smallest) {
       if (!(e.checkVisibility ? e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) : true)
           || !fold(norm(e.innerText)).includes(want)) {
-        const g = e.closest('[data-qajev-guard]');  // hidden by QAJev itself: the result must say so (verse-workshop #302)
+        // Hidden by QAJev itself: the result must say so (verse-workshop #302).
+        const g = e.closest('[data-qajev-guard]');
         why = g && g.dataset.qajevGuard !== 'field'
-          ? "hidden by QAJev's guard (" + g.dataset.qajevGuard.slice(0, 80) + "); if it is safe, allow it in the suite: guard: {allow: [...]}"
+          ? "hidden by QAJev's guard (" + g.dataset.qajevGuard.slice(0, 80) + "); "
+            + 'if it is safe, allow it in the suite: guard: {allow: [...]}'
           : 'in the page but hidden';
         continue;
       }
