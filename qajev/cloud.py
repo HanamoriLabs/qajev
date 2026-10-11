@@ -12,6 +12,7 @@ The rules (José, 11 Oct):
   (CloudError: no key, no answer, a refused upload) still fails: it never falls back either.
 """
 
+import argparse
 import contextlib
 import hashlib
 import json
@@ -242,7 +243,7 @@ def _subparser(command):
     from .cli import build_parser
 
     parser = build_parser()
-    sub = next(a for a in parser._actions if a.dest == "command")
+    sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
     return sub.choices[command]
 
 
