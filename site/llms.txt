@@ -16,11 +16,14 @@ This file is for AI agents. If a person told you to "use QAJev" or "check qajev.
 
 ## 2. Install (once per machine)
 
-Needs macOS or Linux, Google Chrome or Chromium, and uv (it brings its own Python) or pipx with Python 3.12+.
+Needs macOS or Linux (on Windows: WSL) and Google Chrome or Chromium. The installer adds uv (which brings its own
+Python) when it is missing, then QAJev, and puts it on the PATH:
 
 ```bash
-uv tool install git+https://github.com/hanamorilabs/qajev
-# or: pipx install git+https://github.com/hanamorilabs/qajev
+curl -LsSf https://qajev.com/install.sh | sh
+# Windows, in PowerShell (installs it in WSL): irm https://qajev.com/install.ps1 | iex
+# with uv already there: uv tool install git+https://github.com/hanamorilabs/qajev
+# or: pipx install git+https://github.com/hanamorilabs/qajev  (Python 3.12+)
 ```
 
 Jev needs one API key, kept in `~/.qajev/.env` (ask the person for it; never invent or print keys):

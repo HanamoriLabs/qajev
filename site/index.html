@@ -173,6 +173,8 @@ section[id] { scroll-margin-top: 76px; }
 .install code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
 .install code::-webkit-scrollbar { display: none; }
 .install .dollar { color: var(--muted-dark); user-select: none; }
+.install-alt { margin: 8px 0 0; font: 13px/1.5 var(--mono); color: var(--muted-dark); }
+.install-alt code { color: inherit; white-space: nowrap; }
 .cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
 .agent-note { margin: 2px 0 0; font: 400 14px/1.45 var(--mono); color: var(--pale); }
 .agent-note a { color: #fff; }
@@ -435,9 +437,10 @@ h2 { margin-top: 14px; font-weight: 800; font-size: clamp(36px, 4.6vw, 64px); li
       <p class="lede">Describe what a person should be able to do, in plain English. <strong>Jev</strong>, a small and fast model, tries it: in a real Chrome on desktop and on a phone, in your Godot or Electron game, or in your app on the iOS Simulator or an Android emulator. QAJev then checks the result against what you expected, so a pass means it really happened.</p>
       <div class="actions">
         <div class="install" role="group" aria-label="Install command">
-          <code><span class="dollar">$ </span>uv tool install git+https://github.com/hanamorilabs/qajev</code>
-          <button class="copy" type="button" data-track="signup_started" aria-label="Copy the install command" data-copy="uv tool install git+https://github.com/hanamorilabs/qajev">Copy</button>
+          <code><span class="dollar">$ </span>curl -LsSf https://qajev.com/install.sh | sh</code>
+          <button class="copy" type="button" data-track="signup_started" aria-label="Copy the install command for macOS and Linux" title="Installs uv if it is missing, then QAJev" data-copy="curl -LsSf https://qajev.com/install.sh | sh">Copy</button>
         </div>
+        <p class="install-alt">macOS and Linux. It installs <a href="https://docs.astral.sh/uv/">uv</a> if you do not have it.<br>Windows, in PowerShell: <code>irm https://qajev.com/install.ps1 | iex</code> (QAJev runs in WSL).<br>Already have uv: <code>uv tool install git+https://github.com/hanamorilabs/qajev</code></p>
         <div class="cta-row">
           <a class="btn btn-hi" href="#start">Get started</a>
           <a class="btn btn-ghost" href="https://github.com/hanamorilabs/qajev/tree/HEAD/docs">Read the docs</a>
@@ -773,7 +776,7 @@ qajev play android:com.example.app</div>
           </div>
         </div>
         <ol class="cmds">
-          <li class="cmd"><small>install</small><code>uv tool install git+https://github.com/hanamorilabs/qajev</code><button class="copy" type="button" data-track="signup_started" aria-label="Copy the install command" data-copy="uv tool install git+https://github.com/hanamorilabs/qajev">Copy</button></li>
+          <li class="cmd"><small>install (macOS, Linux; on Windows: irm https://qajev.com/install.ps1 | iex)</small><code>curl -LsSf https://qajev.com/install.sh | sh</code><button class="copy" type="button" data-track="signup_started" aria-label="Copy the install command" title="Installs uv if it is missing, then QAJev" data-copy="curl -LsSf https://qajev.com/install.sh | sh">Copy</button></li>
           <li class="cmd"><small>add a key for Jev</small><code>mkdir -p ~/.qajev &amp;&amp; echo 'OPENROUTER_API_KEY=sk-or-...' &gt;&gt; ~/.qajev/.env</code><button class="copy" type="button" aria-label="Copy the key setup command" data-copy="mkdir -p ~/.qajev && echo 'OPENROUTER_API_KEY=sk-or-...' >> ~/.qajev/.env">Copy</button></li>
           <li class="cmd"><small>check your setup</small><code>qajev doctor</code><button class="copy" type="button" aria-label="Copy qajev doctor" data-copy="qajev doctor">Copy</button></li>
           <li class="cmd"><small>free crawl: errors, broken links, missing basics</small><code>qajev smoke http://localhost:3000</code><button class="copy" type="button" aria-label="Copy the smoke crawl command" data-copy="qajev smoke http://localhost:3000">Copy</button></li>
