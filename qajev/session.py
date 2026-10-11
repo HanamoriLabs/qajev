@@ -638,6 +638,10 @@ class Session:
             self.call("Page.removeScriptToEvaluateOnNewDocument", identifier=self.script_id)
         self.script_id = self.call("Page.addScriptToEvaluateOnNewDocument", source=source)["identifier"]
         self.guard_cfg = cfg
+        net = getattr(self, "net", None)
+        if net is not None:  # frames on another site run apart: netlog's link guards each before it runs
+            with contextlib.suppress(RuntimeError, TimeoutError):
+                net.guard_frames(source)
         try:
             self.evaluate(source)  # the current document too (re-arms in place if already guarded)
         except RuntimeError:
@@ -705,11 +709,11 @@ class Session:
 
     def frames_drained(self):
         """What the guard recorded inside the page's frames, each item with its frame's address, and under
-        "frames_not_observed" the address of each frame QAJev could not read. The top page cannot read an iframe on
-        another origin, so each frame's record is read in that frame (netlog's own link).
-        SHORTCUT: frames on another site (their own targets) are not read for block_list or blocked_writes: they are
-        listed as not observed instead. Trigger: before any readonly proof whose frame is on another site, attach to
-        them (Target.setAutoAttach) and read them as this tab's own frames are read."""
+        "frames_not_observed" the address of each frame QAJev could not read or guard. A same-site frame is read in
+        its own page world (the top page cannot read another origin); a frame on another site runs as a target of its
+        own, which netlog's link attached to and guarded before it ran, and is read through that link.
+        A frame on another site that link did not guard (attaching failed, or the frame started before the guard) is
+        named instead, unless guard.unguarded_frames accepts its host."""
         if self.net is None:
             return {}
         try:
@@ -721,8 +725,15 @@ class Session:
             node = todo.pop()
             urls[node["frame"]["id"]] = node["frame"].get("url", "")
             todo.extend(node.get("childFrames") or [])
-        got = {}
-        unread = self.frames_elsewhere({tree["frame"]["id"], *urls})
+        got, unread = {}, []
+
+        def keep(items, where):
+            for key, values in (items or {}).items():
+                for value in values or []:
+                    if isinstance(value, dict):
+                        value.setdefault("frame", where[:300])
+                    got.setdefault(key, []).append(value)
+
         if urls:
             try:
                 drained, missed = self.net.drain_frames(set(urls), DRAIN_JS)
@@ -730,11 +741,19 @@ class Session:
                 drained, missed = [], set(urls)
             unread += [urls[f] for f in missed]
             for frame, items in drained:
-                for key, values in (items or {}).items():
-                    for value in values or []:
-                        if isinstance(value, dict):
-                            value.setdefault("frame", urls.get(frame, "")[:300])
-                        got.setdefault(key, []).append(value)
+                keep(items, urls.get(frame, ""))
+        apart = self.frame_targets({tree["frame"]["id"], *urls})
+        if apart:
+            guarded = self.net.guarded_targets()
+            sessions = {guarded[t]: url for t, url in apart if t in guarded}
+            unread += [url for t, url in apart if t not in guarded]
+            try:
+                drained, missed = self.net.drain_sessions(set(sessions), DRAIN_JS)
+            except (RuntimeError, TimeoutError):
+                drained, missed = [], set(sessions)
+            unread += [sessions[c] for c in missed]
+            for child, items in drained:
+                keep(items, sessions.get(child, ""))
         accepted = {f["host"]: f["why"] for f in self.guard_opts.get("unguarded_frames") or ()}
         if accepted:  # reviewed exceptions: listed as accepted, and they never make a test harness
             from urllib.parse import urlsplit
@@ -747,9 +766,9 @@ class Session:
             got["frames_not_observed"] = [u[:300] for u in unread]
         return got
 
-    def frames_elsewhere(self, ours):
-        """The addresses of this page's frames that run as targets of their own (a frame on another site, under site
-        isolation), found through each iframe target's parent frame. This tab's link cannot read them."""
+    def frame_targets(self, ours):
+        """[(target id, address)] of this page's frames that run as targets of their own (a frame on another site,
+        under site isolation), found through each iframe target's parent frame, nested ones too."""
         try:
             targets = self.jev.cdp("Target.getTargets").get("targetInfos") or []
         except (RuntimeError, TimeoutError, AttributeError):
@@ -761,7 +780,7 @@ class Session:
             for t in frames:
                 if t.get("targetId") not in known and t.get("parentFrameId") in known:
                     known.add(t["targetId"])
-                    found.append(t.get("url") or "")
+                    found.append((t["targetId"], t.get("url") or ""))
                     grew = True
         return found
 

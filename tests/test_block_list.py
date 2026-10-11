@@ -220,9 +220,16 @@ def test_a_get_to_a_blocked_host_is_listed_with_its_method_frame_and_blocked(pro
 
 
 @live
-def test_a_frame_on_another_site_is_named_as_not_observed_not_shown_as_an_empty_list(cross_site_probe):
+def test_a_frame_on_another_site_is_guarded_and_read_like_the_pages_own(cross_site_probe):
+    """Chrome runs it as a target of its own. QAJev attaches to it before it runs (0.4.12): its POST is stopped and
+    listed with its frame, its GET is blocked and listed, and nothing reaches the blocked host."""
     probe, (page, frame, blocked) = cross_site_probe
-    assert probe.get("frames_not_observed") == [f"http://{CROSS_SITE}:{frame}/frame.html?k=secret"], probe
+    here = f"http://{CROSS_SITE}:{frame}/frame.html?k=secret"
+    assert [b for b in probe.get("blocked") or [] if b["method"] == "POST"] == [
+        {"method": "POST", "url": f"http://127.0.0.1:{blocked}/adjust/body.json", "frame": here}], probe.get("blocked")
+    assert probe.get("block_list") == [{"method": "GET", "url": f"http://127.0.0.1:{blocked}/adjust/body.json",
+                                        "frame": here, "blocked": True}]
+    assert not probe.get("frames_not_observed")
 
 
 # ---- the reports: each request on its own line, its frame named, no query string ----
@@ -281,9 +288,8 @@ def test_the_reports_name_each_frame_not_observed_without_its_query(tmp_path):
 
 
 @live
-@pytest.mark.xfail(strict=True, reason="known gap until 0.4.11: a frame on another site is its own target, and QAJev's "
-                                       "guard and block_urls do not reach it (12 Oct 2026)")
-def test_a_frame_on_another_site_still_cannot_reach_a_blocked_host(cross_site_probe):
+def test_a_frame_on_another_site_cannot_reach_a_blocked_host(cross_site_probe):
+    """The leak found on 12 Oct: on 0.4.11 and before, this frame's GET and POST reached the blocked server."""
     probe, (page, frame, blocked) = cross_site_probe
     assert not [r for r in Recorder.seen if r[0] == blocked], Recorder.seen
 
@@ -309,63 +315,9 @@ def test_a_run_without_such_a_frame_or_a_skipped_one_keeps_its_outcome():
     assert verdict.unguarded("skipped", "machine busy", ["http://tool.test/"]) == ("skipped", "machine busy")
 
 
-@live
-def test_a_new_test_does_not_inherit_the_last_tests_unguarded_frame(ports, browser):
-    """Leaving a page carries what its guard held to the next look. A frame the last test already named must not be
-    carried into the next test: test 2 (no frame on another site) ended as harness for test 1's frame (12 Oct)."""
-    from qajev import session as session_mod
-
-    page, _, _ = ports
-    s = None
-    try:
-        s, probe = loaded(ports, browser, "cross.html")
-        assert probe.get("frames_not_observed")  # test 1 names its own frame
-        s.begin_test()
-        s.navigate(f"http://127.0.0.1:{page}/page.html")  # test 2: a same-site frame only
-        assert not s.probe({})["probe"].get("frames_not_observed")
-    finally:
-        if s is not None:
-            s.close()
-        session_mod.stop_daemon()
-
-
-
 # ---- guard.unguarded_frames: a reviewed exception, by exact host ----
 
 ACCEPT_TOOL = [{"host": CROSS_SITE, "why": "the rig tool, reviewed"}]
-
-
-@live
-def test_an_accepted_host_is_listed_as_accepted_and_not_as_not_observed(ports, browser):
-    from qajev import session as session_mod
-
-    _, frame, _ = ports
-    s = None
-    try:
-        s, probe = loaded(ports, browser, "cross.html", unguarded_frames=ACCEPT_TOOL)
-        assert probe.get("frames_accepted") == [{"url": f"http://{CROSS_SITE}:{frame}/frame.html?k=secret",
-                                                 "why": "the rig tool, reviewed"}]
-        assert not probe.get("frames_not_observed")
-    finally:
-        if s is not None:
-            s.close()
-        session_mod.stop_daemon()
-
-
-@live
-def test_a_host_the_suite_did_not_accept_is_still_not_observed(ports, browser):
-    from qajev import session as session_mod
-
-    _, frame, _ = ports
-    s = None
-    try:
-        s, probe = loaded(ports, browser, "other.html", unguarded_frames=ACCEPT_TOOL)
-        assert probe.get("frames_not_observed") == [f"http://{OTHER_SITE}:{frame}/frame.html?k=secret"]
-        assert not probe.get("frames_accepted")
-    finally:
-        if s is not None:
-            s.close()
-        session_mod.stop_daemon()
 
 
 def test_an_accepted_frame_never_makes_a_test_harness():
@@ -408,3 +360,67 @@ def test_the_reports_list_an_accepted_frame_with_its_reason(tmp_path):
         assert ("Frame www.youtube-nocookie.com/embed/x: accepted: not guarded (town screen live stream)"
                 in text), name
         assert "secret" not in text
+
+
+
+# ---- a frame QAJev cannot attach to (the fallback): named, accepted by host, never inherited ----
+
+class FakeNet:
+    """netlog.Failures as frames_drained uses it: no same-site frames here, `guarded` the attached frame targets."""
+
+    def __init__(self, guarded=None, drained=None):
+        self.guarded, self.drained = guarded or {}, drained or []
+
+    def drain_frames(self, frames, expression):
+        return [], set()
+
+    def guarded_targets(self):
+        return dict(self.guarded)
+
+    def drain_sessions(self, sessions, expression):
+        return [d for d in self.drained if d[0] in sessions], set()
+
+
+def fake_session(net, targets, guard_opts=None, loader="L1"):
+    from types import SimpleNamespace
+
+    from qajev import session as session_mod
+
+    s = object.__new__(session_mod.Session)
+    s.net, s.guard_opts, s.carried, s.last_test_page = net, guard_opts or {}, {}, None
+    s.loader = loader
+    s.call = lambda method, **_: {"frameTree": {"frame": {"id": "MAIN", "loaderId": s.loader}}}
+    s.evaluate = lambda *_, **__: {}
+    s.jev = SimpleNamespace(cdp=lambda method, **_: {"targetInfos": [
+        {"targetId": t, "type": "iframe", "parentFrameId": "MAIN", "url": u} for t, u in targets]})
+    return s
+
+
+TWO = [("T1", "http://tool.test:8795/rig.html"), ("T2", "http://other.test:8795/x.html")]
+
+
+def test_frames_qajev_could_not_attach_to_are_named_and_an_accepted_host_is_listed_apart():
+    s = fake_session(FakeNet(), TWO, {"unguarded_frames": ACCEPT_TOOL})
+    got = s.frames_drained()
+    assert got["frames_accepted"] == [{"url": "http://tool.test:8795/rig.html", "why": "the rig tool, reviewed"}]
+    assert got["frames_not_observed"] == ["http://other.test:8795/x.html"]
+
+
+def test_an_attached_frame_is_read_with_its_address_and_never_named_as_not_observed():
+    post = {"method": "POST", "url": "http://127.0.0.1:8796/adjust/body.json"}
+    s = fake_session(FakeNet({"T1": "S1", "T2": "S2"}, [("S1", {"blocked": [dict(post)]})]), TWO)
+    got = s.frames_drained()
+    assert got["blocked"] == [{**post, "frame": "http://tool.test:8795/rig.html"}]
+    assert "frames_not_observed" not in got and "frames_accepted" not in got
+
+
+def test_a_new_test_does_not_inherit_the_last_tests_frames_but_a_later_page_names_its_own():
+    """Leaving a page carries what its guard held to the next look. In 0.4.10, test 2 ended as harness for a frame
+    on test 1's page."""
+    s = fake_session(FakeNet(), TWO[1:])
+    s.begin_test()  # test 2 starts on test 1's page (loader L1)
+    s.carry()  # navigating away from it
+    assert "frames_not_observed" not in s.carried
+    s.loader = "L2"  # a page this test opened
+    s.carry()
+    assert s.carried["frames_not_observed"] == ["http://other.test:8795/x.html"]
