@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.13: 12 Oct 2026
+
 - Each test lists what its frames said and asked for, so a framed tool that stalls shows why: `frame_console` (log,
   info, warn and debug lines, errors, exceptions, rejections) and `frame_requests` (each request that failed, or still
   waits after a second, with its state), each with the frame's address. The report shows the first 20 of each. The top
