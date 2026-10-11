@@ -377,10 +377,14 @@ def hidden_words(hidden, limit=3):
 
 
 def with_guard_note(outcome, reason, hidden):
-    """A stuck or harness result while the guard held controls back names them: the way forward may be one of them
-    (a tooltip's "buy" hid verse1's "Shop" button, and the stuck result read as a layout bug)."""
+    """A stuck, harness or fail result while the guard held controls back names them: the way forward may be one of
+    them (a tooltip's "buy" hid verse1's "Shop" button, and the stuck result read as a layout bug), and a check may
+    have measured one (a hidden "Roll back" read as display none)."""
     if outcome in {"stuck", "harness"} and hidden:
         return f"{reason}; guard hid: {hidden_words(hidden)}"
+    if outcome == "fail" and hidden:  # a hidden element is always reported (verse-workshop #302, 11 Oct)
+        return (f"{reason}; guard hid: {hidden_words(hidden)}; a check that reads a hidden control sees QAJev's "
+                "hiding, not the page")
     return reason
 
 

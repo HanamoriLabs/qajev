@@ -233,7 +233,12 @@ def test_a_stuck_or_harness_result_names_what_the_guard_held_back():
                      "'Card number' (secret field), 'Elsewhere' (off-site link: elsewhere.example) and 1 more")
     harness = V.with_guard_note("harness", "action budget spent", held[:1])
     assert harness == "action budget spent; guard hid: 'Shop Show clothes and gear you can buy' (danger: buy)"
-    assert V.with_guard_note("pass", "ok", held) == "ok" and V.with_guard_note("fail", "no", held) == "no"
+    assert V.with_guard_note("pass", "ok", held) == "ok"
+    # verse-workshop #302, 11 Oct: a js check measured a "Roll back" button the guard had hidden (display none) and the
+    # FAIL never said so. A hidden element is always reported, so a fail names it too.
+    fail = V.with_guard_note("fail", "js check: Roll back not dimmed off", held[:1])
+    assert fail == ("js check: Roll back not dimmed off; guard hid: 'Shop Show clothes and gear you can buy' "
+                    "(danger: buy); a check that reads a hidden control sees QAJev's hiding, not the page")
     assert V.with_guard_note("stuck", "Jev found no way forward", []) == "Jev found no way forward"
 
 
