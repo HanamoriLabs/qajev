@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.4: 11 Oct 2026
+
 - `qajev mode` switches where runs go: `qajev mode cloud` sends this Mac's next runs to QAJev Cloud, `qajev mode local`
   keeps them here, `qajev mode auto` uses the cloud when it can, and `qajev mode dashboard` follows the dashboard's
   "Where runs go by default" (looked up once a minute), so a person can switch every agent from the dashboard.
