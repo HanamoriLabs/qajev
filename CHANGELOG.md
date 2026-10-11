@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.3: 11 Oct 2026
+
 - Fixed: every QAJev browser run inside machine-lane failed at Chrome's start with "Exception occurred in
   preexec_fn". The lane runs at nice 10, QAJev lowered itself by 10 more, and on macOS every os.nice() call at nice
   20 raises EPERM. Now QAJev goes to nice 10 only when it runs above that priority and changes nothing at 10 or
