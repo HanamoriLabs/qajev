@@ -17,6 +17,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import subprocess
 import time
 import urllib.parse
@@ -306,6 +307,26 @@ def split_args(command, argv):
     return out
 
 
+# Files a served build never ships (Orchestrator, 11 Oct): env files, keys, credentials and a git folder.
+SECRET_NAMES = re.compile(r"^(\.env(\..+)?|\.dev\.vars(\..+)?|\.npmrc|\.netrc|\.pypirc|"
+                          r"id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|.*\.(pem|key|p12|pfx|jks|keystore)|"
+                          r".*service-account.*\.json|credentials.*\.json)$", re.I)
+
+
+def secrets_in(root):
+    """The paths under a served folder that look like secrets, relative to it (a .git folder counts once)."""
+    found = []
+    for f in sorted(root.rglob("*")):
+        rel = f.relative_to(root)
+        if ".git" in rel.parts:
+            if rel.parts[-1] == ".git":
+                found.append(rel.as_posix() + "/")
+            continue
+        if f.is_file() and SECRET_NAMES.match(f.name):
+            found.append(rel.as_posix())
+    return found
+
+
 def _serve_spec(serve, local_targets):
     """--serve DIR[:PORT] -> (folder, port). The port defaults to the port of the target on this Mac, else 8877."""
     folder, port = serve, None
@@ -315,6 +336,12 @@ def _serve_spec(serve, local_targets):
     root = Path(folder).expanduser()
     if not root.is_dir():
         raise CloudError(f"--serve {folder}: no such folder", EXIT_CONFIG)
+    found = secrets_in(root)
+    if found:
+        more = f" and {len(found) - 5} more" if len(found) > 5 else ""
+        raise CloudError(f"--serve {folder}: it holds {', '.join(found[:5])}{more}; a served folder goes to a cloud "
+                         "machine, so it must hold no secrets: ship a clean build (git archive), not a working copy",
+                         EXIT_CONFIG)
     ports = {urllib.parse.urlsplit(t).port for t in local_targets}
     if port is None:
         only = next(iter(ports)) if len(ports) == 1 else None
