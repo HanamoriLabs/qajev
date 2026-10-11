@@ -151,6 +151,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         result["blocked_writes"].extend(probe.get("blocked") or [])
         if "block_list" in probe:  # block_urls set: every request to a blocked address, even none
             result.setdefault("block_list_requests", []).extend(probe["block_list"])
+        for url in probe.get("frames_not_observed") or []:  # frames QAJev could not read: their lists say nothing
+            if url not in result.setdefault("frames_not_observed", []):
+                result["frames_not_observed"].append(url)
         for key, out in (("allowed", "allowed_writes"), ("dialogs", "dialogs")):  # what production let through, asked
             if probe.get(key):
                 result.setdefault(out, []).extend(probe[key])
@@ -346,6 +349,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                                              jev_done=session.agent.state.get("status") == "done")]
     if not (blame or "").startswith("blocked by the guard"):  # the blame already names what the guard hid
         reason = verdict.with_guard_note(outcome, reason, hidden)
+    outcome, reason = verdict.unguarded(outcome, reason, result.get("frames_not_observed"))
     return _finish(result, outcome, reason, started)
 
 

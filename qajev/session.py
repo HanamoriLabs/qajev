@@ -308,6 +308,30 @@ FIND_JS = Template("""(() => {
   return { x, y, secret, covered, over, tag: el.tagName };
 })()""")
 
+# click_at: the point $x, $y (CSS pixels) from the top-left corner of $selector's element (or of the viewport when it
+# is null), in view, and what the page has at that point. A frame element is the hit for any point inside its frame.
+AT_JS = Template("""(() => {
+  let x = $x, y = $y, el = null;
+  if ($selector !== null) {
+    el = document.querySelector($selector);
+    if (!el) return { error: 'no element matches ' + $selector };
+    if (el.dataset.qajevGuard) return { error: 'refused: the guard hid this control (' + el.dataset.qajevGuard + ')' };
+    el.scrollIntoView({ block: 'center', inline: 'center' });
+    const r = el.getBoundingClientRect();
+    if (x > r.width || y > r.height)
+      return { error: 'the point ' + x + ', ' + y + ' is outside ' + $selector + ' (' + Math.round(r.width) + ' x ' +
+               Math.round(r.height) + ')' };
+    x += r.x; y += r.y;
+  }
+  if (x < 0 || y < 0 || x > innerWidth || y > innerHeight)
+    return { error: 'the point ' + Math.round(x) + ', ' + Math.round(y) + ' is outside the viewport' };
+  const hit = document.elementFromPoint(x, y);
+  const covered = el !== null && !(hit && (el === hit || el.contains(hit)));
+  const over = hit ? hit.tagName.toLowerCase() + (hit.id ? '#' + hit.id : hit.classList.length ?
+    '.' + hit.classList[0] : '') : 'nothing';
+  return { x, y, covered, over };
+})()""")
+
 # Why a decision went stale, read before Jev looks again: Jev's freshness keys now (its pageKey and the target's
 # guard, as Browser.fresh compares them) and the first of Browser.act's target checks that fails.
 STALE_JS = Template("""(() => {
@@ -560,7 +584,10 @@ class Session:
         return "error" not in r and bool(r.get("value"))
 
     def minimize(self):
-        if self.headless or self.agent is None:  # a client's window stays up: a minimised page stops rendering
+        """Keep a visible run's window out of the way. The page still draws: Chrome's flags here
+        (--disable-backgrounding-occluded-windows, --disable-renderer-backgrounding) keep a minimized page visible,
+        with its animation frames running (measured on macOS, 12 Oct 2026)."""
+        if self.headless or self.agent is None:  # a client's window stays up
             return
         try:
             window = self.jev.cdp("Browser.getWindowForTarget", targetId=self.browser.target)["windowId"]
@@ -666,10 +693,12 @@ class Session:
             self.carried.setdefault(key, []).extend(items)
 
     def frames_drained(self):
-        """What the guard recorded inside the page's frames, each item with its frame's address. The top page cannot
-        read an iframe on another origin, so each frame's record is read in that frame (netlog's own link).
-        SHORTCUT: frames in this tab's own process only (same site, any port). A frame on another site runs as a target
-        of its own (site isolation) and is not read; attach to it (Target.setAutoAttach) when a run needs one."""
+        """What the guard recorded inside the page's frames, each item with its frame's address, and under
+        "frames_not_observed" the address of each frame QAJev could not read. The top page cannot read an iframe on
+        another origin, so each frame's record is read in that frame (netlog's own link).
+        SHORTCUT: frames on another site (their own targets) are not read for block_list or blocked_writes: they are
+        listed as not observed instead. Trigger: before any readonly proof whose frame is on another site, attach to
+        them (Target.setAutoAttach) and read them as this tab's own frames are read."""
         if self.net is None:
             return {}
         try:
@@ -681,20 +710,41 @@ class Session:
             node = todo.pop()
             urls[node["frame"]["id"]] = node["frame"].get("url", "")
             todo.extend(node.get("childFrames") or [])
-        if not urls:
-            return {}
         got = {}
-        try:
-            drained = self.net.drain_frames(set(urls), DRAIN_JS)
-        except (RuntimeError, TimeoutError):
-            return {}
-        for frame, items in drained:
-            for key, values in (items or {}).items():
-                for value in values or []:
-                    if isinstance(value, dict):
-                        value.setdefault("frame", urls.get(frame, "")[:300])
-                    got.setdefault(key, []).append(value)
+        unread = self.frames_elsewhere({tree["frame"]["id"], *urls})
+        if urls:
+            try:
+                drained, missed = self.net.drain_frames(set(urls), DRAIN_JS)
+            except (RuntimeError, TimeoutError):
+                drained, missed = [], set(urls)
+            unread += [urls[f] for f in missed]
+            for frame, items in drained:
+                for key, values in (items or {}).items():
+                    for value in values or []:
+                        if isinstance(value, dict):
+                            value.setdefault("frame", urls.get(frame, "")[:300])
+                        got.setdefault(key, []).append(value)
+        if unread:
+            got["frames_not_observed"] = [u[:300] for u in unread]
         return got
+
+    def frames_elsewhere(self, ours):
+        """The addresses of this page's frames that run as targets of their own (a frame on another site, under site
+        isolation), found through each iframe target's parent frame. This tab's link cannot read them."""
+        try:
+            targets = self.jev.cdp("Target.getTargets").get("targetInfos") or []
+        except (RuntimeError, TimeoutError, AttributeError):
+            return []
+        frames = [t for t in targets if t.get("type") == "iframe"]
+        known, found, grew = set(ours), [], True
+        while grew:  # a frame inside such a frame names that frame as its parent
+            grew = False
+            for t in frames:
+                if t.get("targetId") not in known and t.get("parentFrameId") in known:
+                    known.add(t["targetId"])
+                    found.append(t.get("url") or "")
+                    grew = True
+        return found
 
     def navigate(self, url, timeout=30.0):
         self.carry()
@@ -1017,6 +1067,37 @@ class Session:
             raise HookFailed((found or {}).get("error") or f"cannot locate {selector!r}")
         return found
 
+    def click_at(self, spec, timeout=2.0):
+        """A real click at a point: CSS pixels from the top-left corner of spec's selector, or of the viewport. Like
+        `click`, it waits for the point to hold still two looks in a row, and fails when something else covers it."""
+        selector = spec.get("selector")
+        point = spec
+        if "js" in spec:  # the point is known only at run time (a camera that moves): the expression gives it
+            got = self.evaluate(awaited(spec["js"]), timeout_ms=JS_WAIT_MS) or {}
+            point = got.get("value") if "error" not in got else None
+            if not isinstance(point, dict) or not all(
+                    isinstance(point.get(a), (int, float)) and not isinstance(point.get(a), bool) and point[a] >= 0
+                    for a in ("x", "y")):
+                said = got.get("error") or json.dumps(point)[:120]
+                raise HookFailed(f"click_at {selector or 'the viewport'}: its js must return {{x, y}}, two numbers "
+                                 f"of 0 or more; it gave {said}")
+        expression = AT_JS.substitute(selector=json.dumps(selector), x=json.dumps(point["x"]), y=json.dumps(point["y"]))
+        what = f"click_at {selector or 'the viewport'} {point['x']}, {point['y']}"
+        deadline, last = time.monotonic() + timeout, None
+        while True:
+            at = self.evaluate(expression, timeout_ms=3000) or {}
+            if at.get("error"):
+                raise HookFailed(f"{what}: {at['error']}")
+            if not at.get("covered") and last is not None and (at["x"], at["y"]) == (last["x"], last["y"]):
+                break
+            last = None if at.get("covered") else at
+            if time.monotonic() > deadline:
+                if at.get("covered"):
+                    raise HookFailed(f"{what}: the point is covered by {at.get('over')}")
+                break
+            time.sleep(0.1)
+        self.trusted_click(at["x"], at["y"])
+
     def settled(self, selector, timeout=2.0):
         """A click target scrolled into view, on top, and at the same spot two looks in a row: a fading splash, a
         panel still scrolling or growing as its images arrive moves or covers it for a moment (SideGame1, 6 Oct).
@@ -1049,6 +1130,8 @@ class Session:
         elif kind == "click":
             found = self.settled(value)
             self.trusted_click(found["x"], found["y"])
+        elif kind == "click_at":
+            self.click_at(value)
         elif kind == "fill":
             for selector, text in value.items():
                 found = self.find(selector)

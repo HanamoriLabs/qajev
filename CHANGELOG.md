@@ -4,6 +4,24 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- A `click_at` step: a real mouse click at a point, `{selector, x, y}` in CSS pixels from the element's top-left corner
+  (or the viewport's without `selector`). It reaches into an iframe, so a test can click a thing in a 3D view, where
+  `click`'s center depends on the camera (verse-games, 12 Oct). A point another element covers, or one outside the
+  element, fails and says why. `{selector, js}` takes the point from an expression on the top page that returns
+  `{x, y}`, for a point known only at run time.
+- Known, so nobody chases it again: a visible run minimizes its window after each page, and the page keeps drawing.
+  QAJev's Chrome flags (`--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding`) keep a
+  minimized page "visible", with its animation frames running (about 50 in 600 ms, measured on macOS, 12 Oct). A page
+  that stalls in a QAJev window stalls for another reason.
+- **Known gap (0.4.9 and every earlier version):** a frame on another site than the page runs as a target of its own
+  (Chrome's site isolation), and QAJev's read-only guard and `block_urls` do not reach it. Such a frame can send
+  writes and reach blocked addresses, even in a readonly run, on production too. Found 12 Oct with a live test: the
+  frame's GET and POST reached the blocked server. Frames on the page's own site (any port) are guarded. 0.4.11 guards
+  frames on other sites.
+- Until then, such a frame is named in `frames_not_observed`, the report says "Frame not observed: <address>. QAJev's
+  read-only guard and block_urls do not reach it, so it may send writes", and the test ends as harness in every mode,
+  never pass.
+
 ## 0.4.9: 12 Oct 2026
 
 - A run with `block_urls` lists every request to a blocked address, from the page and every frame in it:

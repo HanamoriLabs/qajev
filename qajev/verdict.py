@@ -376,6 +376,21 @@ def hidden_words(hidden, limit=3):
     return ", ".join(named) + more
 
 
+def unguarded(outcome, reason, frames):
+    """A frame on another site runs apart from the page (its own target), out of reach of QAJev's read-only guard and
+    of block_urls: it may send writes. A run with one is not proven read-only, so it is harness, naming the frames
+    (found 12 Oct 2026; every version to 0.4.10 leaves such a frame unguarded). -> (outcome, reason)."""
+    if not frames or outcome == "skipped":
+        return outcome, reason
+    from urllib.parse import urlsplit
+
+    where = ", ".join(f"{urlsplit(f).netloc}{urlsplit(f).path}" for f in frames[:3])
+    more = f" and {len(frames) - 3} more" if len(frames) > 3 else ""
+    note = (f"not proven read-only: QAJev's read-only guard and block_urls do not reach the frame on another site "
+            f"({where}{more}), so it may send writes")
+    return "harness", f"{note}; {reason}" if reason else note
+
+
 def with_guard_note(outcome, reason, hidden):
     """A stuck, harness or fail result while the guard held controls back names them: the way forward may be one of
     them (a tooltip's "buy" hid verse1's "Shop" button, and the stuck result read as a layout bug), and a check may

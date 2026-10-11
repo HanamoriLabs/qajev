@@ -175,24 +175,27 @@ class Failures(threading.Thread):
         return reply.get("result") or {}
 
     def drain_frames(self, frames, expression):
-        """`expression`'s value in the page world of each frame in `frames` (frame ids): [(frame id, value)].
-        Runtime is turned on at the first call only, so a page without frames never pays for it."""
+        """`expression`'s value in the page world of each frame in `frames` (frame ids): ([(frame id, value)], the
+        frame ids it could not read). Runtime is turned on at the first call only, so a page without frames never
+        pays for it."""
         if not self.runtime:
             self.ask("Runtime.enable")  # Chrome reports the existing contexts before it replies
             self.runtime = True
         with self.lock:
             targets = [(f, c) for f, c in self.contexts.items() if f in frames]
+        unread = set(frames) - {f for f, _ in targets}
         out = []
         for frame, context in targets:
             try:
                 r = self.ask("Runtime.evaluate", expression=expression, contextId=context, returnByValue=True,
                              timeout=3000)
             except (RuntimeError, TimeoutError):
+                unread.add(frame)
                 continue
             value = (r.get("result") or {}).get("value")
             if value:
                 out.append((frame, value))
-        return out
+        return out, unread
 
     def reason(self, url, wait=0.5):
         """Chrome's reason `url` failed, or None. Waits a moment: the page can hear of a failure first."""
