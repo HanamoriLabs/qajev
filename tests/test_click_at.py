@@ -11,7 +11,6 @@ same-origin page whose canvas records where it was clicked.
 import http.server
 import os
 import threading
-import time
 from functools import partial
 
 import pytest
@@ -132,27 +131,14 @@ def test_click_at_fails_when_its_js_does_not_return_a_point(page):
 
 
 @live
-def test_a_click_into_a_frame_right_after_the_page_loads_still_lands(port, browser):
-    """Chrome drops a click into an iframe sent within about 0.5 s of the page load: bare clicks at once landed 0 of
-    12, and 4 of 4 after 0.5 s (measured 12 Oct). The click every step uses (click, click_at) waits for that. Each try
-    is a fresh session, as each run starts one."""
-    from qajev import session as session_mod
-    from qajev.ledger import Ledger
+def test_a_click_into_a_frame_right_after_the_page_loads_still_lands():
+    """Chrome drops a click into an iframe sent within about 0.5 s of the page load. The steps run in a process of
+    their own: inside this one they landed on 0.4.10 too, on their own 0 of 12 (fixtures/frame_click_repro.py)."""
+    import subprocess
+    import sys
+    from pathlib import Path
 
-    session_mod.configure_env(browser["cdp_url"])
-    url, landed = f"http://127.0.0.1:{port}/page.html", []
-    try:
-        for _ in range(4):
-            s = session_mod.Session(Ledger(0.0), headless=False, hosts={f"127.0.0.1:{port}"})
-            try:
-                s.set_device({"width": 1280, "height": 900, "mobile": False, "scale": 1})
-                s.arm("readonly")
-                assert s.navigate(url) is None
-                s.trusted_click(160, 110)  # 40 + 120, 30 + 80: the frame's 120, 80
-                time.sleep(0.3)
-                landed.append(len(s.evaluate(CLICKS)))
-            finally:
-                s.close()
-    finally:
-        session_mod.stop_daemon()
-    assert landed == [1, 1, 1, 1]
+    script = Path(__file__).parent / "fixtures" / "frame_click_repro.py"
+    out = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=240)
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert out.stdout.strip().endswith("landed 12 of 12"), out.stdout + out.stderr[-1000:]
