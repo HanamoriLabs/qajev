@@ -191,6 +191,9 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
         for url in probe.get("frames_not_observed") or []:  # frames QAJev could not read: their lists say nothing
             if url not in result.setdefault("frames_not_observed", []):
                 result["frames_not_observed"].append(url)
+        for frame in probe.get("frames_accepted") or []:  # guard.unguarded_frames: reviewed, so never harness
+            if frame not in result.setdefault("frames_accepted", []):
+                result["frames_accepted"].append(frame)
         result["guard_hidden"] = max(result["guard_hidden"], probe.get("hidden") or 0)
         return observed
 

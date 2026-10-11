@@ -77,7 +77,8 @@ SIGNED_IN_KEYS = {"url_not", "text", "js"}
 # reduce: the tab tells pages the visitor prefers reduced motion (CSS media query and matchMedia), so sites that
 # honour it stop scroll-scrubbing, carousels and counters that otherwise keep changing under Jev. full: as-is.
 MOTIONS = ("reduce", "full")
-GUARD_KEYS = {"deny", "allow", "block_urls", "allow_requests", "redact_emails", "allow_secret_fields"}
+GUARD_KEYS = {"deny", "allow", "block_urls", "allow_requests", "redact_emails", "allow_secret_fields",
+              "unguarded_frames"}
 DEFAULT_BUDGET = {"actions": 20, "seconds": 90}
 
 
@@ -189,6 +190,28 @@ def _hooks(value, where):
         _wait_hook(hook, f"{where}[{i}]")
         _click_at_hook(hook, f"{where}[{i}]")
     return hooks
+
+
+HOST_NAME = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+")  # no wildcard, port or path
+
+
+def _unguarded_frames(value):
+    """guard.unguarded_frames: [{host, why}], frames on another site accepted without QAJev's guard (a reviewed
+    exception: the Orchestrator approves each). Exact host names only: a wildcard would accept hosts nobody reviewed."""
+    if value is None:
+        return
+    if not isinstance(value, list):
+        raise SuiteError("guard.unguarded_frames must be a list of {host, why}")
+    for i, item in enumerate(value):
+        where = f"guard.unguarded_frames[{i}]"
+        if not isinstance(item, dict) or set(item) != {"host", "why"}:
+            raise SuiteError(f"{where} must be {{host: <exact host name>, why: <the reason it is accepted>}}")
+        host, why = item["host"], item["why"]
+        if not isinstance(host, str) or not HOST_NAME.fullmatch(host):
+            raise SuiteError(f"{where}.host must be one exact host name in lower case, such as "
+                             "www.youtube-nocookie.com: no wildcard, scheme, port or path")
+        if not isinstance(why, str) or not why.strip():
+            raise SuiteError(f"{where}.why must say why this frame is accepted without the guard")
 
 
 def _click_at_hook(hook, where):
@@ -452,6 +475,7 @@ def parse(data, path=None, devices=None):
         raise SuiteError("base_url must be http(s)")
     guard = data.get("guard") or {}
     _unknown("guard", guard, GUARD_KEYS)
+    _unguarded_frames(guard.get("unguarded_frames"))
     if data.get("allow_destructive") not in (None, False, True):
         raise SuiteError("allow_destructive must be true or false")
     if data.get("allow_destructive"):  # a local dev host's delete, remove, refund... (check_safety refuses the rest)

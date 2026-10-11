@@ -340,8 +340,21 @@ QAJev reads and guards frames on the page's own site (any port). **Known gap, ev
 another site runs apart from the page (Chrome's site isolation), and QAJev's read-only guard and `block_urls` do not
 reach it. Such a frame can send writes and reach blocked addresses. From 0.4.10 it is named in `frames_not_observed`,
 the report says "Frame not observed: <address>. QAJev's read-only guard and block_urls do not reach it, so it may send
-writes", and the test's outcome is harness in every mode, because the run is not proven read-only. Version 0.4.11
-guards these frames.
+writes", and the test's outcome is harness in every mode, because the run is not proven read-only. A later version
+guards these frames (Target.setAutoAttach).
+
+A suite can accept one such frame by its exact host, with the reason:
+
+```yaml
+guard:
+  unguarded_frames:
+    - {host: www.youtube-nocookie.com, why: town screen live stream}
+```
+
+An accepted frame is still listed (`frames_accepted` in `report.json`; "Frame <address>: accepted: not guarded
+(<why>)" in the report), and it does not make the test harness. Any other frame on another site still does. Host names
+are exact: no wildcard, scheme, port or path. **An accepted host is a reviewed exception.** The Orchestrator approves
+each one. The agent that wrote the suite never adds one on its own.
 
 ## Multiplayer: several players at once
 

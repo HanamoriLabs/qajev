@@ -127,6 +127,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     from .session import GuardMissing, HookFailed, LeftSite
 
     started = time.monotonic()
+    if hasattr(session, "begin_test"):  # the last test's page: its frames were named under that test
+        session.begin_test()
     session.assists = []  # this scenario's own; a hook failing before Jev's loop must not inherit the last one's
     session.react_log, session.react_frames = [], 0  # frames and releases from react hooks, this scenario's own
     session.shot_dir = run_dir / "shots" if opts.shots and run_dir else None
@@ -154,6 +156,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         for url in probe.get("frames_not_observed") or []:  # frames QAJev could not read: their lists say nothing
             if url not in result.setdefault("frames_not_observed", []):
                 result["frames_not_observed"].append(url)
+        for frame in probe.get("frames_accepted") or []:  # guard.unguarded_frames: reviewed, so never harness
+            if frame not in result.setdefault("frames_accepted", []):
+                result["frames_accepted"].append(frame)
         for key, out in (("allowed", "allowed_writes"), ("dialogs", "dialogs")):  # what production let through, asked
             if probe.get(key):
                 result.setdefault(out, []).extend(probe[key])

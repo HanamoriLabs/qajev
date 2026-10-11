@@ -308,6 +308,12 @@ FIND_JS = Template("""(() => {
   return { x, y, secret, covered, over, tag: el.tagName };
 })()""")
 
+# Chrome drops a click into an iframe sent too soon after the page loads: bare clicks at once landed 0 of 12, and 4 of
+# 4 after 0.5 s (measured on macOS, Chrome 153, 12 Oct 2026). The frame's load event had already fired, and two
+# animation frames did not help, so there is no event to wait on yet.
+# SHORTCUT: a fixed wait. Revisit if a click into a frame is lost after it, or when Chrome exposes input readiness.
+FRAME_INPUT_S = 0.75
+
 # click_at: the point $x, $y (CSS pixels) from the top-left corner of $selector's element (or of the viewport when it
 # is null), in view, and what the page has at that point. A frame element is the hit for any point inside its frame.
 AT_JS = Template("""(() => {
@@ -524,6 +530,8 @@ class Session:
         self.last_stale = None
         self.net = None
         self.carried = {}  # what a page's guard recorded before the tab left it, for the next probe
+        self.loaded_at = 0.0  # when the last navigation or reload ended (a click into a frame waits FRAME_INPUT_S)
+        self.last_test_page = None  # the page the last test left this tab on (begin_test): its frames are named
         # Jev's agent and its Browser; a multiplayer client has a Tab and no agent (only Jev's own paths use one)
         self.agent: Any
         self.browser: Any
@@ -689,7 +697,10 @@ class Session:
             got = self.evaluate(DRAIN_JS, timeout_ms=3000) or {}
             for key, items in got.items():
                 self.carried.setdefault(key, []).extend(items or [])
+        leaving_last_test = self.last_test_page is not None and self._document() == self.last_test_page
         for key, items in self.frames_drained().items():
+            if leaving_last_test and key in ("frames_not_observed", "frames_accepted"):
+                continue  # the last test's page: that test named its frames
             self.carried.setdefault(key, []).extend(items)
 
     def frames_drained(self):
@@ -724,6 +735,14 @@ class Session:
                         if isinstance(value, dict):
                             value.setdefault("frame", urls.get(frame, "")[:300])
                         got.setdefault(key, []).append(value)
+        accepted = {f["host"]: f["why"] for f in self.guard_opts.get("unguarded_frames") or ()}
+        if accepted:  # reviewed exceptions: listed as accepted, and they never make a test harness
+            from urllib.parse import urlsplit
+
+            ok = [u for u in unread if (urlsplit(u).hostname or "") in accepted]
+            if ok:
+                got["frames_accepted"] = [{"url": u[:300], "why": accepted[urlsplit(u).hostname or ""]} for u in ok]
+            unread = [u for u in unread if u not in ok]
         if unread:
             got["frames_not_observed"] = [u[:300] for u in unread]
         return got
@@ -763,6 +782,7 @@ class Session:
             with contextlib.suppress(RuntimeError):  # navigating on: the next page's guard is judged in its turn
                 self.guard_settled()
         self.minimize()
+        self.loaded_at = time.monotonic()
         return None
 
     def reload(self, timeout=30.0):
@@ -778,6 +798,21 @@ class Session:
         if self.guard_cfg is not None:
             with contextlib.suppress(RuntimeError):
                 self.guard_settled()
+        self.loaded_at = time.monotonic()
+
+    def begin_test(self):
+        """A new test starts on this tab: the last test's page is marked, so leaving it does not name its frames
+        under this test (that test's own looks named them). Its blocked writes still carry on."""
+        self.carried.pop("frames_not_observed", None)
+        self.carried.pop("frames_accepted", None)
+        self.last_test_page = self._document()
+
+    def _document(self):
+        """The top document's loader id: the same while the tab shows the same page load."""
+        try:
+            return self.call("Page.getFrameTree")["frameTree"]["frame"].get("loaderId")
+        except (RuntimeError, TimeoutError, KeyError):
+            return None
 
     def observe(self):
         if self.agent is None:  # a multiplayer client: no Jev looks at it
@@ -898,6 +933,12 @@ class Session:
 
     # ---- direct steps (hooks): for forms Jev would re-type forever, resets, seeding ----
     def trusted_click(self, x, y):
+        with contextlib.suppress(RuntimeError, TimeoutError):  # a point on a frame: Chrome may not route it yet
+            wait = self.loaded_at + FRAME_INPUT_S - time.monotonic()
+            if wait > 0 and self.evaluate(
+                    f"(() => {{ const e = document.elementFromPoint({float(x)}, {float(y)}); "
+                    "return !!e && (e.tagName === 'IFRAME' || e.tagName === 'FRAME'); })()", timeout_ms=3000):
+                time.sleep(wait)
         for kind in ("mousePressed", "mouseReleased"):
             self.call("Input.dispatchMouseEvent", type=kind, x=x, y=y, button="left", clickCount=1)
 

@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- `guard: {unguarded_frames: [{host, why}]}`: a reviewed exception for a frame on another site, by exact host name.
+  It is listed as "accepted: not guarded" with its reason, and it does not make the test harness. Any other such
+  frame still does. Verse's town screen embeds YouTube, so every Verse load was harness under 0.4.10.
+- Fixed: a test no longer inherits the last test's frame on another site. In 0.4.10, test 2 of a suite ended as
+  harness for a frame on test 1's page.
+- Fixed: a click into an iframe right after the page loads is no longer lost. Chrome dropped such clicks for about
+  0.5 s after the load: 0 of 12 at once, 4 of 4 after 0.5 s. `click` and `click_at` now wait until 0.75 s after the
+  load when their point is on a frame.
 ## 0.4.10: 12 Oct 2026
 
 - A `click_at` step: a real mouse click at a point, `{selector, x, y}` in CSS pixels from the element's top-left corner
