@@ -294,6 +294,8 @@ def markdown(data):
                          f"{_cell(first.get('method'))} {_cell(_where(first.get('url')))}")
         for w in r.get("allowed_writes") or []:  # every write production let through (allow_requests) is listed
             lines.append(f"- Allowed write: {_cell(w.get('method'))} {_cell(_where(w.get('url')))}")
+        for url in r.get("frames_not_observed") or []:  # its writes and requests are in no list: never "none"
+            lines.append("- " + _cell(report_html.NOT_OBSERVED.format(where=_where(url))))
         listed, shown = r.get("block_list_requests") or [], report_html.BLOCK_LIST_SHOWN
         for q in listed[:shown]:  # what the page tried to reach on block_urls
             lines.append(f"- Block list: {_cell(q.get('method'))} {_cell(_where(q.get('url')))}, "

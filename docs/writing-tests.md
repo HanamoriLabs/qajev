@@ -227,7 +227,13 @@ For long forms or setup, drive the page directly and let Jev do the decisions:
 ```
 
 Hooks: `js`, `click` (a CSS selector: scrolled into view, then clicked once it is on top and still, waiting up to
-2 s for a splash or a settling panel; a target still covered fails naming what covers it), `fill`
+2 s for a splash or a settling panel; a target still covered fails naming what covers it), `click_at` (a real
+click at a point: `{selector: "iframe#view", x: 120, y: 80}` is CSS pixels from the element's top-left corner, and
+without `selector` the pixels are the viewport's. It reaches into an iframe, such as a WebGL canvas, and a point that
+something else covers, or that lies outside the element, fails naming why. When the point is known only at run time,
+`{selector: "iframe#view", js: "window.findBench()"}` takes it from an expression that returns `{x, y}` (it may await).
+The expression runs on the top page: it can read a same-origin frame through `contentWindow`, not a cross-origin
+one), `fill`
 (`{selector: text}`), `navigate`, `wait_for` (JavaScript that must turn
 true, within `timeout` seconds: 15 by default, at most 300, e.g. `{js: "window.ready", timeout: 60}`; a Promise counts by what it resolves to; a wait, unlike a check, holds on any truthy value), `key` (a real key press, below), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
 cookies and storage), and `command` (a shell command, only with `--allow-commands`). Hooks refuse to click dangerous controls or fill password fields on a real site.
@@ -329,6 +335,13 @@ With `block_urls`, each test's result lists every request the page or any frame 
 never reaches the network, so it is not in that list: it is in `blocked_writes`, which now holds the writes stopped
 inside frames too, each with its `frame`. Together they show a GET (information) apart from a save (a POST). The report
 lists the first 20 as "Block list" lines.
+
+QAJev reads and guards frames on the page's own site (any port). **Known gap, every version to 0.4.10:** a frame on
+another site runs apart from the page (Chrome's site isolation), and QAJev's read-only guard and `block_urls` do not
+reach it. Such a frame can send writes and reach blocked addresses. From 0.4.10 it is named in `frames_not_observed`,
+the report says "Frame not observed: <address>. QAJev's read-only guard and block_urls do not reach it, so it may send
+writes", and the test's outcome is harness in every mode, because the run is not proven read-only. Version 0.4.11
+guards these frames.
 
 ## Multiplayer: several players at once
 

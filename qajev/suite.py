@@ -49,7 +49,8 @@ def wanted_devices(explicit=None):
     for name in names:
         _device(name, "devices")
     return names or list(DEFAULT_DEVICES)
-HOOK_KINDS = {"js", "fill", "click", "navigate", "wait_for", "key", "react", "sleep", "command", "reload", "pad"}
+HOOK_KINDS = {"js", "fill", "click", "click_at", "navigate", "wait_for", "key", "react", "sleep", "command", "reload",
+              "pad"}
 EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
                "looks", "across", "says"}
 # The checks only their author can describe, by what `says` gives them in plain words (the test plan, 6 Oct)
@@ -186,7 +187,31 @@ def _hooks(value, where):
             raise SuiteError(f"{where}[{i}] must be one of {sorted(HOOK_KINDS)}, e.g. {{js: '...'}}")
         _key_hook(hook, f"{where}[{i}]")
         _wait_hook(hook, f"{where}[{i}]")
+        _click_at_hook(hook, f"{where}[{i}]")
     return hooks
+
+
+def _click_at_hook(hook, where):
+    """click_at: {selector?, x, y}: CSS pixels from the element's top-left corner, or viewport pixels without one; or
+    {selector?, js}: an expression on the top page that returns that {x, y} at run time."""
+    if "click_at" not in hook:
+        return
+    spec = hook["click_at"]
+    point = {"x", "y"} <= set(spec) if isinstance(spec, dict) else False
+    if (not isinstance(spec, dict) or set(spec) - {"selector", "x", "y", "js"} or point == ("js" in spec)
+            or ("js" in spec and set(spec) & {"x", "y"})):
+        raise SuiteError(f"{where}.click_at must be {{x: <px>, y: <px>}} or {{js: <expression returning {{x, y}}>}}, "
+                         "with an optional selector: CSS pixels from the element's top-left corner, or from the "
+                         "viewport's without a selector")
+    if "js" in spec:
+        if not isinstance(spec["js"], str) or not spec["js"].strip():
+            raise SuiteError(f"{where}.click_at.js must be a JavaScript expression that returns {{x, y}}")
+    for axis in ("x", "y") if point else ():
+        v = spec[axis]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
+            raise SuiteError(f"{where}.click_at.{axis} must be a number of CSS pixels, 0 or more")
+    if "selector" in spec and (not isinstance(spec["selector"], str) or not spec["selector"].strip()):
+        raise SuiteError(f"{where}.click_at.selector must be a CSS selector")
 
 
 WAIT_MAX_S = 300
@@ -333,6 +358,7 @@ def _steps(value, names, where):
             if not isinstance(hook, dict) or len(hook) != 1 or next(iter(hook)) not in CLIENT_HOOK_KINDS:
                 raise SuiteError(f"{at} needs one hook, one of {sorted(CLIENT_HOOK_KINDS)}")
             _key_hook(hook, at)
+            _click_at_hook(hook, at)
             who = names if kind == "all" else _list(step["client"], f"{at}.client")
             unknown = [w for w in who if w not in names]
             if unknown:

@@ -188,6 +188,9 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
         if "block_list" in probe:  # block_urls set: every request to a blocked address, even none
             result.setdefault("block_list_requests", []).extend(
                 dict(r, client=client.name) for r in probe["block_list"])
+        for url in probe.get("frames_not_observed") or []:  # frames QAJev could not read: their lists say nothing
+            if url not in result.setdefault("frames_not_observed", []):
+                result["frames_not_observed"].append(url)
         result["guard_hidden"] = max(result["guard_hidden"], probe.get("hidden") or 0)
         return observed
 
@@ -304,6 +307,7 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
     not_run = [] if stop == "checked" else [_label(n, s) for n, s in enumerate(scenario.steps, 1) if n > at]
     not_run += [] if final_done else ["the final checks"]
     outcome, reason = verdict.classify(stop, checks, has_checks=has, stop_detail=detail, not_run=not_run)
+    outcome, reason = verdict.unguarded(outcome, reason, result.get("frames_not_observed"))
     result.update(outcome=outcome, reason=reason, stop_detail=detail, not_run=not_run,
                   seconds=round(time.monotonic() - started, 2))
     return result
