@@ -166,10 +166,10 @@ def site(tmp_path, files=2):
 
 @pytest.mark.parametrize("argv, said", [
     (["check", "https://shop.example/", "--profile", "work"], "signed-in runs stay on this Mac"),
-    (["check", "http://127.0.0.1:3000/"], "cannot reach this Mac's 127.0.0.1; ship the build with --serve"),
-    (["check", "http://localhost:5173/x"], "cannot reach this Mac's 127.0.0.1"),
-    (["check", "http://[::1]:8000/"], "cannot reach this Mac's 127.0.0.1"),
-    (["smoke", "http://shop.localhost/"], "cannot reach this Mac's 127.0.0.1"),
+    (["check", "http://127.0.0.1:3000/", "--mode", "mutate"], "the tunnel to this Mac is read-only"),
+    (["check", "http://127.0.0.1/"], "a dev server port from 1024 to 65535"),
+    (["check", "http://[::1]:8000/"], "the tunnel reaches this Mac's 127.0.0.1 or localhost only"),
+    (["smoke", "http://shop.localhost:8000/"], "the tunnel reaches this Mac's 127.0.0.1 or localhost only"),
     (["play", "games/boss"], "the cloud does not take `play` runs yet"),
     (["check", "https://shop.example/", "--cdp-url", "http://127.0.0.1:9222"], "--cdp-url"),
     (["check", "https://shop.example/", "--real-devices", "ios"], "--real-devices"),
@@ -181,11 +181,35 @@ def test_cloud_refuses_what_must_stay_here(dash, local, capsys, argv, said):
     assert dash.calls == [] and local == []
 
 
-def test_a_local_suite_target_is_refused_and_a_refusal_in_json_says_so(dash, local, capsys, tmp_path):
-    path = suite_file(tmp_path, base="http://127.0.0.1:4000")
-    assert cli.main(["run", str(path), "--runner", "cloud", "--json"]) == cli.EXIT_CONFIG
+def test_a_run_on_this_macs_dev_server_goes_through_the_tunnel(dash, local, capsys, tmp_path):
+    # QAJev Cloud 11 Oct (José: "Tunnel first, then a day"): the dispatcher on this Mac opens a read-only tunnel to
+    # one dev server port, so most local runs can move to the cloud.
+    assert cli.main(["check", "http://127.0.0.1:3000/shop", "--runner", "cloud"]) == 0
+    assert dash.created()["tunnel"] == {"port": 3000} and "serve" not in dash.created()
+    path = suite_file(tmp_path, base="http://localhost:4000")
+    assert cli.main(["run", str(path), "--runner", "cloud"]) == 0
+    assert [b["tunnel"] for m, p, b in dash.calls if m == "POST" and p == "/api/v1/runs"][-1] == {"port": 4000}
+    assert local == []
+
+
+def test_a_public_target_needs_no_tunnel_and_a_shipped_build_never_gets_one(dash, local, tmp_path):
+    assert cli.main(["check", "https://shop.example/", "--runner", "cloud"]) == 0
+    assert "tunnel" not in dash.created()
+    built = site(tmp_path)
+    assert cli.main(["check", "http://127.0.0.1:8877/", "--serve", str(built), "--runner", "cloud"]) == 0
+    sent = [b for m, p, b in dash.calls if m == "POST" and p == "/api/v1/runs"][-1]
+    assert sent["serve"] == {"path": "site", "port": 8877} and "tunnel" not in sent
+
+
+def test_a_suite_that_writes_or_opens_two_ports_stays_here_and_json_says_why(dash, local, capsys, tmp_path):
+    writes = suite_file(tmp_path, base="http://127.0.0.1:4000", extra="mode: mutate\n")
+    assert cli.main(["run", str(writes), "--runner", "cloud", "--json"]) == cli.EXIT_CONFIG
     out = json.loads(capsys.readouterr().out)
-    assert out["runner"] == "cloud" and "127.0.0.1" in out["reason"] and out["exit_code"] == 3
+    assert out["runner"] == "cloud" and "read-only" in out["reason"] and out["exit_code"] == 3
+    two = suite_file(tmp_path, base="http://127.0.0.1:4000", name="two.yaml",
+                     extra="hosts: [127.0.0.1:4000, 127.0.0.1:5000]\n")
+    assert cli.main(["run", str(two), "--runner", "cloud"]) == cli.EXIT_CONFIG
+    assert "one dev server per run" in capsys.readouterr().err
     assert dash.calls == [] and local == []
 
 
@@ -220,11 +244,11 @@ def test_a_key_never_travels_in_clear_text(local, capsys, monkeypatch):
 # --runner auto: here only what the cloud may not take, with one line why; a cloud failure is still a failure
 
 
-def test_auto_runs_a_signed_in_run_and_a_local_target_here_saying_why(dash, local, capsys):
+def test_auto_runs_a_signed_in_run_and_a_writing_run_here_saying_why(dash, local, capsys):
     assert cli.main(["check", "https://shop.example/", "--profile", "work", "--runner", "auto"]) == 0
-    assert cli.main(["check", "http://127.0.0.1:3000/", "--runner", "auto"]) == 0
+    assert cli.main(["check", "http://127.0.0.1:3000/", "--mode", "mutate", "--runner", "auto"]) == 0
     err = capsys.readouterr().err
-    assert "signed-in runs stay on this Mac" in err and "cannot reach this Mac's 127.0.0.1" in err
+    assert "signed-in runs stay on this Mac" in err and "the tunnel to this Mac is read-only" in err
     assert len(local) == 2 and dash.calls == []
 
 
@@ -456,13 +480,13 @@ def test_mcp_cloud_refuses_and_auto_runs_here_with_a_note(dash, monkeypatch):
         return {"gate": "PASS", "run_dir": "/runs/x", "scenarios": []}
 
     monkeypatch.setattr(mcp_server, "_run_report", here)
-    with pytest.raises(ToolError, match="cannot reach this machine's|cannot reach this Mac's"):
-        asyncio.run(mcp_server.qa_check("http://127.0.0.1:3000/", None, runner="cloud"))
+    with pytest.raises(ToolError, match="the tunnel to this Mac is read-only"):
+        asyncio.run(mcp_server.qa_check("http://127.0.0.1:3000/", None, runner="cloud", mode="mutate"))
     with pytest.raises(ToolError, match="signed-in runs stay"):
         asyncio.run(mcp_server.qa_check("https://shop.example/", None, runner="cloud", profile="work"))
     assert seen == [] and dash.calls == []
-    out = asyncio.run(mcp_server.qa_check("http://127.0.0.1:3000/", None, runner="auto"))
-    assert "127.0.0.1" in out["runner_note"] and "--runner" not in seen[0] and dash.calls == []
+    out = asyncio.run(mcp_server.qa_check("http://127.0.0.1:3000/", None, runner="auto", mode="mutate"))
+    assert "read-only" in out["runner_note"] and "--runner" not in seen[0] and dash.calls == []
     with pytest.raises(ToolError, match="runner must be"):
         asyncio.run(mcp_server.qa_check("https://shop.example/", None, runner="mars"))
 

@@ -231,6 +231,7 @@ class Plan:
     files: list = field(default_factory=list)  # [(remote path, local Path)]
     serve_root: Path | None = None
     port: int | None = None
+    tunnel_port: int | None = None  # this Mac's dev server port, reached through the dispatcher's read-only tunnel
     project: str | None = None  # the project's name, sent when the dashboard knows it
     model: str | None = None
     sees_screen: bool | None = None
@@ -290,6 +291,24 @@ def _serve_spec(serve, local_targets):
         raise CloudError(f"--serve serves the build on the cloud machine's 127.0.0.1:{port}, but the run opens "
                          f"{wrong[0]}: use port {port} there, or give --serve DIR:PORT", EXIT_CONFIG)
     return root.resolve(), port
+
+
+def _tunnel_port(local_targets, writes):
+    """The one dev server port on this Mac a cloud run reaches through the dispatcher's read-only tunnel (QAJev Cloud,
+    11 Oct). Raises NotAllowed for what the tunnel cannot carry: the run stays on this Mac."""
+    if writes:
+        raise NotAllowed("the run writes to this Mac's dev server, and the tunnel to this Mac is read-only")
+    hosts = {(urllib.parse.urlsplit(t).hostname or "").lower() for t in local_targets}
+    if hosts - {"127.0.0.1", "localhost"}:
+        raise NotAllowed("the tunnel reaches this Mac's 127.0.0.1 or localhost only, not "
+                         f"{sorted(hosts - {'127.0.0.1', 'localhost'})[0]}")
+    ports = {urllib.parse.urlsplit(t).port or 80 for t in local_targets}
+    if len(ports) > 1:
+        raise NotAllowed(f"the run opens {len(ports)} ports on this Mac; the tunnel reaches one dev server per run")
+    port = ports.pop()
+    if not 1024 <= port <= 65535:
+        raise NotAllowed(f"port {port}: the tunnel takes a dev server port from 1024 to 65535")
+    return port
 
 
 def plan(args):
@@ -354,8 +373,10 @@ def plan(args):
         raise NotAllowed("signed-in runs stay on this Mac (the run signs in with an account)")
     local_targets = [t for t in targets if t and config.is_loopback(t)]
     serve = getattr(args, "serve", None)
+    tunnel_port = None
     if local_targets and not serve:
-        raise NotAllowed("a cloud machine cannot reach this Mac's 127.0.0.1; ship the build with --serve DIR[:PORT]")
+        writes = getattr(args, "mode", None) == "mutate" or (cmd == "run" and not project_name and suite.mutates)
+        tunnel_port = _tunnel_port(local_targets, writes)
     serve_root, port = _serve_spec(serve, local_targets) if serve else (None, None)
     warnings = []
     plan_path = args.plan.expanduser() if getattr(args, "plan", None) else (
@@ -384,7 +405,7 @@ def plan(args):
     from .jobs import describe_argv
 
     return Plan(kind=cmd, args=forwarded, name=describe_argv(args.argv)[:160], files=files, serve_root=serve_root,
-                port=port, project=project_name, model=getattr(args, "model", None),
+                port=port, tunnel_port=tunnel_port, project=project_name, model=getattr(args, "model", None),
                 sees_screen=True if getattr(args, "vision", None) else None, warnings=warnings)
 
 
@@ -451,7 +472,8 @@ def submit(client, plan):
                 "name": plan.name}
         project = _known_project(client, plan.project) if plan.project else None
         for key, value in (("model", plan.model), ("sees_screen", plan.sees_screen), ("project", project),
-                           ("serve", {"path": "site", "port": plan.port} if plan.serve_root else None)):
+                           ("serve", {"path": "site", "port": plan.port} if plan.serve_root else None),
+                           ("tunnel", {"port": plan.tunnel_port} if plan.tunnel_port else None)):
             if value is not None:
                 body[key] = value
         created = client.post("/api/v1/runs", body) or {}

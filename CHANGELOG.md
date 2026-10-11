@@ -12,8 +12,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - Runs can go to QAJev Cloud instead of this Mac: `--runner cloud|local|auto` on `check`, `run` (a suite or a
   project) and `smoke`, and `runner` on `qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run`. `local` is the
   default and works as before. `cloud` sends the run or fails with the reason; it never runs it here instead. It
-  refuses a signed-in run, a target on this Mac's 127.0.0.1 without `--serve DIR[:PORT]` (which ships the built
-  site), and `play`. `auto` runs those here, with one line saying why. A cloud failure (no key, no answer, a refused
+  refuses a signed-in run, a run that writes to a dev server on this Mac, and `play`. A read-only run on one
+  127.0.0.1 or localhost port goes through QAJev Cloud's read-only tunnel to this Mac; `--serve DIR[:PORT]` ships a
+  built site instead. `auto` runs those here, with one line saying why. A cloud failure (no key, no answer, a refused
   upload, a stopped run, a wait that runs out) is never run here either. The default comes from `QAJEV_RUNNER` (the
   shell, then `~/.qajev/.env`), then `runner` in project.toml. `--model` picks the cloud run's model. The run's
   address shows at once; `--json` prints one object with the gate, each test's reason and the report's address.

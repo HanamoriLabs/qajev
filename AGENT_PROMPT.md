@@ -92,8 +92,9 @@ and say what they are waiting for. Never start a second copy of a run because th
 `runner: "cloud"` (MCP) or `--runner cloud` (CLI) sends `qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run`
 to QAJev Cloud instead of this machine. `"auto"` uses the cloud when it can. The default is `QAJEV_RUNNER`, else
 local. A cloud run never falls back to this machine: when it cannot go, it is refused with the reason. Then fix
-the reason; do not rerun it here unless the person says so. A signed-in run (`profile`) stays here. A site on this
-machine's `127.0.0.1` needs its built folder shipped: `serve: "dist"` (CLI `--serve dist[:PORT]`). A cloud run's id
+the reason; do not rerun it here unless the person says so. A signed-in run (`profile`) stays here. A dev server on
+this machine's `127.0.0.1` or `localhost` (one port, 1024 to 65535) is reached through QAJev Cloud's read-only tunnel;
+a run that writes to it stays here. Or ship the built folder: `serve: "dist"` (CLI `--serve dist[:PORT]`). A cloud run's id
 starts with `r_`: `qa_job` and `qa_stop` take it. Tell the person the run's `url` and `report_url`.
 
 ### Rules

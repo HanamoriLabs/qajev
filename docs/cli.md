@@ -257,8 +257,12 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
 - **What stays on this Mac.** `--runner cloud` refuses these, with the reason and exit `3`, and runs nothing here.
   `--runner auto` runs them here, with one line saying why:
   - a signed-in run: `--profile`, or a suite or project that signs in with an account;
-  - a target on this Mac (`127.0.0.1`, `localhost`, `::1`, `*.localhost`) without `--serve`: a cloud machine cannot
-    reach it. Ship the built site with `--serve DIR[:PORT]`;
+  - a run that writes to a dev server on this Mac (`--mode mutate`, or a suite with `mode: mutate`): the tunnel to
+    this Mac is read-only;
+  - a target on this Mac the tunnel cannot carry: `::1` or a `*.localhost` name, a port below 1024, or two ports in
+    one run. A read-only run on one `127.0.0.1` or `localhost` port goes to the cloud: the dispatcher on this Mac
+    opens a read-only tunnel to that port for the run (only GET, HEAD and OPTIONS pass; WebSockets do not). Or ship
+    the built site with `--serve DIR[:PORT]`;
   - `play` (games, native and mobile apps), `--real-devices`, `--cdp-url` and `--allow-commands`.
 - **A cloud failure never runs here instead**, also with `auto`: no key, no answer from the dashboard (exit `3` or
   `4`), a refused upload (QAJev stops that run), a run stopped on the dashboard, or a wait that runs out

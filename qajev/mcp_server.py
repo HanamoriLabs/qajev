@@ -394,8 +394,9 @@ async def qa_check(
     Returns the report with a gate and findings.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
     runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot
-    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a site on this machine's
-    127.0.0.1 runs here, and runner_note says why). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
+    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a
+    dev server here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only
+    tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
     site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud run's
     decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
     background returns its id (r_...) and address at once.
@@ -469,8 +470,9 @@ async def qa_run_suite(
     allow_destructive: show delete/remove/refund/cancel... controls (every host a local dev host, or refused).
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
     runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot
-    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a site on this machine's
-    127.0.0.1 runs here, and runner_note says why). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
+    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a
+    dev server here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only
+    tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
     site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud run's
     decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
     background returns its id (r_...) and address at once.
@@ -539,8 +541,9 @@ async def qa_smoke(
     a design-consistency comparison across pages; they never change the gate.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
     runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot
-    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a site on this machine's
-    127.0.0.1 runs here, and runner_note says why). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
+    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a
+    dev server here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only
+    tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
     site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud run's
     decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
     background returns its id (r_...) and address at once.
@@ -617,8 +620,9 @@ async def qa_project_run(
     controls (a local dev env only).
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
     runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot
-    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a site on this machine's
-    127.0.0.1 runs here, and runner_note says why). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
+    go, never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a
+    dev server here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only
+    tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a built
     site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud run's
     decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
     background returns its id (r_...) and address at once.
