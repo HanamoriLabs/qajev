@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.10: 12 Oct 2026
+
 - A `click_at` step: a real mouse click at a point, `{selector, x, y}` in CSS pixels from the element's top-left corner
   (or the viewport's without `selector`). It reaches into an iframe, so a test can click a thing in a 3D view, where
   `click`'s center depends on the camera (verse-games, 12 Oct). A point another element covers, or one outside the
