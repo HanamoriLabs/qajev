@@ -96,9 +96,10 @@ The load gate only matters on shared or busy machines; set `QAJEV_LOAD_HIGH=0` t
 
 | Variable | Is | Default |
 |---|---|---|
-| `QAJEV_RUNNER` | where `check`, `run`, `smoke` and `play` go: `local` (this Mac), `cloud` (QAJev Cloud, never this Mac) or `auto` (the cloud when it can, else this Mac, saying why). `--runner` wins; a project's `runner` comes after it ([CLI](cli.md#qajev-cloud-where-a-run-goes)) | `local` |
+| `QAJEV_RUNNER` | this Mac's mode: where `check`, `run`, `smoke` and `play` go: `local` (this Mac), `cloud` (QAJev Cloud, never this Mac), `auto` (the cloud when it can, else this Mac, saying why) or `dashboard` (follow the dashboard's "Where runs go by default"). `qajev mode` sets it. `--runner` wins, then a project's `runner` ([CLI](cli.md#qajev-cloud-where-a-run-goes)) | `local` |
 | `QAJEV_CLOUD_KEY` | the QAJev Cloud agent key. Without it QAJev reads macOS Keychain, service `qajev-cloud-agent`. Never printed | Keychain |
 | `QAJEV_CLOUD_URL` | the dashboard (https only) | `https://cloud.qajev.com` |
+| `QAJEV_CLOUD_HOLD` | comma-separated words (any case): a suite path, project or target that holds one stays on this Mac unless the command says `--runner cloud` | none |
 | `QAJEV_CLOUD_WAIT` | seconds a cloud run is waited for before QAJev gives up (exit `4`); the run goes on in the cloud | `7200` |
 
 `qajev doctor` has a `cloud` line: whether the key is found (never its value), the default runner and where it came

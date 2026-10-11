@@ -72,6 +72,7 @@ and `--json`.
 | What is running, and can I stop it? | `qa_jobs`, `qa_job`, `qa_stop` | `qajev jobs`, `qajev stop ID` | free |
 | Run again only what failed last time | `qa_rerun` | `qajev rerun JOB --failed` | as the run |
 | Is the setup right? | `qa_doctor` | `qajev doctor` | free |
+| Where do runs go? Switch to the cloud or back | `qa_mode` | `qajev mode [local\|cloud\|auto\|dashboard]` | free |
 
 How to write a check:
 
@@ -100,10 +101,11 @@ Long runs: pass `background: true` (CLI `--background`), then follow with `qa_jo
 take turns, one at a time per machine; never start a second copy of a queued run.
 
 Where it runs: `runner: "cloud"` (CLI `--runner cloud`) sends `qa_check`, `qa_run_suite`, `qa_smoke` and
-`qa_project_run` to QAJev Cloud instead of this machine; `"auto"` uses the cloud when it can. Default: `QAJEV_RUNNER`,
-else local. A cloud run never falls back to this machine: a signed-in run is refused, and so is a run that writes to
+`qa_project_run` to QAJev Cloud instead of this machine; `"auto"` uses the cloud when it can. Default: the project's
+`runner`, then this machine's mode (`qajev mode cloud|local|auto|dashboard`, MCP `qa_mode`), else local. A cloud run never falls back to this machine: a signed-in run is refused, and so is a run that writes to
 a dev server on this machine. A read-only run on one 127.0.0.1 or localhost port goes through the read-only tunnel to
-this machine; `serve: "DIR[:PORT]"` (CLI `--serve`) ships a built site instead. The key is `QAJEV_CLOUD_KEY` or Keychain `qajev-cloud-agent`;
+this machine only when the call says `runner: "cloud"` (the tunnel passes no POST or WebSocket); `QAJEV_CLOUD_HOLD`
+keeps named suites here unless the call says it too; `serve: "DIR[:PORT]"` (CLI `--serve`) ships a built site instead. The key is `QAJEV_CLOUD_KEY` or Keychain `qajev-cloud-agent`;
 `qa_doctor` checks it. A cloud run's id starts with `r_`; `qa_job` and `qa_stop` take it.
 
 Rules: never type, ask for or write down passwords, one-time codes or payment details (for a signed-in test,

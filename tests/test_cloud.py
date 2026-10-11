@@ -27,6 +27,7 @@ class FakeDashboard:
         self.calls, self.files, self.auth = [], {}, set()
         self.runs = [{"id": RUN, "gate": "pass", "counts": {"pass": 1}, "tests": []}]  # GET answers, the last repeats
         self.refuse_put = False
+        self.default_runner = "cloud"  # the Settings page's "Where runs go by default"
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -59,6 +60,9 @@ class FakeDashboard:
                 if not self._authed():
                     return
                 outer.calls.append(("GET", self.path, None))
+                if self.path == "/api/v1/me":
+                    me = {"kind": "agent", "scopes": ["read", "run"], "default_runner": outer.default_runner}
+                    return self._reply(200, me)
                 if self.path == f"/api/v1/runs/{RUN}":
                     run = outer.runs.pop(0) if len(outer.runs) > 1 else outer.runs[0]
                     return self._reply(200, {"id": RUN, **run})
@@ -104,7 +108,8 @@ def isolated(monkeypatch, tmp_path):
     home = tmp_path / "qajev-home"
     home.mkdir()
     monkeypatch.setattr(config, "HOME", home)
-    for name in ("QAJEV_RUNNER", "QAJEV_CLOUD_URL", "QAJEV_CLOUD_KEY", "QAJEV_PROFILE", "QAJEV_REQUIRE_PLAN",
+    for name in ("QAJEV_RUNNER", "QAJEV_CLOUD_URL", "QAJEV_CLOUD_KEY", "QAJEV_CLOUD_HOLD", "QAJEV_PROFILE",
+                 "QAJEV_REQUIRE_PLAN",
                  "QAJEV_ENV_FILE", "QAJEV_JOB", "QAJEV_CLOUD_WAIT"):
         monkeypatch.delenv(name, raising=False)
 
@@ -190,6 +195,40 @@ def test_a_run_on_this_macs_dev_server_goes_through_the_tunnel(dash, local, caps
     assert cli.main(["run", str(path), "--runner", "cloud"]) == 0
     assert [b["tunnel"] for m, p, b in dash.calls if m == "POST" and p == "/api/v1/runs"][-1] == {"port": 4000}
     assert local == []
+
+
+def test_only_a_run_that_says_runner_cloud_reaches_this_macs_dev_server(dash, local, capsys, monkeypatch, tmp_path):
+    # Orchestrator, 11 Oct: the tunnel passes GET, HEAD and OPTIONS only, so a page that posts or opens a WebSocket
+    # would fail in the cloud for the tunnel's sake. Unless the command itself names the cloud, it stays here or stops.
+    monkeypatch.setenv("QAJEV_RUNNER", "auto")
+    assert cli.main(["check", "http://127.0.0.1:3000/shop"]) == 0
+    assert dash.sent("POST") == [] and len(local) == 1
+    assert "only with --runner cloud" in capsys.readouterr().err
+    monkeypatch.setenv("QAJEV_RUNNER", "cloud")
+    assert cli.main(["check", "http://127.0.0.1:3000/shop"]) == cli.EXIT_CONFIG
+    err = capsys.readouterr().err
+    assert "only with --runner cloud" in err and "POST" in err and "WebSocket" in err
+    assert dash.sent("POST") == [] and len(local) == 1
+    assert cli.main(["check", "http://127.0.0.1:3000/shop", "--runner", "cloud"]) == 0
+    assert dash.created()["tunnel"] == {"port": 3000}
+
+
+def test_a_held_suite_stays_here_unless_the_command_says_runner_cloud(dash, local, capsys, monkeypatch, tmp_path):
+    # Orchestrator, 12:32 and 14:48: a Verse suite goes to the cloud only with an OK for that suite, named on the run.
+    monkeypatch.setenv("QAJEV_CLOUD_HOLD", "figgyz, verse")
+    (tmp_path / "figgyz").mkdir()
+    held = suite_file(tmp_path / "figgyz", base="https://verse.figgyz.com")
+    for mode in ("auto", "cloud"):
+        monkeypatch.setenv("QAJEV_RUNNER", mode)
+        code = cli.main(["run", str(held)])
+        err = capsys.readouterr().err
+        assert dash.sent("POST") == [] and "held on this Mac" in err and "QAJEV_CLOUD_HOLD" in err
+        assert code == (0 if mode == "auto" else cli.EXIT_CONFIG)
+    assert len(local) == 1  # auto ran it here; cloud stopped with the reason
+    assert cli.main(["check", "https://verse.figgyz.com/hair"]) == cli.EXIT_CONFIG  # a held target, by its host
+    assert cli.main(["run", str(held), "--runner", "cloud"]) == 0
+    assert dash.created()["kind"] == "run"
+    assert cli.main(["check", "https://shop.example/"]) == 0  # nothing held there: it goes
 
 
 def test_a_public_target_needs_no_tunnel_and_a_shipped_build_never_gets_one(dash, local, tmp_path):
@@ -396,24 +435,43 @@ def test_the_key_never_shows_in_output_or_a_childs_arguments(dash, local, capsys
 # The default runner
 
 
-def test_the_runner_comes_from_the_flag_the_shell_the_env_file_the_project_then_local(monkeypatch, tmp_path):
+def test_the_runner_comes_from_the_flag_the_project_the_shell_the_env_file_then_local(monkeypatch, tmp_path):
+    # José, 11 Oct: a project can say where its runs go, and that wins over this Mac's mode.
     repo = tmp_path / "shop"
     (repo / ".qajev").mkdir(parents=True)
-    (repo / ".qajev" / "project.toml").write_text(
-        'name = "shop"\nrunner = "cloud"\n[env.prod]\nbase_url = "https://shop.example"\n')
+    toml = repo / ".qajev" / "project.toml"
+    toml.write_text('name = "shop"\nrunner = "cloud"\n[env.prod]\nbase_url = "https://shop.example"\n')
     args = SimpleNamespace(runner=None, env_file=None, command="run", project=str(repo))
-    assert cloud.runner_for(args)[0] == "cloud"
-    (config.HOME / ".env").write_text("QAJEV_RUNNER=auto\n")
-    assert cloud.runner_for(args) == ("auto", f"QAJEV_RUNNER from {config.HOME / '.env'}")
+    assert cloud.runner_for(args) == ("cloud", f"runner in {toml}")
     monkeypatch.setenv("QAJEV_RUNNER", "local")
-    assert cloud.runner_for(args) == ("local", "QAJEV_RUNNER from the shell")
-    assert cloud.runner_for(SimpleNamespace(**{**vars(args), "runner": "cloud"})) == ("cloud", "--runner")
+    assert cloud.runner_for(args)[0] == "cloud"  # the project wins over this Mac's mode
+    assert cloud.runner_for(SimpleNamespace(**{**vars(args), "runner": "local"})) == ("local", "--runner")
+    no_project = SimpleNamespace(**{**vars(args), "project": None})
+    assert cloud.runner_for(no_project) == ("local", "QAJEV_RUNNER from the shell")
+    monkeypatch.delenv("QAJEV_RUNNER")
+    (config.HOME / ".env").write_text("QAJEV_RUNNER=auto\n")
+    assert cloud.runner_for(no_project) == ("auto", f"QAJEV_RUNNER from {config.HOME / '.env'}")
     monkeypatch.setenv("QAJEV_RUNNER", "mars")
-    with pytest.raises(cloud.CloudError, match="use local, cloud or auto"):
-        cloud.runner_for(args)
+    with pytest.raises(cloud.CloudError, match="use local, cloud, auto or dashboard"):
+        cloud.runner_for(no_project)
     monkeypatch.delenv("QAJEV_RUNNER")
     (config.HOME / ".env").write_text("")
-    assert cloud.runner_for(SimpleNamespace(**{**vars(args), "project": None})) == ("local", "default")
+    assert cloud.runner_for(no_project) == ("local", "default")
+
+
+def test_qajev_mode_sets_a_project_and_default_hands_it_back_to_this_mac(capsys, tmp_path):
+    repo = tmp_path / "shop"
+    (repo / ".qajev").mkdir(parents=True)
+    toml = repo / ".qajev" / "project.toml"
+    toml.write_text('# the shop\nname = "shop"\n\n[env.prod]\nbase_url = "https://shop.example"\n')
+    assert cli.main(["mode", "cloud", "--project", str(repo)]) == 0
+    assert 'runner = "cloud"' in toml.read_text().split("[env.prod]")[0]  # a top-level key, before any table
+    assert cli.main(["mode", "local", "--project", str(repo)]) == 0
+    assert toml.read_text().count("runner = ") == 1 and 'runner = "local"' in toml.read_text()
+    assert cli.main(["mode", "default", "--project", str(repo)]) == 0
+    assert "runner" not in toml.read_text()
+    assert "base_url" in toml.read_text() and "# the shop" in toml.read_text()
+    assert cli.main(["mode", "default"]) != 0  # only a project goes back to the default
 
 
 def test_a_projects_runner_must_be_one_of_the_three(tmp_path):
@@ -519,3 +577,41 @@ def test_doctor_prints_a_cloud_line(dash, monkeypatch, capsys):
     checks = {c["check"]: c for c in json.loads(capsys.readouterr().out)["checks"]}
     assert "default runner local" in checks["cloud"]["detail"] and checks["cloud"]["ok"]
     assert KEY not in json.dumps(checks)
+
+
+def test_qajev_runner_switches_this_mac_and_says_where_runs_go(capsys):
+    # José, 11 Oct: "something that makes it super easy to change between cloud and local".
+    env = config.HOME / ".env"
+    env.write_text("TYPESAFE_MODEL=x\nQAJEV_RUNNER=local\n")
+    assert cli.main(["mode", "cloud"]) == 0
+    assert env.read_text().splitlines() == ["TYPESAFE_MODEL=x", "QAJEV_RUNNER=cloud"]
+    assert "cloud" in capsys.readouterr().out
+    assert cli.main(["mode", "auto"]) == 0
+    assert env.read_text().count("QAJEV_RUNNER=") == 1
+    assert cli.main(["mode", "--json"]) == 0
+    shown = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert shown["runner"] == "auto" and shown["setting"] == "auto" and "~/.env" not in shown["source"]
+    with pytest.raises(SystemExit):  # argparse refuses it
+        cli.main(["mode", "mars"])
+
+
+def test_qajev_runner_dashboard_follows_the_settings_page(dash, capsys):
+    assert cli.main(["mode", "dashboard"]) == 0
+    assert "QAJEV_RUNNER=dashboard" in (config.HOME / ".env").read_text()
+    args = SimpleNamespace(runner=None, env_file=None, command="run", project=None)
+    runner, source = cloud.runner_for(args)
+    assert runner == "cloud" and "dashboard" in source
+    dash.default_runner = "local"
+    cloud._dashboard_cache.clear()
+    assert cloud.runner_for(args)[0] == "local"
+    # a flag still wins over the dashboard
+    assert cloud.runner_for(SimpleNamespace(**{**vars(args), "runner": "cloud"})) == ("cloud", "--runner")
+
+
+def test_a_silent_dashboard_keeps_the_run_here_and_says_why(monkeypatch):
+    monkeypatch.setenv("QAJEV_RUNNER", "dashboard")
+    monkeypatch.setenv("QAJEV_CLOUD_URL", "http://127.0.0.1:9")  # nothing listens
+    monkeypatch.setenv("QAJEV_CLOUD_KEY", KEY)
+    cloud._dashboard_cache.clear()
+    runner, source = cloud.runner_for(SimpleNamespace(runner=None, env_file=None, command="run", project=None))
+    assert runner == "local" and "did not answer" in source

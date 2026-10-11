@@ -224,6 +224,7 @@ async def _dispatch(args, where, ctx, background, title=None):
     try:
         runner, source = cloud.runner_for(parsed)
         if runner != "local":
+            parsed.runner_named = source == "--runner"  # the tool's `runner` argument, as the CLI's --runner
             try:
                 plan = await asyncio.to_thread(cloud.plan, parsed)
             except cloud.NotAllowed as e:
@@ -894,6 +895,20 @@ async def qa_doctor() -> dict:
         return json.loads(text)
     except json.JSONDecodeError:
         raise ToolError(" | ".join(tail[-5:]) or f"doctor exited {code}") from None
+
+
+@server.tool()
+async def qa_mode(where: str | None = None, project: str | None = None) -> dict:
+    """Where QAJev runs go: this Mac or QAJev Cloud. Without `where`, says where they go now and why. `where`:
+    local (this Mac), cloud (always the cloud), auto (the cloud when it can, else here), dashboard (follow the
+    dashboard's "Where runs go by default"). With `project`, sets that project only (local, cloud, auto, or default
+    to follow this Mac's mode again); a project's setting wins over this Mac's mode. A run can still pass `runner`."""
+    argv = ["mode", *([where] if where else []), *(["--project", project] if project else []), "--json"]
+    code, text, tail = await _spawn(argv)
+    try:
+        return json.loads(text.strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        raise ToolError(" | ".join(tail[-5:]) or f"mode exited {code}") from None
 
 
 def serve(allow_commands=False):

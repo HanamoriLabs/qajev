@@ -29,6 +29,7 @@ Use it to check that a change actually works for a user, before you say it does.
 | What did a run find? | `qa_report`, `qa_screenshot` / `qajev report RUN_DIR` | free |
 | What is running right now, and can I stop it? | `qa_jobs`, `qa_job`, `qa_stop` / `qajev jobs`, `qajev stop ID` | free |
 | Is QAJev set up correctly? | `qa_doctor` / `qajev doctor` | free |
+| Where do runs go (this machine or the cloud)? | `qa_mode` / `qajev mode` | free |
 
 With MCP, call the `qa_*` tools. Without MCP, run the `qajev` command with `--json` and read the JSON it prints.
 
@@ -90,11 +91,12 @@ and say what they are waiting for. Never start a second copy of a run because th
 ### Where it runs
 
 `runner: "cloud"` (MCP) or `--runner cloud` (CLI) sends `qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run`
-to QAJev Cloud instead of this machine. `"auto"` uses the cloud when it can. The default is `QAJEV_RUNNER`, else
-local. A cloud run never falls back to this machine: when it cannot go, it is refused with the reason. Then fix
+to QAJev Cloud instead of this machine. `"auto"` uses the cloud when it can. The default is the project's `runner`,
+then this machine's mode (`qajev mode`, MCP `qa_mode`: local, cloud, auto or dashboard), else local. A cloud run never falls back to this machine: when it cannot go, it is refused with the reason. Then fix
 the reason; do not rerun it here unless the person says so. A signed-in run (`profile`) stays here. A dev server on
-this machine's `127.0.0.1` or `localhost` (one port, 1024 to 65535) is reached through QAJev Cloud's read-only tunnel;
-a run that writes to it stays here. Or ship the built folder: `serve: "dist"` (CLI `--serve dist[:PORT]`). A cloud run's id
+this machine's `127.0.0.1` or `localhost` (one port, 1024 to 65535) is reached through QAJev Cloud's read-only tunnel
+only when you pass `runner: "cloud"` yourself (a page's POST or WebSocket does not pass); a run that writes to it stays
+here. A suite held by `QAJEV_CLOUD_HOLD` stays here too, unless you pass `runner: "cloud"` with its owner's OK. Or ship the built folder: `serve: "dist"` (CLI `--serve dist[:PORT]`). A cloud run's id
 starts with `r_`: `qa_job` and `qa_stop` take it. Tell the person the run's `url` and `report_url`.
 
 ### Rules

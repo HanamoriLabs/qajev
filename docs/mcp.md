@@ -64,6 +64,7 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 | `qa_nightly` | the latest nightly digest: what changed per project | free |
 | `qa_browser` | QAJev's own Chrome: status, start, stop, **login** (the person signs in), reap | free |
 | `qa_doctor` | check the setup (never shows key values), including the QAJev Cloud key and default runner | free |
+| `qa_mode` | where runs go (this machine or QAJev Cloud) and why; with `where` (`local`, `cloud`, `auto`, `dashboard`) switch this machine, with `project` switch one project | free |
 
 ### Main parameters
 
@@ -100,8 +101,9 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 - `qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run` take `runner`: `"local"` (this machine), `"cloud"`
   (QAJev Cloud: refused with the reason when the run cannot go, never run here instead) or `"auto"` (the cloud when it
   can; a signed-in profile, or a run that writes to a dev server on this machine, runs here, and `runner_note` says why; a
-  read-only run on one 127.0.0.1 or localhost port reaches it through the read-only tunnel). Default:
-  `QAJEV_RUNNER`, else local (for `qa_project_run`, the project's `runner` comes after `QAJEV_RUNNER`). `serve`
+  read-only run on one 127.0.0.1 or localhost port, or a run held by `QAJEV_CLOUD_HOLD`, goes only when the call says
+  `runner: "cloud"`; a run on such a port then reaches it through the read-only tunnel). Default: for
+  `qa_project_run` the project's `runner`, then this machine's mode (`QAJEV_RUNNER`, which `qa_mode` sets), else local. `serve`
   (`"DIR"` or `"DIR:PORT"`) ships a built site with a cloud run, served on the cloud machine's own 127.0.0.1.
   `model` picks the cloud run's model. A cloud run returns `{"runner": "cloud", "run_id", "url", "gate", "counts",
   "tests", "report_url", "reason"}`; with `background` its id (`r_...`) and address at once. `qa_job` and `qa_stop`
