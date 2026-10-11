@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.12: 12 Oct 2026
+
 - **Frames on another site are guarded.** Chrome runs such a frame apart from the page, and QAJev 0.4.11 and earlier
   left it unguarded: in a readonly run it could send writes and reach `block_urls` addresses. QAJev now attaches to
   each one before it runs (Target.setAutoAttach, waiting for the debugger), puts the read-only guard and the block list
