@@ -24,6 +24,25 @@ def test_page_checks_name_what_failed():
     assert failed == ["url contains '/pricing'", "page shows 'Team'", "page lacks 'Error'", "js 'true'"]
 
 
+def test_a_text_the_guard_hid_says_so_and_how_to_allow_it():
+    # QAJev Cloud QA, 11 Oct: the guard hid a run named "FlockTab · billing, signed in" (the word "billing"), and the
+    # result said only "not on the page", which read like a product bug.
+    seen = {**observed(text=(True, False)), "guarded": [None, "danger: FlockTab · billing, signed in"]}
+    team = next(c for c in V.page_checks({"text": ["Pro", "Team"]}, seen) if c["check"] == "page shows 'Team'")
+    assert not team["ok"]
+    assert "hidden by QAJev's guard (danger: FlockTab · billing, signed in)" in team["detail"]
+    assert "guard: {allow:" in team["detail"] and "not on the page" not in team["detail"]
+
+
+def test_a_check_that_failed_only_because_the_guard_hid_its_text_is_harness_not_fail():
+    # The guard's choice says nothing about the page, so it must not count against the product.
+    hid = {"check": "page shows 'Team'", "ok": False, "detail": "hidden by QAJev's guard (danger: Team billing); ..."}
+    page = {"check": "page shows 'Pro'", "ok": False, "detail": "not on the page; it begins: x"}
+    outcome, reason = V.classify("checked", [hid], has_checks=True)
+    assert outcome == "harness" and "guard" in reason
+    assert V.classify("checked", [hid, page], has_checks=True)[0] == "fail"  # the page is wrong as well
+
+
 def test_js_must_be_exactly_true():
     assert not V.all_ok(V.page_checks({"js": "x"}, {"js": "error: boom"}))
     assert not V.all_ok(V.page_checks({"js": "x"}, {"js": False}))

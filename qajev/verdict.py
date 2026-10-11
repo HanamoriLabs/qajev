@@ -45,9 +45,13 @@ def page_checks(expect, observed):
                              None if have == expect["status"] else f"HTTP {have}"))
     case = " (any case)" if expect.get("ignore_case") else ""
     near = observed.get("near") or []
+    guarded = observed.get("guarded") or []  # what the guard hid that holds the text (session.PROBE_JS)
     for i, (needle, seen) in enumerate(zip(expect.get("text", []), observed.get("text") or [])):
         closest = near[i] if i < len(near) else None
-        miss = f"closest on the page: {closest}" if closest else f"not on the page; it begins: {observed.get('says')}"
+        hid = guarded[i] if i < len(guarded) else None
+        miss = (f"hidden by QAJev's guard ({hid}); if it is safe, allow it in the suite: guard: {{allow: [...]}}"
+                if hid else f"closest on the page: {closest}" if closest
+                else f"not on the page; it begins: {observed.get('says')}")
         checks.append(_check(f"page shows {needle!r}{case}", bool(seen), None if seen else miss))
     for needle, seen in zip(expect.get("absent", []), observed.get("absent") or []):
         checks.append(_check(f"page lacks {needle!r}{case}", not seen, "still shown" if seen else None))
@@ -186,6 +190,9 @@ def classify(stop, checks, *, has_checks, stop_detail=None, not_run=(), actions=
     if all_ok(checks):
         tail = f" (Jev ended with {stop})" if stop not in {"reached", "checked"} else ""
         return "pass", f"all {len(checks)} check(s) passed{tail}"
+    if failed and all(str(c.get("detail") or "").startswith("hidden by QAJev's guard") for c in failed):
+        # only texts QAJev's own guard hid: nothing was judged about the page (Cloud QA, 11 Oct)
+        return "harness", f"QAJev's guard hid what the check looks for, so this says nothing about the page: {why}"
     if failed and all(c.get("broke") for c in failed):  # only checks whose own code broke: nothing was judged
         return "harness", "; ".join(f"the check failed to run: {str(c.get('detail') or '').removeprefix('error: ')}"
                                     for c in failed)

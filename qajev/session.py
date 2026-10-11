@@ -252,6 +252,14 @@ PROBE_JS = Template("""(async () => {
     }
     return null;
   };
+  // A missing text the guard hid (data-qajev-guard): the result names the guard, not the page.
+  const guarded = spec.text.map(t => {
+    if (has(t)) return null;
+    const want = fold(norm(t));
+    const el = [...document.querySelectorAll('[data-qajev-guard]')]
+      .find(e => e.dataset.qajevGuard !== 'field' && fold(norm(e.textContent)).includes(want));
+    return el ? el.dataset.qajevGuard.slice(0, 80) : null;
+  });
   let js = null;
   if (spec.js) {
     const r = await $js;
@@ -269,7 +277,7 @@ PROBE_JS = Template("""(async () => {
   try { status = performance.getEntriesByType('navigation')[0].responseStatus || null; } catch (e) {}
   const seen = spec.visible.map(onScreen);
   return { probe, url: location.href, title: document.title, status,
-    text: spec.text.map(t => has(t)), absent: spec.absent.map(t => has(t)), visible: seen.map(s => s.ok),
+    text: spec.text.map(t => has(t)), guarded, absent: spec.absent.map(t => has(t)), visible: seen.map(s => s.ok),
     visible_why: seen.map(s => s.why),
     near: spec.text.map(t => has(t) ? null : nearest(t)), js, says: body.slice(0, 400) };
 })()""")
