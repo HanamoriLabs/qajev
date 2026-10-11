@@ -221,7 +221,13 @@ PROBE_JS = Template("""(async () => {
     let why = 'not in the page';
     for (const e of smallest) {
       if (!(e.checkVisibility ? e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) : true)
-          || !fold(norm(e.innerText)).includes(want)) { why = 'in the page but hidden'; continue; }
+          || !fold(norm(e.innerText)).includes(want)) {
+        const g = e.closest('[data-qajev-guard]');  // hidden by QAJev itself: the result must say so (verse-workshop #302)
+        why = g && g.dataset.qajevGuard !== 'field'
+          ? "hidden by QAJev's guard (" + g.dataset.qajevGuard.slice(0, 80) + "); if it is safe, allow it in the suite: guard: {allow: [...]}"
+          : 'in the page but hidden';
+        continue;
+      }
       if (!inView(e.getBoundingClientRect())) { why = 'in the page but not in the viewport'; continue; }
       const range = wordsIn(e, norm(t));
       const rects = range ? [...range.getClientRects()].filter(r => r.width > 0 && r.height > 0) : [];
