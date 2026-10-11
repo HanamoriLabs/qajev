@@ -4,6 +4,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- An on-screen check (`visible`) whose text QAJev's guard hid now says "hidden by QAJev's guard (...)" instead of "in
+  the page but hidden", and its outcome is harness, as for `text` since 0.4.5.
+
 ## 0.4.5: 11 Oct 2026
 
 - A text check that fails only because QAJev's guard hid the text now says so: "hidden by QAJev's guard (danger:
