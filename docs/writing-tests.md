@@ -323,6 +323,13 @@ guard:
   redact_emails: false             # hide e-mail addresses from Jev
 ```
 
+With `block_urls`, each test's result lists every request the page or any frame in it sent to a blocked address:
+`block_list_requests` in `report.json`, each with its `method`, `url`, the `frame` (the document that sent it) and
+`blocked` (Chrome stopped it). An empty list says nothing tried. A write that the read-only guard stopped in the page
+never reaches the network, so it is not in that list: it is in `blocked_writes`, which now holds the writes stopped
+inside frames too, each with its `frame`. Together they show a GET (information) apart from a save (a POST). The report
+lists the first 20 as "Block list" lines.
+
 ## Multiplayer: several players at once
 
 A scenario with `clients:` opens several players, each in a browser context of its own: its own cookies, storage,

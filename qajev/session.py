@@ -135,6 +135,8 @@ def load(ledger):
 
 
 JS_WAIT_MS = 5000
+# The guard's record that nobody has read yet (blocked and allowed writes, dialogs), taken from one document
+DRAIN_JS = "window.__qajev && window.__qajev.drain ? window.__qajev.drain() : null"
 
 
 def awaited(expression, timeout_ms=JS_WAIT_MS):
@@ -534,7 +536,8 @@ class Session:
                 except (RuntimeError, TimeoutError):
                     pass  # the in-page stub still refuses capture
             self.minimize()
-            self.net = netlog.start(self.page_socket())  # still on about:blank: it hears the site's first request
+            # still on about:blank: it hears the site's first request
+            self.net = netlog.start(self.page_socket(), self.guard_opts.get("block_urls") or ())
         except Exception:
             self.close()
             raise
@@ -656,10 +659,42 @@ class Session:
     def carry(self):
         """Take what the page's guard recorded (blocked and allowed writes, dialogs) before the tab leaves it."""
         with contextlib.suppress(RuntimeError, TimeoutError):
-            got = self.evaluate("window.__qajev && window.__qajev.drain ? window.__qajev.drain() : null",
-                                timeout_ms=3000) or {}
+            got = self.evaluate(DRAIN_JS, timeout_ms=3000) or {}
             for key, items in got.items():
                 self.carried.setdefault(key, []).extend(items or [])
+        for key, items in self.frames_drained().items():
+            self.carried.setdefault(key, []).extend(items)
+
+    def frames_drained(self):
+        """What the guard recorded inside the page's frames, each item with its frame's address. The top page cannot
+        read an iframe on another origin, so each frame's record is read in that frame (netlog's own link).
+        SHORTCUT: frames in this tab's own process only (same site, any port). A frame on another site runs as a target
+        of its own (site isolation) and is not read; attach to it (Target.setAutoAttach) when a run needs one."""
+        if self.net is None:
+            return {}
+        try:
+            tree = self.call("Page.getFrameTree")["frameTree"]
+        except (RuntimeError, TimeoutError, KeyError):
+            return {}
+        urls, todo = {}, list(tree.get("childFrames") or [])
+        while todo:
+            node = todo.pop()
+            urls[node["frame"]["id"]] = node["frame"].get("url", "")
+            todo.extend(node.get("childFrames") or [])
+        if not urls:
+            return {}
+        got = {}
+        try:
+            drained = self.net.drain_frames(set(urls), DRAIN_JS)
+        except (RuntimeError, TimeoutError):
+            return {}
+        for frame, items in drained:
+            for key, values in (items or {}).items():
+                for value in values or []:
+                    if isinstance(value, dict):
+                        value.setdefault("frame", urls.get(frame, "")[:300])
+                    got.setdefault(key, []).append(value)
+        return got
 
     def navigate(self, url, timeout=30.0):
         self.carry()
@@ -704,10 +739,15 @@ class Session:
                 "ci": bool(expect.get("ignore_case")), "visible": expect.get("visible", [])}
         expression = PROBE_JS.substitute(spec=json.dumps(spec), js=awaited(expect.get("js") or "null"))
         out = self.evaluate(expression) or {}
-        if self.carried and isinstance(out.get("probe"), dict):  # the pages the tab has left, first
-            carried, self.carried = self.carried, {}
-            for key, items in carried.items():
-                out["probe"][key] = items + (out["probe"].get(key) or [])
+        if isinstance(out.get("probe"), dict):
+            for key, items in self.frames_drained().items():  # the frames' own records, after the page's
+                out["probe"][key] = (out["probe"].get(key) or []) + items
+            if self.carried:  # the pages the tab has left, first
+                carried, self.carried = self.carried, {}
+                for key, items in carried.items():
+                    out["probe"][key] = items + (out["probe"].get(key) or [])
+            if self.net is not None and self.guard_opts.get("block_urls"):
+                out["probe"]["block_list"] = self.net.take_block_list()
         return out
 
     def check_host(self, url):

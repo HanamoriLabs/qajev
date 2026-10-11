@@ -294,6 +294,12 @@ def markdown(data):
                          f"{_cell(first.get('method'))} {_cell(_where(first.get('url')))}")
         for w in r.get("allowed_writes") or []:  # every write production let through (allow_requests) is listed
             lines.append(f"- Allowed write: {_cell(w.get('method'))} {_cell(_where(w.get('url')))}")
+        listed, shown = r.get("block_list_requests") or [], report_html.BLOCK_LIST_SHOWN
+        for q in listed[:shown]:  # what the page tried to reach on block_urls
+            lines.append(f"- Block list: {_cell(q.get('method'))} {_cell(_where(q.get('url')))}, "
+                         + ("blocked" if q.get("blocked") else "not blocked") + _cell(report_html.from_frame(q)))
+        if len(listed) > shown:
+            lines.append(f"- Block list: {len(listed) - shown} more in report.json")
         for d in r.get("dialogs") or []:
             said = f": {_cell(d['message'], 120)}" if d.get("message") else ""
             lines.append(f"- Dismissed {_cell(d.get('kind'))}{said}")

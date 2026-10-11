@@ -98,6 +98,14 @@ def _where(url):
     return f"{parts.netloc}{parts.path}"
 
 
+BLOCK_LIST_SHOWN = 20  # block-list requests a report lists by line; report.json keeps them all
+
+
+def from_frame(request):
+    """", from <frame>" for a request a frame sent, else "" (the document that sent it, without its query)."""
+    return f", from {_where(request['frame'])}" if request.get("frame") else ""
+
+
 def _link(url):
     """A clickable http(s) link without its query string; anything else is shown as text."""
     if not url:
@@ -195,6 +203,11 @@ def _scenario(i, r, who="Jev"):
                      f"{_e(first.get('method'))} {_e(_where(first.get('url')))}")
     for w in r.get("allowed_writes") or []:  # every write production let through (allow_requests) is listed
         notes.append(f"Allowed write: {_e(w.get('method'))} {_e(_where(w.get('url')))}")
+    for q in (r.get("block_list_requests") or [])[:BLOCK_LIST_SHOWN]:  # what the page tried to reach on block_urls
+        notes.append(f"Block list: {_e(q.get('method'))} {_e(_where(q.get('url')))}, "
+                     + ("blocked" if q.get("blocked") else "not blocked") + _e(from_frame(q)))
+    if len(r.get("block_list_requests") or []) > BLOCK_LIST_SHOWN:
+        notes.append(f"Block list: {len(r['block_list_requests']) - BLOCK_LIST_SHOWN} more in report.json")
     for d in r.get("dialogs") or []:
         notes.append(f"Dismissed {_e(d.get('kind'))}" + (f": {_e(d['message'])}" if d.get("message") else ""))
     blocked = [a for a in r.get("assists") or [] if a.get("after", "BLOCKED") == "BLOCKED"]
