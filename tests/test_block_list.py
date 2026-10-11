@@ -380,6 +380,9 @@ class FakeNet:
     def drain_sessions(self, sessions, expression):
         return [d for d in self.drained if d[0] in sessions], set()
 
+    def frame_requests(self, documents):
+        return []
+
 
 def fake_session(net, targets, guard_opts=None, loader="L1"):
     from types import SimpleNamespace

@@ -376,6 +376,9 @@ def hidden_words(hidden, limit=3):
     return ", ".join(named) + more
 
 
+FRAME_KEEP = 100  # frame console lines, and frame requests, a test keeps
+
+
 def unguarded(outcome, reason, frames):
     """A frame on another site runs apart from the page (its own target), out of reach of QAJev's read-only guard and
     of block_urls: it may send writes. A run with one is not proven read-only, so it is harness, naming the frames

@@ -159,6 +159,14 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         for frame in probe.get("frames_accepted") or []:  # guard.unguarded_frames: reviewed, so never harness
             if frame not in result.setdefault("frames_accepted", []):
                 result["frames_accepted"].append(frame)
+        said = result.setdefault("frame_console", []) if probe.get("frame_console") else []
+        said.extend((probe.get("frame_console") or [])[:verdict.FRAME_KEEP - len(said)])
+        for r in probe.get("frame_requests") or []:  # the latest state of each: pending, then failed or finished
+            asked = result.setdefault("frame_requests", [])
+            key = (r.get("method"), r.get("url"), r.get("frame"))
+            asked[:] = [a for a in asked
+                        if (a.get("method"), a.get("url"), a.get("frame")) != key][:verdict.FRAME_KEEP - 1]
+            asked.append(r)
         for key, out in (("allowed", "allowed_writes"), ("dialogs", "dialogs")):  # what production let through, asked
             if probe.get(key):
                 result.setdefault(out, []).extend(probe[key])

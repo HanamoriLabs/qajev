@@ -128,6 +128,19 @@
     else push(state.errors, { kind: 'console', detail: text.slice(0, 500) });
     return consoleError.apply(this, args);
   };
+  // In a frame only: what its console says (log, info, warn, debug), for the report with the frame's errors
+  // (drainConsole). The top page's console is left as it is.
+  state.console = [];
+  const framed = (() => { try { return window.top !== window; } catch (e) { return true; } })();
+  if (framed) {
+    for (const level of ['log', 'info', 'warn', 'debug']) {
+      const real = console[level];
+      console[level] = function (...args) {
+        push(state.console, { level, text: args.map((a) => (a && a.message) || String(a)).join(' ').slice(0, 300) });
+        return real.apply(this, args);
+      };
+    }
+  }
   try {
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
@@ -414,5 +427,8 @@
   // What this page recorded and nobody has read yet: the session takes it before the tab leaves the page.
   state.drain = () => ({ blocked: state.blocked.splice(0), allowed: state.allowed.splice(0),
                          dialogs: state.dialogs.splice(0) });
+  // A frame's console and errors since the last read (frames only: the top page's errors go to its own findings).
+  state.drainConsole = () => [...state.console.splice(0), ...state.errors.splice(0).map((e) => (
+    { level: e.kind === 'console' ? 'error' : e.kind, text: String(e.detail || '').slice(0, 300) }))];
   Object.defineProperty(window, '__qajev', { value: state, configurable: false, writable: false, enumerable: false });
 })();

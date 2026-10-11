@@ -353,9 +353,17 @@ guard:
 ```
 
 An accepted frame that QAJev could not guard is still listed (`frames_accepted` in `report.json`; "Frame <address>:
-accepted: not guarded (<why>)" in the report), and it does not make the test harness. One QAJev guards needs nothing. Any other frame on another site still does. Host names
+accepted: not guarded (<why>)" in the report), and it does not make the test harness. One QAJev guards needs
+nothing. Any other frame on another site still does. Host names
 are exact: no wildcard, scheme, port or path. **An accepted host is a reviewed exception.** The Orchestrator approves
 each one. The agent that wrote the suite never adds one on its own.
+
+Each test also lists what its frames said and asked for: `frame_console` in `report.json` (each frame's console
+log, info, warn and debug lines, its errors, exceptions and rejections) and `frame_requests` (each request a frame made
+that failed, or still waited after a second, with its state, such as "pending 38 s" or "failed:
+net::ERR_CONNECTION_REFUSED"). Each item names its `frame`. The report shows the first 20 of each as "Frame console"
+and "Frame request" lines. A framed tool that stays on "loading…" then shows whether it waits on a request or on its
+own work.
 
 ## Multiplayer: several players at once
 

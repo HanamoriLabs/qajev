@@ -137,6 +137,9 @@ def load(ledger):
 JS_WAIT_MS = 5000
 # The guard's record that nobody has read yet (blocked and allowed writes, dialogs), taken from one document
 DRAIN_JS = "window.__qajev && window.__qajev.drain ? window.__qajev.drain() : null"
+# A frame's record: the same, plus what its console said and its errors (frame_console)
+FRAME_DRAIN_JS = ("window.__qajev && window.__qajev.drain ? Object.assign(window.__qajev.drain(), {frame_console: "
+                  "window.__qajev.drainConsole ? window.__qajev.drainConsole() : []}) : null")
 
 
 def awaited(expression, timeout_ms=JS_WAIT_MS):
@@ -703,7 +706,8 @@ class Session:
                 self.carried.setdefault(key, []).extend(items or [])
         leaving_last_test = self.last_test_page is not None and self._document() == self.last_test_page
         for key, items in self.frames_drained().items():
-            if leaving_last_test and key in ("frames_not_observed", "frames_accepted"):
+            if leaving_last_test and key in ("frames_not_observed", "frames_accepted", "frame_console",
+                                             "frame_requests"):
                 continue  # the last test's page: that test named its frames
             self.carried.setdefault(key, []).extend(items)
 
@@ -736,7 +740,7 @@ class Session:
 
         if urls:
             try:
-                drained, missed = self.net.drain_frames(set(urls), DRAIN_JS)
+                drained, missed = self.net.drain_frames(set(urls), FRAME_DRAIN_JS)
             except (RuntimeError, TimeoutError):
                 drained, missed = [], set(urls)
             unread += [urls[f] for f in missed]
@@ -748,12 +752,16 @@ class Session:
             sessions = {guarded[t]: url for t, url in apart if t in guarded}
             unread += [url for t, url in apart if t not in guarded]
             try:
-                drained, missed = self.net.drain_sessions(set(sessions), DRAIN_JS)
+                drained, missed = self.net.drain_sessions(set(sessions), FRAME_DRAIN_JS)
             except (RuntimeError, TimeoutError):
                 drained, missed = [], set(sessions)
             unread += [sessions[c] for c in missed]
             for child, items in drained:
                 keep(items, sessions.get(child, ""))
+        docs = set(urls.values()) | {url for _, url in apart}
+        asked = self.net.frame_requests(docs) if docs else []
+        if asked:  # what the frames asked for that failed, or still waits
+            got["frame_requests"] = asked
         accepted = {f["host"]: f["why"] for f in self.guard_opts.get("unguarded_frames") or ()}
         if accepted:  # reviewed exceptions: listed as accepted, and they never make a test harness
             from urllib.parse import urlsplit
