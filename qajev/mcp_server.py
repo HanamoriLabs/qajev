@@ -224,6 +224,7 @@ async def _dispatch(args, where, ctx, background, title=None):
     try:
         runner, source = cloud.runner_for(parsed)
         if runner != "local":
+            parsed.runner_named = source == "--runner"  # the tool's `runner` argument, as the CLI's --runner
             try:
                 plan = await asyncio.to_thread(cloud.plan, parsed)
             except cloud.NotAllowed as e:

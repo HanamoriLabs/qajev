@@ -1673,6 +1673,7 @@ def _route(args):
         from .config import load_env
 
         load_env(args.env_file)  # QAJEV_CLOUD_URL and QAJEV_CLOUD_KEY may live in ~/.qajev/.env
+        args.runner_named = source == "--runner"  # held suites and this Mac's dev servers need the cloud named here
         plan = cloud.plan(args)
     except FileNotFoundError as e:
         return _cloud_fail(args, str(e), EXIT_CONFIG)

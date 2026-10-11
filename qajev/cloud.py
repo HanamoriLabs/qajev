@@ -112,6 +112,13 @@ def dashboard_url(env_file=None):
     return (setting("QAJEV_CLOUD_URL", env_file)[0] or DEFAULT_URL).rstrip("/")
 
 
+def held_by(texts, env_file=None):
+    """The QAJEV_CLOUD_HOLD word (comma-separated, any case) that a suite path, project or target holds on this Mac,
+    or None. A held run goes to the cloud only when the command itself says --runner cloud."""
+    words = [w.strip().lower() for w in (setting("QAJEV_CLOUD_HOLD", env_file)[0] or "").split(",") if w.strip()]
+    return next((w for w in words for t in texts if w in t.lower()), None)
+
+
 def dashboard_runner(env_file=None):
     """The dashboard's "Where runs go by default", for QAJEV_RUNNER=dashboard: one look a minute. A dashboard that
     cannot say keeps the run on this Mac, and the source says why. -> (runner, source)"""
@@ -399,9 +406,17 @@ def plan(args):
             raise CloudError("give a URL or --project", EXIT_CONFIG)
     if account:
         raise NotAllowed("signed-in runs stay on this Mac (the run signs in with an account)")
+    named = getattr(args, "runner_named", False)
+    held = held_by([str(p) for _, p in files] + [t for t in targets if t] + [project_name or ""])
+    if held and not named:
+        raise NotAllowed(f"held on this Mac: it matches '{held}' in QAJEV_CLOUD_HOLD; a held suite goes to the cloud "
+                         "only when the command says --runner cloud (with its owner's OK)")
     local_targets = [t for t in targets if t and config.is_loopback(t)]
     serve = getattr(args, "serve", None)
     tunnel_port = None
+    if local_targets and not serve and not named:
+        raise NotAllowed("a run on this Mac's dev server goes to the cloud only with --runner cloud on the command: "
+                         "the tunnel passes GET, HEAD and OPTIONS, so a page's POST or WebSocket would fail there")
     if local_targets and not serve:
         writes = getattr(args, "mode", None) == "mutate" or (cmd == "run" and not project_name and suite.mutates)
         tunnel_port = _tunnel_port(local_targets, writes)

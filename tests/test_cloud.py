@@ -108,7 +108,8 @@ def isolated(monkeypatch, tmp_path):
     home = tmp_path / "qajev-home"
     home.mkdir()
     monkeypatch.setattr(config, "HOME", home)
-    for name in ("QAJEV_RUNNER", "QAJEV_CLOUD_URL", "QAJEV_CLOUD_KEY", "QAJEV_PROFILE", "QAJEV_REQUIRE_PLAN",
+    for name in ("QAJEV_RUNNER", "QAJEV_CLOUD_URL", "QAJEV_CLOUD_KEY", "QAJEV_CLOUD_HOLD", "QAJEV_PROFILE",
+                 "QAJEV_REQUIRE_PLAN",
                  "QAJEV_ENV_FILE", "QAJEV_JOB", "QAJEV_CLOUD_WAIT"):
         monkeypatch.delenv(name, raising=False)
 
@@ -194,6 +195,40 @@ def test_a_run_on_this_macs_dev_server_goes_through_the_tunnel(dash, local, caps
     assert cli.main(["run", str(path), "--runner", "cloud"]) == 0
     assert [b["tunnel"] for m, p, b in dash.calls if m == "POST" and p == "/api/v1/runs"][-1] == {"port": 4000}
     assert local == []
+
+
+def test_only_a_run_that_says_runner_cloud_reaches_this_macs_dev_server(dash, local, capsys, monkeypatch, tmp_path):
+    # Orchestrator, 11 Oct: the tunnel passes GET, HEAD and OPTIONS only, so a page that posts or opens a WebSocket
+    # would fail in the cloud for the tunnel's sake. Unless the command itself names the cloud, it stays here or stops.
+    monkeypatch.setenv("QAJEV_RUNNER", "auto")
+    assert cli.main(["check", "http://127.0.0.1:3000/shop"]) == 0
+    assert dash.sent("POST") == [] and len(local) == 1
+    assert "only with --runner cloud" in capsys.readouterr().err
+    monkeypatch.setenv("QAJEV_RUNNER", "cloud")
+    assert cli.main(["check", "http://127.0.0.1:3000/shop"]) == cli.EXIT_CONFIG
+    err = capsys.readouterr().err
+    assert "only with --runner cloud" in err and "POST" in err and "WebSocket" in err
+    assert dash.sent("POST") == [] and len(local) == 1
+    assert cli.main(["check", "http://127.0.0.1:3000/shop", "--runner", "cloud"]) == 0
+    assert dash.created()["tunnel"] == {"port": 3000}
+
+
+def test_a_held_suite_stays_here_unless_the_command_says_runner_cloud(dash, local, capsys, monkeypatch, tmp_path):
+    # Orchestrator, 12:32 and 14:48: a Verse suite goes to the cloud only with an OK for that suite, named on the run.
+    monkeypatch.setenv("QAJEV_CLOUD_HOLD", "figgyz, verse")
+    (tmp_path / "figgyz").mkdir()
+    held = suite_file(tmp_path / "figgyz", base="https://verse.figgyz.com")
+    for mode in ("auto", "cloud"):
+        monkeypatch.setenv("QAJEV_RUNNER", mode)
+        code = cli.main(["run", str(held)])
+        err = capsys.readouterr().err
+        assert dash.sent("POST") == [] and "held on this Mac" in err and "QAJEV_CLOUD_HOLD" in err
+        assert code == (0 if mode == "auto" else cli.EXIT_CONFIG)
+    assert len(local) == 1  # auto ran it here; cloud stopped with the reason
+    assert cli.main(["check", "https://verse.figgyz.com/hair"]) == cli.EXIT_CONFIG  # a held target, by its host
+    assert cli.main(["run", str(held), "--runner", "cloud"]) == 0
+    assert dash.created()["kind"] == "run"
+    assert cli.main(["check", "https://shop.example/"]) == 0  # nothing held there: it goes
 
 
 def test_a_public_target_needs_no_tunnel_and_a_shipped_build_never_gets_one(dash, local, tmp_path):
