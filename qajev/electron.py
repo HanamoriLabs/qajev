@@ -25,6 +25,7 @@ from websockets.exceptions import ConnectionClosed
 
 from . import chrome, game_profile
 from .config import HOME
+from .lowprio import niced
 from .native import STATE, NativeError, NoAnswer, free_port, with_lists
 
 WEB = Path(__file__).parent / "bridges" / "web"
@@ -214,9 +215,9 @@ class ElectronGame:
                                                                           dir=HOME / "tmp")
         cmd = [*command_for(self.project), f"--profile={self.user_dir}", f"--user-data-dir={self.user_dir}",
                f"--remote-debugging-port={self.port}", "--remote-debugging-address=127.0.0.1", *self.args]
-        self.proc = subprocess.Popen(cmd, env={**os.environ, **self.env}, stdout=subprocess.PIPE,
+        self.proc = subprocess.Popen(niced(cmd), env={**os.environ, **self.env}, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, text=True, stdin=subprocess.DEVNULL,
-                                     start_new_session=True, preexec_fn=lambda: os.nice(10))
+                                     start_new_session=True)
         threading.Thread(target=self._read_output, daemon=True).start()
         self.record = {"pid": self.proc.pid, "owner_pid": os.getpid(), "engine": "electron",
                        "project": str(self.project), "adapter": self.adapter.stem if self.adapter else None,

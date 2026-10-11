@@ -12,7 +12,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import __version__
+from . import __version__, lowprio
 
 EXIT_CONFIG, EXIT_BROWSER, EXIT_REFUSED, EXIT_INTERRUPTED = 3, 4, 5, 130
 DASHBOARD_STOP_S = 15  # `qajev dashboard --stop` waits this long for the dashboard to exit and free its lock
@@ -1467,10 +1467,7 @@ def cmd_mcp(args):
 
 
 def _lower_priority():
-    try:
-        os.nice(10)  # shared machine: the driver, its daemon and its Chrome all run below interactive work
-    except OSError:
-        pass
+    lowprio.lower_self()  # shared machine: the driver, its daemon and its Chrome all run below interactive work
 
 
 def _provider_flag(args):

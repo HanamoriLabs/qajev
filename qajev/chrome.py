@@ -11,13 +11,13 @@ import shutil
 import signal
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.request
 from pathlib import Path
 
 from .config import HOME
+from .lowprio import niced
 
 PORTS = range(9350, 9400)  # 9333 and 9340-9347 belong to other harnesses on José's machine
 STATE = HOME / "chrome"
@@ -237,8 +237,7 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait):
     STATE.mkdir(parents=True, exist_ok=True)
     with open(STATE / f"{profile}.log", "ab") as log:
         proc = subprocess.Popen(
-            args, stdout=subprocess.DEVNULL, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True,
-            preexec_fn=(lambda: os.nice(10)) if sys.platform != "win32" else None,
+            niced(args), stdout=subprocess.DEVNULL, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True,
         )
     cdp_url = f"http://127.0.0.1:{port}"
     deadline = time.monotonic() + wait
