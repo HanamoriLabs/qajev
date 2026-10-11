@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.11: 12 Oct 2026
+
 - `guard: {unguarded_frames: [{host, why}]}`: a reviewed exception for a frame on another site, by exact host name.
   It is listed as "accepted: not guarded" with its reason, and it does not make the test harness. Any other such
   frame still does. Verse's town screen embeds YouTube, so every Verse load was harness under 0.4.10.
