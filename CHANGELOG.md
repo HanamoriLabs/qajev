@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.5: 11 Oct 2026
+
 - A text check that fails only because QAJev's guard hid the text now says so: "hidden by QAJev's guard (danger:
   ...); if it is safe, allow it in the suite: guard: {allow: [...]}". Its outcome is harness, not fail: the guard's
   choice says nothing about the page. ([Troubleshooting](docs/troubleshooting.md))
