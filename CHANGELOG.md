@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.7: 11 Oct 2026
+
 - A failed test now names what QAJev's guard hid on its page too ("guard hid: 'Roll back to this' (danger: Roll back);
   a check that reads a hidden control sees QAJev's hiding, not the page"). Before, only stuck and harness results did,
   so a `js` check that measured a hidden button read like a product bug.
