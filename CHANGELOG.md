@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- One-line installer: `curl -LsSf https://qajev.com/install.sh | sh` on macOS and Linux. It installs uv when it is
+  missing (the old `uv tool install` line failed with "command not found: uv" on a new machine), then QAJev, puts it on
+  the PATH and checks for Chrome. `QAJEV_VERSION` pins a release; `QAJEV_NO_MODIFY_PATH=1` changes no shell file.
+  Windows: `irm https://qajev.com/install.ps1 | iex` installs it in WSL, or says how to turn WSL on.
+
 ## 0.4.8: 11 Oct 2026
 
 - `--serve DIR` refuses a folder that holds a secret: an env file (`.env`, `.dev.vars`), a key (`*.pem`, `*.key`,

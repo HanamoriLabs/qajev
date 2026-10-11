@@ -53,7 +53,8 @@ qajev check https://shop.example \
 ## Quick start
 
 ```bash
-uv tool install git+https://github.com/hanamorilabs/qajev     # or: pipx install git+https://github.com/hanamorilabs/qajev
+curl -LsSf https://qajev.com/install.sh | sh                 # macOS, Linux: adds uv if missing, then QAJev
+# Windows (PowerShell, installs into WSL): irm https://qajev.com/install.ps1 | iex
 mkdir -p ~/.qajev && echo 'OPENROUTER_API_KEY=sk-or-...' >> ~/.qajev/.env   # or TYPESAFE_API_KEY
 qajev doctor                                                # checks your setup
 
@@ -105,7 +106,7 @@ run your project's objectives, read reports and screenshots, and follow or stop 
 
 ## Requirements
 
-- macOS or Linux, Python 3.12+, Google Chrome or Chromium.
+- macOS or Linux (on Windows: WSL), Google Chrome or Chromium. The installer brings uv and Python 3.12+.
 - One key for Jev: [TypeSafe](https://docs.typesafe.ai) or [OpenRouter](https://openrouter.ai) (not needed for
   the smoke crawl).
 - For games: [Godot](https://godotengine.org) 4, or the game's Electron app.

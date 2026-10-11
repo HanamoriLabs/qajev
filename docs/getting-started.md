@@ -1,24 +1,35 @@
 # Getting started
 
-This takes about five minutes. You need a Mac or Linux machine, Google Chrome (or Chromium), and an API key for
-Jev.
+This takes about five minutes. You need a Mac or Linux machine (on Windows: WSL), Google Chrome (or Chromium), and
+an API key for Jev.
 
 ## 1. Install
 
-With [uv](https://docs.astral.sh/uv/) (recommended):
+On macOS or Linux, one line:
+
+```bash
+curl -LsSf https://qajev.com/install.sh | sh
+```
+
+It installs [uv](https://docs.astral.sh/uv/) if you do not have it (uv brings its own Python), then QAJev, puts
+`qajev` on your PATH and checks for Chrome. Run it again to update. `QAJEV_VERSION=v0.4.8` installs one release;
+`QAJEV_NO_MODIFY_PATH=1` changes no shell file and prints the PATH line instead. Read it first at
+[qajev.com/install.sh](https://qajev.com/install.sh).
+
+On Windows, QAJev runs in WSL. In PowerShell:
+
+```powershell
+irm https://qajev.com/install.ps1 | iex
+```
+
+It installs QAJev in your default WSL distribution, or tells you how to turn WSL on (`wsl --install`) first.
+
+Already have uv, or prefer [pipx](https://pipx.pypa.io/) (Python 3.12 or newer)?
 
 ```bash
 uv tool install git+https://github.com/hanamorilabs/qajev
-```
-
-Or with [pipx](https://pipx.pypa.io/):
-
-```bash
 pipx install git+https://github.com/hanamorilabs/qajev
 ```
-
-Either one puts a `qajev` command on your PATH. Python 3.12 or newer is needed; uv installs it for you if it is
-missing.
 
 **A machine shared by several people or agents** should run a released version, not someone's working copy. Keep
 a clean checkout at the latest release tag and install from it; move it to each new tag, and check the version:

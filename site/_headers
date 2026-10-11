@@ -21,3 +21,11 @@
   Cache-Control: public, max-age=604800, stale-while-revalidate=86400
 /icon-:size
   Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+
+# The installers: plain text, so a browser shows them and `curl | sh` or `irm | iex` reads them; checked often.
+/install.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+/install.ps1
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
