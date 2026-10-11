@@ -379,7 +379,7 @@ def hidden_words(hidden, limit=3):
 def unguarded(outcome, reason, frames):
     """A frame on another site runs apart from the page (its own target), out of reach of QAJev's read-only guard and
     of block_urls: it may send writes. A run with one is not proven read-only, so it is harness, naming the frames
-    (found 12 Oct 2026; every version to 0.4.10 leaves such a frame unguarded). -> (outcome, reason)."""
+    (found 12 Oct 2026; 0.4.12 guards such frames, and one it still cannot guard comes here). -> (outcome, reason)."""
     if not frames or outcome == "skipped":
         return outcome, reason
     from urllib.parse import urlsplit

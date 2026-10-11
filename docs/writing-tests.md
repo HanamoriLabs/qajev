@@ -336,14 +336,15 @@ never reaches the network, so it is not in that list: it is in `blocked_writes`,
 inside frames too, each with its `frame`. Together they show a GET (information) apart from a save (a POST). The report
 lists the first 20 as "Block list" lines.
 
-QAJev reads and guards frames on the page's own site (any port). **Known gap, every version to 0.4.10:** a frame on
-another site runs apart from the page (Chrome's site isolation), and QAJev's read-only guard and `block_urls` do not
-reach it. Such a frame can send writes and reach blocked addresses. From 0.4.10 it is named in `frames_not_observed`,
-the report says "Frame not observed: <address>. QAJev's read-only guard and block_urls do not reach it, so it may send
-writes", and the test's outcome is harness in every mode, because the run is not proven read-only. A later version
-guards these frames (Target.setAutoAttach).
+QAJev reads and guards every frame in the page. A frame on another site runs apart from the page (Chrome's site
+isolation): from 0.4.12, QAJev attaches to it before it runs and puts the read-only guard and `block_urls` in it, so its
+writes are stopped and listed, with its `frame`, like the page's own. **Versions 0.4.11 and earlier did not:** such a
+frame could send writes and reach blocked addresses, even in a readonly run.
 
-A suite can accept one such frame by its exact host, with the reason:
+If QAJev cannot guard such a frame (attaching failed, or the frame started before the guard), it names it in
+`frames_not_observed`. The report says "Frame not observed: <address>. QAJev's read-only guard and block_urls do not
+reach it, so it may send writes", and the test's outcome is harness in every mode, because the run is not proven
+read-only. A suite can accept one such frame by its exact host, with the reason:
 
 ```yaml
 guard:
@@ -351,8 +352,8 @@ guard:
     - {host: www.youtube-nocookie.com, why: town screen live stream}
 ```
 
-An accepted frame is still listed (`frames_accepted` in `report.json`; "Frame <address>: accepted: not guarded
-(<why>)" in the report), and it does not make the test harness. Any other frame on another site still does. Host names
+An accepted frame that QAJev could not guard is still listed (`frames_accepted` in `report.json`; "Frame <address>:
+accepted: not guarded (<why>)" in the report), and it does not make the test harness. One QAJev guards needs nothing. Any other frame on another site still does. Host names
 are exact: no wildcard, scheme, port or path. **An accepted host is a reviewed exception.** The Orchestrator approves
 each one. The agent that wrote the suite never adds one on its own.
 
