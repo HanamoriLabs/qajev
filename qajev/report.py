@@ -298,6 +298,7 @@ def markdown(data):
             lines.append("- " + _cell(report_html.NOT_OBSERVED.format(where=_where(url))))
         for f in r.get("frames_accepted") or []:
             lines.append("- " + _cell(report_html.ACCEPTED.format(where=_where(f.get("url")), why=f.get("why", ""))))
+        lines += ["- " + _cell(line, 400) for line in report_html.frame_lines(r)]
         listed, shown = r.get("block_list_requests") or [], report_html.BLOCK_LIST_SHOWN
         for q in listed[:shown]:  # what the page tried to reach on block_urls
             lines.append(f"- Block list: {_cell(q.get('method'))} {_cell(_where(q.get('url')))}, "

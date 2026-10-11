@@ -100,7 +100,21 @@ def _where(url):
 
 BLOCK_LIST_SHOWN = 20  # block-list requests a report lists by line; report.json keeps them all
 # A frame QAJev could not read (another site): its requests and writes are in neither list, which is not "none"
-ACCEPTED = "Frame {where}: accepted: not guarded ({why})"  # guard.unguarded_frames, a reviewed exception
+ACCEPTED = "Frame {where}: accepted: not guarded ({why})"
+FRAME_SHOWN = 20  # frame console lines, and frame requests, a report lists; report.json keeps them all
+
+
+def frame_lines(r):
+    """What a test's frames said and asked for, as report lines (no query strings)."""
+    said, asked = r.get("frame_console") or [], r.get("frame_requests") or []
+    lines = [f"Frame console ({_where(c.get('frame'))}): {c.get('level')}: {c.get('text')}" for c in said[:FRAME_SHOWN]]
+    if len(said) > FRAME_SHOWN:
+        lines.append(f"Frame console: {len(said) - FRAME_SHOWN} more in report.json")
+    lines += [f"Frame request: {q.get('method')} {_where(q.get('url'))}, {q.get('state')}{from_frame(q)}"
+              for q in asked[:FRAME_SHOWN]]
+    if len(asked) > FRAME_SHOWN:
+        lines.append(f"Frame request: {len(asked) - FRAME_SHOWN} more in report.json")
+    return lines  # guard.unguarded_frames, a reviewed exception
 NOT_OBSERVED = ("Frame not observed: {where}. QAJev's read-only guard and block_urls do not reach it, so it may send "
                 "writes")
 
@@ -211,6 +225,7 @@ def _scenario(i, r, who="Jev"):
         notes.append(_e(NOT_OBSERVED.format(where=_where(url))))
     for f in r.get("frames_accepted") or []:
         notes.append(_e(ACCEPTED.format(where=_where(f.get("url")), why=f.get("why", ""))))
+    notes += [_e(line) for line in frame_lines(r)]
     for q in (r.get("block_list_requests") or [])[:BLOCK_LIST_SHOWN]:  # what the page tried to reach on block_urls
         notes.append(f"Block list: {_e(q.get('method'))} {_e(_where(q.get('url')))}, "
                      + ("blocked" if q.get("blocked") else "not blocked") + _e(from_frame(q)))

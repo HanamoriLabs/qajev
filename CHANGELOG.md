@@ -4,6 +4,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+- Each test lists what its frames said and asked for, so a framed tool that stalls shows why: `frame_console` (log,
+  info, warn and debug lines, errors, exceptions, rejections) and `frame_requests` (each request that failed, or still
+  waits after a second, with its state), each with the frame's address. The report shows the first 20 of each. The top
+  page's own console is left as it is: its errors are findings, as before (verse-workshop's rig tool, 12 Oct).
 ## 0.4.12: 12 Oct 2026
 
 - **Frames on another site are guarded.** Chrome runs such a frame apart from the page, and QAJev 0.4.11 and earlier
@@ -12,6 +16,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   in it, then lets it run. Its blocked writes and its requests to blocked addresses are listed with its `frame`, and
   the live test that proved the leak now passes. A frame QAJev still cannot guard is named and makes the test harness,
   as in 0.4.10.
+- Readonly runs on QAJev 0.4.11 and earlier, on pages with frames on another site, were not proven read-only.
+
 ## 0.4.11: 12 Oct 2026
 
 - `guard: {unguarded_frames: [{host, why}]}`: a reviewed exception for a frame on another site, by exact host name.

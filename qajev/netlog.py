@@ -75,6 +75,8 @@ class Failures(threading.Thread):
         self.patterns = list(block_urls or ())
         self.block_list = []  # requests to a blocked address, since the last take
         self.listed = OrderedDict()  # request id -> its block_list entry, until Chrome says how it ended
+        self.inflight = OrderedDict()  # request id -> (address, method, document, when sent): not finished yet
+        self.gone_wrong = []  # requests that failed since the last frame_requests: {method, url, frame, state}
         self.contexts = {}  # frame id -> its page-world execution context (Runtime), for drain_frames
         self.runtime = False
         self.replies = {}  # message id -> [answered, reply]
@@ -123,11 +125,19 @@ class Failures(threading.Thread):
                 self.urls[rid] = sent
                 while len(self.urls) > IDS:
                     self.urls.popitem(last=False)
+                if params.get("type") != "Document":  # a frame's own page: Chrome finishes it on the parent's link
+                    self.inflight[rid] = (*sent, time.monotonic())
+                    while len(self.inflight) > IDS:
+                        self.inflight.popitem(last=False)
                 if self.patterns and blocks(sent[0], self.patterns):
                     self._list(rid, sent)
             elif method == "Network.loadingFailed":
                 rid = (sid, params.get("requestId"))
                 sent = self.urls.pop(rid, None)
+                self.inflight.pop(rid, None)
+                if sent and len(self.gone_wrong) < KEEP:
+                    self.gone_wrong.append({"method": sent[1], "url": sent[0][:300], "frame": sent[2],
+                                            "state": f"failed: {describe(params)}"})
                 if sent:
                     self.failed.pop(sent[0], None)
                     self.failed[sent[0]] = (describe(params), time.monotonic())
@@ -142,6 +152,8 @@ class Failures(threading.Thread):
                         entry["blocked"] = True
             elif method in ("Network.loadingFinished", "Network.responseReceived"):
                 self.listed.pop((sid, params.get("requestId")), None)
+                if method == "Network.loadingFinished":
+                    self.inflight.pop((sid, params.get("requestId")), None)
             elif sid:  # an attached frame's other events: its contexts are read through its session instead
                 return
             elif method == "Runtime.executionContextCreated":
@@ -226,6 +238,18 @@ class Failures(threading.Thread):
         while len(self.listed) > IDS:
             self.listed.popitem(last=False)
         return entry
+
+    def frame_requests(self, documents, waiting=1.0):
+        """The requests the frames at `documents` (their addresses) asked for that failed since the last call, and
+        those still waiting after `waiting` seconds: [{method, url, frame, state}]. The other failures are dropped:
+        the page's own reach its findings."""
+        now = time.monotonic()
+        with self.lock:
+            failed = [r for r in self.gone_wrong if r["frame"] in documents]
+            self.gone_wrong = []
+            pending = [{"method": m, "url": u[:300], "frame": d, "state": f"pending {int(now - t)} s"}
+                       for u, m, d, t in self.inflight.values() if d in documents and now - t >= waiting]
+        return failed + pending[:KEEP]
 
     def take_block_list(self):
         """The requests to a blocked address since the last take: [{method, url, frame, blocked}]."""
