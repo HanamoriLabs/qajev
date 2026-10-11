@@ -7,6 +7,7 @@ import pytest
 from qajev import lowprio
 
 ROOT = Path(lowprio.__file__).parent.parent
+MAX_NICE = 20 if sys.platform == "darwin" else 19  # Linux caps nice at 19: `nice -n 20` lands there
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="no nice on Windows")
 
 # Started from a QAJev process at nice N: what nice its own process ends at, and what nice a program it starts runs at.
@@ -25,6 +26,7 @@ def test_qajev_goes_to_nice_10_only_from_above_and_always_starts_its_programs(st
                          text=True, cwd=ROOT)
     assert out.returncode == 0, out.stderr
     me, kid_code, kid_nice = out.stdout.split()
+    expect = min(expect, MAX_NICE)
     assert (int(me), int(kid_code), int(kid_nice)) == (expect, 0, expect)
 
 
