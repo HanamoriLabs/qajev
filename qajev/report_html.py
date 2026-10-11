@@ -100,6 +100,7 @@ def _where(url):
 
 BLOCK_LIST_SHOWN = 20  # block-list requests a report lists by line; report.json keeps them all
 # A frame QAJev could not read (another site): its requests and writes are in neither list, which is not "none"
+ACCEPTED = "Frame {where}: accepted: not guarded ({why})"  # guard.unguarded_frames, a reviewed exception
 NOT_OBSERVED = ("Frame not observed: {where}. QAJev's read-only guard and block_urls do not reach it, so it may send "
                 "writes")
 
@@ -208,6 +209,8 @@ def _scenario(i, r, who="Jev"):
         notes.append(f"Allowed write: {_e(w.get('method'))} {_e(_where(w.get('url')))}")
     for url in r.get("frames_not_observed") or []:  # its writes and requests are in no list: never "none"
         notes.append(_e(NOT_OBSERVED.format(where=_where(url))))
+    for f in r.get("frames_accepted") or []:
+        notes.append(_e(ACCEPTED.format(where=_where(f.get("url")), why=f.get("why", ""))))
     for q in (r.get("block_list_requests") or [])[:BLOCK_LIST_SHOWN]:  # what the page tried to reach on block_urls
         notes.append(f"Block list: {_e(q.get('method'))} {_e(_where(q.get('url')))}, "
                      + ("blocked" if q.get("blocked") else "not blocked") + _e(from_frame(q)))
