@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.9: 12 Oct 2026
+
 - A run with `block_urls` lists every request to a blocked address, from the page and every frame in it:
   `block_list_requests` in `report.json`, with the method, the address, the frame that sent it and whether Chrome
   blocked it. Before, a blocked GET was listed nowhere (verse-workshop, 12 Oct).
