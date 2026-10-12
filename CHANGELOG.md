@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.27: 13 Oct 2026
+
 ### Fixed
 
 - The guard hid a to-do row's own title when it held a danger word, such as the task "Buy paint". In a list item with
