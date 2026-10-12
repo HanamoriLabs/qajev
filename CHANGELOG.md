@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.22: 13 Oct 2026
+
+### Changed
+
+- A cloud run that waits for credits is followed for 1 minute, not 2 hours. Then QAJev says why, with the run id and
+  `qajev stop r_...`, and returns with exit `4`, also with `--quiet` and `--json`, which printed nothing before. The run
+  stays queued until a top-up, and QAJev Cloud ends it after 2 hours with no charge (the Orchestrator).
+
 ## 0.4.21: 13 Oct 2026
 
 ### Fixed

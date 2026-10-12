@@ -279,6 +279,9 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
   machines are off, today's cloud minutes are used up, the month's model spend reached its limit, or the account has
   too few credits (with what the run needs, the balance and where to buy). Otherwise it says `waiting for a cloud
   machine`. `qajev jobs r_...` and its `--json` (`"waiting": {"reason", "text"}`) show the same.
+- **A run that waits for credits** is followed for 1 minute (`QAJEV_CLOUD_CREDIT_WAIT`), also with `--quiet` and
+  `--json`. Then QAJev returns with exit `4` and says why, the run id and `qajev stop r_...`. The run stays queued: a
+  top-up on the Credits page starts it, and QAJev Cloud ends it after 2 hours without one, with no charge.
 - **`--background`** returns the cloud run's id (`r_...`) and address at once. `qajev jobs r_...` shows its state;
   `qajev stop r_...` stops it.
 - **What stays on this Mac.** `--runner cloud` refuses these, with the reason and exit `3`, and runs nothing here.
