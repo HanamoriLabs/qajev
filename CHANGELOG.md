@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Changed
+
+- A hook whose selector matches a guarded control first now says how many elements it matches and asks for a narrower
+  selector, instead of only "the guard hid this control (danger: Sign out)", which read as if the test tried to sign
+  out (dash-wholesale-links).
+
 ## 0.4.24: 13 Oct 2026
 
 ### Fixed
