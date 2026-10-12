@@ -785,6 +785,29 @@ def test_a_seeded_account_goes_with_only_its_own_value_and_the_suite_points_at_i
     assert local == []
 
 
+def test_a_fixture_with_a_user_per_key_is_read_by_a_dotted_key(dash, local, tmp_path):
+    # foleyapp, 12 Oct: Foley's local stack writes {"A": {"email", "password"}, "B": {...}} and documents #A.password.
+    # 0.4.20 read only top-level keys, so the dry check stopped at "no text value for 'A.email'".
+    nested = {"test_account": True, "allowed_hosts": ["localhost"],
+              "A": {"email": "test-a@foley.test", "password": "pw-a-1234"}, "B": {"password": "pw-b-5678"}}
+    account = ("account:\n  email: seed:../fixtures/users.json#A.email\n"
+               "  password: seed:../fixtures/users.json#A.password\n  login: {url: /login}\n")
+    repo, path = seeded(tmp_path, fixture=nested, extra=account)
+    assert cli.main(["run", str(path), "--runner", "cloud"]) == 0
+    remote = cloud.seed_remote(str((repo / "fixtures" / "users.json").resolve()))
+    sent = json.loads(dash.files[remote])
+    assert sent == {"test_account": True, "allowed_hosts": ["localhost"], "A.email": "test-a@foley.test",
+                    "A.password": "pw-a-1234"}  # flat, A's only: B's password stays on this Mac
+    from qajev import vault
+    copy = tmp_path / "copy.json"  # what the cloud runner reads: the trimmed copy, by the same dotted keys
+    copy.write_text(json.dumps(sent))
+    assert vault.resolve(f"seed:{copy}#A.password") == "pw-a-1234"
+    original = repo / "fixtures" / "users.json"  # and a local run reads the nested file itself
+    assert vault.resolve(f"seed:{original}#B.password") == "pw-b-5678"
+    with pytest.raises(vault.VaultError, match="no text value for 'A'"):
+        vault.resolve(f"seed:{original}#A")  # an object is not a value
+
+
 @pytest.mark.parametrize("fixture, extra, tunnel, said", [
     # planted fault: a fixture that does not say it is a test account
     ({"allowed_hosts": ["127.0.0.1"], "password_a": "x"}, ACCOUNT, TUNNEL, "not a test-user fixture"),

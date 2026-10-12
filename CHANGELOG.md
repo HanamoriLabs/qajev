@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.21: 13 Oct 2026
+
+### Fixed
+
+- `seed:FILE#KEY` reads a dotted KEY as a path into nested objects, such as `#A.password` in a fixture with one object per
+  test user. Before, only top-level keys worked, so a cloud run stopped at "the fixture has no text value for 'A.email'"
+  (foleyapp).
+
 ## 0.4.20: 13 Oct 2026
 
 ### Added

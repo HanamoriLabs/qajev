@@ -448,9 +448,10 @@ def seeded_account(account, tunnel, targets, source, folder):
             raise NotAllowed(f"seed:{file}: the fixture must list its allowed_hosts")
         values = {}
         for key in sorted(keys):
-            if not isinstance(data.get(key), str) or not data[key]:
+            value = vault.seed_value(data, key)
+            if not isinstance(value, str) or not value:
                 raise NotAllowed(f"seed:{file}: the fixture has no text value for {key!r}")
-            values[key] = data[key]
+            values[key] = value
         fixture = {"test_account": True, "allowed_hosts": data["allowed_hosts"], **values}
         out.append((seed_remote(file), json.dumps(fixture).encode()))
 
