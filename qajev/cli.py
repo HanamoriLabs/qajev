@@ -9,7 +9,6 @@ import shutil
 import signal
 import sys
 import threading
-import time
 from pathlib import Path
 
 from . import __version__, lowprio
@@ -1603,18 +1602,21 @@ def _interrupt(_signum, _frame):
     raise KeyboardInterrupt
 
 
-def _stop_when_orphaned(every=2.0):
+def _stop_when_orphaned(every=2.0, stop=None):
     """Stop the run, like Ctrl-C, when the process that started it ends. A lane stop or a killed script left
     `qajev play` running on its own, its game window at 120% CPU for 20 minutes (SideGame1 plan 61, 7 Oct).
     Started by launchd (parent 1 from the start: nightly), there is nothing to watch. QAJEV_OUTLIVE_PARENT=1 keeps
-    a run that was detached on purpose. A background job's parent is its wrapper, which waits for it."""
+    a run that was detached on purpose. A background job's parent is its wrapper, which waits for it. It waits on an
+    event, not time.sleep, so a fake clock in the same process can never make it spin (CI, 13 Oct); `stop` ends it."""
     parent = os.getppid()
     if parent == 1 or os.environ.get("QAJEV_OUTLIVE_PARENT") == "1":
         return None
+    halt = stop or threading.Event()
 
     def watch():
         while os.getppid() == parent:
-            time.sleep(every)
+            if halt.wait(every):
+                return
         print(f"qajev: the process that started this run (pid {parent}) ended; stopping", file=sys.stderr)
         os.kill(os.getpid(), signal.SIGTERM)
 
