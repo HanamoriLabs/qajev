@@ -64,6 +64,12 @@ DESTRUCTIVE = [
 HARMLESS = [
     r"\b(reset|clear|cancel)\s+(all\s+)?(the\s+|my\s+|your\s+|this\s+)?(filters?|search(es)?|search\s+query|"
     r"selection|selected|edits?|editing|form|changes)\b",
+    # Drag-and-drop hints (Foley, 13 Oct: "drag to move. Drop a task here to move it into this project." on every
+    # project button). Only this phrasing: "Drop table", "Drop all", "Drop database" stay destructive (Orchestrator).
+    r"\bdrag(\s+and\s+|\s*&\s*|-and-)drop\b",
+    r"\bdrag\s+to\s+(move|reorder|sort)\b",
+    r"\bdrop\s+(a|an|the|your|it|them|this|these|files?|items?|tasks?|cards?|images?|photos?)\b[^.;:!?]{0,40}?"
+    r"\b(here|onto|into)\b",
 ]
 # ...unless the control names something that matters: then it stays destructive, whatever else it says.
 GRAVE = [r"\b(accounts?|orders?|subscriptions?|plans?|bookings?|data|payments?|memberships?)\b"]
