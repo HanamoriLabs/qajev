@@ -481,7 +481,9 @@ when the suite loads, on every host, with a message that points to `qajev browse
 show that it belongs to a test account, and the fixture's `"test_account": true` can.
 
 Before the first scenario, QAJev itself opens the sign-in page in its own tab, types the email, reads the password
-from the fixture and types it into the password field, submits, and checks it got in. Then the scenarios run as
+from the fixture and types it into the password field, submits, and checks it got in. It types only once the page has
+loaded, and checks the fields still hold what it typed just before it submits: a page whose scripts start late can
+clear them. It types them again once, then stops with the reason. Then the scenarios run as
 usual, guarded and already signed in. The password is never in Jev's prompt, a report, a screenshot or a log (it is
 redacted from everything QAJev writes), and Jev still cannot type into password fields. If the site does not let the
 account in, the run stops with the reason (`harness: sign-in failed: Wrong email or password`) instead of leaving Jev
@@ -490,7 +492,8 @@ at a sign-in page.
 The sign-in page must be `https` (plain `http` only on localhost), on a local dev host the fixture's `allowed_hosts`
 names, checked again where the browser is just before it types; the password only goes into a password field.
 `login` also takes `email_field`, `password_field` and `submit` (CSS selectors, when the defaults do not find them),
-`next` (the button between the email and password steps of a two-step sign-in), and `signed_in` to say how success
+`open` (the button that shows the sign-in form, such as "Sign in with email"), `next` (the button between the email
+and password steps of a two-step sign-in), and `signed_in` to say how success
 looks (`{url_not: /login}`, `{text: ["Your orders"]}` or `{js: ...}`; by default: away from the sign-in page with no
 password field showing).
 

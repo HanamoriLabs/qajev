@@ -45,8 +45,10 @@ The seeded test account could not sign in, so nothing was tested. The reason is 
 email or password") or the seed fixture's: check that your app's seed wrote the fixture, that it says
 `"test_account": true`, and that it lists the host in `allowed_hosts`. QAJev signs in by itself only on a local dev
 host, with a `seed:FILE#KEY` password; a `keychain:`, `op://` or `env:` password is refused. If the site's fields
-are unusual, name them in the account's `login:` (`email_field`, `password_field`, `next`, `submit`) and say how to
-tell it worked (`signed_in`).
+are unusual, name them in the account's `login:` (`open`, `email_field`, `password_field`, `next`, `submit`) and say
+how to tell it worked (`signed_in`). "cleared the email and password QAJev typed, twice": the page's scripts started
+after QAJev typed (a dev server that builds the page on the first request does this). Open the page once before the
+run.
 
 **"hidden by QAJev's guard (danger: ...)" (harness)**
 The text is on the page, inside a control QAJev's guard hid because it holds a risky word ("billing", "delete",

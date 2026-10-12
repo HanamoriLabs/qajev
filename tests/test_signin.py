@@ -89,9 +89,13 @@ class FormPage:
     """A sign-in page at `href` with an email and a password field. It records what is typed; Enter signs in when
     `lets_in`, and `moves_to` is where the page goes once the email is typed (a two-step sign-in)."""
 
-    def __init__(self, href, lets_in=True, moves_to=None, unreadable=False):
+    def __init__(self, href, lets_in=True, moves_to=None, unreadable=False, loading=0, clears=0, closed=False):
         self.href, self.lets_in, self.moves_to, self.typed, self.pw = href, lets_in, moves_to, [], True
         self.unreadable, self.dark = unreadable, False  # dark: its state cannot be read (a getter that throws)
+        self.loading, self.clears, self.fields = loading, clears, {"email": "", "pw": ""}
+        self.closed = closed  # its form shows only after a click on the button that opens it
+        self.typed_while_loading = False  # loading: state reads before its scripts have run; clears: read-backs that
+        # find the fields emptied by them
 
     def navigate(self, _url):
         return None
@@ -102,15 +106,23 @@ class FormPage:
         if js == signin.STATE_JS:
             from urllib.parse import urlsplit
 
+            self.loading -= 1
             return {"href": self.href, "path": urlsplit(self.href).path, "pw": self.pw, "otp": False, "error": "",
-                    "text": ""}
-        return True  # PICK_JS: the field is there
+                    "text": "", "ready": self.loading < 0}
+        if js == signin.TYPED_JS:
+            if self.clears:
+                self.clears -= 1
+                self.fields = {"email": "", "pw": ""}
+            return {"email": self.fields["email"], "pw": len(self.fields["pw"])}
+        return not self.closed or js.rstrip().endswith('"open")')  # PICK_JS: the field is there
 
     def find(self, selector):
         return {"selector": selector, "secret": '"password"' in selector, "x": 1, "y": 1}
 
     def type_into(self, field, text):
         self.typed.append(text)
+        self.typed_while_loading = self.typed_while_loading or self.loading >= 0
+        self.fields["pw" if field["secret"] else "email"] = text
         if self.moves_to and not field["secret"]:
             self.href, self.dark = self.moves_to, self.unreadable
 
@@ -122,7 +134,7 @@ class FormPage:
             self.href, self.pw = self.href.rsplit("/", 1)[0] + "/home", False
 
     def trusted_click(self, _x, _y):
-        pass
+        self.closed = False
 
 
 def test_a_password_is_typed_only_for_a_seeded_test_account_on_a_local_dev_host(tmp_path, monkeypatch):
@@ -188,3 +200,43 @@ def test_a_seed_reference_reads_only_a_fixture_that_says_it_is_a_test_account(tm
     assert "not-a-fixture" not in str(e.value)
     with pytest.raises(vault.VaultError, match="no text value"):
         vault.resolve(f"seed:{good}#missing")
+
+
+def _local_account(tmp_path):
+    fixture = tmp_path / "qa_test_user.json"
+    fixture.write_text(json.dumps({"test_account": True, "allowed_hosts": ["127.0.0.1"],
+                                   "password": "fixture-pass-local"}))
+    return {"name": "qa", "email": "qa-test@example.test", "password": f"seed:{fixture}#password",
+            "login": {"url": "http://127.0.0.1:4000/login"}}
+
+
+def test_it_types_only_once_the_sign_in_page_has_loaded(tmp_path):
+    # dash-wholesale-links, 12 Oct: a fresh dev server built /login on the first request, so the page's scripts started
+    # late. QAJev had typed already; the fields were cleared and no sign-in request went out.
+    page = FormPage("http://127.0.0.1:4000/login", loading=3)
+    assert signin.sign_in(page, _local_account(tmp_path), timeout=5)["ok"]
+    assert not page.typed_while_loading and page.typed == ["qa-test@example.test", "fixture-pass-local"]
+
+
+def test_fields_the_page_cleared_are_typed_again_once_before_enter(tmp_path):
+    page = FormPage("http://127.0.0.1:4000/login", clears=1)
+    assert signin.sign_in(page, _local_account(tmp_path), timeout=5)["ok"]
+    assert page.typed == ["qa-test@example.test", "fixture-pass-local"] * 2
+
+
+def test_a_page_that_clears_them_again_fails_saying_so_and_never_shows_the_password(tmp_path):
+    page = FormPage("http://127.0.0.1:4000/login", clears=2)
+    with pytest.raises(signin.SignInFailed, match="cleared the email and password QAJev typed, twice") as e:
+        signin.sign_in(page, _local_account(tmp_path), timeout=5)
+    assert "fixture-pass-local" not in str(e.value) and page.href.endswith("/login")  # Enter never pressed
+
+
+def test_a_button_that_shows_the_sign_in_form_is_clicked_first(tmp_path):
+    # foleyapp, 12 Oct: Foley's web app shows the email form only after "Sign in with email" (login.open).
+    account = {**_local_account(tmp_path), "login": {"url": "http://127.0.0.1:4000/", "open": "button.brand.plain"}}
+    page = FormPage("http://127.0.0.1:4000/", closed=True)
+    assert signin.sign_in(page, account, timeout=5)["ok"] and page.typed[0] == "qa-test@example.test"
+    page = FormPage("http://127.0.0.1:4000/", closed=True)
+    with pytest.raises(signin.SignInFailed, match="no email or username field"):  # without it: no form to type into
+        signin.sign_in(page, _local_account(tmp_path) | {"login": {"url": "http://127.0.0.1:4000/"}}, timeout=1)
+    assert page.typed == []
