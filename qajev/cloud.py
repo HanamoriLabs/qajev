@@ -269,6 +269,7 @@ class Plan:
     port: int | None = None
     tunnel_port: int | None = None  # this Mac's dev server port, reached through the dispatcher's read-only tunnel
     tunnel: dict | None = None  # the full tunnel: ports with their commands, root, data, writes, test_keys
+    inline: list = field(default_factory=list)  # [(remote path, bytes)]: a suite copy and its seed fixtures
     project: str | None = None  # the project's name, sent when the dashboard knows it
     model: str | None = None
     sees_screen: bool | None = None
@@ -399,6 +400,67 @@ def full_tunnel(spec, local_targets, writes, root, source):
     return {**spec, "root": str(Path(root).resolve()), "source": source, **({"writes": True} if writes else {})}
 
 
+SEED_REF = re.compile(r"seed:([^\s\"'#,\]\}]+)#([A-Za-z0-9_.-]+)")
+
+
+def seed_remote(file):
+    """Where a seed fixture goes in a cloud run: in/seed/<hash of its absolute path on this Mac>.json. The cloud
+    runner reads it there for that path (qcloud.runner), so the suite needs no other change."""
+    return f"in/seed/{hashlib.sha256(os.path.abspath(file).encode()).hexdigest()[:16]}.json"
+
+
+def seeded_account(account, tunnel, targets, source, folder):
+    """A cloud run that signs in with a seeded TEST account (José via the Orchestrator, 12 Oct): only through the full
+    tunnel with data: local, to this Mac's dev servers; only seed:FILE#KEY from a fixture that says "test_account":
+    true; and only the values this run's account uses. -> [(remote, bytes)]: the source file with each seed reference
+    made absolute, and one small fixture per file. Raises NotAllowed (never with a value in the message)."""
+    from . import vault
+
+    if not tunnel or tunnel.get("data") != "local":
+        raise NotAllowed("a signed-in cloud run needs tunnel: with data: local (a seeded test account on this Mac's "
+                         "dev servers); any other signed-in run stays on this Mac")
+    login = urllib.parse.urljoin(targets[0] if targets else "", account["login"]["url"])  # a project's is relative
+    away = [t for t in [*targets, login] if t and not config.is_loopback(t)]
+    if away:
+        raise NotAllowed(f"a signed-in cloud run reaches only this Mac's 127.0.0.1 or localhost, not "
+                         f"{urllib.parse.urlsplit(away[0]).hostname}")
+    refs = [("email", account.get("email")), ("password", account.get("password")), ("totp", account.get("totp")),
+            ("cookie.value", (account.get("cookie") or {}).get("value"))]
+    needed = {}
+    for what, ref in refs:
+        if ref is None or (what == "email" and not vault.is_ref(ref)):
+            continue
+        try:
+            kind, *rest = vault.parse(ref)
+        except vault.VaultError as e:
+            raise NotAllowed(f"account.{what}: {e}") from None
+        if kind != "seed":
+            raise NotAllowed(f"account.{what}: a cloud run takes only seed:FILE#KEY from a test fixture, never a "
+                             f"{kind}: reference")
+        needed.setdefault(os.path.abspath(rest[0]), set()).add(rest[1])
+    out = []
+    for file, keys in needed.items():
+        try:
+            data = vault.seed(file)
+        except vault.VaultError as e:
+            raise NotAllowed(str(e)) from None
+        if not data.get("allowed_hosts"):
+            raise NotAllowed(f"seed:{file}: the fixture must list its allowed_hosts")
+        values = {}
+        for key in sorted(keys):
+            if not isinstance(data.get(key), str) or not data[key]:
+                raise NotAllowed(f"seed:{file}: the fixture has no text value for {key!r}")
+            values[key] = data[key]
+        fixture = {"test_account": True, "allowed_hosts": data["allowed_hosts"], **values}
+        out.append((seed_remote(file), json.dumps(fixture).encode()))
+
+    def absolute(m):
+        file = m.group(1) if os.path.isabs(m.group(1)) else os.path.join(str(folder), m.group(1))
+        return f"seed:{os.path.abspath(file)}#{m.group(2)}"
+
+    return [(source[0], SEED_REF.sub(absolute, Path(source[1]).read_text(encoding="utf-8")).encode()), *out]
+
+
 def plan(args):
     """What goes to the cloud for this parsed run (args.argv: its arguments, with the command first). Nothing is sent.
     Raises NotAllowed when the run must stay on this Mac, CloudError when a setting is wrong."""
@@ -418,6 +480,7 @@ def plan(args):
     if getattr(args, "allow_commands", False):
         raise NotAllowed("a suite's shell commands (--allow-commands) run on this Mac only")
     files, targets, account, named_plan, plan_base, project_name, swap = [], [], None, None, Path.cwd(), None, {}
+    seed_base = None
     full, root, source, writes = None, None, None, getattr(args, "mode", None) == "mutate"
     if getattr(args, "project", None):
         from urllib.parse import urljoin
@@ -435,6 +498,12 @@ def plan(args):
         targets = [args.url] if cmd == "smoke" and args.url else [
             urljoin(target["base_url"], target.get("smoke_start", "/")) if cmd == "smoke" else target["base_url"]]
         account = target.get("account") or proj.account
+        if account:  # the account block as a suite gets it (seed references anchored to the project)
+            try:
+                account = project_mod.sign_in_account(proj, account)
+            except project_mod.ProjectError as e:
+                raise CloudError(str(e), EXIT_CONFIG) from None
+            seed_base = proj.repo or proj.config_path.parent
         full = target.get("tunnel")
         root = proj.repo.expanduser() if proj.repo is not None else None
         source = {"file": str(proj.config_path.resolve()), "env": env}
@@ -454,6 +523,7 @@ def plan(args):
             raise CloudError(f"{args.suite}: {e}", EXIT_CONFIG) from None
         targets = [f"http://{h}" for h in suite.hosts]
         account = suite.account
+        seed_base = Path(args.suite).parent
         full = suite.tunnel
         root = planfile.project_root(args.suite.resolve().parent)
         source = {"file": str(args.suite.resolve())}
@@ -466,8 +536,10 @@ def plan(args):
         targets = [args.url]
         if not args.url:
             raise CloudError("give a URL or --project", EXIT_CONFIG)
-    if account:
-        raise NotAllowed("signed-in runs stay on this Mac (the run signs in with an account)")
+    if account and not full:
+        raise NotAllowed("signed-in runs stay on this Mac (the run signs in with an account; a seeded test account "
+                         "goes to the cloud through tunnel: with data: local)")
+    writes = writes or bool(account)  # signing in posts a form to this Mac's dev server
     named = getattr(args, "runner_named", False)
     held = held_by([str(p) for _, p in files] + [t for t in targets if t] + [project_name or ""])
     if held and not named:
@@ -476,8 +548,14 @@ def plan(args):
     local_targets = [t for t in targets if t and config.is_loopback(t)]
     serve = getattr(args, "serve", None)
     tunnel_port, tunnel = None, None
+    inline = []
     if local_targets and not serve and full:
         tunnel = full_tunnel(full, local_targets, writes, root, source)
+        if account:
+            inline = seeded_account(account, tunnel, targets, files[0], seed_base)
+            files = files[1:]  # the source goes as its copy, with each seed reference made absolute
+    elif account:
+        raise NotAllowed("a signed-in cloud run needs tunnel: to this Mac's dev servers, not --serve or a public site")
     elif local_targets and not serve and not named:
         raise NotAllowed("a run on this Mac's dev server goes to the cloud only with --runner cloud on the command: "
                          "the tunnel passes GET, HEAD and OPTIONS, so a page's POST or WebSocket would fail there")
@@ -511,7 +589,7 @@ def plan(args):
     from .jobs import describe_argv
 
     return Plan(kind=cmd, args=forwarded, name=describe_argv(args.argv)[:160], files=files, serve_root=serve_root,
-                port=port, tunnel_port=tunnel_port, tunnel=tunnel, project=project_name,
+                port=port, tunnel_port=tunnel_port, tunnel=tunnel, inline=inline, project=project_name,
                 model=getattr(args, "model", None), sees_screen=True if getattr(args, "vision", None) else None,
                 warnings=warnings)
 
@@ -566,6 +644,11 @@ def submit(client, plan):
 
     with tempfile.TemporaryDirectory(prefix="qajev-cloud-") as scratch:
         files = list(plan.files) + (site_files(plan.serve_root, Path(scratch)) if plan.serve_root else [])
+        for i, (remote, data) in enumerate(plan.inline):  # written only into this scratch folder, removed after
+            local = Path(scratch) / f"inline-{i}"
+            local.write_bytes(data)
+            local.chmod(0o600)
+            files.insert(i, (remote, local))
         names = [r for r, _ in files]
         if len(set(names)) != len(names):
             raise CloudError("two files would have the same name on the cloud machine; rename one", EXIT_CONFIG)

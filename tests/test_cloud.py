@@ -746,3 +746,97 @@ def test_a_silent_dashboard_keeps_the_run_here_and_says_why(monkeypatch):
     cloud._dashboard_cache.clear()
     runner, source = cloud.runner_for(SimpleNamespace(runner=None, env_file=None, command="run", project=None))
     assert runner == "local" and "did not answer" in source
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# A seeded TEST account in a cloud run (José via the Orchestrator, 12 Oct): only through the full tunnel with
+# data: local, only seed:FILE#KEY from a fixture that says "test_account": true, and only the values the run uses.
+
+ACCOUNT = ("account:\n  email: qa-a@example.test\n  password: seed:../fixtures/users.json#password_a\n"
+           "  login: {url: /login}\n")
+
+
+def seeded(tmp_path, fixture=None, extra=ACCOUNT, tunnel=TUNNEL):
+    repo = checkout(tmp_path)
+    (repo / "fixtures").mkdir()
+    users = fixture if fixture is not None else {
+        "test_account": True, "allowed_hosts": ["127.0.0.1", "localhost"], "password_a": "pw-a-1234",
+        "password_b": "pw-b-5678", "admin_password": "never-ship-me"}
+    (repo / "fixtures" / "users.json").write_text(json.dumps(users))
+    path = suite_file(repo / "qa", base="http://127.0.0.1:8871", extra=f"{extra}{tunnel}")
+    return repo, path
+
+
+def test_a_seeded_account_goes_with_only_its_own_value_and_the_suite_points_at_it(dash, local, tmp_path):
+    repo, path = seeded(tmp_path)
+    assert cli.main(["run", str(path), "--runner", "cloud"]) == 0
+    body = dash.created()
+    fixture_file = str((repo / "fixtures" / "users.json").resolve())
+    remote = cloud.seed_remote(fixture_file)
+    assert remote in [f["path"] for f in body["files"]]
+    assert json.loads(dash.files[remote]) == {"test_account": True, "allowed_hosts": ["127.0.0.1", "localhost"],
+                                              "password_a": "pw-a-1234"}  # not B's, not the admin's
+    suite = dash.files["in/s.yaml"].decode()
+    assert f"seed:{fixture_file}#password_a" in suite and "../fixtures" not in suite
+    assert path.read_text().count("../fixtures/users.json") == 1  # the file on this Mac is never changed
+    assert body["tunnel"]["writes"] is True  # signing in posts a form
+    blob = json.dumps(body)
+    assert "pw-a-1234" not in blob and "pw-b-5678" not in blob  # values travel only in the fixture file
+    assert local == []
+
+
+@pytest.mark.parametrize("fixture, extra, tunnel, said", [
+    # planted fault: a fixture that does not say it is a test account
+    ({"allowed_hosts": ["127.0.0.1"], "password_a": "x"}, ACCOUNT, TUNNEL, "not a test-user fixture"),
+    ({"test_account": True, "password_a": "x"}, ACCOUNT, TUNNEL, "allowed_hosts"),
+    (None, ACCOUNT, TUNNEL.replace("  data: local\n", ""), "data: local"),
+    (None, ACCOUNT, "", "goes to the cloud through tunnel: with data: local"),
+])
+def test_a_seeded_account_that_breaks_a_rule_is_refused_and_nothing_is_sent(dash, local, capsys, tmp_path, fixture,
+                                                                            extra, tunnel, said):
+    _, path = seeded(tmp_path, fixture=fixture, extra=extra, tunnel=tunnel)
+    assert cli.main(["run", str(path), "--runner", "cloud"]) == cli.EXIT_CONFIG
+    err = capsys.readouterr().err
+    assert said in err and "pw-" not in err
+    assert dash.calls == [] and local == []
+
+
+def test_a_seeded_account_on_a_production_host_is_refused(dash, local, capsys, tmp_path):
+    # planted fault: a production base_url. The suite itself refuses a password for a host that is not a local dev host.
+    repo, _ = seeded(tmp_path)
+    path = suite_file(repo / "qa", base="https://shop.example", name="prod.yaml",
+                      extra=ACCOUNT.replace("{url: /login}", "{url: https://shop.example/login}") + TUNNEL)
+    assert cli.main(["run", str(path), "--runner", "cloud"]) == cli.EXIT_CONFIG
+    assert "local dev host" in capsys.readouterr().err
+    assert dash.calls == [] and local == []
+
+
+def test_a_project_account_with_a_keychain_password_stays_out_of_the_cloud(dash, local, capsys, tmp_path):
+    repo = checkout(tmp_path)
+    (repo / ".qajev").mkdir()
+    path = repo / ".qajev" / "project.toml"
+    path.write_text('name = "shop"\nrunner = "cloud"\naccount = "a"\n[env.local]\nbase_url = "http://127.0.0.1:8871"\n'
+                    'tunnel = { ports = { 8871 = { command = "node serve-folder.mjs" } }, data = "local" }\n'
+                    '[accounts.a]\nemail = "qa@example.test"\npassword = "keychain:shop/qa"\n'
+                    'login = { url = "/login" }\n'
+                    '[[objective]]\nname = "home"\nurl = "/"\nabout = "it loads"\nexpect = { text = ["Hi"] }\n')
+    assert cli.main(["run", "--project", str(path), "--suite", "core"]) == cli.EXIT_CONFIG
+    assert "never a keychain: reference" in capsys.readouterr().err
+    assert dash.calls == [] and local == []
+
+
+def test_a_project_account_from_the_seed_fixture_goes_through_the_tunnel(dash, local, tmp_path):
+    repo, _ = seeded(tmp_path)
+    (repo / ".qajev").mkdir()
+    path = repo / ".qajev" / "project.toml"
+    path.write_text('name = "shop"\nrunner = "cloud"\naccount = "b"\n[env.local]\nbase_url = "http://127.0.0.1:8871"\n'
+                    'tunnel = { ports = { 8871 = { command = "node serve-folder.mjs" } }, data = "local" }\n'
+                    '[accounts.b]\nemail = "qa-b@example.test"\npassword = "seed:fixtures/users.json#password_b"\n'
+                    'login = { url = "/login" }\n'
+                    '[[objective]]\nname = "home"\nurl = "/"\nabout = "it loads"\nexpect = { text = ["Hi"] }\n')
+    assert cli.main(["run", "--project", str(path), "--suite", "core"]) == 0
+    fixture_file = str((repo / "fixtures" / "users.json").resolve())
+    assert json.loads(dash.files[cloud.seed_remote(fixture_file)])["password_b"] == "pw-b-5678"
+    assert f'"seed:{fixture_file}#password_b"' in dash.files["in/project.toml"].decode()  # anchored to the repo
+    assert "password_a" not in dash.files[cloud.seed_remote(fixture_file)].decode()
+    assert local == []

@@ -541,6 +541,20 @@ says which pages asked and what to do (`needs_sign_in` in `report.json`, with a 
 scenario that starts on the sign-in page itself is judged as usual. The smoke crawl lists the pages it found behind a
 sign-in.
 
+### A seeded test account in QAJev Cloud
+
+A suite (or project env) whose account comes from the app's seed fixture can run in QAJev Cloud, through the full
+tunnel to this machine's dev servers (see "Dev servers on this machine, from QAJev Cloud"):
+
+- the suite has `tunnel:` with `data: local`, and every host it opens is this machine's `127.0.0.1` or `localhost`;
+- each secret of the account is `seed:FILE#KEY`, from a fixture that says `"test_account": true` and lists its
+  `allowed_hosts`. `keychain:`, `op://` and `env:` references, and `--profile` sign-ins, stay on this machine.
+
+QAJev sends one small copy of each fixture, with only the keys this run's account uses (not the fixture's other users),
+and a copy of the suite whose `seed:` paths point at it. The file on this machine is not changed. On QAJev Cloud only the
+run's own job reads the copy, and it is deleted when the run ends. The cloud machine hides its values in every event,
+report file and result it sends. The run writes through the tunnel, because signing in posts a form.
+
 ## Games
 
 Games are tested with `qajev play` instead; see [Games](games.md).
