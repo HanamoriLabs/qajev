@@ -72,7 +72,8 @@ SUITE_KEYS = {
 COLOR_SCHEMES = ("light", "dark")
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
-LOGIN_KEYS = {"url", "email_field", "password_field", "next", "submit", "signed_in", "code_field", "code_submit"}
+LOGIN_KEYS = {"url", "open", "email_field", "password_field", "next", "submit", "signed_in", "code_field",
+              "code_submit"}
 COOKIE_KEYS = {"name", "value", "path", "http_only"}
 SIGNED_IN_KEYS = {"url_not", "text", "js"}
 # reduce: the tab tells pages the visitor prefers reduced motion (CSS media query and matchMedia), so sites that

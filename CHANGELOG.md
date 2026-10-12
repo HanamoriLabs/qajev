@@ -4,6 +4,23 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.20: 13 Oct 2026
+
+### Added
+
+- `login.open` in an account: the button QAJev clicks first to show the sign-in form, such as "Sign in with email"
+  (foleyapp).
+
+### Fixed
+
+- A `fill` hook did nothing on a date, time or month field, and said nothing, so the next step timed out instead.
+  Now QAJev sets such a field's value as a person's edit does, and any fill whose text never reaches its field fails,
+  saying so (dash-wholesale-links).
+- A seeded sign-in typed before the page's scripts had run. On a dev server that builds the page on the first request,
+  they cleared the fields and the form sent nothing ("not signed in after 20 s"). Now QAJev waits for the page to load,
+  checks the fields before it submits, types them again once, and else says the page cleared them
+  (dash-wholesale-links).
+
 ## 0.4.19: 12 Oct 2026
 
 ### Added

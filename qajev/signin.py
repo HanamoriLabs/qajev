@@ -61,8 +61,14 @@ STATE_JS = """(() => {
     const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && e.type !== 'password'; });
   const errs = [...document.querySelectorAll(%s)].map((e) => e.innerText.trim()).filter(Boolean);
   return { href: location.href, path: location.pathname, pw, otp, error: (errs[0] || '').slice(0, 160),
-           text: (document.body ? document.body.innerText : '').slice(0, 20000) };
+           text: (document.body ? document.body.innerText : '').slice(0, 20000),
+           ready: document.readyState === 'complete' };
 })()""" % (json.dumps(", ".join(CODE_FIELDS)), json.dumps(ERRORS))
+# What the fields hold just before Enter: the email as typed, the password only by its length (never read out).
+TYPED_JS = """(() => {
+  const v = (t) => { const e = document.querySelector('[data-qajev-signin="' + t + '"]'); return e ? e.value : null; };
+  return { email: v('email'), pw: (v('password') || '').length };
+})()"""
 
 
 # José, 6 Oct: QAJev types passwords for local test accounts only. Every other account: a person signs in once.
@@ -172,7 +178,10 @@ def sign_in(session, account, *, timeout=20.0):
     error = session.navigate(login["url"])
     if error:
         raise SignInFailed(f"could not open the sign-in page {login['url']}: {error}")
-    first = _wait(session, lambda s: bool(s), 5) or {}
+    # Typed only once the page's scripts have run (dash-wholesale-links, 12 Oct: a dev server building /login on the
+    # first request started them late; they cleared what QAJev had typed, and no sign-in request went out). A page
+    # that never finishes loading is typed into anyway, after `timeout`: the read-back before Enter still catches it.
+    first = _wait(session, lambda s: s.get("ready"), timeout) or _wait(session, lambda s: bool(s), 5) or {}
     if not first.get("pw") and _signed_in(session, login, first):  # the site sent a signed-in visitor on already
         return {**out, "ok": True, "already": True, "landed": first.get("href", "").split("?")[0],
                 "seconds": round(time.monotonic() - started, 1)}
@@ -181,7 +190,14 @@ def sign_in(session, account, *, timeout=20.0):
     if not vault.is_ref(account["email"]):  # an email kept by reference stays out of events, logs and reports
         out["email"] = email
     _password_ok(account, first.get("href") or "", email)  # before a key is pressed; an unread page is no host
-    field = _pick(session, login.get("email_field") or EMAIL_FIELDS, "email")
+    email_fields = login.get("email_field") or EMAIL_FIELDS
+    if login.get("open") and not _pick(session, email_fields, "email"):  # a button shows the form (foleyapp, 12 Oct)
+        opener = _pick(session, login["open"], "open")
+        if not opener:
+            raise SignInFailed(f"no {login['open']!r} to open the sign-in form with on {login['url']}")
+        session.trusted_click(opener["x"], opener["y"])
+        _wait(session, lambda s: _pick(session, email_fields, "email"), 10)
+    field = _pick(session, email_fields, "email")
     if not field:
         raise SignInFailed(f"no email or username field on {login['url']}; set account.login.email_field")
     session.type_into(field, email)
@@ -210,6 +226,7 @@ def sign_in(session, account, *, timeout=20.0):
     password = vault.resolve(account["password"])
     remember_secret(password)  # never in an error, a log or a report
     session.type_into(field, password)
+    _still_typed(session, account, email, password, email_fields, password_field)
 
     button = _pick(session, login["submit"], "submit") if login.get("submit") else None
     if login.get("submit") and not button:
@@ -234,6 +251,33 @@ def sign_in(session, account, *, timeout=20.0):
         raise SignInFailed(redact(f"not signed in after {timeout:.0f} s: still on {last.get('path', '?')}{says}"))
     return {**out, "ok": True, "landed": state.get("href", "").split("?")[0],
             "seconds": round(time.monotonic() - started, 1)}
+
+
+def _still_typed(session, account, email, password, email_fields, password_field, settle=0.5):
+    """The fields still hold what was typed, a moment later: a page whose scripts start after the typing can clear
+    them, and then Enter sends nothing. Typed again once, under the same rails; a page that clears them again fails,
+    saying so. An email field already gone (a two-step sign-in) is fine."""
+    for again in (True, False):
+        time.sleep(settle)
+        held = session.evaluate(TYPED_JS) or {}
+        lost = [name for name, ok in (("email", held.get("email") in (None, email)),
+                                      ("password", held.get("pw") == len(password))) if not ok]
+        if not lost:
+            return
+        if not again:
+            raise SignInFailed(f"the sign-in page cleared the {' and '.join(lost)} QAJev typed, twice (its scripts "
+                               "may start late: open the page once before the run)")
+        if "email" in lost and (found := _pick(session, email_fields, "email")):
+            session.type_into(found, email)
+        if "password" in lost:
+            here = (_state(session) or {}).get("href") or ""
+            _password_ok(account, here, email)  # still a local dev host the seed fixture allows
+            session.check_host(here)
+            found = _pick(session, password_field, "password")
+            if not found or not found.get("secret"):
+                raise SignInFailed("refused: the password goes only into a password field, and none was found "
+                                   f"({password_field!r})")
+            session.type_into(found, password)
 
 
 def _code(session, account, email, state, timeout):
