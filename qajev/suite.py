@@ -439,6 +439,13 @@ def _account(raw, base, folder=None):
         raise SuiteError("account.login.url is required (the sign-in page)")
     _unknown("account.login", login, LOGIN_KEYS)
     _unknown("account.login.signed_in", login.get("signed_in") or {}, SIGNED_IN_KEYS)
+    if login.get("open") is not None:
+        steps = login["open"] if isinstance(login["open"], list) else [login["open"]]
+        ok = lambda s: (isinstance(s, str) and s.strip()) or (  # noqa: E731
+            isinstance(s, dict) and set(s) == {"text"} and isinstance(s["text"], str) and s["text"].strip())
+        if not steps or not all(ok(s) for s in steps):
+            raise SuiteError('account.login.open: a CSS selector, {text: "Button text"}, or a list of them, clicked in '
+                             "order until the email field shows")
     url = urljoin(base, login["url"]) if base else login["url"]
     scheme = urlsplit(url).scheme
     if scheme != "https" and not (scheme == "http" and is_loopback(url)):

@@ -493,7 +493,8 @@ at a sign-in page.
 The sign-in page must be `https` (plain `http` only on localhost), on a local dev host the fixture's `allowed_hosts`
 names, checked again where the browser is just before it types; the password only goes into a password field.
 `login` also takes `email_field`, `password_field` and `submit` (CSS selectors, when the defaults do not find them),
-`open` (the button that shows the sign-in form, such as "Sign in with email"), `next` (the button between the email
+`open` (the button that shows the sign-in form, such as "Sign in with email": a CSS selector, `{text: "Sign in"}`
+for a button found by its visible text, or a list of them clicked in order until the email field shows), `next` (the button between the email
 and password steps of a two-step sign-in), and `signed_in` to say how success
 looks (`{url_not: /login}`, `{text: ["Your orders"]}` or `{js: ...}`; by default: away from the sign-in page with no
 password field showing).

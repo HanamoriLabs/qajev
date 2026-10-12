@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.23: 13 Oct 2026
+
+### Added
+
+- `login.open` takes a list of steps, clicked in order until the email field shows, and a step can be
+  `{text: "Sign in or create account"}`: a button found by its visible text, for a control no CSS selector tells apart
+  (foleyapp).
+
 ## 0.4.22: 13 Oct 2026
 
 ### Fixed

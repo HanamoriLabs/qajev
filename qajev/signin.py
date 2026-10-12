@@ -54,6 +54,18 @@ PICK_JS = """((sels, tag) => {
   }
   return false;
 })(%s, %s)"""
+# A control found by its visible text, for login.open (Foley, 13 Oct: "Sign in or create account", then "Sign in
+# with email"; no CSS selector tells the first apart). A button, a link or a role=button with exactly this text.
+PICK_TEXT_JS = """((text, tag) => {
+  const seen = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e);
+    return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && !e.disabled; };
+  const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  document.querySelectorAll('[data-qajev-signin="' + tag + '"]').forEach((e) => e.removeAttribute('data-qajev-signin'));
+  const el = [...document.querySelectorAll('button, a, [role=button], input[type=button], input[type=submit]')]
+    .find((e) => seen(e) && norm(e.innerText || e.value) === norm(text));
+  if (el) { el.setAttribute('data-qajev-signin', tag); return true; }
+  return false;
+})(%s, %s)"""
 STATE_JS = """(() => {
   const pw = [...document.querySelectorAll('input[type=password]')].some((e) => {
     const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
@@ -130,6 +142,24 @@ def _pick(session, selectors, tag):
     return session.find(f'[data-qajev-signin="{tag}"]')
 
 
+def open_steps(login):
+    """login.open as a list: each a CSS selector or {text: "..."}, clicked in order until the email field shows."""
+    value = login.get("open")
+    return [] if not value else value if isinstance(value, list) else [value]
+
+
+def _pick_step(session, step, tag):
+    if isinstance(step, dict):
+        if not session.evaluate(PICK_TEXT_JS % (json.dumps(step["text"]), json.dumps(tag))):
+            return None
+        return session.find(f'[data-qajev-signin="{tag}"]')
+    return _pick(session, step, tag)
+
+
+def _named(step):
+    return f"button {step['text']!r}" if isinstance(step, dict) else repr(step)
+
+
 def _state(session):
     try:
         return session.evaluate(STATE_JS) or {}
@@ -198,13 +228,18 @@ def sign_in(session, account, *, timeout=20.0):
         out["email"] = email
     _password_ok(account, first.get("href") or "", email)  # before a key is pressed; an unread page is no host
     email_fields = login.get("email_field") or EMAIL_FIELDS
-    if login.get("open"):  # a button shows the form (foleyapp, 12 Oct); an app may draw it after it checks the session
-        _wait(session, lambda s: _pick(session, email_fields, "email") or _pick(session, login["open"], "open"), 10)
-    if login.get("open") and not _pick(session, email_fields, "email"):
-        opener = _pick(session, login["open"], "open")
+    # Buttons that show the form, clicked in order (foleyapp, 12-13 Oct). An app may draw each one late: after it checks
+    # the session, or after the click before it. Done as soon as the email field shows.
+    for step in open_steps(login):
+        _wait(session, lambda s, step=step: (_pick(session, email_fields, "email")
+                                             or _pick_step(session, step, "open")), 10)
+        if _pick(session, email_fields, "email"):
+            break
+        opener = _pick_step(session, step, "open")
         if not opener:
-            raise SignInFailed(f"no {login['open']!r} to open the sign-in form with on {login['url']}")
+            raise SignInFailed(f"no {_named(step)} to open the sign-in form with on {login['url']}")
         session.trusted_click(opener["x"], opener["y"])
+    if open_steps(login):
         _wait(session, lambda s: _pick(session, email_fields, "email"), 10)
     field = _pick(session, email_fields, "email")
     if not field:
