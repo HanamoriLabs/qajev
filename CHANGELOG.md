@@ -4,6 +4,23 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.25: 13 Oct 2026
+
+### Fixed
+
+- A seeded sign-in failed with "no element matches [data-qajev-signin=…]" when the page drew a field again between
+  QAJev marking it and finding it (Foley's panel, after "Already have an account? Sign in"). It now marks and finds
+  again, up to 3 times.
+- A browser that kept a session made a seeded sign-in fail: the app showed its sign-in door for a moment, then its
+  signed-in view, so the `login.open` steps found nothing to click. A page that turns signed in while QAJev waits for a
+  step now counts as signed in (Foley).
+
+### Added
+
+- `qajev report r_...` and `qa_report("r_...")` read a QAJev Cloud run's report with this machine's cloud key, and keep
+  it with the screenshots its report names in `~/.qajev/cloud-reports/<id>/`. An agent no longer needs the
+  dashboard's sign-in for its own run's steps and last screen (dash-wholesale-links).
+
 ### Changed
 
 - A hook whose selector matches a guarded control first now says how many elements it matches and asks for a narrower

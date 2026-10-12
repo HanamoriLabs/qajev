@@ -315,7 +315,13 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
 qajev report qajev-runs/20261001-101500-shop          # the report as Markdown
 qajev report qajev-runs/20261001-101500-shop --json   # as JSON
 qajev report qajev-runs/20261001-101500-shop --html   # rebuild report.html and print its path
+qajev report r_mv5ft95ufbdda38d                       # a QAJev Cloud run: fetched with this Mac's key
 ```
+
+A cloud run's id fetches its `report.json`, `report.md`, `report.html` and the screenshots its report names, with this
+machine's cloud key (no dashboard sign-in), keeps them in `~/.qajev/cloud-reports/<id>/`, and prints the report like a
+local one. A run with no report (unknown, or not finished) exits `4`. MCP: `qa_report("r_...")` does the same and adds
+`kept_in` and `screenshots`.
 
 ## `qajev projects`
 

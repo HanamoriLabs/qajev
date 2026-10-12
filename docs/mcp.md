@@ -55,7 +55,7 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 | `qa_plan` | a suite's test plan without running it, the tests that do not say what they prove (a lint), and whether its approved test plan file (`test_plan`) is approved | free |
 | `qa_projects` | the projects QAJev knows | free |
 | `qa_reports` | recent project runs | free |
-| `qa_report` | read a run's report (JSON or Markdown) | free |
+| `qa_report` | read a run's report (JSON or Markdown); a cloud run's id fetches its report and screenshots | free |
 | `qa_screenshot` | see a run's screenshots as images (default: the first scenario that did not pass) | free |
 | `qa_jobs` | every run on the machine: queued, running, recent (anyone's) | free |
 | `qa_job` | one run: progress, what Jev is doing now, scenarios finished so far, the report once done (a cloud run's `r_...` id: its state from QAJev Cloud) | free |

@@ -136,10 +136,24 @@ def _password_ok(account, url, email):
         raise SignInFailed(f"{e}. {BROWSER_LOGIN.format(url=account['login']['url'])}") from None
 
 
+def _found(session, mark, tag):
+    """Mark (one evaluate), then find the marked element (another). A page that draws it again in between drops the
+    mark (Foley, 13 Oct: its fields after "Already have an account? Sign in"), so it is marked and found again, up to 3
+    times. -> find()'s result, or None when nothing matches any more."""
+    for attempt in range(3):
+        if not mark():
+            return None
+        try:
+            return session.find(f'[data-qajev-signin="{tag}"]')
+        except RuntimeError:
+            if attempt == 2:
+                return None
+            time.sleep(0.2)
+    return None
+
+
 def _pick(session, selectors, tag):
-    if not session.evaluate(PICK_JS % (json.dumps(selectors), json.dumps(tag))):
-        return None
-    return session.find(f'[data-qajev-signin="{tag}"]')
+    return _found(session, lambda: session.evaluate(PICK_JS % (json.dumps(selectors), json.dumps(tag))), tag)
 
 
 def open_steps(login):
@@ -150,9 +164,8 @@ def open_steps(login):
 
 def _pick_step(session, step, tag):
     if isinstance(step, dict):
-        if not session.evaluate(PICK_TEXT_JS % (json.dumps(step["text"]), json.dumps(tag))):
-            return None
-        return session.find(f'[data-qajev-signin="{tag}"]')
+        text_js = PICK_TEXT_JS % (json.dumps(step["text"]), json.dumps(tag))
+        return _found(session, lambda: session.evaluate(text_js), tag)
     return _pick(session, step, tag)
 
 
@@ -234,7 +247,12 @@ def sign_in(session, account, *, timeout=20.0):
     # account" with its fields showing, and only "Sign in instead" turns it into a sign-in.
     for step in open_steps(login):
         wait = 2 if _pick(session, email_fields, "email") else 10
-        _wait(session, lambda s, step=step: _pick_step(session, step, "open"), wait)
+        # A kept session the app loads late (Foley, 13 Oct) turns the page signed in while QAJev waits: done.
+        state = _wait(session, lambda s, step=step: _signed_in(session, login, s) or _pick_step(session, step, "open"),
+                      wait)
+        if state and _signed_in(session, login, state) and not _pick(session, email_fields, "email"):
+            return {**out, "ok": True, "already": True, "landed": state.get("href", "").split("?")[0],
+                    "seconds": round(time.monotonic() - started, 1)}
         opener = _pick_step(session, step, "open")
         if not opener:
             if _pick(session, email_fields, "email"):
