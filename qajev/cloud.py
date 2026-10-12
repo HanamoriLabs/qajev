@@ -37,6 +37,10 @@ KINDS = ("check", "run", "smoke")  # websites; play (games, native and mobile ap
 EXIT_CONFIG, EXIT_TROUBLE = 3, 4  # as cli.py: a setting to fix; the dashboard could not take or finish the run
 POLL_S = 10  # seconds between two looks at a cloud run
 WAIT_S = 2 * 3600  # how long a run is waited for (QAJEV_CLOUD_WAIT, seconds); the run itself goes on
+# How long a run that waits for credits is followed before QAJev says so and returns (QAJEV_CLOUD_CREDIT_WAIT,
+# seconds). The run stays queued: a top-up starts it, and QAJev Cloud ends it after 2 hours with no charge (the
+# Orchestrator, 13 Oct).
+CREDIT_WAIT_S = 60
 DEFAULT_PORT = 8877
 # A run takes at most 200 files of at most 50 MB, 500 MB in all (worker runs.ts). A bigger build ships as one tar in
 # 45 MB parts (site/qcloud-archive.NNN.part), which the cloud runner joins and unpacks.
@@ -702,11 +706,16 @@ def done(run):
     return run.get("gate") not in LIVE_GATES
 
 
-def wait_seconds():
+def wait_seconds(name="QAJEV_CLOUD_WAIT", default=WAIT_S):
     try:
-        return float(os.environ.get("QAJEV_CLOUD_WAIT") or WAIT_S)
+        return float(os.environ.get(name) or default)
     except ValueError:
-        return WAIT_S
+        return default
+
+
+def credit_wait_message(run_id, text):
+    return (f"the run has not started: {text.rstrip()} It stays queued and starts after a top-up. After 2 hours "
+            f"without one, QAJev Cloud ends it, with no charge. Run {run_id}. To stop it now: qajev stop {run_id}")
 
 
 def wait(client, run_id, on_change=None, every=None, timeout=None, sleep=time.sleep, now=time.monotonic):
@@ -715,7 +724,8 @@ def wait(client, run_id, on_change=None, every=None, timeout=None, sleep=time.sl
     CloudError when the dashboard stops answering or the wait runs out (the run itself goes on in the cloud)."""
     every = POLL_S if every is None else every
     timeout = wait_seconds() if timeout is None else timeout
-    url, deadline, last, misses = run_url(client.base, run_id), now() + timeout, None, 0
+    credit_wait = wait_seconds("QAJEV_CLOUD_CREDIT_WAIT", CREDIT_WAIT_S)
+    url, deadline, last, misses, credits_since = run_url(client.base, run_id), now() + timeout, None, 0, None
     while True:
         try:
             run = status(client, run_id)
@@ -733,6 +743,13 @@ def wait(client, run_id, on_change=None, every=None, timeout=None, sleep=time.sl
         last = seen
         if done(run):
             return run
+        if waiting.get("reason") == "credits":  # not in silence for hours: say so, and leave the run queued
+            credits_since = now() if credits_since is None else credits_since
+            if now() - credits_since >= credit_wait:
+                raise CloudError(credit_wait_message(run_id, waiting.get("text") or "it waits for credits."),
+                                 EXIT_TROUBLE, run_id, url)
+        else:
+            credits_since = None
         if now() >= deadline:
             raise CloudError(f"waited {timeout / 60:.0f} min and the run has not finished; it goes on in the cloud: "
                              f"{url}", EXIT_TROUBLE, run_id, url)

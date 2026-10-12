@@ -435,6 +435,28 @@ def test_a_queued_run_says_why_it_waits_and_when_that_ends(dash, local, capsys):
     assert err.index(f"queued: {why}") < err.index("queued: waiting for a cloud machine") < err.index("Gate: PASS")
 
 
+@pytest.mark.parametrize("flags", [[], ["--quiet"], ["--json"]])
+def test_a_run_that_waits_for_credits_is_not_waited_for_in_silence(dash, local, capsys, monkeypatch, flags):
+    # The Orchestrator, 13 Oct: before the credit check goes on, an agent whose run waits for credits must see why, the
+    # run id and the exact stop command, at once, not after 2 hours of silence (--quiet and --json printed nothing).
+    monkeypatch.setenv("QAJEV_CLOUD_CREDIT_WAIT", "0.05")
+    why = ("Waiting for credits: the run needs 120 for its 120-minute limit, and the balance is 0. The account owner "
+           "adds credits on the Credits page: https://cloud.qajev.com/credits.html.")
+    dash.runs = [{"gate": "queued", "waiting": {"reason": "credits", "text": why, "need": 120, "balance": 0}}]
+    assert cli.main(["check", "https://shop.example/", "--runner", "cloud", *flags]) == 4
+    captured = capsys.readouterr()
+    for out in (captured.err, *([json.loads(captured.out)["error"]] if "--json" in flags else [])):
+        assert why in out and f"qajev stop {RUN}" in out and "stays queued" in out and "no charge" in out
+    assert not any(path.endswith("/stop") for _, path, _ in dash.sent("POST"))  # it may still start after a top-up
+
+
+def test_a_short_wait_for_credits_that_ends_in_a_top_up_is_followed_to_its_gate(dash, local, capsys, monkeypatch):
+    monkeypatch.setenv("QAJEV_CLOUD_CREDIT_WAIT", "30")
+    dash.runs = [{"gate": "queued", "waiting": {"reason": "credits", "text": "Waiting for credits."}},
+                 {"gate": "pass", "counts": {"pass": 1}, "tests": []}]
+    assert cli.main(["check", "https://shop.example/", "--runner", "cloud", "--quiet"]) == 0
+
+
 def test_events_carry_the_waiting_reason(dash, local, capsys):
     why = {"reason": "machines off", "text": "Cloud machines are off. An admin turns them on in Settings."}
     dash.runs = [{"gate": "queued", "waiting": why}, {"gate": "pass", "counts": {"pass": 1}, "tests": []}]

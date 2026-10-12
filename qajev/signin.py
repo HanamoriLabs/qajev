@@ -137,6 +137,13 @@ def _state(session):
         return {}
 
 
+def page_seen(session):
+    """Where the browser is and the start of what its page says, in one line: for a failed sign-in's reason."""
+    state = _state(session)
+    text = " ".join((state.get("text") or "").split())
+    return f"{state.get('path') or '?'}: {text or 'no text'}" if state else ""
+
+
 def _signed_in(session, login, state):
     spec = login.get("signed_in") or {}
     if not state:
@@ -191,7 +198,9 @@ def sign_in(session, account, *, timeout=20.0):
         out["email"] = email
     _password_ok(account, first.get("href") or "", email)  # before a key is pressed; an unread page is no host
     email_fields = login.get("email_field") or EMAIL_FIELDS
-    if login.get("open") and not _pick(session, email_fields, "email"):  # a button shows the form (foleyapp, 12 Oct)
+    if login.get("open"):  # a button shows the form (foleyapp, 12 Oct); an app may draw it after it checks the session
+        _wait(session, lambda s: _pick(session, email_fields, "email") or _pick(session, login["open"], "open"), 10)
+    if login.get("open") and not _pick(session, email_fields, "email"):
         opener = _pick(session, login["open"], "open")
         if not opener:
             raise SignInFailed(f"no {login['open']!r} to open the sign-in form with on {login['url']}")

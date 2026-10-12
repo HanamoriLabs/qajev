@@ -89,11 +89,13 @@ class FormPage:
     """A sign-in page at `href` with an email and a password field. It records what is typed; Enter signs in when
     `lets_in`, and `moves_to` is where the page goes once the email is typed (a two-step sign-in)."""
 
-    def __init__(self, href, lets_in=True, moves_to=None, unreadable=False, loading=0, clears=0, closed=False):
+    def __init__(self, href, lets_in=True, moves_to=None, unreadable=False, loading=0, clears=0, closed=False,
+                 drawn_after=0, says=""):
         self.href, self.lets_in, self.moves_to, self.typed, self.pw = href, lets_in, moves_to, [], True
         self.unreadable, self.dark = unreadable, False  # dark: its state cannot be read (a getter that throws)
         self.loading, self.clears, self.fields = loading, clears, {"email": "", "pw": ""}
         self.closed = closed  # its form shows only after a click on the button that opens it
+        self.drawn_after, self.says = drawn_after, says  # looks before its sign-in panel shows; its body text
         self.typed_while_loading = False  # loading: state reads before its scripts have run; clears: read-backs that
         # find the fields emptied by them
 
@@ -108,12 +110,15 @@ class FormPage:
 
             self.loading -= 1
             return {"href": self.href, "path": urlsplit(self.href).path, "pw": self.pw, "otp": False, "error": "",
-                    "text": "", "ready": self.loading < 0}
+                    "text": self.says, "ready": self.loading < 0}
         if js == signin.TYPED_JS:
             if self.clears:
                 self.clears -= 1
                 self.fields = {"email": "", "pw": ""}
             return {"email": self.fields["email"], "pw": len(self.fields["pw"])}
+        if self.drawn_after > 0:  # PICK_JS while the app still checks the session: nothing to pick yet
+            self.drawn_after -= 1
+            return False
         return not self.closed or js.rstrip().endswith('"open")')  # PICK_JS: the field is there
 
     def find(self, selector):
@@ -240,3 +245,16 @@ def test_a_button_that_shows_the_sign_in_form_is_clicked_first(tmp_path):
     with pytest.raises(signin.SignInFailed, match="no email or username field"):  # without it: no form to type into
         signin.sign_in(page, _local_account(tmp_path) | {"login": {"url": "http://127.0.0.1:4000/"}}, timeout=1)
     assert page.typed == []
+
+
+def test_a_sign_in_button_the_app_draws_late_is_waited_for(tmp_path):
+    # Foley's dry check (13 Oct): the app checks the session first, so "Sign in with email" was not there yet when QAJev
+    # looked once, at once. It waits up to 10 s for the button or the email field.
+    account = {**_local_account(tmp_path), "login": {"url": "http://127.0.0.1:4000/", "open": "button.brand.plain"}}
+    page = FormPage("http://127.0.0.1:4000/", closed=True, drawn_after=6)
+    assert signin.sign_in(page, account, timeout=5)["ok"] and page.typed[0] == "qa-test@example.test"
+
+
+def test_a_failed_sign_in_says_where_the_browser_was_and_what_the_page_said():
+    page = FormPage("http://127.0.0.1:4000/welcome", says="Loading your\n  workspace…")
+    assert signin.page_seen(page) == "/welcome: Loading your workspace…"

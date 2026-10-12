@@ -4,6 +4,21 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.22: 13 Oct 2026
+
+### Fixed
+
+- A seeded sign-in with `login.open` looked for the button once, at once. An app that checks the session first draws it
+  later, so the sign-in failed. Now QAJev waits up to 10 s for the button or the email field (foleyapp).
+- A failed sign-in now says where the browser was and the start of what the page showed, so it can be read without a
+  second run.
+
+### Changed
+
+- A cloud run that waits for credits is followed for 1 minute, not 2 hours. Then QAJev says why, with the run id and
+  `qajev stop r_...`, and returns with exit `4`, also with `--quiet` and `--json`, which printed nothing before. The run
+  stays queued until a top-up, and QAJev Cloud ends it after 2 hours with no charge (the Orchestrator).
+
 ## 0.4.21: 13 Oct 2026
 
 ### Fixed
