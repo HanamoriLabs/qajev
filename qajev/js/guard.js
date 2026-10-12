@@ -19,12 +19,13 @@
   // production, staging and previews too: read-only in every mode, whatever the run asked for (José, 6 Oct).
   const localDev = (host) => /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/i.test(host) || /\.(localhost|test)$/i.test(host);
   const local = localDev(location.hostname);
-  let cfg, deny, mutating, destructive, harmless, grave, allow, allowRequest, hosts, readOnly, heard;
+  let cfg, deny, mutating, destructive, harmless, grave, purchase, allow, allowRequest, hosts, readOnly, heard;
   const configure = (next) => {
     cfg = next; state.v = next.v; state.mode = next.mode;
     deny = re(next.deny); mutating = re(next.mutating); destructive = re(next.destructive); allow = re(next.allow);
     harmless = next.harmless && next.harmless.length ? new RegExp(next.harmless.join('|'), 'gi') : null;
     grave = re(next.grave);
+    purchase = re(next.purchase);
     allowRequest = re(next.allow_requests);
     hosts = new Set(next.hosts); readOnly = next.mode === 'readonly' || !local; heard = next.speech;
   };
@@ -235,6 +236,20 @@
   // Everything a person could read on the control: deny patterns may appear in any of it.
   const label = (el) => squash([el.innerText || el.textContent, el.getAttribute('aria-label'), el.getAttribute('title'),
     el.tagName === 'INPUT' ? el.value : ''].join(' '));
+  // A to-do row's own title (Foley, 13 Oct: the task "Buy paint" is a button that opens the task, in a row whose
+  // checkbox is "Toggle Buy paint"). It names the item, not an action, so it is shown, unless it reads as a purchase.
+  // Only that one control: the row's other controls (its Delete) follow the usual rules (the Orchestrator).
+  // Pure, so tests run it as written: text is the control's visible text, toggles the labels of the row's checkboxes.
+  const rowTitle = (text, toggles, purchaseRe) => {
+    const t = squash(text).toLowerCase();
+    if (!t || (purchaseRe && purchaseRe.test(t))) return false;
+    return toggles.some((name) => squash(name).toLowerCase().replace(/^(toggle|complete|mark|check|done|finish)\b:?\s*/, '') === t);
+  };
+  const toggleLabels = (el) => {
+    const row = !el.matches('input, select, textarea') && el.closest('li, [role=listitem], [role=row]');
+    return row ? [...row.querySelectorAll('input[type=checkbox], [role=checkbox], [role=switch]')]
+      .filter((c) => c !== el).map((c) => c.getAttribute('aria-label') || c.getAttribute('title') || '') : [];
+  };
   // Its accessible name: what read-only patterns anchor to.
   const accessibleName = (el) => squash(el.getAttribute('aria-label') || el.innerText || el.textContent ||
     el.getAttribute('title') || (el.tagName === 'INPUT' ? el.value : ''));
@@ -253,6 +268,7 @@
   };
   const dangerous = (el) => {
     const text = label(el);
+    if (rowTitle(el.innerText || el.textContent, toggleLabels(el), purchase)) return offsite(el) ? OFFSITE : null;
     // destructive first: `allow` never shows it; allow_destructive does, on a local dev host only
     if (destroys(text) && !(cfg.allow_destructive && local)) return 'destructive: ' + text.slice(0, 60);
     const allowed = allow && allow.test(text);

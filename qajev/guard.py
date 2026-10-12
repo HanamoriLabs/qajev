@@ -74,6 +74,13 @@ HARMLESS = [
 # ...unless the control names something that matters: then it stays destructive, whatever else it says.
 GRAVE = [r"\b(accounts?|orders?|subscriptions?|plans?|bookings?|data|payments?|memberships?)\b"]
 
+# A purchase, even as a to-do row's title (js/guard.js rowTitle): "Buy now", "Buy credits", "Buy 500 credits $10".
+PURCHASE = [
+    r"\b(buy|pay|purchase|order)\s+(it\s+)?(now|credits?|plans?|subscriptions?|packs?|upgrades?|tickets?|"
+    r"\d[\d,.]*\s*(credits?|tokens?|seats?|minutes?))\b",
+    r"[$£€¥]\s?\d",
+]
+
 MODES = ("readonly", "mutate")
 
 
@@ -89,6 +96,7 @@ def build_config(*, mode="readonly", hosts=(), deny=(), allow=(), allow_requests
         "destructive": DESTRUCTIVE,
         "harmless": HARMLESS,
         "grave": GRAVE,
+        "purchase": PURCHASE,
         "allow": list(allow),
         "allow_requests": list(allow_requests),
         "speech": speech,
