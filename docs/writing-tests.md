@@ -509,7 +509,8 @@ user and writes its secrets to a JSON fixture that marks itself as a test accoun
 ```yaml
 account:
   name: qa-test
-  email: seed:dev_support/qa_test_user.json#email          # FILE#KEY, relative to this suite (or the project's repo)
+  email: seed:dev_support/qa_test_user.json#email          # FILE#KEY, relative to this suite (or the project's repo);
+                                                           # KEY may be a dotted path: #A.email in {"A": {"email": ...}}
   password: seed:dev_support/qa_test_user.json#password
   totp: seed:dev_support/qa_test_user.json#totp_secret_base32  # the code after the password: TOTP, SHA1, 6 digits, 30 s
   login: {url: /login}

@@ -73,6 +73,20 @@ def seed(file):
     return data
 
 
+def seed_value(data, key):
+    """A fixture's value for KEY: the key itself, or a dotted path into nested objects ("A.password" in a fixture with a
+    user per key, as Foley's local stack writes it, 12 Oct). An exact key wins, so a fixture QAJev trimmed for a cloud
+    run (flat, dotted keys) reads the same. -> the value, or None."""
+    if key in data:
+        return data[key]
+    value = data
+    for part in key.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    return value
+
+
 def is_ref(value):
     try:
         parse(value)
@@ -119,7 +133,7 @@ def resolve(ref):
     elif kind == "keychain":
         value = _run(_keychain_cmd(*rest), ref).removesuffix("\n")
     elif kind == "seed":
-        value = seed(rest[0]).get(rest[1])
+        value = seed_value(seed(rest[0]), rest[1])
         if not isinstance(value, str):
             raise VaultError(f"{ref}: the fixture has no text value for {rest[1]!r}")
     else:
