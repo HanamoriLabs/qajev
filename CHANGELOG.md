@@ -4,6 +4,16 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- `qajev smoke` shows its live screen, as a check or a suite does: on the dashboard and on QAJev Cloud's run page. Smoke
+  never started the live frame writer, so every smoke said "No live screen yet" (José).
+
+### Added
+
+- Each page of a smoke run records its `lcp` (ms) and `cls` in the report, as a check does. Smoke measured them but used
+  them only for its "slow largest contentful paint" finding (figgyz.com).
+
 ## 0.4.16: 12 Oct 2026
 
 ### Added
