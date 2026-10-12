@@ -625,6 +625,10 @@ def sign_in_first(suite, *, opts, cdp_url, headless, motion):
         done = signin.sign_in(session, suite.account)
     except (signin.SignInFailed, vault.VaultError, RuntimeError, TimeoutError, OSError) as e:
         done = {"account": suite.account["name"], "ok": False, "reason": redact(str(e))[:300]}
+        # What the page showed, so a failed sign-in can be read without a second run (Foley's dry check, 13 Oct).
+        seen = signin.page_seen(session) if session is not None else ""
+        if seen:
+            done["reason"] = f"{done['reason']} (the page showed: {redact(seen)[:240]})"
     finally:
         if session is not None:
             session.close()
