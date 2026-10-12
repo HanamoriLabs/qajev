@@ -194,3 +194,29 @@ def test_cpu_throttle_is_1_by_default_a_whole_number_from_1_to_8():
     for bad in (0, 9, 2.5, "4", True):
         with pytest.raises(S.SuiteError, match="cpu_throttle must be a whole number from 1 to 8"):
             S.parse({**base, "cpu_throttle": bad})
+
+
+def test_a_tunnel_names_each_port_with_its_dev_servers_command():
+    # QAJev Cloud's full tunnel, 12 Oct: the dispatcher on this machine lets a port answer only when exactly the named
+    # process holds it, so a port needs words that pick out that process: its script or subcommand, not "node".
+    ok = parse([{"url": "http://127.0.0.1:8871/", "expect": {"text": "Hi"}}],
+               tunnel={"ports": {8871: {"command": "node  serve-folder.mjs"}, "8787": "wrangler dev"},
+                       "data": "local", "test_keys": ["STRIPE_SECRET_KEY"]})
+    assert ok.tunnel == {"ports": {"8871": {"command": "node serve-folder.mjs"}, "8787": {"command": "wrangler dev"}},
+                         "data": "local", "test_keys": ["STRIPE_SECRET_KEY"]}
+    assert parse([{"url": "http://127.0.0.1:8871/", "expect": {"text": "Hi"}}]).tunnel is None
+    for bad, said in [
+        ({"ports": {8871: {"command": "node"}}}, "script or subcommand"),
+        ({"ports": {8871: {"command": "npx --yes"}}}, "script or subcommand"),
+        ({"ports": {8871: {"command": "wrangler"}}}, "script or subcommand"),
+        ({"ports": {80: {"command": "wrangler dev"}}}, "from 1024 to 65535"),
+        ({"ports": {"web": {"command": "wrangler dev"}}}, "not a port number"),
+        ({"ports": {}}, "1 to 8 ports"),
+        ({"ports": {8871: {"command": "wrangler dev"}}, "data": "production"}, "data must be local"),
+        ({"ports": {8871: {"command": "wrangler dev"}}, "test_keys": ["A B"]}, "env key names"),
+        ({"ports": {8871: {"command": "wrangler dev", "cwd": "/x"}}}, "cwd"),
+        ({"ports": {8871: {"command": "wrangler dev"}}, "host": "10.0.0.2"}, "host"),
+        ("8871", "must be a mapping"),
+    ]:
+        with pytest.raises(S.SuiteError, match=said):
+            parse([{"url": "http://127.0.0.1:8871/", "expect": {"text": "Hi"}}], tunnel=bad)

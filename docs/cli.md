@@ -213,6 +213,18 @@ the line `Plan file: ...` says whether it is approved, and the JSON has `test_pl
 `sha256`, `problem`). A plan that is missing or not approved is listed, and the exit code stays `0`. With
 `QAJEV_REQUIRE_PLAN=1` it exits `2`.
 
+## `qajev tunnel`
+
+Prints, as JSON, the `tunnel:` a suite declares, or a project env's `tunnel` (with `--env`; default the project's
+default env). It exits `3` when the file declares none.
+
+```bash
+qajev tunnel tools/qa/rooms.qajev.yaml   # {"data": "local", "ports": {"8871": {"command": "node serve-folder.mjs"}}}
+```
+
+A cloud run through the full tunnel names this file. The QAJev Cloud dispatcher on this machine reads it again with
+this command and refuses a run whose tunnel differs from it.
+
 ## `qajev plan-hash`
 
 Prints the sha256 an approver puts on a test plan's approval line, from the plan's text as it stands:
@@ -260,8 +272,9 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
   `QAJEV_CLOUD_URL` names another dashboard (default `https://cloud.qajev.com`). `qajev doctor` checks both.
 - **What it prints.** The run's address at once, its progress, then each test's outcome and reason, the gate and
   the report's address. `--json` prints one object: `{"runner": "cloud", "run_id", "url", "gate", "counts",
-  "tests": [{"name", "outcome", "about", "reason", "wrong"}], "report_url", "reason"}`. The exit code is as for a
-  run here: `0` only on PASS.
+  "tests": [{"name", "outcome", "about", "reason", "wrong", "checks"}], "report_url", "reason"}`. `checks` are as in
+  a run here, `{"check", "ok", "value"}`, where `value` is what a js check returned (at most 240 characters). The exit
+  code is as for a run here: `0` only on PASS.
 - **Why a queued run waits.** While a run cannot start, its progress line says why, in the dashboard's words: cloud
   machines are off, today's cloud minutes are used up, the month's model spend reached its limit, or the account has
   too few credits (with what the run needs, the balance and where to buy). Otherwise it says `waiting for a cloud
@@ -271,10 +284,12 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
 - **What stays on this Mac.** `--runner cloud` refuses these, with the reason and exit `3`, and runs nothing here.
   `--runner auto` runs them here, with one line saying why:
   - a signed-in run: `--profile`, or a suite or project that signs in with an account;
-  - a run that writes to a dev server on this Mac (`--mode mutate`, or a suite with `mode: mutate`): the tunnel to
-    this Mac is read-only;
-  - a target on this Mac the tunnel cannot carry: `::1` or a `*.localhost` name, a port below 1024, or two ports in
-    one run. A read-only run on one `127.0.0.1` or `localhost` port goes to the cloud only when the command itself
+  - a run that writes to a dev server on this Mac (`--mode mutate`, or a suite with `mode: mutate`), when its suite
+    or project env has no `tunnel:`. With `tunnel:` (each port and its dev server's command, and `data: local` for
+    writes), the run goes to the cloud through the full tunnel: several ports, writes and WebSockets. See
+    Writing tests;
+  - a target on this Mac the tunnel cannot carry: `::1` or a `*.localhost` name, a port below 1024, or, with no
+    `tunnel:`, two ports in one run. A read-only run on one `127.0.0.1` or `localhost` port goes to the cloud only when the command itself
     says `--runner cloud`: the dispatcher on this Mac then opens a read-only tunnel to that port for the run (only
     GET, HEAD and OPTIONS pass; a page's POST or WebSocket does not). With `auto`, or a mode of `cloud`, it stays here
     or stops with the reason. Or ship the built site with `--serve DIR[:PORT]`. The folder must be a clean build

@@ -67,7 +67,7 @@ STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
-    "cpu_throttle", "plan", "color_scheme",
+    "cpu_throttle", "plan", "color_scheme", "tunnel",
 }
 COLOR_SCHEMES = ("light", "dark")
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
@@ -146,6 +146,7 @@ class Suite:
     about: str | None = None  # what the run as a whole proves
     plan: str | None = None  # the approved test plan this run follows (planfile.py), as the suite names it
     test_plan: dict | None = None  # that plan's check (planfile.check), set before the run
+    tunnel: dict | None = None  # the full tunnel: this machine's dev servers a cloud run reaches (tunnel_spec)
 
     @property
     def mutates(self):
@@ -612,9 +613,54 @@ def parse(data, path=None, devices=None):
         account=account,
         about=about(data.get("about"), "about"),
         plan=_plan_path(data.get("plan")),
+        tunnel=tunnel_spec(data.get("tunnel")),
     )
     check_safety(suite)
     return suite
+
+
+TUNNEL_KEYS = {"ports", "data", "test_keys"}
+TUNNEL_INTERPRETERS = {"node", "nodejs", "python", "python3", "bun", "deno", "ruby", "uv", "uvx", "npx", "pnpm", "yarn",
+                       "npm"}
+
+
+def tunnel_spec(value):
+    """`tunnel:`: the dev servers on this machine that a cloud run reaches through the full tunnel (QAJev Cloud).
+    {ports: {8835: {command: "wrangler pages dev"}}, data: local, test_keys: [...]}. Each port names the command of its
+    dev server, the words of its real command line with its script or subcommand: the machine checks that exactly that
+    process answers. data: local (fixture accounts only) is needed for writes. -> the spec, or None."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise SuiteError("tunnel must be a mapping: ports (each with its dev server's command), data, test_keys")
+    _unknown("tunnel", value, TUNNEL_KEYS)
+    ports = value.get("ports")
+    if not isinstance(ports, dict) or not 1 <= len(ports) <= 8:
+        raise SuiteError("tunnel.ports names 1 to 8 ports, each with its dev server's command")
+    out = {}
+    for key, entry in ports.items():
+        try:
+            port = int(key)
+        except (TypeError, ValueError):
+            raise SuiteError(f"tunnel.ports: {key!r} is not a port number") from None
+        if not 1024 <= port <= 65535:
+            raise SuiteError(f"tunnel.ports: port {port} must be from 1024 to 65535")
+        if isinstance(entry, dict):
+            _unknown(f"tunnel.ports.{port}", entry, {"command"})
+            entry = entry.get("command")
+        words = str(entry or "").split() if isinstance(entry, str) else []
+        if len(words) < 2 or all(Path(w).name in TUNNEL_INTERPRETERS or w.startswith("-") for w in words):
+            raise SuiteError(f"tunnel.ports.{port}: give the dev server's command with its script or subcommand, "
+                             "e.g. {command: \"wrangler pages dev\"} or {command: \"node rooms/server.mjs\"}")
+        out[str(port)] = {"command": " ".join(words)}
+    data = value.get("data")
+    if data not in (None, "local"):
+        raise SuiteError("tunnel.data must be local (fixture accounts, no production data), or left out")
+    keys = value.get("test_keys") or []
+    if not isinstance(keys, list) or len(keys) > 20 or not all(
+            isinstance(k, str) and re.fullmatch(r"[A-Za-z0-9_]{1,64}", k) for k in keys):
+        raise SuiteError("tunnel.test_keys is a list of at most 20 env key names")
+    return {"ports": out, **({"data": "local"} if data else {}), **({"test_keys": keys} if keys else {})}
 
 
 def _plan_path(value):

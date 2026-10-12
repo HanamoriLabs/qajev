@@ -37,7 +37,7 @@ PROJECT_KEYS = {"name", "repo", "default_env", "env", "accounts", "account", "bu
 KNOWN_KEYS = {"kind", "url", "note"}
 ENV_KEYS = {"base_url", "hosts", "mode", "device", "devices", "real_devices", "persona", "smoke_start", "motion",
             "cpu_throttle",
-            "account", "allow_destructive"}
+            "account", "allow_destructive", "tunnel"}
 OBJECTIVE_KEYS = {"name", "env", "url", "goal", "expect", "tags", "before", "after", "budget", "device", "persona",
                   "mode", "settle", "depends_on", "speech", "vision", "about", "color_scheme"}
 # email and password are vault references (vault.py) or, for email, the plain address; never a password value.
@@ -139,6 +139,13 @@ def load(ref):
             raise ProjectError(f"{path}: env.{name}: unknown key(s) {sorted(set(env) - ENV_KEYS)}")
         if not env.get("base_url"):
             raise ProjectError(f"{path}: env.{name} needs base_url")
+        if "tunnel" in env:  # checked as a suite's tunnel:, so the cloud gets the same shape from either
+            from .suite import SuiteError, tunnel_spec  # noqa: PLC0415
+
+            try:
+                env["tunnel"] = tunnel_spec(env["tunnel"])
+            except SuiteError as e:
+                raise ProjectError(f"{path}: env.{name}: {e}") from None
     accounts = data.get("accounts") or {}
     for name, account in accounts.items():
         # Accounts are references (vault references, env var names, seed scripts, signed-in profiles), never
@@ -228,6 +235,8 @@ def suite_data(project, *, env=None, tags=(), names=(), objective=None, url=None
     }
     if "allow_destructive" in target:  # a local env only: the suite refuses it for a production host
         data["allow_destructive"] = target["allow_destructive"]
+    if target.get("tunnel"):  # this env's dev servers, for a cloud run through the full tunnel (suite.tunnel_spec)
+        data["tunnel"] = target["tunnel"]
     for key in ("persona", "device", "devices", "real_devices", "motion", "cpu_throttle"):
         value = target.get(key) or getattr(project, key, None)
         if value:
