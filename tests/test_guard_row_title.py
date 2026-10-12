@@ -89,7 +89,8 @@ def test_a_purchase_stays_hidden_in_a_row_and_out_of_one():
     assert all(hidden_by_usual_rules(x) for x in ("Buy credits", "Buy now", "Buy 500 credits $10"))
 
 
-# Just enough of an element for childNames: attributes, text, innerText, and the attribute and "svg title" selectors it uses.
+# Just enough of an element for childNames: attributes, text, innerText, and the selectors it uses
+# (an attribute, or "svg title").
 FAKE_DOM = """
 const E = (tag, attrs = {}, kids = [], text = '') => {
   const el = { tagName: tag.toUpperCase(), attrs, kids, text,
@@ -120,7 +121,8 @@ def row_title_of(buttons):
     cfg = guard.build_config(mode="mutate", hosts=["localhost:5284"])
     pats = {k: json.dumps("|".join(cfg[k])) for k in ("purchase", "destructive", "deny")}
     script = (f"{squash}\n{func}\n{child}\n{FAKE_DOM}\nconst purchase = new RegExp({pats['purchase']}, 'i');\n"
-              f"const destructive = new RegExp({pats['destructive']}, 'i');\nconst denyRe = new RegExp({pats['deny']}, 'i');\n"
+              f"const destructive = new RegExp({pats['destructive']}, 'i');\n"
+              f"const denyRe = new RegExp({pats['deny']}, 'i');\n"
               f"const buttons = [{', '.join(buttons)}];\n"
               "console.log(JSON.stringify(buttons.map((b) => rowTitle([b.innerText], ['Toggle Buy paint'], {\n"
               "  purchase, destroys: (t) => destructive.test(t), deny: (s) => denyRe.test(s), local: true,\n"
