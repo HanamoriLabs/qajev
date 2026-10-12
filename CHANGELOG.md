@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.14: 12 Oct 2026
+
 ### Added
 
 - A queued cloud run says why it does not start: cloud machines are off, today's minutes are used up, the model spend
