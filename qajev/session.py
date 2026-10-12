@@ -296,9 +296,14 @@ PROBE_JS = Template("""(async () => {
 })()""")
 
 FIND_JS = Template("""(() => {
-  const el = document.querySelector($selector);
+  const all = document.querySelectorAll($selector);
+  const el = all[0];
   if (!el) return { error: 'no element matches ' + $selector };
-  if (el.dataset.qajevGuard) return { error: 'refused: the guard hid this control (' + el.dataset.qajevGuard + ')' };
+  // A broad selector whose first match is guarded says so (dash-wholesale-links, 13 Oct: Save matched Sign out first).
+  // A later match is never clicked instead: the suite says which control it means.
+  if (el.dataset.qajevGuard) return { error: 'refused: the guard hid this control (' + el.dataset.qajevGuard + ')' +
+    (all.length > 1 ? '; your selector matches ' + all.length + ' elements and this one comes first: make it match ' +
+      'only the control you mean' : '') };
   const secret = el.matches('input[type=password],input[autocomplete^="cc-"],input[name*=card i],input[name*=cvc i],' +
     'input[name*=cvv i],input[autocomplete=one-time-code],input[autocomplete$$=-password]');
   el.scrollIntoView({ block: 'center', inline: 'center' });

@@ -56,6 +56,11 @@ The text is on the page, inside a control QAJev's guard hid because it holds a r
 control is safe to show (a plain link whose name holds the word), allow it in the suite:
 `guard: {allow: ["billing, signed in"]}`.
 
+**"hook failed: refused: the guard hid this control (danger: Sign out); your selector matches 2 elements …"**
+A hook's selector found a guarded control first, such as a Sign out button in a sidebar before the form's Save.
+QAJev clicked nothing. Make the selector match only the control you mean, for example `form#agreement
+button[type=submit]` or a `data-qa` attribute. QAJev never clicks a later match on its own.
+
 **"refused: QAJev never changes a production site ..." (exit code 5)**
 The run asked to change a site that is not a local dev host (`mode: mutate` or `--allow-destructive`), so nothing
 started. Run it read-only, or against a local copy (`localhost`, `*.test`, `*.localhost`). There is no override
