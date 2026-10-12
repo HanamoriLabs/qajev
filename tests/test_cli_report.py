@@ -137,7 +137,11 @@ def test_every_report_also_writes_a_self_contained_html_page(tmp_path):
     report.write(tmp_path, data)
     page = (tmp_path / "report.html").read_text()
     assert page.startswith("<!doctype html>") and "Gate: FAIL" in page
-    assert "<script" not in page and "<img src=x" not in page and "<b>TypeError" not in page  # page text is escaped
+    # page text is escaped: the only script is the report's own lightbox one (report_html.LIGHTBOX_JS)
+    from qajev import report_html
+
+    assert page.count("<script") == page.count(f"<script>{report_html.LIGHTBOX_JS}</script>") <= 1
+    assert "<img src=x" not in page and "<b>TypeError" not in page
     assert "&lt;b&gt;TypeError&lt;/b&gt;" in page and "not found" in page
     assert "token=secret" not in page and "code=123" not in page  # no query strings, as in the Markdown
     assert 'href="http://h/p"' in page and 'href="javascript:' not in page  # only http(s) URLs become links
