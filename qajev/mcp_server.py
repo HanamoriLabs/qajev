@@ -162,6 +162,10 @@ async def _progress(ctx, event, counts):
         await ctx.report_progress(counts["done"], counts["total"], f"{r['outcome']}: {r['name']}")
     elif kind == "waiting":
         await ctx.report_progress(counts["done"], counts["total"], event.get("reason", "waiting"))
+    elif kind == "cloud" and event.get("gate"):  # a cloud run: its gate, progress, or why it waits in the queue
+        why = (event.get("waiting") or {}).get("text")
+        detail = why or " · ".join(str(x) for x in (event.get("progress"), event.get("now_test")) if x)
+        await ctx.report_progress(counts["done"], counts["total"], f"cloud {event['gate']}" + (f": {detail}" if detail else ""))
     elif kind == "step":  # what Jev is doing, and the money spent so far
         spent = f" · ${event['spent_usd']:.4f}" if isinstance(event.get("spent_usd"), (int, float)) else ""
         await ctx.report_progress(counts["done"], counts["total"],

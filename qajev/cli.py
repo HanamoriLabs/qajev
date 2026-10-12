@@ -1729,7 +1729,8 @@ def cmd_cloud(args, plan):
     try:
         run = cloud.wait(client, run_id, on_change=lambda r: say({"event": "cloud", "run_id": run_id, "url": url,
                                                                   "gate": r.get("gate"), "progress": r.get("progress"),
-                                                                  "now_test": r.get("now_test")}))
+                                                                  "now_test": r.get("now_test"),
+                                                                  "waiting": r.get("waiting")}))
     except KeyboardInterrupt:
         with contextlib.suppress(cloud.CloudError):
             cloud.stop(client, run_id)
@@ -1757,7 +1758,8 @@ def _cloud_printer(args):
         if "progress" not in event:  # the first line: where a person can watch it
             print(f"qajev: cloud run {event['run_id']}: {event['url']}", file=sys.stderr, flush=True)
         elif gate == "queued":
-            print("  queued: waiting for a cloud machine", file=sys.stderr, flush=True)
+            why = (event.get("waiting") or {}).get("text") or "waiting for a cloud machine"
+            print(f"  queued: {why}", file=sys.stderr, flush=True)
         elif gate == "running":
             now = " · ".join(str(x) for x in (event.get("progress"), event.get("now_test")) if x)
             print(f"  running{': ' + now if now else ''}", file=sys.stderr, flush=True)
@@ -1799,6 +1801,8 @@ def _cloud_job(args, stopping=False):
         print(f"  {str(t['outcome']):<10} {str(t['name'])[:60]}  {(t.get('reason') or '')[:100]}")
     if out.get("reason"):
         print(f"  reason: {out['reason']}")
+    if out.get("waiting"):
+        print(f"  waiting: {out['waiting'].get('text')}")
     if out.get("report_url"):
         print(f"  report: {out['report_url']}")
     return 0
