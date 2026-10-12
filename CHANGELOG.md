@@ -4,6 +4,15 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- The full tunnel to this machine's dev servers, for QAJev Cloud. A suite's `tunnel:` (or a project env's `tunnel`)
+  names each port and its dev server's command, and `data: local` for writes. The run then goes to the cloud with
+  several ports, writes and WebSockets. Before it starts, this machine checks that exactly that process holds
+  each port, inside the project's checkout. With `tunnel:`, `--runner auto` sends the run too (verse-ship, foleyapp).
+- A cloud run's `--json` result gives each test's `checks` (`check`, `ok`, `value`), as a run here does. A gate that
+  reads `tests[].checks[].value` reads a cloud run the same way. Before, the value showed only inside `wrong` (verse-ship).
+
 ## 0.4.17: 12 Oct 2026
 
 ### Fixed

@@ -268,6 +268,7 @@ class Plan:
     serve_root: Path | None = None
     port: int | None = None
     tunnel_port: int | None = None  # this Mac's dev server port, reached through the dispatcher's read-only tunnel
+    tunnel: dict | None = None  # the full tunnel: ports with their commands, root, data, writes, test_keys
     project: str | None = None  # the project's name, sent when the dashboard knows it
     model: str | None = None
     sees_screen: bool | None = None
@@ -373,6 +374,29 @@ def _tunnel_port(local_targets, writes):
     return port
 
 
+def full_tunnel(spec, local_targets, writes, root):
+    """The full tunnel (QAJev Cloud, 12 Oct): a run on this machine's dev servers, several ports, writes with local
+    data, WebSockets. The suite's (or project env's) `tunnel:` names each port and its command; the dispatcher on this
+    machine checks that exactly that process answers before anything starts. -> the run's tunnel. Raises NotAllowed."""
+    hosts = {(urllib.parse.urlsplit(t).hostname or "").lower() for t in local_targets}
+    if hosts - {"127.0.0.1", "localhost"}:
+        raise NotAllowed("the tunnel reaches this machine's 127.0.0.1 or localhost only, not "
+                         f"{sorted(hosts - {'127.0.0.1', 'localhost'})[0]}")
+    named = {int(p) for p in spec["ports"]}
+    needed = {urllib.parse.urlsplit(t).port or 80 for t in local_targets}
+    missing = sorted(needed - named)
+    if missing:
+        raise NotAllowed(f"the run uses port {missing[0]} on this machine, and the suite's tunnel.ports does not "
+                         "name it")
+    if writes and spec.get("data") != "local":
+        raise NotAllowed("the run writes to this machine's dev servers: the suite's tunnel needs data: local "
+                         "(fixture accounts only, no production data)")
+    if root is None or not Path(root).is_dir():
+        raise NotAllowed("the tunnel needs the project's folder: run the suite from its git checkout (or set the "
+                         "project's repo)")
+    return {**spec, "root": str(Path(root).resolve()), **({"writes": True} if writes else {})}
+
+
 def plan(args):
     """What goes to the cloud for this parsed run (args.argv: its arguments, with the command first). Nothing is sent.
     Raises NotAllowed when the run must stay on this Mac, CloudError when a setting is wrong."""
@@ -392,6 +416,7 @@ def plan(args):
     if getattr(args, "allow_commands", False):
         raise NotAllowed("a suite's shell commands (--allow-commands) run on this Mac only")
     files, targets, account, named_plan, plan_base, project_name, swap = [], [], None, None, Path.cwd(), None, {}
+    full, root, writes = None, None, getattr(args, "mode", None) == "mutate"
     if getattr(args, "project", None):
         from urllib.parse import urljoin
 
@@ -408,6 +433,9 @@ def plan(args):
         targets = [args.url] if cmd == "smoke" and args.url else [
             urljoin(target["base_url"], target.get("smoke_start", "/")) if cmd == "smoke" else target["base_url"]]
         account = target.get("account") or proj.account
+        full = target.get("tunnel")
+        root = proj.repo.expanduser() if proj.repo is not None else None
+        writes = writes or target.get("mode") == "mutate"
         remote = f"in/{proj.config_path.name}"
         files.append((remote, proj.config_path.resolve()))
         swap["project"] = remote
@@ -423,6 +451,9 @@ def plan(args):
             raise CloudError(f"{args.suite}: {e}", EXIT_CONFIG) from None
         targets = [f"http://{h}" for h in suite.hosts]
         account = suite.account
+        full = suite.tunnel
+        root = planfile.project_root(args.suite.resolve().parent)
+        writes = writes or suite.mutates
         remote = f"in/{args.suite.name}"
         files.append((remote, args.suite.resolve()))
         swap["suite"] = remote
@@ -440,12 +471,13 @@ def plan(args):
                          "only when the command says --runner cloud (with its owner's OK)")
     local_targets = [t for t in targets if t and config.is_loopback(t)]
     serve = getattr(args, "serve", None)
-    tunnel_port = None
-    if local_targets and not serve and not named:
+    tunnel_port, tunnel = None, None
+    if local_targets and not serve and full:
+        tunnel = full_tunnel(full, local_targets, writes, root)
+    elif local_targets and not serve and not named:
         raise NotAllowed("a run on this Mac's dev server goes to the cloud only with --runner cloud on the command: "
                          "the tunnel passes GET, HEAD and OPTIONS, so a page's POST or WebSocket would fail there")
-    if local_targets and not serve:
-        writes = getattr(args, "mode", None) == "mutate" or (cmd == "run" and not project_name and suite.mutates)
+    elif local_targets and not serve:
         tunnel_port = _tunnel_port(local_targets, writes)
     serve_root, port = _serve_spec(serve, local_targets) if serve else (None, None)
     warnings = []
@@ -475,8 +507,9 @@ def plan(args):
     from .jobs import describe_argv
 
     return Plan(kind=cmd, args=forwarded, name=describe_argv(args.argv)[:160], files=files, serve_root=serve_root,
-                port=port, tunnel_port=tunnel_port, project=project_name, model=getattr(args, "model", None),
-                sees_screen=True if getattr(args, "vision", None) else None, warnings=warnings)
+                port=port, tunnel_port=tunnel_port, tunnel=tunnel, project=project_name,
+                model=getattr(args, "model", None), sees_screen=True if getattr(args, "vision", None) else None,
+                warnings=warnings)
 
 
 def site_files(root, scratch):
@@ -543,7 +576,7 @@ def submit(client, plan):
         project = _known_project(client, plan.project) if plan.project else None
         for key, value in (("model", plan.model), ("sees_screen", plan.sees_screen), ("project", project),
                            ("serve", {"path": "site", "port": plan.port} if plan.serve_root else None),
-                           ("tunnel", {"port": plan.tunnel_port} if plan.tunnel_port else None)):
+                           ("tunnel", plan.tunnel or ({"port": plan.tunnel_port} if plan.tunnel_port else None))):
             if value is not None:
                 body[key] = value
         created = client.post("/api/v1/runs", body) or {}
@@ -619,14 +652,17 @@ def wait(client, run_id, on_change=None, every=None, timeout=None, sleep=time.sl
 
 
 def result(base, run):
-    """One cloud run as QAJev's JSON: {runner, run_id, url, gate, counts, tests, report_url, reason}, plus waiting
+    """One cloud run as QAJev's JSON: {runner, run_id, url, gate, counts, tests (with checks), report_url, reason},
+    plus waiting
     ({reason, text}) while a queued run cannot start."""
     run_id = run.get("id") or ""
     tests = []
     for t in run.get("tests") or []:
         wrong = [str(w) for w in t.get("wrong") or []]
+        # checks: {check, ok, value?} as a local run's JSON gives them, so a gate reads both the same way
         tests.append({"name": t.get("name"), "outcome": t.get("outcome"), "about": t.get("about"),
-                      "reason": t.get("reason") or "; ".join(wrong) or None, "wrong": wrong})
+                      "reason": t.get("reason") or "; ".join(wrong) or None, "wrong": wrong,
+                      "checks": [c for c in t.get("checks") or [] if isinstance(c, dict)]})
     report = (run.get("files") or {}).get("report_html")
     return {"runner": "cloud", "run_id": run_id, "url": run_url(base, run_id) if run_id else None,
             "gate": str(run.get("gate") or "").upper() or None, "counts": run.get("counts") or {}, "tests": tests,

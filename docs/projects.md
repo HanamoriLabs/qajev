@@ -39,6 +39,7 @@ cpu_throttle = 1                 # 1 to 8: run the page's CPU this many times sl
 base_url = "http://localhost:3000"
 mode = "mutate"
 allow_destructive = true         # also show delete, remove, refund... (local only; red report banner)
+tunnel = { ports = { 3000 = { command = "next dev" } }, data = "local" }   # cloud runs reach this env (Writing tests)
 
 [accounts.tester]                # a seeded TEST account, local dev hosts only; references only, never passwords
 email = "qa-test@example.test"

@@ -378,6 +378,36 @@ net::ERR_CONNECTION_REFUSED"). Each item names its `frame`. The report shows the
 and "Frame request" lines. A framed tool that stays on "loading…" then shows whether it waits on a request or on its
 own work.
 
+## Dev servers on this machine, from QAJev Cloud: `tunnel:`
+
+A suite whose site runs on this machine's dev servers can still run in QAJev Cloud. `tunnel:` names each port and the
+command of the dev server that answers it. The dispatcher on this machine opens one tunnel per run to those ports. It
+carries WebSockets, and writes when the suite writes on local data.
+
+```yaml
+base_url: http://127.0.0.1:8871
+hosts: [127.0.0.1:8871, localhost:8787]
+mode: mutate                # writes need data: local
+tunnel:
+  ports:
+    8871: {command: "node serve-folder.mjs"}
+    8787: {command: "wrangler dev"}
+  data: local               # fixture accounts only, no production data
+  test_keys: [STRIPE_SECRET_KEY]   # env keys the dev server may hold, when they are test keys
+```
+
+- **Each port names its command**: the words of the dev server's real command line, with its script or subcommand.
+  `node` alone, or `npx --yes`, is refused. Before the run starts, this machine checks that exactly that process
+  holds the port, that it runs from inside the project's git checkout, and that it is not a tool, a debugger or a
+  database. Any other process on the port, or a port the suite uses but does not name, refuses the run.
+- **Only `127.0.0.1` and `localhost`**, ports 1024 to 65535, at most 8. Run the suite from its git checkout.
+- **Writes need `data: local`.** The machine also refuses a dev server bound to remote resources or holding live
+  credentials. `test_keys` names keys whose test values it may hold.
+- **Where it goes.** With `tunnel:`, `--runner auto` and `qajev mode cloud` send the suite to the cloud too. Without
+  it, a run on one port still goes only with `--runner cloud`, read-only. A project env takes the same `tunnel`
+  table (see [Projects](projects.md)).
+- Each run's tunnel ends with the run, or at its time limit plus 10 minutes.
+
 ## Multiplayer: several players at once
 
 A scenario with `clients:` opens several players, each in a browser context of its own: its own cookies, storage,

@@ -267,6 +267,59 @@ def test_a_suite_that_writes_or_opens_two_ports_stays_here_and_json_says_why(das
     assert dash.calls == [] and local == []
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# The full tunnel (QAJev Cloud, 12 Oct): a suite's `tunnel:` names each dev server port and its command; the run goes to
+# the cloud with several ports, writes on local data and WebSockets. The dispatcher on this Mac checks each process.
+
+TUNNEL = ("tunnel:\n  ports:\n    8871: {command: \"node serve-folder.mjs\"}\n"
+          "    8787: {command: \"wrangler dev\"}\n  data: local\n")
+
+
+def checkout(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "qa").mkdir()
+    return repo
+
+
+def test_a_suite_with_a_tunnel_goes_to_the_cloud_with_its_ports_writes_and_folder(dash, local, monkeypatch, tmp_path):
+    # verse-ship room 21: a game server and its API on this Mac, a PUT on local data. No --runner cloud needed: the
+    # suite's tunnel says which processes may answer, so auto sends it too.
+    monkeypatch.setenv("QAJEV_RUNNER", "auto")
+    repo = checkout(tmp_path)
+    path = suite_file(repo / "qa", base="http://127.0.0.1:8871",
+                      extra=f"mode: mutate\nhosts: [127.0.0.1:8871, localhost:8787]\n{TUNNEL}")
+    assert cli.main(["run", str(path)]) == 0
+    assert dash.created()["tunnel"] == {
+        "ports": {"8871": {"command": "node serve-folder.mjs"}, "8787": {"command": "wrangler dev"}},
+        "data": "local", "root": str(repo.resolve()), "writes": True}
+    assert local == []
+
+
+@pytest.mark.parametrize("extra, said", [
+    # a port the run uses that the tunnel does not name
+    (f"hosts: [127.0.0.1:8871, 127.0.0.1:9000]\n{TUNNEL}", "port 9000 on this machine"),
+    # writes with no data: local
+    ("mode: mutate\ntunnel:\n  ports:\n    8871: {command: \"node serve-folder.mjs\"}\n", "needs data: local"),
+    # [::1] is loopback, but the tunnel listens on 127.0.0.1 and localhost only
+    (f"hosts: ['[::1]:8871']\n{TUNNEL}", "127.0.0.1 or localhost only"),
+])
+def test_a_tunnel_run_that_breaks_a_rule_is_refused_and_nothing_is_sent(dash, local, capsys, tmp_path, extra, said):
+    repo = checkout(tmp_path)
+    path = suite_file(repo / "qa", base="http://127.0.0.1:8871", extra=extra)
+    assert cli.main(["run", str(path), "--runner", "cloud"]) == cli.EXIT_CONFIG
+    assert said in capsys.readouterr().err
+    assert dash.calls == [] and local == []
+
+
+def test_a_tunnel_needs_the_projects_folder(dash, local, capsys, tmp_path):
+    # The guard checks that each dev server runs from inside the project's git checkout: no checkout, no tunnel.
+    path = suite_file(tmp_path, base="http://127.0.0.1:8871", extra=TUNNEL)
+    assert cli.main(["run", str(path), "--runner", "cloud"]) == cli.EXIT_CONFIG
+    assert "needs the project's folder" in capsys.readouterr().err
+    assert dash.calls == [] and local == []
+
+
 def test_no_key_fails_and_nothing_runs_here(dash, local, capsys, monkeypatch):
     monkeypatch.delenv("QAJEV_CLOUD_KEY")
     monkeypatch.setattr(cloud, "_security", lambda args: subprocess.CompletedProcess(args, 44, "", "not found"))
@@ -398,12 +451,16 @@ def test_json_is_one_object_in_the_agreed_shape(dash, local, capsys):
     dash.runs = [{"gate": "fail", "counts": {"pass": 1, "fail": 1}, "reason": None,
                   "files": {"report_html": f"/api/v1/runs/{RUN}/files/report.html"},
                   "tests": [{"name": "a", "outcome": "pass", "wrong": []},
-                            {"name": "b", "outcome": "fail", "wrong": ["no price"]}]}]
+                            {"name": "b", "outcome": "fail", "wrong": ["no price"],
+                             "checks": [{"check": 'js "price()"', "ok": False, "value": "no price"}]}]}]
     assert cli.main(["check", "https://shop.example/", "--runner", "cloud", "--json"]) == 1
     out = json.loads(capsys.readouterr().out)
     assert set(out) == {"runner", "run_id", "url", "gate", "counts", "tests", "report_url", "reason"}
     assert (out["runner"], out["run_id"], out["gate"]) == ("cloud", RUN, "FAIL")
     assert out["tests"][1]["reason"] == "no price" and out["tests"][1]["wrong"] == ["no price"]
+    # verse-ship, 12 Oct: a gate reads tests[].checks[].value as on a local run; an older dashboard sends none
+    assert out["tests"][1]["checks"] == [{"check": 'js "price()"', "ok": False, "value": "no price"}]
+    assert out["tests"][0]["checks"] == []
     assert out["report_url"] == f"{dash.url}/api/v1/runs/{RUN}/files/report.html"
 
 
@@ -532,6 +589,24 @@ def test_a_project_run_ships_its_project_file(dash, local, tmp_path):
     body = dash.created()
     assert body["args"] == ["run", "--project", "in/shop.toml", "--suite", "core"] and "project" not in body
     assert dash.files["in/shop.toml"] == path.read_bytes() and local == []
+
+
+def test_a_project_env_with_a_tunnel_sends_it_from_the_repo_and_a_bad_one_fails_at_load(dash, local, tmp_path):
+    from qajev import project
+
+    repo = checkout(tmp_path)
+    (repo / ".qajev").mkdir()
+    path = repo / ".qajev" / "project.toml"
+    path.write_text('name = "rooms"\nrunner = "cloud"\n[env.local]\nbase_url = "http://127.0.0.1:8871"\n'
+                    'tunnel = { ports = { 8871 = { command = "node serve-folder.mjs" } } }\n'
+                    '[[objective]]\nname = "home"\nurl = "/"\nabout = "it loads"\nexpect = { text = ["Hi"] }\n')
+    assert cli.main(["run", "--project", str(path), "--suite", "core"]) == 0
+    assert dash.created()["tunnel"] == {"ports": {"8871": {"command": "node serve-folder.mjs"}},
+                                        "root": str(repo.resolve())}
+    path.write_text(path.read_text().replace("node serve-folder.mjs", "node"))
+    with pytest.raises(project.ProjectError, match="env.local: tunnel.ports.8871: give the dev server's command"):
+        project.load(str(path))
+    assert local == []
 
 
 # ---------------------------------------------------------------------------------------------------------------------
