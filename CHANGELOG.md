@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.15: 12 Oct 2026
+
 ### Fixed
 
 - Web Workers run again. From 0.4.12, QAJev's guard for frames on another site made Chrome hold every worker at its
