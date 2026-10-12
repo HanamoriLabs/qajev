@@ -18,16 +18,19 @@ GUARD_JS = (Path(guard.__file__).parent / "js" / "guard.js").read_text()
 
 def row_title(cases):
     """The page's own rowTitle, cut from guard.js and run in node with the real patterns. A case is
-    [names (text, aria-label, title), toggles, is_local]."""
+    [names (text, aria-label, title), toggles, is_local, has aria-labelledby, its children's alt/aria-label/title]."""
     squash = re.search(r"^  const squash = .*$", GUARD_JS, re.M).group(0)
     func = re.search(r"^  const rowTitle = [\s\S]*?^  };$", GUARD_JS, re.M).group(0)
     cfg = guard.build_config(mode="mutate", hosts=["localhost:5284"])
     purchase = json.dumps("|".join(cfg["purchase"]))
     destructive = json.dumps("|".join(cfg["destructive"]))
+    deny = json.dumps("|".join(cfg["deny"]))
     script = (f"{squash}\n{func}\nconst purchase = new RegExp({purchase}, 'i');\n"
               f"const destructive = new RegExp({destructive}, 'i');\nconst destroys = (t) => destructive.test(t);\n"
+              f"const denyRe = new RegExp({deny}, 'i');\n"
               f"const cases = {json.dumps(cases)};\n"
-              "const shown = cases.map(([n, toggles, local]) => rowTitle(n, toggles, purchase, destroys, local));\n"
+              "const shown = cases.map(([n, toggles, local, labelledby = false, inner = '']) => rowTitle(n, toggles,\n"
+              "  { purchase, destroys, deny: (s) => denyRe.test(s), local, labelledby, inner }));\n"
               "console.log(JSON.stringify(shown));")
     return json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30).stdout)
 
@@ -59,7 +62,13 @@ def test_a_page_cannot_dress_a_dangerous_control_as_a_row_title():
         [["Buy paint", "Delete account", None], ["Toggle Buy paint"], True],
         [["Buy paint", None, "Delete account"], ["Toggle Buy paint"], True],
         [["Buy paint", "Buy paint", "Buy paint"], ["Toggle Buy paint"], True],  # every name agrees: shown
-    ]) == [False, False, True]
+        # redteam, second look: the browser names <button aria-labelledby="x">Buy paint</button> from #x, and
+        # <button><img alt="Delete account">Buy paint</button> "Delete account Buy paint".
+        [["Buy paint", None, None], ["Toggle Buy paint"], True, True, ""],
+        [["Buy paint", None, None], ["Toggle Buy paint"], True, False, "Delete account "],
+        [["Buy paint", None, None], ["Toggle Buy paint"], True, False, "Sign out"],
+        [["Buy paint", None, None], ["Toggle Buy paint"], True, False, "Normal priority"],  # Foley's priority dot
+    ]) == [False, False, True, False, False, False, True]
 
 
 @NODE

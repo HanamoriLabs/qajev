@@ -241,12 +241,18 @@
   // Only that one control: the row's other controls (its Delete) follow the usual rules (the Orchestrator). Every name
   // the control has (its text, aria-label, title) must equal the checkbox's label: a page that shows "Buy paint" on a
   // button named "Delete account" gets nothing (redteam, #123). Off a local dev host a destructive title stays hidden.
-  // Pure, so tests run it as written: names are the control's own names, toggles the row's checkbox labels.
-  const rowTitle = (names, toggles, purchaseRe, destroysFn, isLocal) => {
+  // The browser also names a control from aria-labelledby (then the text does not count) and from its children's alt,
+  // aria-label and title (redteam, #123): a control with aria-labelledby is never a row title, and one whose children
+  // carry a danger, destructive or purchase word is not either ("Normal priority" on Foley's dot is fine).
+  // Pure, so tests run it as written: names are the control's own names, toggles the row's checkbox labels, and ctx
+  // {purchase, destroys, deny, local, labelledby, inner}: inner is its children's alt, aria-label and title.
+  const rowTitle = (names, toggles, ctx) => {
     const said = names.map((n) => squash(n).toLowerCase()).filter(Boolean);
     const t = said[0];
-    if (!t || said.some((n) => n !== t) || (purchaseRe && purchaseRe.test(t))) return false;
-    if (!isLocal && destroysFn(t)) return false;
+    if (!t || ctx.labelledby || said.some((n) => n !== t) || (ctx.purchase && ctx.purchase.test(t))) return false;
+    if (!ctx.local && ctx.destroys(t)) return false;
+    const inner = squash(ctx.inner);
+    if (inner && (ctx.destroys(inner) || ctx.deny(inner) || (ctx.purchase && ctx.purchase.test(inner)))) return false;
     return toggles.some((name) => squash(name).toLowerCase().replace(/^(toggle|complete|mark|check|done|finish)\b:?\s*/, '') === t);
   };
   const toggleLabels = (el) => {
@@ -273,7 +279,11 @@
   const dangerous = (el) => {
     const text = label(el);
     const names = [el.innerText || el.textContent, el.getAttribute('aria-label'), el.getAttribute('title')];
-    if (rowTitle(names, toggleLabels(el), purchase, destroys, local)) return offsite(el) ? OFFSITE : null;
+    const inner = [...el.querySelectorAll('[alt], [aria-label], [title]')]
+      .map((d) => [d.getAttribute('alt'), d.getAttribute('aria-label'), d.getAttribute('title')].join(' ')).join(' ');
+    const ctx = { purchase, destroys, deny: (s) => !!(deny && deny.test(s)), local,
+      labelledby: el.hasAttribute('aria-labelledby'), inner };
+    if (rowTitle(names, toggleLabels(el), ctx)) return offsite(el) ? OFFSITE : null;
     // destructive first: `allow` never shows it; allow_destructive does, on a local dev host only
     if (destroys(text) && !(cfg.allow_destructive && local)) return 'destructive: ' + text.slice(0, 60);
     const allowed = allow && allow.test(text);
