@@ -93,7 +93,7 @@ fi
 
 # --- What next
 if command -v qajev >/dev/null 2>&1; then
-  say "done. Next: qajev doctor"
+  say "done. Next: qajev doctor (it checks your setup and says what to add next)"
 elif [ "${QAJEV_NO_MODIFY_PATH:-}" = 1 ]; then
   say "done. Add QAJev to your PATH: export PATH=\"$bin_dir:\$PATH\""
   say "then: qajev doctor"

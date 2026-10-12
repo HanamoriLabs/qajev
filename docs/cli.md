@@ -453,6 +453,12 @@ with the hosts that count as local dev hosts. Its `cloud` line says whether the 
 value), the default runner and where it came from, and whether the dashboard answers. `--offline` skips the key
 validity check and the dashboard check.
 
+Each line starts with `ok`, `NO` (a problem: doctor exits `3`) or `--` (an optional setting not set, or a step a fresh
+install has not taken yet). A fresh install with no model key is not a failure: doctor exits `0` and ends with
+**Next:** put one model key in `~/.qajev/.env` (`TYPESAFE_API_KEY` or `OPENROUTER_API_KEY`), or run in QAJev Cloud
+with `qajev mode cloud`. `--json` gives `ok`, `ready` (false until a model key or the cloud is set up), `next` (those
+steps) and each check's `level`: `ok`, `problem`, `info` or `todo`.
+
 ## `qajev init`
 
 ```bash
