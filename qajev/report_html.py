@@ -2,6 +2,7 @@
 relative to the run folder). URLs lose their query strings, as in report.md: they carry tokens and codes."""
 
 import base64
+import re
 import time
 from html import escape
 from pathlib import Path
@@ -76,7 +77,19 @@ ol.plan ul { list-style:none; padding:0; margin:4px 0 0; } ol.plan ul li { displ
 .box.fail { color:var(--fail); background:var(--fail-bg); border-color:var(--fail); }
 .box.warn { color:var(--stuck); background:var(--stuck-bg); border-color:var(--stuck); }
 .nd { color:var(--fail); font-weight:700; font-size:12px; letter-spacing:.04em; }
+.shot { display:inline-block; cursor:zoom-in; }
 .shot img { max-width:100%; max-height:360px; border:1px solid var(--line); border-radius:6px; margin-top:8px; }
+.lb { display:none; position:fixed; inset:0; z-index:50; align-items:center; justify-content:center; padding:16px; }
+.lb:target { display:flex; }
+.lb-bg { position:absolute; inset:0; background:rgba(0,0,0,.88); cursor:zoom-out; }
+.lb figure { position:relative; margin:0; text-align:center; }
+.lb img { max-width:calc(100vw - 32px); max-height:calc(100vh - 96px); object-fit:contain; border-radius:6px; }
+.lb figcaption { color:#eee; font-size:14px; margin-top:8px; overflow-wrap:anywhere; }
+.lb-close, .lb-prev, .lb-next { position:absolute; color:#fff; background:rgba(0,0,0,.6); border-radius:8px;
+  padding:6px 12px; text-decoration:none; }
+.lb-close { top:12px; right:12px; }
+.lb-prev, .lb-next { top:50%; transform:translateY(-50%); font-size:28px; line-height:1; }
+.lb-prev { left:12px; } .lb-next { right:12px; }
 .clients { display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:10px; margin-top:8px; }
 .clients figure { margin:0; } .clients figcaption { font-size:13px; color:var(--muted); }
 details { margin-top:8px; } summary { cursor:pointer; color:var(--muted); }
@@ -89,6 +102,69 @@ dt { color:var(--muted); } dd { margin:0; overflow-wrap:anywhere; }
 
 def _e(value):
     return escape(str(value if value is not None else ""))
+
+
+def _shot(src, alt, caption):
+    """A screenshot thumbnail. render() numbers each one and gives it a lightbox (lightbox())."""
+    return (f'<a class="shot" href="{_e(src)}" data-caption="{_e(caption)}"><img src="{_e(src)}" loading="lazy" '
+            f'alt="{_e(alt)}"></a>')
+
+
+SHOT = re.compile(r'<a class="shot" href="([^"]*)" data-caption="([^"]*)">')
+# Esc closes (back to the thumbnail, with focus), the arrows move. Only where scripts run: the cloud copy is sandboxed
+# with no script at all, and there the overlay's own links do the same.
+LIGHTBOX_JS = """
+(function () {
+  function at() { var m = /^#shot-(\\d+)$/.exec(location.hash); return m ? +m[1] : 0; }
+  addEventListener('keydown', function (e) {
+    var i = at();
+    if (!i) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      location.hash = 'shot-' + i + '-at';
+      var t = document.getElementById('shot-' + i + '-at');
+      if (t) t.focus();
+    } else if (e.key === 'ArrowRight' && document.getElementById('shot-' + (i + 1))) {
+      location.replace('#shot-' + (i + 1));
+    } else if (e.key === 'ArrowLeft' && i > 1) {
+      location.replace('#shot-' + (i - 1));
+    }
+  });
+  addEventListener('hashchange', function () {
+    var i = at(), c = i && document.querySelector('#shot-' + i + ' .lb-close');
+    if (c) c.focus();
+  });
+})();
+"""
+
+
+def lightbox(page):
+    """José, 12 Oct ("This needs to open in lightbox"): each screenshot thumbnail opens its image full size, fitted to
+    the window, with the test and step as its caption, links to the run's other screenshots, and a way back. CSS
+    :target shows it, so it works with no script (QAJev Cloud serves report.html sandboxed)."""
+    shots = SHOT.findall(page)
+    if not shots:
+        return page
+    number = iter(range(1, len(shots) + 1))
+
+    def thumb(m):
+        i = next(number)
+        label = f"Open the screenshot: {m.group(2)}"
+        return f'<a class="shot" id="shot-{i}-at" href="#shot-{i}" title="{label}" aria-label="{label}">'
+
+    page = SHOT.sub(thumb, page)
+    boxes = []
+    for i, (src, caption) in enumerate(shots, 1):
+        back = f"#shot-{i}-at"
+        prev = f'<a class="lb-prev" href="#shot-{i - 1}" aria-label="Previous screenshot">&#8249;</a>' if i > 1 else ""
+        nxt = (f'<a class="lb-next" href="#shot-{i + 1}" aria-label="Next screenshot">&#8250;</a>'
+               if i < len(shots) else "")
+        boxes.append(f'<div class="lb" id="shot-{i}" role="dialog" aria-label="Screenshot: {caption}">'
+                     f'<a class="lb-bg" href="{back}" tabindex="-1" aria-hidden="true"></a>'
+                     f'<figure><img src="{src}" alt="{caption}"><figcaption>{caption} · {i} of {len(shots)}'
+                     f'</figcaption></figure>{prev}{nxt}<a class="lb-close" href="{back}">Close</a></div>')
+    return page.replace("</main></body></html>", "</main>" + "".join(boxes) + f"<script>{LIGHTBOX_JS}</script>"
+                        "</body></html>")
 
 
 def _where(url):
@@ -290,10 +366,10 @@ def _scenario(i, r, who="Jev"):
                      + _table(["Step", "Kind", "Action", "Typed", "Page"], rows) + "</details>")
     frames = [e for e in r.get("react") or [] if e.get("path")]
     if frames:  # the frames a react hook's policy asked for: the cue as the player saw it
+        moments = [(e, f"{e['shot']} at {e['at_s']} s") for e in frames]
         parts.append('<div class="clients">' + "".join(
-            f'<figure><a class="shot" href="{_e(e["path"])}"><img src="{_e(e["path"])}" loading="lazy" '
-            f'alt="{_e(e["shot"])} at {_e(e["at_s"])} s"></a><figcaption>{_e(e["shot"])} at {_e(e["at_s"])} s'
-            "</figcaption></figure>" for e in frames) + "</div>")
+            f'<figure>{_shot(e["path"], when, f"{r["name"]} · {when}")}<figcaption>{_e(when)}</figcaption></figure>'
+            for e, when in moments) + "</div>")
     notes = [f"Released {_e(e['released'])} at {_e(e['at_s'])} s: {_e(e['why'])}" if "released" in e
              else f"At {_e(e['at_s'])} s: {_e(e['note'])}"
              for e in r.get("react") or [] if "released" in e or "note" in e]
@@ -302,8 +378,7 @@ def _scenario(i, r, who="Jev"):
     if r.get("clients"):
         parts.append(_clients_html(r))
     elif r.get("shot"):
-        parts.append(f'<a class="shot" href="{_e(r["shot"])}"><img src="{_e(r["shot"])}" loading="lazy" '
-                     f'alt="Screenshot at the end of {_e(r["name"])}"></a>')
+        parts.append(_shot(r["shot"], f"Screenshot at the end of {r['name']}", f"{r['name']} · the last screen"))
     parts.append("</section>")
     return "".join(parts)
 
@@ -312,8 +387,8 @@ def _clients_html(r):
     """A multiplayer scenario (clients.py): each client's screen, the steps with when each client acted, and every
     snapshot with when each client got there (ms after the first)."""
     figures = "".join(
-        f'<figure><a class="shot" href="{_e(c["shot"])}"><img src="{_e(c["shot"])}" loading="lazy" '
-        f'alt="{_e(c["name"])} at the end"></a><figcaption>{_e(c["name"])}</figcaption></figure>' if c.get("shot")
+        f'<figure>{_shot(c["shot"], f"{c["name"]} at the end", f"{r["name"]} · {c["name"]} at the end")}'
+        f'<figcaption>{_e(c["name"])}</figcaption></figure>' if c.get("shot")
         else f'<figure><figcaption>{_e(c["name"])} (no screenshot)</figcaption></figure>' for c in r["clients"])
     out = [f'<div class="clients">{figures}</div>']
     steps = [[_e(s.get("step")), _e(s.get("do") or f"snapshot {s.get('snapshot')}"),
@@ -538,4 +613,4 @@ def render(data):
             ("QAJev", _e(data.get("qajev")) + (f" ({_e(data['qajev_commit'])})" if data.get("qajev_commit") else ""))]
     out += ["<h2>Run</h2>", '<div class="card"><dl>', "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in run),
             "</dl></div>", "</main></body></html>"]
-    return "\n".join(o for o in out if o)
+    return lightbox("\n".join(o for o in out if o))
