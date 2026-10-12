@@ -94,7 +94,7 @@ class FormPage:
         self.href, self.lets_in, self.moves_to, self.typed, self.pw = href, lets_in, moves_to, [], True
         self.unreadable, self.dark = unreadable, False  # dark: its state cannot be read (a getter that throws)
         self.loading, self.clears, self.fields = loading, clears, {"email": "", "pw": ""}
-        self.closed = closed  # its form shows only after a click on the button that opens it
+        self.closed = int(closed)  # clicks it takes before its form shows (True: one)
         self.drawn_after, self.says = drawn_after, says  # looks before its sign-in panel shows; its body text
         self.typed_while_loading = False  # loading: state reads before its scripts have run; clears: read-backs that
         # find the fields emptied by them
@@ -139,7 +139,7 @@ class FormPage:
             self.href, self.pw = self.href.rsplit("/", 1)[0] + "/home", False
 
     def trusted_click(self, _x, _y):
-        self.closed = False
+        self.closed = max(0, self.closed - 1)
 
 
 def test_a_password_is_typed_only_for_a_seeded_test_account_on_a_local_dev_host(tmp_path, monkeypatch):
@@ -258,3 +258,22 @@ def test_a_sign_in_button_the_app_draws_late_is_waited_for(tmp_path):
 def test_a_failed_sign_in_says_where_the_browser_was_and_what_the_page_said():
     page = FormPage("http://127.0.0.1:4000/welcome", says="Loading your\n  workspace…")
     assert signin.page_seen(page) == "/welcome: Loading your workspace…"
+
+
+def test_open_clicks_its_steps_in_order_and_finds_a_button_by_its_text(tmp_path):
+    # Foley, 13 Oct: "Sign in or create account" opens a panel, and "Sign in with email" in it shows the form. The first
+    # has no CSS selector of its own (class "gear" is shared), so a step can name the button's visible text.
+    steps = [{"text": "Sign in or create account"}, "button.brand.plain"]
+    account = {**_local_account(tmp_path), "login": {"url": "http://127.0.0.1:4000/", "open": steps}}
+    page = FormPage("http://127.0.0.1:4000/", closed=2)
+    assert signin.sign_in(page, account, timeout=5)["ok"] and page.closed == 0
+    assert '"Sign in or create account"' in signin.PICK_TEXT_JS % ('"Sign in or create account"', '"open"')
+    page = FormPage("http://127.0.0.1:4000/", closed=2)  # one step too few: the form never shows
+    with pytest.raises(signin.SignInFailed, match="no email or username field"):
+        signin.sign_in(page, {**account, "login": {**account["login"], "open": steps[:1]}}, timeout=1)
+
+
+@pytest.mark.parametrize("bad", [[], [""], [{"text": ""}], [{"text": "x", "css": "y"}], 3, [["a"]]])
+def test_a_login_open_that_cannot_be_clicked_is_refused_when_the_suite_loads(bad):
+    with pytest.raises(SuiteError, match="account.login.open"):
+        _account(base_account(login={"url": "http://127.0.0.1:4000/", "open": bad}), None)
