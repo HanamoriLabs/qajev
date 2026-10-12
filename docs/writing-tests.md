@@ -496,7 +496,9 @@ names, checked again where the browser is just before it types; the password onl
 `open` (the button that shows the sign-in form, such as "Sign in with email": a CSS selector, `{text: "Sign in"}`
 for a button found by its visible text, or a list of them clicked in order; a step whose control does not show while the
 email field is already there is skipped), `next` (the button between the email
-and password steps of a two-step sign-in), and `signed_in` to say how success
+and password steps of a two-step sign-in), `tab` (`own`, the default: QAJev signs in in a tab of its own, which then
+closes; `same`: in the scenarios' own tab, for an app that keeps one writer per site and must not see a second tab), and
+`signed_in` to say how success
 looks (`{url_not: /login}`, `{text: ["Your orders"]}` or `{js: ...}`; by default: away from the sign-in page with no
 password field showing).
 

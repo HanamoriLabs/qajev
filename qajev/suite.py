@@ -72,7 +72,7 @@ SUITE_KEYS = {
 COLOR_SCHEMES = ("light", "dark")
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
-LOGIN_KEYS = {"url", "open", "email_field", "password_field", "next", "submit", "signed_in", "code_field",
+LOGIN_KEYS = {"url", "open", "tab", "email_field", "password_field", "next", "submit", "signed_in", "code_field",
               "code_submit"}
 COOKIE_KEYS = {"name", "value", "path", "http_only"}
 SIGNED_IN_KEYS = {"url_not", "text", "js"}
@@ -439,6 +439,9 @@ def _account(raw, base, folder=None):
         raise SuiteError("account.login.url is required (the sign-in page)")
     _unknown("account.login", login, LOGIN_KEYS)
     _unknown("account.login.signed_in", login.get("signed_in") or {}, SIGNED_IN_KEYS)
+    if login.get("tab") not in (None, "own", "same"):
+        raise SuiteError('account.login.tab: "own" (QAJev signs in in its own tab, the default) or "same" (in the '
+                         "scenarios' tab)")
     if login.get("open") is not None:
         steps = login["open"] if isinstance(login["open"], list) else [login["open"]]
         ok = lambda s: (isinstance(s, str) and s.strip()) or (  # noqa: E731

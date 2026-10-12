@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- `login.tab: same` signs a seeded account in in the scenarios' own tab, not in a tab of QAJev's own that then closes.
+  For an app that keeps one writer per site (Foley's browser database); the default stays `own` (foleyapp).
+
 ### Changed
 
 - `qajev doctor` on a fresh install is not a failure: with no model key yet it exits `0` and ends with the next steps
