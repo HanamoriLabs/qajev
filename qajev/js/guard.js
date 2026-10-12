@@ -19,12 +19,13 @@
   // production, staging and previews too: read-only in every mode, whatever the run asked for (José, 6 Oct).
   const localDev = (host) => /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/i.test(host) || /\.(localhost|test)$/i.test(host);
   const local = localDev(location.hostname);
-  let cfg, deny, mutating, destructive, harmless, grave, allow, allowRequest, hosts, readOnly, heard;
+  let cfg, deny, mutating, destructive, harmless, grave, purchase, allow, allowRequest, hosts, readOnly, heard;
   const configure = (next) => {
     cfg = next; state.v = next.v; state.mode = next.mode;
     deny = re(next.deny); mutating = re(next.mutating); destructive = re(next.destructive); allow = re(next.allow);
     harmless = next.harmless && next.harmless.length ? new RegExp(next.harmless.join('|'), 'gi') : null;
     grave = re(next.grave);
+    purchase = re(next.purchase);
     allowRequest = re(next.allow_requests);
     hosts = new Set(next.hosts); readOnly = next.mode === 'readonly' || !local; heard = next.speech;
   };
@@ -235,6 +236,40 @@
   // Everything a person could read on the control: deny patterns may appear in any of it.
   const label = (el) => squash([el.innerText || el.textContent, el.getAttribute('aria-label'), el.getAttribute('title'),
     el.tagName === 'INPUT' ? el.value : ''].join(' '));
+  // A to-do row's own title (Foley, 13 Oct: the task "Buy paint" is a button that opens the task, in a row whose
+  // checkbox is "Toggle Buy paint"). It names the item, not an action, so it is shown, unless it reads as a purchase.
+  // Only that one control: the row's other controls (its Delete) follow the usual rules (the Orchestrator). Every name
+  // the control has (its text, aria-label, title) must equal the checkbox's label: a page that shows "Buy paint" on a
+  // button named "Delete account" gets nothing (redteam, #123). Off a local dev host a destructive title stays hidden.
+  // The browser also names a control from aria-labelledby (then the text does not count) and from its children's alt,
+  // aria-label and title (redteam, #123): a control with aria-labelledby is never a row title, and one whose children
+  // carry a danger, destructive or purchase word is not either ("Normal priority" on Foley's dot is fine).
+  // Pure, so tests run it as written: names are the control's own names, toggles the row's checkbox labels, and ctx
+  // {purchase, destroys, deny, local, labelledby, inner}: labelledby and inner come from childNames.
+  const rowTitle = (names, toggles, ctx) => {
+    const said = names.map((n) => squash(n).toLowerCase()).filter(Boolean);
+    const t = said[0];
+    if (!t || ctx.labelledby || said.some((n) => n !== t) || (ctx.purchase && ctx.purchase.test(t))) return false;
+    if (!ctx.local && ctx.destroys(t)) return false;
+    const inner = squash(ctx.inner);
+    if (inner && (ctx.destroys(inner) || ctx.deny(inner) || (ctx.purchase && ctx.purchase.test(inner)))) return false;
+    return toggles.some((name) => squash(name).toLowerCase().replace(/^(toggle|complete|mark|check|done|finish)\b:?\s*/, '') === t);
+  };
+  // What the control's children add to its name, for rowTitle's ctx: the browser names
+  // <button><img alt="Delete account">Buy paint</button> "Delete account Buy paint", and an inline svg by its <title>
+  // and <desc>. A child with aria-labelledby names the control from elsewhere on the page, like the control's own does
+  // (redteam, #123). -> {labelledby, inner}
+  const childNames = (el) => ({
+    labelledby: el.hasAttribute('aria-labelledby') || !!el.querySelector('[aria-labelledby]'),
+    inner: [...el.querySelectorAll('[alt], [aria-label], [title]')]
+      .map((d) => [d.getAttribute('alt'), d.getAttribute('aria-label'), d.getAttribute('title')].join(' '))
+      .concat([...el.querySelectorAll('svg title, svg desc')].map((d) => d.textContent)).join(' '),
+  });
+  const toggleLabels = (el) => {
+    const row = !el.matches('input, select, textarea') && el.closest('li, [role=listitem], [role=row]');
+    return row ? [...row.querySelectorAll('input[type=checkbox], [role=checkbox], [role=switch]')]
+      .filter((c) => c !== el).map((c) => c.getAttribute('aria-label') || c.getAttribute('title') || '') : [];
+  };
   // Its accessible name: what read-only patterns anchor to.
   const accessibleName = (el) => squash(el.getAttribute('aria-label') || el.innerText || el.textContent ||
     el.getAttribute('title') || (el.tagName === 'INPUT' ? el.value : ''));
@@ -253,6 +288,9 @@
   };
   const dangerous = (el) => {
     const text = label(el);
+    const names = [el.innerText || el.textContent, el.getAttribute('aria-label'), el.getAttribute('title')];
+    const ctx = { purchase, destroys, deny: (s) => !!(deny && deny.test(s)), local, ...childNames(el) };
+    if (rowTitle(names, toggleLabels(el), ctx)) return offsite(el) ? OFFSITE : null;
     // destructive first: `allow` never shows it; allow_destructive does, on a local dev host only
     if (destroys(text) && !(cfg.allow_destructive && local)) return 'destructive: ' + text.slice(0, 60);
     const allowed = allow && allow.test(text);
