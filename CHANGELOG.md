@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.24: 13 Oct 2026
+
+### Fixed
+
+- `login.open` stopped at the first step that showed the email field, so a panel that opens on "Create account" was
+  submitted as a sign-up. Now every step is clicked when its control shows, and one that never shows while the email
+  field is there is skipped (foleyapp).
+
 ## 0.4.23: 13 Oct 2026
 
 ### Added

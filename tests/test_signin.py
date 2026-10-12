@@ -90,12 +90,14 @@ class FormPage:
     `lets_in`, and `moves_to` is where the page goes once the email is typed (a two-step sign-in)."""
 
     def __init__(self, href, lets_in=True, moves_to=None, unreadable=False, loading=0, clears=0, closed=False,
-                 drawn_after=0, says=""):
+                 drawn_after=0, says="", missing=(), opens_with_fields=False):
         self.href, self.lets_in, self.moves_to, self.typed, self.pw = href, lets_in, moves_to, [], True
         self.unreadable, self.dark = unreadable, False  # dark: its state cannot be read (a getter that throws)
         self.loading, self.clears, self.fields = loading, clears, {"email": "", "pw": ""}
         self.closed = int(closed)  # clicks it takes before its form shows (True: one)
         self.drawn_after, self.says = drawn_after, says  # looks before its sign-in panel shows; its body text
+        self.missing, self.opens_with_fields, self.clicks = missing, opens_with_fields, 0  # controls never there;
+        # a panel that shows its fields at once (in sign-up mode)
         self.typed_while_loading = False  # loading: state reads before its scripts have run; clears: read-backs that
         # find the fields emptied by them
 
@@ -119,7 +121,10 @@ class FormPage:
         if self.drawn_after > 0:  # PICK_JS while the app still checks the session: nothing to pick yet
             self.drawn_after -= 1
             return False
-        return not self.closed or js.rstrip().endswith('"open")')  # PICK_JS: the field is there
+        if any(m in js for m in self.missing):
+            return False
+        fields = not self.closed or (self.opens_with_fields and self.clicks > 0)
+        return fields or js.rstrip().endswith('"open")')  # PICK_JS: the field is there
 
     def find(self, selector):
         return {"selector": selector, "secret": '"password"' in selector, "x": 1, "y": 1}
@@ -140,6 +145,7 @@ class FormPage:
 
     def trusted_click(self, _x, _y):
         self.closed = max(0, self.closed - 1)
+        self.clicks += 1
 
 
 def test_a_password_is_typed_only_for_a_seeded_test_account_on_a_local_dev_host(tmp_path, monkeypatch):
@@ -277,3 +283,13 @@ def test_open_clicks_its_steps_in_order_and_finds_a_button_by_its_text(tmp_path)
 def test_a_login_open_that_cannot_be_clicked_is_refused_when_the_suite_loads(bad):
     with pytest.raises(SuiteError, match="account.login.open"):
         _account(base_account(login={"url": "http://127.0.0.1:4000/", "open": bad}), None)
+
+
+def test_a_step_is_clicked_even_when_the_fields_already_show_and_skipped_when_it_never_does(tmp_path):
+    # Foley, 13 Oct (r_mv5j7nfb9ceb8232): the panel opened on "Create your free account" with its fields showing. 0.4.23
+    # stopped there and pressed "Create account" for user A, who exists. "Sign in instead" must still be clicked.
+    steps = [{"text": "Sign in or create account"}, {"text": "Sign in instead"}, "button.brand.plain"]
+    account = {**_local_account(tmp_path), "login": {"url": "http://127.0.0.1:4000/", "open": steps}}
+    page = FormPage("http://127.0.0.1:4000/", closed=3, opens_with_fields=True, missing=("button.brand.plain",))
+    assert signin.sign_in(page, account, timeout=5)["ok"]
+    assert page.clicks == 2  # both text steps; the third, never drawn while the fields show, is skipped
