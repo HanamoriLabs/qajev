@@ -87,3 +87,59 @@ def test_a_purchase_stays_hidden_in_a_row_and_out_of_one():
         "CHF 15", "₹ 499",
     ])]) == [False] * 16
     assert all(hidden_by_usual_rules(x) for x in ("Buy credits", "Buy now", "Buy 500 credits $10"))
+
+
+# Just enough of an element for childNames: attributes, text, innerText, and the attribute and "svg title" selectors it uses.
+FAKE_DOM = """
+const E = (tag, attrs = {}, kids = [], text = '') => {
+  const el = { tagName: tag.toUpperCase(), attrs, kids, text,
+    getAttribute: (n) => (n in attrs ? attrs[n] : null), hasAttribute: (n) => n in attrs,
+    get textContent() { return text + kids.map((k) => k.textContent).join(''); },
+    // an svg's title and desc are not drawn, so they are not in innerText
+    get innerText() { return tag === 'svg' ? '' : text + kids.map((k) => k.innerText).join(''); } };
+  const below = (e, inSvg) => e.kids.flatMap((k) => [[k, inSvg], ...below(k, inSvg || k.tagName === 'SVG')]);
+  el.querySelectorAll = (sel) => below(el, false).filter(([k, inSvg]) => sel.split(',').some((s) => {
+    s = s.trim();
+    const attr = /^\\[([\\w-]+)\\]$/.exec(s);
+    if (attr) return k.hasAttribute(attr[1]);
+    const svg = /^svg (\\w+)$/.exec(s);
+    if (svg) return inSvg && k.tagName === svg[1].toUpperCase();
+    throw new Error('fake DOM: no selector ' + s);
+  })).map(([k]) => k);
+  el.querySelector = (sel) => el.querySelectorAll(sel)[0] || null;
+  return el;
+};
+"""
+
+
+def row_title_of(buttons):
+    """rowTitle for real-ish buttons in a local "Toggle Buy paint" row, with ctx from the page's own childNames."""
+    squash = re.search(r"^  const squash = .*$", GUARD_JS, re.M).group(0)
+    func = re.search(r"^  const rowTitle = [\s\S]*?^  };$", GUARD_JS, re.M).group(0)
+    child = re.search(r"^  const childNames = [\s\S]*?^  }\);$", GUARD_JS, re.M).group(0)
+    cfg = guard.build_config(mode="mutate", hosts=["localhost:5284"])
+    pats = {k: json.dumps("|".join(cfg[k])) for k in ("purchase", "destructive", "deny")}
+    script = (f"{squash}\n{func}\n{child}\n{FAKE_DOM}\nconst purchase = new RegExp({pats['purchase']}, 'i');\n"
+              f"const destructive = new RegExp({pats['destructive']}, 'i');\nconst denyRe = new RegExp({pats['deny']}, 'i');\n"
+              f"const buttons = [{', '.join(buttons)}];\n"
+              "console.log(JSON.stringify(buttons.map((b) => rowTitle([b.innerText], ['Toggle Buy paint'], {\n"
+              "  purchase, destroys: (t) => destructive.test(t), deny: (s) => denyRe.test(s), local: true,\n"
+              "  ...childNames(b) }))));")
+    out = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+@NODE
+def test_a_rows_title_counts_every_name_its_children_give_it():
+    # redteam, #123 third look: a child's aria-labelledby names the button from elsewhere, and an inline svg is named
+    # by its <title> and <desc>.
+    assert row_title_of([
+        "E('button', {}, [], 'Buy paint')",                                                     # plain title: shown
+        "E('button', {}, [E('span', {'aria-labelledby': 'y'})], 'Buy paint')",                  # child labelledby
+        "E('button', {}, [E('svg', {}, [E('title', {}, [], 'Delete account')])], 'Buy paint')",  # svg <title>
+        "E('button', {}, [E('svg', {}, [E('desc', {}, [], 'Delete account')])], 'Buy paint')",   # svg <desc>
+        "E('button', {}, [E('img', {alt: 'Delete account'})], 'Buy paint')",                    # img alt
+        "E('button', {'aria-labelledby': 'x'}, [], 'Buy paint')",                               # its own labelledby
+        "E('button', {}, [E('svg', {}, [E('title', {}, [], 'Normal priority')])], 'Buy paint')",  # a harmless svg
+    ]) == [True, False, False, False, False, False, True]

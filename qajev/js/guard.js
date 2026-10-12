@@ -245,7 +245,7 @@
   // aria-label and title (redteam, #123): a control with aria-labelledby is never a row title, and one whose children
   // carry a danger, destructive or purchase word is not either ("Normal priority" on Foley's dot is fine).
   // Pure, so tests run it as written: names are the control's own names, toggles the row's checkbox labels, and ctx
-  // {purchase, destroys, deny, local, labelledby, inner}: inner is its children's alt, aria-label and title.
+  // {purchase, destroys, deny, local, labelledby, inner}: labelledby and inner come from childNames.
   const rowTitle = (names, toggles, ctx) => {
     const said = names.map((n) => squash(n).toLowerCase()).filter(Boolean);
     const t = said[0];
@@ -255,6 +255,16 @@
     if (inner && (ctx.destroys(inner) || ctx.deny(inner) || (ctx.purchase && ctx.purchase.test(inner)))) return false;
     return toggles.some((name) => squash(name).toLowerCase().replace(/^(toggle|complete|mark|check|done|finish)\b:?\s*/, '') === t);
   };
+  // What the control's children add to its name, for rowTitle's ctx: the browser names
+  // <button><img alt="Delete account">Buy paint</button> "Delete account Buy paint", and an inline svg by its <title>
+  // and <desc>. A child with aria-labelledby names the control from elsewhere on the page, like the control's own does
+  // (redteam, #123). -> {labelledby, inner}
+  const childNames = (el) => ({
+    labelledby: el.hasAttribute('aria-labelledby') || !!el.querySelector('[aria-labelledby]'),
+    inner: [...el.querySelectorAll('[alt], [aria-label], [title]')]
+      .map((d) => [d.getAttribute('alt'), d.getAttribute('aria-label'), d.getAttribute('title')].join(' '))
+      .concat([...el.querySelectorAll('svg title, svg desc')].map((d) => d.textContent)).join(' '),
+  });
   const toggleLabels = (el) => {
     const row = !el.matches('input, select, textarea') && el.closest('li, [role=listitem], [role=row]');
     return row ? [...row.querySelectorAll('input[type=checkbox], [role=checkbox], [role=switch]')]
@@ -279,10 +289,7 @@
   const dangerous = (el) => {
     const text = label(el);
     const names = [el.innerText || el.textContent, el.getAttribute('aria-label'), el.getAttribute('title')];
-    const inner = [...el.querySelectorAll('[alt], [aria-label], [title]')]
-      .map((d) => [d.getAttribute('alt'), d.getAttribute('aria-label'), d.getAttribute('title')].join(' ')).join(' ');
-    const ctx = { purchase, destroys, deny: (s) => !!(deny && deny.test(s)), local,
-      labelledby: el.hasAttribute('aria-labelledby'), inner };
+    const ctx = { purchase, destroys, deny: (s) => !!(deny && deny.test(s)), local, ...childNames(el) };
     if (rowTitle(names, toggleLabels(el), ctx)) return offsite(el) ? OFFSITE : null;
     // destructive first: `allow` never shows it; allow_destructive does, on a local dev host only
     if (destroys(text) && !(cfg.allow_destructive && local)) return 'destructive: ' + text.slice(0, 60);
