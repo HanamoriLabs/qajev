@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.19: 12 Oct 2026
+
 ### Added
 
 - Every screenshot in report.html opens in a lightbox: full size, fitted to the window, with the test and the step as
