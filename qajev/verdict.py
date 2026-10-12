@@ -337,6 +337,10 @@ def findings_from_probe(probe, *, scenario, url, first_party_hosts, why=None):
                                 scenario, url))
         elif kind == "console":
             out.append(_finding("S3", "console error", detail, scenario, url))
+        elif kind == "worker":  # a worker's console (netlog.worker_entry): an error is S2, a warning S3
+            error = err.get("level") == "error"
+            out.append(_finding("S2" if error else "S3", "worker error" if error else "worker warning", detail,
+                                scenario, url))
         elif kind == "csp":  # third-party too: a blocked tag or pixel is the site's own policy at work
             what = f"{err.get('directive')}: {detail}"
             if err.get("disposition") == "report":
