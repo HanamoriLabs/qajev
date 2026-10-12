@@ -299,7 +299,9 @@ qajev report qajev-runs/20261001-101500-shop --html   # rebuild report.html and 
 
 ## `qajev projects`
 
-Lists the projects QAJev knows, their environments, and where their reports go. `--json` for data.
+Lists the projects QAJev knows, their environments, and where their reports go. `--json` for data: each project's
+`name`, `config`, `repo`, `envs`, `objectives` (how many), `objective_names`, `site` (its default environment's
+address), `runner` and `reports`. QAJev Cloud's sync reads it for the dashboard's Projects page.
 
 ## `qajev reports`
 

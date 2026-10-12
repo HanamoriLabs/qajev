@@ -363,7 +363,10 @@ def listing():
                 continue
             out.append({"name": p.name, "config": str(p.config_path), "repo": str(p.repo) if p.repo else None,
                         "envs": {k: v["base_url"] for k, v in p.envs.items()}, "objectives": len(p.objectives),
-                        "reports": str(p.reports_dir)})
+                        "reports": str(p.reports_dir),
+                        # What QAJev Cloud's Projects page shows (its sync reads this listing).
+                        "site": p.envs[p.default_env]["base_url"], "runner": p.runner,
+                        "objective_names": [str(o.get("name") or "") for o in p.objectives]})
     return out
 
 
