@@ -213,6 +213,18 @@ the line `Plan file: ...` says whether it is approved, and the JSON has `test_pl
 `sha256`, `problem`). A plan that is missing or not approved is listed, and the exit code stays `0`. With
 `QAJEV_REQUIRE_PLAN=1` it exits `2`.
 
+## `qajev tunnel`
+
+Prints, as JSON, the `tunnel:` a suite declares, or a project env's `tunnel` (with `--env`; default the project's
+default env). It exits `3` when the file declares none.
+
+```bash
+qajev tunnel tools/qa/rooms.qajev.yaml   # {"data": "local", "ports": {"8871": {"command": "node serve-folder.mjs"}}}
+```
+
+A cloud run through the full tunnel names this file. The QAJev Cloud dispatcher on this machine reads it again with
+this command and refuses a run whose tunnel differs from it.
+
 ## `qajev plan-hash`
 
 Prints the sha256 an approver puts on a test plan's approval line, from the plan's text as it stands:

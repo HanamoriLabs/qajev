@@ -292,8 +292,21 @@ def test_a_suite_with_a_tunnel_goes_to_the_cloud_with_its_ports_writes_and_folde
     assert cli.main(["run", str(path)]) == 0
     assert dash.created()["tunnel"] == {
         "ports": {"8871": {"command": "node serve-folder.mjs"}, "8787": {"command": "wrangler dev"}},
-        "data": "local", "root": str(repo.resolve()), "writes": True}
+        "data": "local", "root": str(repo.resolve()), "writes": True, "source": {"file": str(path.resolve())}}
     assert local == []
+
+
+def test_qajev_tunnel_prints_what_the_file_declares_for_the_dispatcher_to_check(capsys, tmp_path):
+    # redteam, 12 Oct: the dispatcher reads the suite or project file on disk again and refuses a run whose tunnel
+    # differs from it, so a run record alone cannot open a port.
+    repo = checkout(tmp_path)
+    path = suite_file(repo / "qa", base="http://127.0.0.1:8871", extra=TUNNEL)
+    assert cli.main(["tunnel", str(path)]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "ports": {"8871": {"command": "node serve-folder.mjs"}, "8787": {"command": "wrangler dev"}}, "data": "local"}
+    plain = suite_file(repo / "qa", name="plain.yaml")
+    assert cli.main(["tunnel", str(plain)]) == cli.EXIT_CONFIG
+    assert "no tunnel" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("extra, said", [
@@ -602,7 +615,9 @@ def test_a_project_env_with_a_tunnel_sends_it_from_the_repo_and_a_bad_one_fails_
                     '[[objective]]\nname = "home"\nurl = "/"\nabout = "it loads"\nexpect = { text = ["Hi"] }\n')
     assert cli.main(["run", "--project", str(path), "--suite", "core"]) == 0
     assert dash.created()["tunnel"] == {"ports": {"8871": {"command": "node serve-folder.mjs"}},
-                                        "root": str(repo.resolve())}
+                                        "root": str(repo.resolve()),
+                                        "source": {"file": str(path.resolve()), "env": "local"}}
+    assert cli.main(["tunnel", str(path), "--env", "local"]) == 0
     path.write_text(path.read_text().replace("node serve-folder.mjs", "node"))
     with pytest.raises(project.ProjectError, match="env.local: tunnel.ports.8871: give the dev server's command"):
         project.load(str(path))

@@ -374,10 +374,12 @@ def _tunnel_port(local_targets, writes):
     return port
 
 
-def full_tunnel(spec, local_targets, writes, root):
+def full_tunnel(spec, local_targets, writes, root, source):
     """The full tunnel (QAJev Cloud, 12 Oct): a run on this machine's dev servers, several ports, writes with local
     data, WebSockets. The suite's (or project env's) `tunnel:` names each port and its command; the dispatcher on this
-    machine checks that exactly that process answers before anything starts. -> the run's tunnel. Raises NotAllowed."""
+    machine checks that exactly that process answers before anything starts. `source` ({file, env?}) names the file on
+    this machine that declares it: the dispatcher reads it again (`qajev tunnel`) and refuses a run whose tunnel
+    differs. -> the run's tunnel. Raises NotAllowed."""
     hosts = {(urllib.parse.urlsplit(t).hostname or "").lower() for t in local_targets}
     if hosts - {"127.0.0.1", "localhost"}:
         raise NotAllowed("the tunnel reaches this machine's 127.0.0.1 or localhost only, not "
@@ -394,7 +396,7 @@ def full_tunnel(spec, local_targets, writes, root):
     if root is None or not Path(root).is_dir():
         raise NotAllowed("the tunnel needs the project's folder: run the suite from its git checkout (or set the "
                          "project's repo)")
-    return {**spec, "root": str(Path(root).resolve()), **({"writes": True} if writes else {})}
+    return {**spec, "root": str(Path(root).resolve()), "source": source, **({"writes": True} if writes else {})}
 
 
 def plan(args):
@@ -416,7 +418,7 @@ def plan(args):
     if getattr(args, "allow_commands", False):
         raise NotAllowed("a suite's shell commands (--allow-commands) run on this Mac only")
     files, targets, account, named_plan, plan_base, project_name, swap = [], [], None, None, Path.cwd(), None, {}
-    full, root, writes = None, None, getattr(args, "mode", None) == "mutate"
+    full, root, source, writes = None, None, None, getattr(args, "mode", None) == "mutate"
     if getattr(args, "project", None):
         from urllib.parse import urljoin
 
@@ -435,6 +437,7 @@ def plan(args):
         account = target.get("account") or proj.account
         full = target.get("tunnel")
         root = proj.repo.expanduser() if proj.repo is not None else None
+        source = {"file": str(proj.config_path.resolve()), "env": env}
         writes = writes or target.get("mode") == "mutate"
         remote = f"in/{proj.config_path.name}"
         files.append((remote, proj.config_path.resolve()))
@@ -453,6 +456,7 @@ def plan(args):
         account = suite.account
         full = suite.tunnel
         root = planfile.project_root(args.suite.resolve().parent)
+        source = {"file": str(args.suite.resolve())}
         writes = writes or suite.mutates
         remote = f"in/{args.suite.name}"
         files.append((remote, args.suite.resolve()))
@@ -473,7 +477,7 @@ def plan(args):
     serve = getattr(args, "serve", None)
     tunnel_port, tunnel = None, None
     if local_targets and not serve and full:
-        tunnel = full_tunnel(full, local_targets, writes, root)
+        tunnel = full_tunnel(full, local_targets, writes, root, source)
     elif local_targets and not serve and not named:
         raise NotAllowed("a run on this Mac's dev server goes to the cloud only with --runner cloud on the command: "
                          "the tunnel passes GET, HEAD and OPTIONS, so a page's POST or WebSocket would fail there")

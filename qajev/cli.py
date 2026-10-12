@@ -314,6 +314,10 @@ def build_parser():
     plan_hash = sub.add_parser("plan-hash", help="print the sha256 an approver puts on a test plan's approval line "
                                                  "(\"Approved by the Orchestrator <d Mon yyyy hh:mm> sha256:...\")")
     plan_hash.add_argument("file", type=Path, help="the test plan (Markdown), as it stands above the new line")
+    tunnel = sub.add_parser("tunnel", help="print a suite's tunnel: (or a project env's tunnel) as JSON: what the "
+                                           "QAJev Cloud dispatcher on this machine checks a run's tunnel against")
+    tunnel.add_argument("file", type=Path, help="a suite file, or a project file (.toml) with --env")
+    tunnel.add_argument("--env", help="the project env (default: the project's default env)")
 
     mode = sub.add_parser("mode", aliases=["runner"],
                           help="show where runs go (this Mac or QAJev Cloud), or switch it: local, cloud, auto, or "
@@ -671,6 +675,29 @@ def cmd_plan_hash(args):
     if problem:
         return _fail(args, f"{args.file}: {problem}", EXIT_CONFIG)
     print(f"sha256:{planfile.digest(text)}")
+    return 0
+
+
+def cmd_tunnel(args):
+    """The tunnel a suite or project env declares, as the cloud plan sends it (without root and writes). The QAJev Cloud
+    dispatcher reads the file on disk with this and refuses a run whose tunnel differs (redteam, 12 Oct)."""
+    from . import project as project_mod
+    from . import suite as suite_mod
+
+    try:
+        if args.file.suffix == ".toml":
+            proj = project_mod.load(str(args.file))
+            env = args.env or proj.default_env
+            if env not in proj.envs:
+                return _fail(args, f"{args.file}: no env {env!r}; have {sorted(proj.envs)}", EXIT_CONFIG)
+            spec = proj.envs[env].get("tunnel")
+        else:
+            spec = suite_mod.load(args.file).tunnel
+    except (project_mod.ProjectError, suite_mod.SuiteError, ValueError, OSError) as e:
+        return _fail(args, f"{args.file}: {e}", EXIT_CONFIG)
+    if not spec:
+        return _fail(args, f"{args.file}: no tunnel", EXIT_CONFIG)
+    print(json.dumps(spec, sort_keys=True))
     return 0
 
 
@@ -1836,8 +1863,8 @@ def main(argv=None):
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
                 "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
                 "top": cmd_top, "nightly": cmd_nightly, "rerun": cmd_rerun, "dashboard": cmd_dashboard,
-                "play": cmd_play, "plan": cmd_plan, "plan-hash": cmd_plan_hash, "mode": cmd_runner,
-                "runner": cmd_runner}
+                "play": cmd_play, "plan": cmd_plan, "plan-hash": cmd_plan_hash, "tunnel": cmd_tunnel,
+                "mode": cmd_runner, "runner": cmd_runner}
     code = 1  # a crash on the way out still leaves an exit code for `qajev jobs`
     try:
         code = handlers[args.command](args)

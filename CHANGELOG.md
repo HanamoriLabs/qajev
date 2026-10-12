@@ -10,6 +10,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   names each port and its dev server's command, and `data: local` for writes. The run then goes to the cloud with
   several ports, writes and WebSockets. Before it starts, this machine checks that exactly that process holds
   each port, inside the project's checkout. With `tunnel:`, `--runner auto` sends the run too (verse-ship, foleyapp).
+- `qajev tunnel FILE [--env ENV]` prints the tunnel a suite or project env declares. The cloud dispatcher on this
+  machine checks each run's tunnel against the file on disk with it (redteam).
 - A cloud run's `--json` result gives each test's `checks` (`check`, `ok`, `value`), as a run here does. A gate that
   reads `tests[].checks[].value` reads a cloud run the same way. Before, the value showed only inside `wrong` (verse-ship).
 
