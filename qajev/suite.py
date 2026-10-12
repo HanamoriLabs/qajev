@@ -57,7 +57,7 @@ EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", 
 SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
-    "persona", "speech", "vision", "about", "clients", "steps", "state", "seed",
+    "persona", "speech", "vision", "about", "clients", "steps", "state", "seed", "color_scheme",
 }
 # A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
 MAX_CLIENTS = 12
@@ -67,8 +67,9 @@ STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
-    "cpu_throttle", "plan",
+    "cpu_throttle", "plan", "color_scheme",
 }
+COLOR_SCHEMES = ("light", "dark")
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
 LOGIN_KEYS = {"url", "email_field", "password_field", "next", "submit", "signed_in", "code_field", "code_submit"}
@@ -115,6 +116,7 @@ class Scenario:
     steps: list = field(default_factory=list)  # its steps, in order (see _steps)
     state: str | None = None  # JS read on every client for the across checks and snapshots
     seed: int | None = None  # for `jitter`: the same seed gives the same offsets
+    color_scheme: str | None = None  # light | dark: the page's prefers-color-scheme answers so; None: the browser's
 
     @property
     def task(self):
@@ -573,6 +575,7 @@ def parse(data, path=None, devices=None):
             steps=_steps(item.get("steps"), [c["name"] for c in clients], f"{where}.steps") if clients else [],
             state=item.get("state"),
             seed=item.get("seed"),
+            color_scheme=color_scheme(item.get("color_scheme", data.get("color_scheme")), f"{where}.color_scheme"),
         ))
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")
@@ -627,6 +630,15 @@ def cpu_rate(value):
     """cpu_throttle: how many times slower Chrome runs the page's CPU, a whole number from 1 (as the machine) to 8."""
     if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 8:
         raise SuiteError("cpu_throttle must be a whole number from 1 to 8 (1 = this machine's speed)")
+    return value
+
+
+def color_scheme(value, where):
+    """light | dark, or None (the browser's own setting)."""
+    if value is None:
+        return None
+    if value not in COLOR_SCHEMES:
+        raise SuiteError(f"{where}: color_scheme must be light or dark, not {value!r}")
     return value
 
 

@@ -259,6 +259,8 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     try:
         session = session_mod.Session(ledger, headless=browser.get("headless", False), hosts={host},
                                       motion=opts.motion or "reduce", cpu_throttle=opts.cpu_throttle or 1)
+        if getattr(opts, "color_scheme", None):  # --color-scheme: every page is crawled as on a light or dark system
+            session.set_color_scheme(opts.color_scheme)
         session.set_device(dev)
         session.arm("readonly")
         while queue and len(results) < max_pages:
@@ -365,6 +367,8 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     built = report.build(suite, results, [ledger.summary()], browser=browser, started_at=started_at,
                          strict=opts.strict, interrupted=interrupted, run_dir=run_dir)
     built["motion"] = opts.motion or "reduce"
+    if getattr(opts, "color_scheme", None):
+        built["color_scheme"] = opts.color_scheme
     built["cpu_throttle"] = opts.cpu_throttle or 1
     if consistency is not None:
         built["ux"] = {"consistency": consistency}

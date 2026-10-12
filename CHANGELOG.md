@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- `color_scheme` (`light` or `dark`) on a scenario, a suite or a project objective, `--color-scheme` on the command
+  line, and `color_scheme` on `qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run`: the page's
+  `prefers-color-scheme` answers so, so a test can prove that dark mode follows the system (foleyapp). A test's own
+  setting wins. Reduced motion stays on. The report and its JSON name the scheme.
+
 ## 0.4.15: 12 Oct 2026
 
 ### Fixed

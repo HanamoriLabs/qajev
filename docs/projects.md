@@ -70,6 +70,7 @@ url = "/pricing"
 goal = "You are in the UK. Find what the Pro plan costs per month. Stop when that price is visible."
 expect = { visible = ["£11.50"] }
 tags = ["core"]
+# color_scheme = "dark"   # light | dark: the page is told the system prefers it (default: the browser's own)
 
 [[objective]]
 name = "a visitor sends feedback"
