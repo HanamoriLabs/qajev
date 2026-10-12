@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Changed
+
+- `qajev doctor` on a fresh install is not a failure: with no model key yet it exits `0` and ends with the next steps
+  (a key in `~/.qajev/.env`, or `qajev mode cloud`). An optional key that is not set shows `--`, not `ok`. It no
+  longer names an internal approver role. `--json` adds `ready`, `next` and each check's `level` (new-user test).
+
 ## 0.4.25: 13 Oct 2026
 
 ### Fixed
