@@ -22,7 +22,8 @@ def row_title(cases):
     cfg = guard.build_config(mode="mutate", hosts=["localhost:5284"])
     purchase = json.dumps("|".join(cfg["purchase"]))
     script = (f"{squash}\n{func}\nconst purchase = new RegExp({purchase}, 'i');\n"
-              f"console.log(JSON.stringify({json.dumps(cases)}.map(([t, toggles]) => rowTitle(t, toggles, purchase))));")
+              f"const cases = {json.dumps(cases)};\n"
+              "console.log(JSON.stringify(cases.map(([t, toggles]) => rowTitle(t, toggles, purchase))));")
     return json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30).stdout)
 
 
