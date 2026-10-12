@@ -546,6 +546,19 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                         guard_opts=suite_meta["guard"], allow_commands=opts.allow_commands, cwd=suite_meta["cwd"],
                         motion=suite_meta.get("motion", "reduce"), cpu_throttle=suite_meta.get("cpu_throttle", 1),
                     )
+                    if getattr(opts, "sign_in_here", None):  # login.tab: same, before the first scenario arms the guard
+                        opts.signed_here = sign_in_here(session, opts.sign_in_here, opts)
+                signed_here = getattr(opts, "signed_here", None)
+                if signed_here and not signed_here["ok"]:
+                    result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
+                                      "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
+                                      "stop": "sign_in"}, "harness", f"sign-in failed: {signed_here['reason']}",
+                                     time.monotonic())
+                    result["cost_usd"] = 0.0
+                    results.append(result)
+                    outcomes[scenario.name] = result["outcome"]
+                    _emit(opts, "scenario", result=result)
+                    continue
                 _emit(opts, "start", scenario=scenario.name)
                 spent_before = ledger.spent()
                 try:
@@ -609,6 +622,25 @@ def real_device_run(suite, scenarios, platform, opts, cap, run_dir, emit):
         results = [{"name": st["name"], "outcome": "harness", "stop": "browser_error", "checks": [], "findings": [],
                     "screens": [], "reason": f"{mobile.BROWSER_NAMES[platform]} unavailable: {e}"} for st in steps]
     return results, ledger.summary()
+
+
+def sign_in_here(session, account, opts):
+    """login.tab: same (foleyapp, 13 Oct): the account signed in in the scenarios' own tab, for an app that keeps one
+    writer per origin (Foley's OPFS database) and must not see a second tab. -> what happened, as sign_in_first."""
+    from . import signin, vault
+
+    _emit(opts, "signin", account=account["name"])
+    try:
+        done = signin.sign_in(session, account)
+    except (signin.SignInFailed, vault.VaultError, RuntimeError, TimeoutError, OSError) as e:
+        done = {"account": account["name"], "ok": False, "reason": redact(str(e))[:300]}
+        seen = signin.page_seen(session)
+        if seen:
+            done["reason"] = f"{done['reason']} (the page showed: {redact(seen)[:240]})"
+    done["tab"] = "same"
+    opts.account = account["name"] if done["ok"] else None
+    _emit(opts, "signin", **done)
+    return done
 
 
 def sign_in_first(suite, *, opts, cdp_url, headless, motion):
@@ -697,7 +729,10 @@ def run(suite, opts):
     opts.emit = emit
     signed = None
     try:
-        if suite.account:
+        same_tab = bool(suite.account) and suite.account["login"].get("tab") == "same"
+        if same_tab:
+            opts.sign_in_here = suite.account  # run_group signs in in the scenarios' tab (one group: one tab)
+        elif suite.account:
             signed = sign_in_first(suite, opts=opts, cdp_url=cdp_url, headless=suite_meta["headless"], motion=motion)
             opts.account = suite.account["name"] if signed["ok"] else None
             if opts.jobs > 1 and len(chains) > 1:  # the workers start their own daemons; this one is done
@@ -711,7 +746,7 @@ def run(suite, opts):
                             "harness", f"sign-in failed: {signed['reason']}", time.monotonic())
                 results_by_name[s.name] = r
                 emit({"event": "scenario", "result": r})
-        elif opts.jobs > 1 and len(chains) > 1:
+        elif opts.jobs > 1 and len(chains) > 1 and not same_tab:
             import multiprocessing
             from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -765,6 +800,7 @@ def run(suite, opts):
     built["cpu_throttle"] = cpu_throttle
     if live.watched_seconds(run_dir):  # someone watched it LIVE in the dashboard: for how long
         built["watched_live_s"] = live.watched_seconds(run_dir)
+    signed = signed or getattr(opts, "signed_here", None)
     if signed:
         built["sign_in"] = signed
     built = redact_tree(built, secret_values())

@@ -6,6 +6,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- `login.tab: same` signs a seeded account in in the scenarios' own tab, not in a tab of QAJev's own that then closes.
+  For an app that keeps one writer per site (Foley's browser database); the default stays `own` (foleyapp).
 - A web worker's console errors, warnings and uncaught exceptions are findings: `worker error` (S2) and
   `worker warning` (S3), each naming the worker's script. Before, only the page's own console was read, and an app
   whose database runs in a worker hid its errors (foleyapp).
