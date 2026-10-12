@@ -4,6 +4,18 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- A web worker's console errors, warnings and uncaught exceptions are findings: `worker error` (S2) and
+  `worker warning` (S3), each naming the worker's script. Before, only the page's own console was read, and an app
+  whose database runs in a worker hid its errors (foleyapp).
+
+### Fixed
+
+- The guard hid controls whose label holds drag-and-drop wording ("drag to move. Drop a task here …") as destructive,
+  because of the word "drop". Drag-and-drop phrasing is now set aside like a harmless reset; "Drop table", "Drop all"
+  and a control that names data stay hidden (Foley).
+
 ## 0.4.25: 13 Oct 2026
 
 ### Fixed

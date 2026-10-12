@@ -68,6 +68,22 @@ def describe(params):
     return ", ".join(parts)
 
 
+def worker_entry(method, params, url):
+    """A worker's console error or warning, or its uncaught exception, as {level, detail}; None for its other logs.
+    The detail starts with the worker script's name."""
+    name = url.rsplit("/", 1)[-1].split("?", 1)[0] or "worker"
+    if method == "Runtime.exceptionThrown":
+        details = params.get("exceptionDetails") or {}
+        text = ((details.get("exception") or {}).get("description") or details.get("text") or "").split("\n", 1)[0]
+        return {"level": "error", "detail": f"{name}: {text}"[:300]}
+    level = {"error": "error", "assert": "error", "warning": "warning"}.get(params.get("type"))
+    if not level:
+        return None
+    words = [str(a.get("value") if a.get("value") is not None else a.get("description", ""))
+             for a in params.get("args") or []]
+    return {"level": level, "detail": f"{name}: {' '.join(w for w in words if w)}"[:300]}
+
+
 class Failures(threading.Thread):
     """The page's failed requests, as Chrome reports them, from a debugger link of its own to `ws_url`."""
 
@@ -92,6 +108,8 @@ class Failures(threading.Thread):
         self.guard_source = None  # the page's guard script, put in each frame on another site (guard_frames)
         self.children = {}  # session id -> (target id, guarded): the frames on another site this link attached to
         self.auto = False
+        self.workers = {}  # session id -> its worker's script address: its console is read for findings
+        self.worker_logs = []  # since the last take: {level, detail}
         self.connected = threading.Event()
         self.ws = None
 
@@ -125,6 +143,7 @@ class Failures(threading.Thread):
                 self._attached(params)
             elif method == "Target.detachedFromTarget":
                 self.children.pop(params.get("sessionId"), None)
+                self.workers.pop(params.get("sessionId"), None)
             elif method == "Network.requestWillBeSent":
                 rid, request = (sid, params.get("requestId")), params.get("request") or {}
                 sent = (_bare(request.get("url")), str(request.get("method") or "GET").upper(),
@@ -161,6 +180,10 @@ class Failures(threading.Thread):
                 self.listed.pop((sid, params.get("requestId")), None)
                 if method == "Network.loadingFinished":
                     self.inflight.pop((sid, params.get("requestId")), None)
+            elif sid in self.workers and method in ("Runtime.consoleAPICalled", "Runtime.exceptionThrown"):
+                entry = worker_entry(method, params, self.workers[sid])
+                if entry and len(self.worker_logs) < KEEP:
+                    self.worker_logs.append(entry)
             elif sid:  # an attached frame's other events: its contexts are read through its session instead
                 return
             elif method == "Runtime.executionContextCreated":
@@ -198,12 +221,20 @@ class Failures(threading.Thread):
                        filter=ATTACH)
             self.children[child] = (info.get("targetId"), self.guard_source is not None)
         elif info.get("type") in WORKERS:
+            self.workers[child] = str(info.get("url") or "")
+            self._send("Runtime.enable", child)  # its console (foleyapp, 13 Oct: Foley's database lives in a worker)
             self._send("Network.enable", child, maxPostDataSize=0)
             if self.patterns:
                 self._send("Network.setBlockedURLs", child, urls=self.patterns)
             self._send("Target.setAutoAttach", child, autoAttach=True, waitForDebuggerOnStart=True, flatten=True,
                        filter=ATTACH)  # a worker's own workers
         self._send("Runtime.runIfWaitingForDebugger", child)
+
+    def take_worker_logs(self):
+        """The workers' console errors and warnings since the last take."""
+        with self.lock:
+            logs, self.worker_logs = self.worker_logs, []
+        return logs
 
     def guard_frames(self, source):
         """Put the guard `source` in every frame on another site, now and as each starts. The first call turns on

@@ -30,8 +30,9 @@ the model behaving well: the rules are enforced in the page and in QAJev itself.
 - **Show destructive controls.** Delete, remove, erase, destroy, drop, purge, wipe, cancel, refund, void,
   revoke, deactivate, unsubscribe, archive, reset, empty trash, close or terminate account, uninstall and
   disconnect are hidden from Jev on **every** host, in every mode, local included. A reset, clear or cancel of
-  something harmless stays (filters, a search, a selection, the form being edited), unless the control also names
-  an account, order, subscription, plan, booking, data, payment or membership. Escape always reaches the page, so a
+  something harmless stays (filters, a search, a selection, the form being edited), and so does drag-and-drop
+  wording ("drag to move", "drag and drop", "drop a file here"), unless the control also names an account, order,
+  subscription, plan, booking, data, payment or membership. "Drop table" or "Drop all" stays hidden. Escape always reaches the page, so a
   dialog whose only way out is a bare "Cancel" still closes. `guard.allow` never shows them.
   Only `--allow-destructive` (suite `allow_destructive: true`, project env `allow_destructive = true`, MCP
   `allow_destructive`) does, on a local dev host only, and the report then carries a red banner.

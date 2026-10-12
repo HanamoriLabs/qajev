@@ -895,6 +895,9 @@ class Session:
                     out["probe"][key] = items + (out["probe"].get(key) or [])
             if self.net is not None and self.guard_opts.get("block_urls"):
                 out["probe"]["block_list"] = self.net.take_block_list()
+            if self.net is not None:  # the workers' own console: a page's probe never sees it
+                out["probe"]["errors"] = (out["probe"].get("errors") or []) + [
+                    {"kind": "worker", **entry} for entry in self.net.take_worker_logs()]
         return out
 
     def check_host(self, url):
