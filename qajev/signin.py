@@ -247,7 +247,12 @@ def sign_in(session, account, *, timeout=20.0):
     # account" with its fields showing, and only "Sign in instead" turns it into a sign-in.
     for step in open_steps(login):
         wait = 2 if _pick(session, email_fields, "email") else 10
-        _wait(session, lambda s, step=step: _pick_step(session, step, "open"), wait)
+        # A kept session the app loads late (Foley, 13 Oct) turns the page signed in while QAJev waits: done.
+        state = _wait(session, lambda s, step=step: _signed_in(session, login, s) or _pick_step(session, step, "open"),
+                      wait)
+        if state and _signed_in(session, login, state) and not _pick(session, email_fields, "email"):
+            return {**out, "ok": True, "already": True, "landed": state.get("href", "").split("?")[0],
+                    "seconds": round(time.monotonic() - started, 1)}
         opener = _pick_step(session, step, "open")
         if not opener:
             if _pick(session, email_fields, "email"):

@@ -11,6 +11,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - A seeded sign-in failed with "no element matches [data-qajev-signin=…]" when the page drew a field again between
   QAJev marking it and finding it (Foley's panel, after "Already have an account? Sign in"). It now marks and finds
   again, up to 3 times.
+- A browser that kept a session made a seeded sign-in fail: the app showed its sign-in door for a moment, then its
+  signed-in view, so the `login.open` steps found nothing to click. A page that turns signed in while QAJev waits for a
+  step now counts as signed in (Foley).
 
 ### Added
 

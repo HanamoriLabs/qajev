@@ -90,7 +90,7 @@ class FormPage:
     `lets_in`, and `moves_to` is where the page goes once the email is typed (a two-step sign-in)."""
 
     def __init__(self, href, lets_in=True, moves_to=None, unreadable=False, loading=0, clears=0, closed=False,
-                 drawn_after=0, says="", missing=(), opens_with_fields=False, redraws=0):
+                 drawn_after=0, says="", missing=(), opens_with_fields=False, redraws=0, signed_in_after=None):
         self.href, self.lets_in, self.moves_to, self.typed, self.pw = href, lets_in, moves_to, [], True
         self.unreadable, self.dark = unreadable, False  # dark: its state cannot be read (a getter that throws)
         self.loading, self.clears, self.fields = loading, clears, {"email": "", "pw": ""}
@@ -99,6 +99,7 @@ class FormPage:
         self.missing, self.opens_with_fields, self.clicks = missing, opens_with_fields, 0  # controls never there;
         # a panel that shows its fields at once (in sign-up mode)
         self.redraws = redraws  # finds that come after the page drew the marked element again
+        self.signed_in_after = signed_in_after  # state reads before a kept session shows (the app loads it late)
         self.typed_while_loading = False  # loading: state reads before its scripts have run; clears: read-backs that
         # find the fields emptied by them
 
@@ -112,6 +113,10 @@ class FormPage:
             from urllib.parse import urlsplit
 
             self.loading -= 1
+            if self.signed_in_after is not None:
+                self.signed_in_after -= 1
+                if self.signed_in_after < 0:
+                    self.says, self.closed, self.missing = "Account", 1, ("Sign in or create account",)
             return {"href": self.href, "path": urlsplit(self.href).path, "pw": self.pw, "otp": False, "error": "",
                     "text": self.says, "ready": self.loading < 0}
         if js == signin.TYPED_JS:
@@ -305,3 +310,15 @@ def test_a_field_the_page_draws_again_between_two_looks_is_picked_again(tmp_path
     page = FormPage("http://127.0.0.1:4000/login", redraws=2)
     assert signin.sign_in(page, _local_account(tmp_path), timeout=5)["ok"]
     assert page.typed == ["qa-test@example.test", "fixture-pass-local"]
+
+
+def test_a_session_the_app_loads_late_is_taken_as_signed_in_during_the_open_steps(tmp_path):
+    # Foley, 13 Oct: QAJev's Chrome kept A's session from the run before. The app showed the sign-in door for a moment,
+    # then its signed-in view, so "Sign in or create account" was gone and the sign-in failed. A page that turns signed
+    # in while QAJev waits for a step is signed in.
+    steps = [{"text": "Sign in or create account"}, "button.brand.plain"]
+    account = {**_local_account(tmp_path), "login": {"url": "http://127.0.0.1:4000/", "open": steps,
+                                                     "signed_in": {"text": ["Account"]}}}
+    page = FormPage("http://127.0.0.1:4000/", closed=True, drawn_after=50, signed_in_after=2)
+    done = signin.sign_in(page, account, timeout=5)
+    assert done["ok"] and done["already"] and page.typed == []  # nothing typed
