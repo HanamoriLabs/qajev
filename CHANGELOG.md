@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.20: 13 Oct 2026
+
 ### Added
 
 - `login.open` in an account: the button QAJev clicks first to show the sign-in form, such as "Sign in with email"
