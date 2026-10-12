@@ -283,7 +283,8 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
   `qajev stop r_...` stops it.
 - **What stays on this Mac.** `--runner cloud` refuses these, with the reason and exit `3`, and runs nothing here.
   `--runner auto` runs them here, with one line saying why:
-  - a signed-in run: `--profile`, or a suite or project that signs in with an account;
+  - a signed-in run: `--profile`, or an account from `keychain:`, `op://` or `env:`. A seeded test account
+    (`seed:FILE#KEY`) goes to the cloud through `tunnel:` with `data: local` (see Writing tests);
   - a run that writes to a dev server on this Mac (`--mode mutate`, or a suite with `mode: mutate`), when its suite
     or project env has no `tunnel:`. With `tunnel:` (each port and its dev server's command, and `data: local` for
     writes), the run goes to the cloud through the full tunnel: several ports, writes and WebSockets. See

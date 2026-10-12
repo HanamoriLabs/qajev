@@ -4,11 +4,16 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.19: 12 Oct 2026
+
 ### Added
 
 - Every screenshot in report.html opens in a lightbox: full size, fitted to the window, with the test and the step as
   its caption, links to the run's other screenshots, and a way back to its thumbnail. It works with no script, so the
   sandboxed copy on QAJev Cloud has it too. Where scripts run, Esc closes it and the arrows move (José).
+- A cloud run may sign in with a seeded test account, through the full tunnel with `data: local`. Only `seed:FILE#KEY`
+  references from a fixture that says `"test_account": true` qualify. QAJev sends one copy of each fixture with only the
+  values the run's account uses, and the cloud hides those values in all it sends back (José via the Orchestrator).
 
 ## 0.4.18: 12 Oct 2026
 
