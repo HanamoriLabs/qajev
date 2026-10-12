@@ -238,11 +238,15 @@
     el.tagName === 'INPUT' ? el.value : ''].join(' '));
   // A to-do row's own title (Foley, 13 Oct: the task "Buy paint" is a button that opens the task, in a row whose
   // checkbox is "Toggle Buy paint"). It names the item, not an action, so it is shown, unless it reads as a purchase.
-  // Only that one control: the row's other controls (its Delete) follow the usual rules (the Orchestrator).
-  // Pure, so tests run it as written: text is the control's visible text, toggles the labels of the row's checkboxes.
-  const rowTitle = (text, toggles, purchaseRe) => {
-    const t = squash(text).toLowerCase();
-    if (!t || (purchaseRe && purchaseRe.test(t))) return false;
+  // Only that one control: the row's other controls (its Delete) follow the usual rules (the Orchestrator). Every name
+  // the control has (its text, aria-label, title) must equal the checkbox's label: a page that shows "Buy paint" on a
+  // button named "Delete account" gets nothing (redteam, #123). Off a local dev host a destructive title stays hidden.
+  // Pure, so tests run it as written: names are the control's own names, toggles the row's checkbox labels.
+  const rowTitle = (names, toggles, purchaseRe, destroysFn, isLocal) => {
+    const said = names.map((n) => squash(n).toLowerCase()).filter(Boolean);
+    const t = said[0];
+    if (!t || said.some((n) => n !== t) || (purchaseRe && purchaseRe.test(t))) return false;
+    if (!isLocal && destroysFn(t)) return false;
     return toggles.some((name) => squash(name).toLowerCase().replace(/^(toggle|complete|mark|check|done|finish)\b:?\s*/, '') === t);
   };
   const toggleLabels = (el) => {
@@ -268,7 +272,8 @@
   };
   const dangerous = (el) => {
     const text = label(el);
-    if (rowTitle(el.innerText || el.textContent, toggleLabels(el), purchase)) return offsite(el) ? OFFSITE : null;
+    const names = [el.innerText || el.textContent, el.getAttribute('aria-label'), el.getAttribute('title')];
+    if (rowTitle(names, toggleLabels(el), purchase, destroys, local)) return offsite(el) ? OFFSITE : null;
     // destructive first: `allow` never shows it; allow_destructive does, on a local dev host only
     if (destroys(text) && !(cfg.allow_destructive && local)) return 'destructive: ' + text.slice(0, 60);
     const allowed = allow && allow.test(text);

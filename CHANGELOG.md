@@ -7,8 +7,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 ### Fixed
 
 - The guard hid a to-do row's own title when it held a danger word, such as the task "Buy paint". In a list item with
-  a checkbox, the control whose text equals the checkbox's label is now shown, unless it reads as a purchase ("Buy
-  now", "Buy credits", a price). The row's other controls, its Delete included, keep the usual rules (Foley).
+  a checkbox, the control whose every name (text, aria-label, title) equals the checkbox's label is now shown, unless
+  it reads as a purchase ("Buy now", "Checkout", "Subscribe", a price in any common currency). On production a
+  destructive title stays hidden. The row's other controls, its Delete included, keep the usual rules (Foley;
+  redteam).
 
 ## 0.4.26: 13 Oct 2026
 

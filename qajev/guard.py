@@ -78,7 +78,12 @@ GRAVE = [r"\b(accounts?|orders?|subscriptions?|plans?|bookings?|data|payments?|m
 PURCHASE = [
     r"\b(buy|pay|purchase|order)\s+(it\s+)?(now|credits?|plans?|subscriptions?|packs?|upgrades?|tickets?|"
     r"\d[\d,.]*\s*(credits?|tokens?|seats?|minutes?))\b",
-    r"[$£€¥]\s?\d",
+    # more purchase wording (redteam, #123)
+    r"\b(check\s*out|add\s+to\s+(cart|basket|bag)|subscribe|upgrade|renew|top\s*up|donate|"
+    r"start\s+(a\s+|your\s+)?(free\s+)?trial|place\s+(your\s+|the\s+)?order)\b",
+    # a price: a currency before or after the amount, as a sign or a code
+    r"[$£€¥₹₩₽]\s?\d|\bR\$\s?\d|\b(CHF|USD|EUR|GBP|JPY|INR|AUD|CAD|BRL)\s?\d",
+    r"\d[\d,.]*\s?([$£€¥₹₩₽]|(CHF|USD|EUR|GBP|JPY|INR|AUD|CAD|BRL)\b)",
 ]
 
 MODES = ("readonly", "mutate")
