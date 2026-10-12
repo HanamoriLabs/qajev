@@ -1238,29 +1238,40 @@ def cmd_doctor(args):
         return _fail(args, str(e), EXIT_CONFIG)
     checks = []
 
-    def add(name, ok, detail):
-        checks.append({"check": name, "ok": ok, "detail": detail})
+    # A level per check (the 11 Oct new-user test): "ok"; "problem" (NO, exit 3); "info" (--, an optional setting not
+    # set); "todo" (--, a step a fresh install has not taken yet: not an error, the Next lines say what to do).
+    def add(name, ok, detail, level=None):
+        checks.append({"check": name, "ok": ok, "detail": detail, "level": level or ("ok" if ok else "problem")})
 
     add("qajev", True, f"{__version__} ({qajev_commit() or 'installed package, no checkout'})")
-    add("env files", bool(loaded), ", ".join(loaded) or
-        f"none found; looked in {', '.join(str(p) for p in env_files(args.env_file))}")
+    if loaded:
+        add("env files", True, ", ".join(loaded))
+    else:
+        add("env files", True, f"none yet; QAJev reads {', '.join(str(p) for p in env_files(args.env_file))}", "info")
     for key in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "CLOUDFLARE_API_TOKEN", "TEXT_MODEL_API_KEY"):
-        add(key, True, "set" if os.environ.get(key) else "not set")
+        if os.environ.get(key):
+            add(key, True, "set")
+        else:
+            add(key, True, "not set (optional)", "info")
     for line in key_sources():  # where QAJev's own keys came from: names only (Foley1, 6 Oct)
         add("key source", True, line)
     from . import planfile
 
     add("test plan", True, "required: a run without an approved test plan is refused (QAJEV_REQUIRE_PLAN=1)"
-        if planfile.required() else "a run without an approved test plan warns (QAJEV_REQUIRE_PLAN=1 refuses it); "
-        f"approver: {planfile.APPROVER}")
+        if planfile.required() else "a run without an approved test plan warns (QAJEV_REQUIRE_PLAN=1 refuses it)")
     try:
         resolved = providers.resolve()
         models = providers.describe(resolved)
-        add("jev route", bool(resolved["jev"]), f"{models['decider']}: {models['jev']}" if resolved["jev"] else
-            "none: set TYPESAFE_API_KEY or OPENROUTER_API_KEY (Jev), or for Clef QAJEV_JEV_PROVIDER=cloudflare "
-            "with CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN")
-        add("text helper", True, models["text"] if resolved["text"] else
-            "none: goals that type into fields need TEXT_MODEL_API_KEY or OPENROUTER_API_KEY")
+        if resolved["jev"]:
+            add("jev route", True, f"{models['decider']}: {models['jev']}")
+        else:
+            add("jev route", True, "none yet: goals need a model key (see Next); checks without a goal run already",
+                "todo")
+        if resolved["text"]:
+            add("text helper", True, models["text"])
+        else:
+            add("text helper", True, "none: goals that type into fields need TEXT_MODEL_API_KEY or "
+                "OPENROUTER_API_KEY", "info")
         used = {resolved["jev_key_name"] if resolved["jev"] == "openrouter" else None,
                 resolved["text_key_name"] if "openrouter.ai" in str(resolved["text_base_url"] or "") else None}
         for name in sorted(str(n) for n in used if n and not args.offline):
@@ -1298,11 +1309,21 @@ def cmd_doctor(args):
     load1 = os.getloadavg()[0]
     add("load average", load1 < 150, f"{load1:.0f} (runs wait while >= 150)")
     ok = all(c["ok"] for c in checks)
+    ready = not any(c["level"] == "todo" for c in checks)
+    nxt = [] if ready else [
+        "Put one model key in ~/.qajev/.env: TYPESAFE_API_KEY or OPENROUTER_API_KEY (for Jev, which reads the page).",
+        "Or run your tests in QAJev Cloud instead: qajev mode cloud (it needs a cloud key; the cloud line above says "
+        "where QAJev looks for it).",
+        "Then run qajev doctor again.",
+    ]
     if args.json:
-        print(json.dumps({"ok": ok, "checks": checks}, indent=2))
+        print(json.dumps({"ok": ok, "ready": ready, "next": nxt, "checks": checks}, indent=2))
     else:
+        marks = {"ok": "ok ", "problem": "NO ", "info": "-- ", "todo": "-- "}
         for c in checks:
-            print(f"{'ok ' if c['ok'] else 'NO '} {c['check']:<22} {c['detail']}")
+            print(f"{marks[c['level']]} {c['check']:<22} {c['detail']}")
+        if nxt:
+            print("\nNext:\n" + "\n".join(f"  {i}. {line}" for i, line in enumerate(nxt, 1)))
     return 0 if ok else EXIT_CONFIG
 
 
