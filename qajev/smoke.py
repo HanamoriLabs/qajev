@@ -4,6 +4,7 @@ Free and fast; a good first pass before spending Jev decisions on goals. The pag
 (read-only, deaf), and links that look like they change state are never followed.
 """
 
+import contextlib
 import re
 import time
 import urllib.error
@@ -13,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
-from . import chrome, ux, verdict
+from . import chrome, live, ux, verdict
 from .config import is_loopback, redact_tree, secret_values
 from .ledger import Ledger
 from .runner import ConfigError, slug, wait_for_quiet
@@ -188,6 +189,9 @@ def _examine(session, result, page, dev, *, settle, host, opts, run_dir):
     result["findings"] = verdict.dedupe(findings)
     result["end_url"] = facts.get("url")
     result["timing"] = facts.get("timing")
+    for vital in ("lcp", "cls"):  # the page's Web Vitals, as a check run records them (figgyz.com, 12 Oct)
+        if facts.get(vital) is not None:
+            result[vital] = facts[vital]
     status = facts.get("status")
     errors = [f for f in findings if f["kind"] == "page error"]
     result["checks"] = [
@@ -256,6 +260,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     last_load = 0.0
     interrupted = False
     session = None
+    watching = contextlib.ExitStack()  # the live screen, as a check or a suite has it (José, 12 Oct)
     try:
         session = session_mod.Session(ledger, headless=browser.get("headless", False), hosts={host},
                                       motion=opts.motion or "reduce", cpu_throttle=opts.cpu_throttle or 1)
@@ -263,6 +268,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
             session.set_color_scheme(opts.color_scheme)
         session.set_device(dev)
         session.arm("readonly")
+        watching.enter_context(live.frames(run_dir, session.page_socket()))
         while queue and len(results) < max_pages:
             url = queue.popleft()
             page = page_name(url)
@@ -347,6 +353,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     except KeyboardInterrupt:
         interrupted = True
     finally:
+        watching.close()
         if session is not None:
             session.close()
         session_mod.stop_daemon()
