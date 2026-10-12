@@ -117,10 +117,12 @@ def row_title_of(buttons):
     """rowTitle for real-ish buttons in a local "Toggle Buy paint" row, with ctx from the page's own childNames."""
     squash = re.search(r"^  const squash = .*$", GUARD_JS, re.M).group(0)
     func = re.search(r"^  const rowTitle = [\s\S]*?^  };$", GUARD_JS, re.M).group(0)
-    child = re.search(r"^  const childNames = [\s\S]*?^  }\);$", GUARD_JS, re.M).group(0)
+    child = re.search(r"^  const childNames = [\s\S]*?^  };$", GUARD_JS, re.M).group(0)
+    child = re.search(r"^  const referenced = [\s\S]*?;$", GUARD_JS, re.M).group(0) + "\n" + child
     cfg = guard.build_config(mode="mutate", hosts=["localhost:5284"])
     pats = {k: json.dumps("|".join(cfg[k])) for k in ("purchase", "destructive", "deny")}
-    script = (f"{squash}\n{func}\n{child}\n{FAKE_DOM}\nconst purchase = new RegExp({pats['purchase']}, 'i');\n"
+    script = (f"{squash}\n{func}\n{child}\n{FAKE_DOM}\nconst document = {{ getElementById: () => null }};\n"
+              f"const purchase = new RegExp({pats['purchase']}, 'i');\n"
               f"const destructive = new RegExp({pats['destructive']}, 'i');\n"
               f"const denyRe = new RegExp({pats['deny']}, 'i');\n"
               f"const buttons = [{', '.join(buttons)}];\n"
@@ -145,3 +147,65 @@ def test_a_rows_title_counts_every_name_its_children_give_it():
         "E('button', {'aria-labelledby': 'x'}, [], 'Buy paint')",                               # its own labelledby
         "E('button', {}, [E('svg', {}, [E('title', {}, [], 'Normal priority')])], 'Buy paint')",  # a harmless svg
     ]) == [True, False, False, False, False, False, True]
+
+
+def judged(buttons, ids=None):
+    """What the page's own label() and writes() make of real-ish controls on a read-only page: per control
+    [destructive, danger, the read-only word]. ids are the page's other elements, by id, for aria-labelledby."""
+    parts = [re.search(p, GUARD_JS, re.M).group(0) for p in (
+        r"^  const squash = .*$", r"^  const referenced = [\s\S]*?;$", r"^  const childNames = [\s\S]*?^  };$",
+        r"^  const label = [\s\S]*?;$", r"^  const accessibleNames = [\s\S]*?^  };$",
+        r"^  const words = .*$", r"^  const writes = [\s\S]*?^  };$")]
+    cfg = guard.build_config(mode="readonly", hosts=["example.com"])
+    pats = {k: json.dumps("|".join(cfg[k])) for k in ("destructive", "deny", "mutating")}
+    script = (f"{FAKE_DOM}\nconst byId = {{{', '.join(f'{json.dumps(k)}: {v}' for k, v in (ids or {}).items())}}};\n"
+              "const document = { getElementById: (id) => byId[id] || null };\n"
+              f"const destructive = new RegExp({pats['destructive']}, 'i');\n"
+              f"const deny = new RegExp({pats['deny']}, 'i');\nconst mutating = new RegExp({pats['mutating']}, 'i');\n"
+              + "\n".join(parts) +
+              f"\nconst buttons = [{', '.join(buttons)}];\n"
+              "console.log(JSON.stringify(buttons.map((b) =>\n"
+              "  [destructive.test(label(b)), deny.test(label(b)), writes(b)])));")
+    out = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+@NODE
+def test_a_control_is_judged_by_every_way_it_gets_its_name():
+    # redteam, 13 Oct: label() and accessibleName() missed aria-labelledby and child names, so a "Delete" or "Pay"
+    # named those ways stayed visible and clickable, on production too.
+    ids = {"d": "E('span', {}, [], 'Delete')", "p": "E('span', {}, [], 'Pay now')", "w": "E('span', {}, [], 'draft')",
+           "s": "E('span', {}, [], 'Save')"}
+    assert judged([
+        "E('button', {'aria-label': 'Delete'}, [], '🗑')",                                  # aria-label
+        "E('button', {'aria-labelledby': 'd'}, [], '🗑')",                                  # aria-labelledby, by id
+        "E('button', {'aria-labelledby': 'd w'}, [], '🗑')",                                # several ids
+        "E('button', {}, [E('span', {}, [], 'Delete')])",                                   # child text
+        "E('button', {title: 'Delete'}, [], '🗑')",                 # title: destructive; not a read-only name (below)
+        "E('button', {}, [E('img', {alt: 'Delete'})])",                                     # an img alt inside
+        "E('button', {}, [E('span', {'aria-label': 'Delete'})])",                           # a child's aria-label
+        "E('button', {}, [E('span', {'aria-labelledby': 'd'})], 'Open')",                  # a child's aria-labelledby
+        "E('button', {}, [E('svg', {}, [E('title', {}, [], 'Delete')])])",                  # an inline svg's title
+        "E('input', {type: 'image', alt: 'Delete'})",                                       # an image button's alt
+    ], ids) == [[True, False, "Delete"]] * 4 + [[True, False, None]] + [[True, False, "Delete"]] * 5
+    assert judged([
+        "E('a', {'aria-labelledby': 'p'}, [], '→')",
+        "E('button', {}, [E('img', {alt: 'Pay now'})])",
+    ], ids) == [[False, True, None]] * 2
+    assert judged([
+        "E('button', {'aria-labelledby': 's'}, [], '✓')",                                   # named "Save" from #s
+        "E('button', {}, [E('img', {alt: 'Save'})], ' changes')",                           # "Save changes"
+        "E('button', {'aria-label': 'Open'}, [], 'Save')",                                  # a person reads "Save"
+    ], ids) == [[False, False, "Save"]] * 3
+
+
+@NODE
+def test_harmless_names_stay_harmless_and_a_long_text_hides_no_name():
+    assert judged([
+        "E('button', {'aria-labelledby': 'h'}, [], '⚙')",
+        "E('button', {}, [E('img', {alt: 'Logo'})], 'Home')",
+        "E('button', {title: 'Add to favourites'}, [], '★')",  # a tooltip is the name only when there is no other
+    ], {"h": "E('span', {}, [], 'Open settings')"}) == [[False, False, None]] * 3
+    # squash keeps 200 characters: a long caption once pushed the aria-label out of label()
+    assert judged([f"E('button', {{'aria-label': 'Delete account'}}, [], '{'x' * 300}')"])[0][0] is True
