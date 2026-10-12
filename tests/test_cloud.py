@@ -357,6 +357,26 @@ def test_a_run_stopped_on_the_dashboard_fails_with_its_reason_and_address(dash, 
     assert "Gate: STOPPED" in err and "Reason: A person stopped the run." in err and f"run.html?id={RUN}" in err
 
 
+def test_a_queued_run_says_why_it_waits_and_when_that_ends(dash, local, capsys):
+    # QAJev Cloud says why a queued run does not start (credits, a cap, machines off) in "waiting" (12 Oct).
+    why = ("Waiting for credits: the run needs 120 for its 120-minute limit, and the balance is 100. "
+           "Buy credits at https://cloud.qajev.com/credits.html, or give the run a shorter time limit.")
+    dash.runs = [{"gate": "queued", "waiting": {"reason": "credits", "text": why, "need": 120, "balance": 100}},
+                 {"gate": "queued", "waiting": None},
+                 {"gate": "pass", "counts": {"pass": 1}, "tests": []}]
+    assert cli.main(["check", "https://shop.example/", "--runner", "cloud"]) == 0
+    err = capsys.readouterr().err
+    assert err.index(f"queued: {why}") < err.index("queued: waiting for a cloud machine") < err.index("Gate: PASS")
+
+
+def test_events_carry_the_waiting_reason(dash, local, capsys):
+    why = {"reason": "machines off", "text": "Cloud machines are off. An admin turns them on in Settings."}
+    dash.runs = [{"gate": "queued", "waiting": why}, {"gate": "pass", "counts": {"pass": 1}, "tests": []}]
+    assert cli.main(["check", "https://shop.example/", "--runner", "cloud", "--events"]) == 0
+    events = [json.loads(line) for line in capsys.readouterr().err.splitlines() if line.startswith("{")]
+    assert {"gate": "queued", "waiting": why}.items() <= next(e for e in events if e.get("waiting")).items()
+
+
 def test_a_wait_that_runs_out_fails_and_leaves_the_run_going(dash, local, capsys, monkeypatch):
     monkeypatch.setenv("QAJEV_CLOUD_WAIT", "0.05")
     dash.runs = [{"gate": "running", "progress": "1 of 9 tests"}]
@@ -395,6 +415,12 @@ def test_background_returns_the_cloud_run_at_once_and_jobs_and_stop_take_its_id(
     dash.runs = [{"gate": "running", "progress": "1 of 2 tests"}]
     assert cli.main(["jobs", RUN, "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["gate"] == "RUNNING"
+    why = {"reason": "minutes", "text": "Today's 300 cloud minutes are used up."}
+    dash.runs = [{"gate": "queued", "waiting": why}]
+    assert cli.main(["jobs", RUN, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["waiting"] == why
+    assert cli.main(["jobs", RUN]) == 0
+    assert "waiting: Today's 300 cloud minutes are used up." in capsys.readouterr().out
     assert cli.main(["stop", RUN]) == 0
     assert ("POST", f"/api/v1/runs/{RUN}/stop", {}) in dash.calls
 

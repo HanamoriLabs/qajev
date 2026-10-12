@@ -589,7 +589,8 @@ def wait_seconds():
 
 
 def wait(client, run_id, on_change=None, every=None, timeout=None, sleep=time.sleep, now=time.monotonic):
-    """Look at the run until it ends. on_change(run) is called when its gate, progress or test changes. Raises
+    """Look at the run until it ends. on_change(run) is called when its gate, progress, test or the reason it waits
+    (QAJev Cloud's "waiting": credits, a cap, machines off) changes. Raises
     CloudError when the dashboard stops answering or the wait runs out (the run itself goes on in the cloud)."""
     every = POLL_S if every is None else every
     timeout = wait_seconds() if timeout is None else timeout
@@ -604,7 +605,8 @@ def wait(client, run_id, on_change=None, every=None, timeout=None, sleep=time.sl
                 raise CloudError(str(e), EXIT_TROUBLE, run_id, url) from None
             sleep(every)
             continue
-        seen = (run.get("gate"), run.get("progress"), run.get("now_test"))
+        waiting = run.get("waiting") or {}
+        seen = (run.get("gate"), run.get("progress"), run.get("now_test"), waiting.get("reason"), waiting.get("text"))
         if on_change and seen != last:
             on_change(run)
         last = seen
@@ -617,7 +619,8 @@ def wait(client, run_id, on_change=None, every=None, timeout=None, sleep=time.sl
 
 
 def result(base, run):
-    """One cloud run as QAJev's JSON: {runner, run_id, url, gate, counts, tests, report_url, reason}."""
+    """One cloud run as QAJev's JSON: {runner, run_id, url, gate, counts, tests, report_url, reason}, plus waiting
+    ({reason, text}) while a queued run cannot start."""
     run_id = run.get("id") or ""
     tests = []
     for t in run.get("tests") or []:
@@ -628,7 +631,7 @@ def result(base, run):
     return {"runner": "cloud", "run_id": run_id, "url": run_url(base, run_id) if run_id else None,
             "gate": str(run.get("gate") or "").upper() or None, "counts": run.get("counts") or {}, "tests": tests,
             "report_url": (base + report if str(report).startswith("/") else report) if report else None,
-            "reason": run.get("reason")}
+            "reason": run.get("reason"), **({"waiting": run["waiting"]} if run.get("waiting") else {})}
 
 
 def exit_code(gate):

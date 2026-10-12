@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- A queued cloud run says why it does not start: cloud machines are off, today's minutes are used up, the model spend
+  reached its limit, or too few credits. The progress line, `qajev jobs r_...`, `--json` (`waiting`) and MCP progress
+  and `qa_job` show it.
+- `qajev projects --json` gives each project's `site`, `runner` and `objective_names`, for QAJev Cloud's Projects page.
+
 ## 0.4.13: 12 Oct 2026
 
 - Each test lists what its frames said and asked for, so a framed tool that stalls shows why: `frame_console` (log,

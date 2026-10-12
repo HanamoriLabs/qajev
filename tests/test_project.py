@@ -70,6 +70,17 @@ def test_a_central_config_points_at_its_repo_and_reports_centrally(tmp_path, mon
     assert [x["name"] for x in P.listing()] == ["shop"]
 
 
+def test_the_listing_carries_what_the_cloud_dashboard_shows(tmp_path, monkeypatch):
+    # QAJev Cloud's Projects page was empty (José, 12 Oct): the sync needs each project's site, runner and objectives.
+    monkeypatch.setenv("QAJEV_PROJECTS", str(tmp_path / "projects"))
+    monkeypatch.setattr(P, "_source_root", lambda: None)
+    (tmp_path / "projects").mkdir()
+    (tmp_path / "projects" / "shop.toml").write_text('runner = "cloud"\n' + TOML)
+    (row,) = P.listing()
+    assert row["site"] == "https://shop.example" and row["runner"] == "cloud" and row["objectives"] == 3
+    assert row["objective_names"] == ["price is visible", "faq explains refunds", "add a first item"]
+
+
 def test_core_suite_in_prod_is_read_only_and_uses_prod_objectives_only(repo):
     data = P.suite_data(P.load(repo), tags=["core"])
     suite = parse(data)

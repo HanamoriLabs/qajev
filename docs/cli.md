@@ -261,6 +261,10 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
   the report's address. `--json` prints one object: `{"runner": "cloud", "run_id", "url", "gate", "counts",
   "tests": [{"name", "outcome", "about", "reason", "wrong"}], "report_url", "reason"}`. The exit code is as for a
   run here: `0` only on PASS.
+- **Why a queued run waits.** While a run cannot start, its progress line says why, in the dashboard's words: cloud
+  machines are off, today's cloud minutes are used up, the month's model spend reached its limit, or the account has
+  too few credits (with what the run needs, the balance and where to buy). Otherwise it says `waiting for a cloud
+  machine`. `qajev jobs r_...` and its `--json` (`"waiting": {"reason", "text"}`) show the same.
 - **`--background`** returns the cloud run's id (`r_...`) and address at once. `qajev jobs r_...` shows its state;
   `qajev stop r_...` stops it.
 - **What stays on this Mac.** `--runner cloud` refuses these, with the reason and exit `3`, and runs nothing here.
@@ -295,7 +299,9 @@ qajev report qajev-runs/20261001-101500-shop --html   # rebuild report.html and 
 
 ## `qajev projects`
 
-Lists the projects QAJev knows, their environments, and where their reports go. `--json` for data.
+Lists the projects QAJev knows, their environments, and where their reports go. `--json` for data: each project's
+`name`, `config`, `repo`, `envs`, `objectives` (how many), `objective_names`, `site` (its default environment's
+address), `runner` and `reports`. QAJev Cloud's sync reads it for the dashboard's Projects page.
 
 ## `qajev reports`
 
