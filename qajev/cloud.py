@@ -202,7 +202,7 @@ class Client:
         """The dashboard's answer without the key in it, whatever it says: QAJev prints what it gets."""
         return config.redact_tree(obj, [self._key]) if self._key else obj
 
-    def _call(self, method, path, body=None, raw=None, headers=None, timeout=None):
+    def _call(self, method, path, body=None, raw=None, headers=None, timeout=None, as_bytes=False):
         import urllib.error  # noqa: PLC0415 (deferred: `qajev --help` imports this module for its choices)
         import urllib.request  # noqa: PLC0415
 
@@ -219,6 +219,8 @@ class Client:
                 payload = r.read()
                 if r.status == 204 or not payload:
                     return None
+                if as_bytes:
+                    return payload
                 return json.loads(payload) if "json" in (r.headers.get("Content-Type") or "") else payload
         except urllib.error.HTTPError as e:
             try:
@@ -692,6 +694,57 @@ def submit(client, plan):
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Following a cloud run
+
+
+RUN_ID = re.compile(r"^r_[a-z0-9]{4,40}$")  # r_ and 16 characters today
+
+
+def get_file(client, run_id, path):
+    """One file of a cloud run, as its bytes (a .json one is not parsed)."""
+    quoted = "/".join(urllib.parse.quote(p) for p in path.split("/"))
+    return client._call("GET", f"/api/v1/runs/{urllib.parse.quote(run_id)}/files/{quoted}", as_bytes=True) or b""
+
+
+def _plain_relative(path):
+    """A path a run's report may name for a file of that run: relative, no "..", no backslash."""
+    return isinstance(path, str) and path and not path.startswith("/") and "\\" not in path and \
+        ".." not in path.split("/")
+
+
+def fetch_report(client, run_id, folder):
+    """A cloud run's report.json, report.md, report.html and the screenshots its report names, kept in `folder` (12-13
+    Oct: an agent asked for Jev's steps and the last screen, and the report link asked it for a key). A named path that
+    would leave the folder is skipped. -> (the report, the number of screenshots kept). Raises CloudError."""
+    folder.mkdir(parents=True, exist_ok=True)
+    raw = get_file(client, run_id, "report.json")
+    data = json.loads(raw)
+    (folder / "report.json").write_bytes(raw)
+    for name in ("report.md", "report.html"):
+        try:
+            (folder / name).write_bytes(get_file(client, run_id, name))
+        except ApiError as e:
+            if e.status != 404:
+                raise
+    named = set()
+    for s in data.get("scenarios") or []:
+        for path in [s.get("shot"), *[(r or {}).get("path") for r in s.get("react") or [] if isinstance(r, dict)]]:
+            if _plain_relative(path):
+                named.add(path)
+    kept, root = 0, folder.resolve()
+    for path in sorted(named):
+        dest = (folder / path).resolve()
+        if root not in dest.parents:
+            continue
+        try:
+            body = get_file(client, run_id, path)
+        except ApiError as e:
+            if e.status == 404:
+                continue
+            raise
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(body)
+        kept += 1
+    return data, kept
 
 
 def status(client, run_id):

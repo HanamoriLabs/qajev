@@ -336,8 +336,9 @@ def build_parser():
                         help="skip the free OpenRouter key validity check and the QAJev Cloud check")
     doctor.add_argument("--json", action="store_true")
 
-    rep = sub.add_parser("report", help="print a run's report (Markdown, or JSON with --json)")
-    rep.add_argument("run_dir", type=Path)
+    rep = sub.add_parser("report", help="print a run's report (Markdown, or JSON with --json); a cloud run's id "
+                                        "(r_...) fetches its report and screenshots into ~/.qajev/cloud-reports")
+    rep.add_argument("run_dir", type=Path, help="a run folder, or a cloud run's id (r_...)")
     rep.add_argument("--json", action="store_true")
     rep.add_argument("--html", action="store_true",
                      help="(re)write report.html from report.json and print its path (e.g. for older runs)")
@@ -1305,7 +1306,37 @@ def cmd_doctor(args):
     return 0 if ok else EXIT_CONFIG
 
 
+def _cloud_report(args):
+    """`qajev report r_...`: a cloud run's report, fetched with this Mac's key and kept in ~/.qajev/cloud-reports."""
+    from . import cloud
+    from .config import HOME
+
+    run_id = str(args.run_dir)
+    folder = HOME / "cloud-reports" / run_id
+    try:
+        data, shots = cloud.fetch_report(cloud.connect(getattr(args, "env_file", None)), run_id, folder)
+    except cloud.ApiError as e:
+        if e.status == 404:
+            print(f"qajev: cloud run {run_id} has no report: no such run, or it has not finished", file=sys.stderr)
+            return cloud.EXIT_TROUBLE
+        print(f"qajev: {e}", file=sys.stderr)
+        return e.code
+    except (cloud.CloudError, ValueError) as e:
+        print(f"qajev: {e}", file=sys.stderr)
+        return getattr(e, "code", cloud.EXIT_TROUBLE)
+    md = folder / "report.md"
+    print(json.dumps(data, indent=2) if args.json else (md.read_text() if md.exists() else json.dumps(data, indent=2)))
+    print(f"qajev: kept in {folder}: report.html, report.md, report.json and {shots} screenshot"
+          f"{'' if shots == 1 else 's'}", file=sys.stderr)
+    return 0
+
+
 def cmd_report(args):
+    if not args.html and not args.run_dir.exists():
+        from .cloud import RUN_ID
+
+        if RUN_ID.match(str(args.run_dir)):
+            return _cloud_report(args)
     if args.html:
         from . import report as report_mod
 

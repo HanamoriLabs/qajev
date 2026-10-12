@@ -66,6 +66,16 @@ class FakeDashboard:
                 if self.path == f"/api/v1/runs/{RUN}":
                     run = outer.runs.pop(0) if len(outer.runs) > 1 else outer.runs[0]
                     return self._reply(200, {"id": RUN, **run})
+                if self.path.startswith(f"/api/v1/runs/{RUN}/files/"):
+                    data = outer.files.get(self.path.split("/files/", 1)[1])
+                    if data is None:
+                        return self._reply(404, {"error": "There is no such file in this run."})
+                    kind = "application/json" if self.path.endswith(".json") else "application/octet-stream"
+                    self.send_response(200)
+                    self.send_header("Content-Type", kind)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    return self.wfile.write(data)
                 self._reply(404, {"error": "There is no such thing."})
 
             def do_POST(self):
@@ -885,3 +895,38 @@ def test_a_project_account_from_the_seed_fixture_goes_through_the_tunnel(dash, l
     assert f'"seed:{fixture_file}#password_b"' in dash.files["in/project.toml"].decode()  # anchored to the repo
     assert "password_a" not in dash.files[cloud.seed_remote(fixture_file)].decode()
     assert local == []
+
+
+def test_report_reads_a_cloud_run_and_keeps_its_report_and_screenshots(dash, local, capsys):
+    # 12-13 Oct: an agent asked for Jev's steps and the last screen of its cloud run, and the report link asked it for a
+    # key. `qajev report r_...` fetches them with this Mac's agent key and keeps them here.
+    report = {"scenarios": [{"name": "save", "shot": "shots/save.jpg", "react": [{"path": "shots/spark.jpg"}]},
+                            {"name": "odd", "shot": "../../outside.jpg"}, {"name": "abs", "shot": "/etc/x.jpg"}]}
+    dash.files.update({"report.json": json.dumps(report).encode(), "report.md": b"# Renew an agreement\n- stuck\n",
+                       "report.html": b"<!doctype html><title>r</title>", "shots/save.jpg": b"jpg-save",
+                       "shots/spark.jpg": b"jpg-spark"})
+    assert cli.main(["report", RUN]) == 0
+    out = capsys.readouterr()
+    assert out.out.startswith("# Renew an agreement")
+    where = config.HOME / "cloud-reports" / RUN
+    assert (where / "shots" / "save.jpg").read_bytes() == b"jpg-save"
+    assert (where / "shots" / "spark.jpg").read_bytes() == b"jpg-spark"
+    assert (where / "report.html").exists() and json.loads((where / "report.json").read_text()) == report
+    assert not (config.HOME / "outside.jpg").exists()  # a path that leaves the folder is never written
+    assert f"kept in {where}" in out.err and "2 screenshots" in out.err
+    assert cli.main(["report", RUN, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == report
+
+
+def test_report_of_an_unknown_cloud_run_says_so(dash, local, capsys):
+    assert cli.main(["report", "r_nosuchrun"]) == 4
+    assert "r_nosuchrun" in capsys.readouterr().err
+
+
+def test_mcp_qa_report_reads_a_cloud_run_too(dash):
+    dash.files.update({"report.json": json.dumps({"scenarios": [{"name": "a", "shot": "shots/a.jpg"}]}).encode(),
+                       "report.md": b"# Run a\n", "shots/a.jpg": b"jpg"})
+    out = asyncio.run(mcp_server.qa_report(RUN))
+    assert out["scenarios"][0]["name"] == "a" and out["screenshots"] == 1
+    assert out["kept_in"].endswith(f"cloud-reports/{RUN}")
+    assert asyncio.run(mcp_server.qa_report(RUN, markdown=True))["markdown"] == "# Run a\n"

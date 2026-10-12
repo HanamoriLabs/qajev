@@ -71,7 +71,7 @@ and `--json`.
 | Do several things work, in order? | `qa_run_suite` | `qajev run suite.yaml` | a few cents |
 | Does a project still meet its stored objectives? | `qa_project_run` | `qajev run --project NAME` | a few cents |
 | Does a mobile app or a game work? | `qa_play` | `qajev play ios:BUNDLE_ID` / `android:PACKAGE` / `path/to/game` | a few cents |
-| What did a run find? | `qa_report`, `qa_screenshot` | `qajev report RUN_DIR` | free |
+| What did a run find? | `qa_report`, `qa_screenshot` | `qajev report RUN_DIR` (or a cloud run's `r_...` id) | free |
 | What is running, and can I stop it? | `qa_jobs`, `qa_job`, `qa_stop` | `qajev jobs`, `qajev stop ID` | free |
 | Run again only what failed last time | `qa_rerun` | `qajev rerun JOB --failed` | as the run |
 | Is the setup right? | `qa_doctor` | `qajev doctor` | free |

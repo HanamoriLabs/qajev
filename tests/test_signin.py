@@ -90,7 +90,7 @@ class FormPage:
     `lets_in`, and `moves_to` is where the page goes once the email is typed (a two-step sign-in)."""
 
     def __init__(self, href, lets_in=True, moves_to=None, unreadable=False, loading=0, clears=0, closed=False,
-                 drawn_after=0, says="", missing=(), opens_with_fields=False):
+                 drawn_after=0, says="", missing=(), opens_with_fields=False, redraws=0):
         self.href, self.lets_in, self.moves_to, self.typed, self.pw = href, lets_in, moves_to, [], True
         self.unreadable, self.dark = unreadable, False  # dark: its state cannot be read (a getter that throws)
         self.loading, self.clears, self.fields = loading, clears, {"email": "", "pw": ""}
@@ -98,6 +98,7 @@ class FormPage:
         self.drawn_after, self.says = drawn_after, says  # looks before its sign-in panel shows; its body text
         self.missing, self.opens_with_fields, self.clicks = missing, opens_with_fields, 0  # controls never there;
         # a panel that shows its fields at once (in sign-up mode)
+        self.redraws = redraws  # finds that come after the page drew the marked element again
         self.typed_while_loading = False  # loading: state reads before its scripts have run; clears: read-backs that
         # find the fields emptied by them
 
@@ -127,6 +128,9 @@ class FormPage:
         return fields or js.rstrip().endswith('"open")')  # PICK_JS: the field is there
 
     def find(self, selector):
+        if self.redraws > 0:
+            self.redraws -= 1
+            raise RuntimeError(f"no element matches {selector}")
         return {"selector": selector, "secret": '"password"' in selector, "x": 1, "y": 1}
 
     def type_into(self, field, text):
@@ -293,3 +297,11 @@ def test_a_step_is_clicked_even_when_the_fields_already_show_and_skipped_when_it
     page = FormPage("http://127.0.0.1:4000/", closed=3, opens_with_fields=True, missing=("button.brand.plain",))
     assert signin.sign_in(page, account, timeout=5)["ok"]
     assert page.clicks == 2  # both text steps; the third, never drawn while the fields show, is skipped
+
+
+def test_a_field_the_page_draws_again_between_two_looks_is_picked_again(tmp_path):
+    # Foley, 13 Oct (local dry check): after "Already have an account? Sign in" the app drew its fields again between
+    # QAJev's mark and its find, and the sign-in failed with "no element matches [data-qajev-signin=\"email\"]".
+    page = FormPage("http://127.0.0.1:4000/login", redraws=2)
+    assert signin.sign_in(page, _local_account(tmp_path), timeout=5)["ok"]
+    assert page.typed == ["qa-test@example.test", "fixture-pass-local"]

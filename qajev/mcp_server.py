@@ -704,7 +704,24 @@ async def qa_plan(suite: str) -> dict:
 
 @server.tool()
 async def qa_report(run_dir: str, markdown: bool = False) -> dict:
-    """Read a finished run's report (JSON by default, or the Markdown text)."""
+    """Read a finished run's report (JSON by default, or the Markdown text). A cloud run's id (r_...) fetches its report
+    and the screenshots it names with this machine's cloud key, and keeps them in ~/.qajev/cloud-reports/<id>."""
+    from . import cloud
+
+    if not Path(run_dir).expanduser().exists() and cloud.RUN_ID.match(run_dir):
+        from .config import HOME
+
+        folder = HOME / "cloud-reports" / run_dir
+        try:
+            data, shots = cloud.fetch_report(cloud.connect(), run_dir, folder)
+        except cloud.ApiError as e:
+            raise ToolError(f"cloud run {run_dir} has no report: no such run, or it has not finished" if e.status == 404
+                            else str(e)) from None
+        except (cloud.CloudError, ValueError) as e:
+            raise ToolError(str(e)) from None
+        kept = {"kept_in": str(folder), "screenshots": shots}
+        md = folder / "report.md"
+        return {"markdown": md.read_text(), **kept} if markdown and md.is_file() else {**data, **kept}
     folder = Path(run_dir).expanduser()
     path = folder / ("report.md" if markdown else "report.json")
     if not path.is_file():
