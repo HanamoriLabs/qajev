@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.17: 12 Oct 2026
+
 ### Fixed
 
 - `qajev smoke` shows its live screen, as a check or a suite does: on the dashboard and on QAJev Cloud's run page. Smoke
