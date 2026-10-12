@@ -91,6 +91,15 @@ def _cpu_args(cpu_throttle):
     return ["--cpu-throttle", str(cpu_throttle)]
 
 
+def _scheme_args(color_scheme):
+    """light | dark: the page's prefers-color-scheme answers so, for each test that names none."""
+    if color_scheme in (None, ""):
+        return []
+    if color_scheme not in ("light", "dark"):
+        raise ToolError("color_scheme must be light or dark")
+    return ["--color-scheme", color_scheme]
+
+
 def _motion_args(motion):
     """reduce (default): pages are told the visitor prefers reduced motion; full: as a default browser."""
     if motion in (None, ""):
@@ -377,6 +386,7 @@ async def qa_check(
     devices: list[str] | None = None,
     real_devices: list[str] | None = None,
     motion: str | None = None,
+    color_scheme: str | None = None,
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
     plan: str | None = None,
@@ -442,6 +452,7 @@ async def qa_check(
     if allow_destructive:
         args.append("--allow-destructive")
     args += _motion_args(motion)
+    args += _scheme_args(color_scheme)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)
@@ -465,6 +476,7 @@ async def qa_run_suite(
     devices: list[str] | None = None,
     real_devices: list[str] | None = None,
     motion: str | None = None,
+    color_scheme: str | None = None,
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
     plan: str | None = None,
@@ -513,6 +525,7 @@ async def qa_run_suite(
     if allow_destructive:
         args.append("--allow-destructive")
     args += _motion_args(motion)
+    args += _scheme_args(color_scheme)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)
@@ -534,6 +547,7 @@ async def qa_smoke(
     background: bool = False,
     devices: list[str] | None = None,
     motion: str | None = None,
+    color_scheme: str | None = None,
     cpu_throttle: int | None = None,
     ux: bool = True,
     plan: str | None = None,
@@ -566,6 +580,7 @@ async def qa_smoke(
     if not ux:
         args.append("--no-ux")
     args += _motion_args(motion)
+    args += _scheme_args(color_scheme)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices)
     args += _plan_args(plan)
@@ -612,6 +627,7 @@ async def qa_project_run(
     devices: list[str] | None = None,
     real_devices: list[str] | None = None,
     motion: str | None = None,
+    color_scheme: str | None = None,
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
     plan: str | None = None,
@@ -650,6 +666,7 @@ async def qa_project_run(
     if allow_destructive:
         args.append("--allow-destructive")
     args += _motion_args(motion)
+    args += _scheme_args(color_scheme)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)

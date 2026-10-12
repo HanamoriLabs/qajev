@@ -520,6 +520,8 @@ class Session:
                  motion="reduce", isolated=False, cpu_throttle=1):
         """isolated: a multiplayer client (clients.py): its own browser context and tab, and no Jev agent."""
         self.ledger = ledger
+        self.motion = motion
+        self.color_scheme = None
         self.jev = load(ledger)
         self.headless = headless
         self.hosts = set(hosts)
@@ -683,6 +685,18 @@ class Session:
             url = self.evaluate("location.href")
             raise GuardMissing(f"guard {'absent' if not state else 'stale or not deaf'} on {url}")
         return state
+
+    def set_color_scheme(self, scheme):
+        """light | dark: the page's prefers-color-scheme answers so, as on such a system (foleyapp, 12 Oct: "dark mode
+        follows the system setting" had no way to be tested). None: the browser's own. The reduced-motion preference
+        stays: Emulation.setEmulatedMedia replaces every feature at once."""
+        if scheme == self.color_scheme:
+            return
+        features = [{"name": "prefers-color-scheme", "value": scheme or ""}]
+        if self.motion == "reduce":
+            features.append({"name": "prefers-reduced-motion", "value": "reduce"})
+        self.call("Emulation.setEmulatedMedia", features=features)
+        self.color_scheme = scheme
 
     def set_device(self, device):
         if device == self.device:

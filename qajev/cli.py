@@ -110,6 +110,9 @@ def _common(p):
     g.add_argument("--motion", choices=["reduce", "full"],
                    help="reduce (default): pages are told the visitor prefers reduced motion, so animation-heavy "
                         "sites stop changing under Jev; full: as a default browser")
+    g.add_argument("--color-scheme", choices=["light", "dark"],
+                   help="tell the page the visitor's system prefers light or dark (prefers-color-scheme), for every "
+                        "test that names none; a test's own color_scheme wins")
     g.add_argument("--cpu-throttle", type=int, choices=range(1, 9), metavar="N",
                    help="run the page's CPU N times slower (1 to 8; default the suite's, else 1), e.g. 4 for a "
                         "phone-like phone pass; the report says so")
@@ -497,7 +500,7 @@ def _options(args):
         cost_cap_usd=args.cost_cap, load_high=args.load_high or None, load_ok=args.load_ok,
         load_wait=args.load_wait, only=getattr(args, "only", []), shots=not args.no_shots, emit=_printer(args),
         ux=not getattr(args, "no_ux", False),
-        motion=args.motion, cpu_throttle=args.cpu_throttle,
+        motion=args.motion, cpu_throttle=args.cpu_throttle, color_scheme=getattr(args, "color_scheme", None),
     )
 
 

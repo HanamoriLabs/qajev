@@ -157,6 +157,7 @@ cost_cap_usd: 0.50        # for the whole run; checked before every paid call
 settle: 10                # seconds to wait for expectations after Jev stops
 motion: reduce            # reduce (default): pages are told the visitor prefers less motion; full: as-is
 cpu_throttle: 1           # run the page's CPU this many times slower (1 to 8), e.g. 4 for a phone-like phone pass
+color_scheme: dark        # light | dark: the page's prefers-color-scheme answers so (default: the browser's own)
 
 scenarios:
   - name: the home page loads
@@ -181,6 +182,13 @@ scenarios:
     expect:
       js: document.querySelectorAll('[data-plan]').length === 2
       says: {js: the page lists both plans}   # also url_regex, fetch, command: what each proves, in plain words
+
+  - name: dark mode follows the system
+    about: on a system set to dark, the site draws itself dark without a toggle
+    url: /
+    color_scheme: dark        # a scenario's own wins over the suite's and over --color-scheme
+    expect:
+      js: getComputedStyle(document.documentElement).colorScheme === 'dark'
 
   - name: a visitor sends feedback
     url: /feedback

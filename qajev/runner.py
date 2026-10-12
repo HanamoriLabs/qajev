@@ -45,6 +45,7 @@ class Options:
     shots: bool = True
     ux: bool = True  # smoke: measure each page's UX (contrast, keyboard, zoom, dialogs, design consistency): free
     motion: str | None = None  # overrides the suite's motion (reduce | full)
+    color_scheme: str | None = None  # light | dark for every test that names none (a test's own wins)
     cpu_throttle: int | None = None  # overrides the suite's cpu_throttle (1 to 8)
     emit: object = None
     load_waited: float = 0.0  # seconds already spent waiting; load_wait is a budget for the whole run
@@ -134,10 +135,12 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     session.shot_dir = run_dir / "shots" if opts.shots and run_dir else None
     session.shot_prefix = slug(scenario.name)
     quiet, load1 = wait_for_quiet(opts)
+    scheme = scenario.color_scheme or getattr(opts, "color_scheme", None)
     result = {
         "name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
         "device": scenario.device, "load1": round(load1, 1), "checks": [], "findings": [], "screens": [],
         "blocked_writes": [], "guard_hidden": 0, "history": [], "jev": None, "shot": None,
+        **({"color_scheme": scheme} if scheme else {}),
     }
     if not quiet:
         return _finish(result, "skipped", f"machine busy (load1 {load1:.0f})", started)
@@ -192,6 +195,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         return has_page_checks(scenario.expect) and verdict.all_ok(verdict.page_checks(scenario.expect, observed))
 
     try:
+        if hasattr(session, "set_color_scheme"):  # a stand-in session in tests may not have it
+            session.set_color_scheme(scheme)
         session.set_device(scenario.device)
         session.arm(scenario.mode, scenario.speech)
         if any("pad" in hook for hook in [*scenario.before, *scenario.after]):

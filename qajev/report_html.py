@@ -203,6 +203,8 @@ def _scenario(i, r, who="Jev"):
     if isinstance(device, dict) and device.get("width"):
         size = f"{device['width']}×{device['height']}" + (" mobile" if device.get("mobile") else "")
         facts.append(("Device", _e(size)))
+    if r.get("color_scheme"):
+        facts.append(("Color scheme", _e(f"{r['color_scheme']} (the page was told the system prefers it)")))
     timing = [f"{r['seconds']} s" if r.get("seconds") is not None else "",
               f"idled {r['idled_s']:.0f} s, no input from QAJev" if r.get("idled_s") is not None else "",
               f"looked at the game at most {r['look_gap_s']:.1f} s apart" if r.get("look_gap_s") is not None else "",
