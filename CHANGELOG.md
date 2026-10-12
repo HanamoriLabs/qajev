@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- Web Workers run again. From 0.4.12, QAJev's guard for frames on another site made Chrome hold every worker at its
+  start, so a page that waits on a worker never went on (a stream player stayed on "Selecting pipeline", twinbox1).
+  Workers now start at once, with `block_urls` in them first.
+
 ## 0.4.14: 12 Oct 2026
 
 ### Added

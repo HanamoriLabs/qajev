@@ -341,6 +341,11 @@ isolation): from 0.4.12, QAJev attaches to it before it runs and puts the read-o
 writes are stopped and listed, with its `frame`, like the page's own. **Versions 0.4.11 and earlier did not:** such a
 frame could send writes and reach blocked addresses, even in a readonly run.
 
+A page's Web Workers (and a frame's) get `block_urls` before they start, so a worker's request to a blocked address
+never leaves. The read-only guard itself lives in pages and frames, not in workers. **Versions 0.4.12 to 0.4.14 held
+every worker at its start:** a page that waits on a worker (a stream player choosing its video pipeline, say) waited
+forever. 0.4.15 lets each worker run at once.
+
 If QAJev cannot guard such a frame (attaching failed, or the frame started before the guard), it names it in
 `frames_not_observed`. The report says "Frame not observed: <address>. QAJev's read-only guard and block_urls do not
 reach it, so it may send writes", and the test's outcome is harness in every mode, because the run is not proven

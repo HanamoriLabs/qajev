@@ -28,6 +28,13 @@ IDS = 5000  # request id -> address (loadingFailed names only the id)
 AROUND = 15.0  # seconds: the failures "around" a failed resource, so an earlier test's do not leak into this one
 
 
+# What QAJev attaches to. Frames get the guard. Workers are attached only so they can run: with waitForDebuggerOnStart,
+# Chrome holds every dedicated worker at its start even when the filter leaves workers out, and nothing ever lets it go
+# (twinbox1, 12 Oct: a stream page waited on its worker forever). Attached, each worker gets the block list, then runs.
+ATTACH = [{"type": "iframe"}, {"type": "worker"}, {"type": "shared_worker"}]
+WORKERS = {"worker", "shared_worker"}
+
+
 def _bare(url):
     return str(url or "").split("#", 1)[0]
 
@@ -188,8 +195,14 @@ class Failures(threading.Thread):
             if self.guard_source:
                 self._send("Page.addScriptToEvaluateOnNewDocument", child, source=self.guard_source)
             self._send("Target.setAutoAttach", child, autoAttach=True, waitForDebuggerOnStart=True, flatten=True,
-                       filter=[{"type": "iframe"}])
+                       filter=ATTACH)
             self.children[child] = (info.get("targetId"), self.guard_source is not None)
+        elif info.get("type") in WORKERS:
+            self._send("Network.enable", child, maxPostDataSize=0)
+            if self.patterns:
+                self._send("Network.setBlockedURLs", child, urls=self.patterns)
+            self._send("Target.setAutoAttach", child, autoAttach=True, waitForDebuggerOnStart=True, flatten=True,
+                       filter=ATTACH)  # a worker's own workers
         self._send("Runtime.runIfWaitingForDebugger", child)
 
     def guard_frames(self, source):
@@ -204,8 +217,7 @@ class Failures(threading.Thread):
             self._send("Page.addScriptToEvaluateOnNewDocument", child, source=source)
             self._send("Runtime.evaluate", child, expression=source)
         if not self.auto:
-            self.ask("Target.setAutoAttach", autoAttach=True, waitForDebuggerOnStart=True, flatten=True,
-                     filter=[{"type": "iframe"}])
+            self.ask("Target.setAutoAttach", autoAttach=True, waitForDebuggerOnStart=True, flatten=True, filter=ATTACH)
             self.auto = True
 
     def guarded_targets(self):
