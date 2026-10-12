@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.18: 12 Oct 2026
+
 ### Added
 
 - The full tunnel to this machine's dev servers, for QAJev Cloud. A suite's `tunnel:` (or a project env's `tunnel`)
