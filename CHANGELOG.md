@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.26: 13 Oct 2026
+
 ### Added
 
 - `login.tab: same` signs a seeded account in in the scenarios' own tab, not in a tab of QAJev's own that then closes.
