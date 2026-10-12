@@ -228,15 +228,17 @@ def sign_in(session, account, *, timeout=20.0):
         out["email"] = email
     _password_ok(account, first.get("href") or "", email)  # before a key is pressed; an unread page is no host
     email_fields = login.get("email_field") or EMAIL_FIELDS
-    # Buttons that show the form, clicked in order (foleyapp, 12-13 Oct). An app may draw each one late: after it checks
-    # the session, or after the click before it. Done as soon as the email field shows.
+    # Buttons that lead to the sign-in form, clicked in order (foleyapp, 12-13 Oct). An app may draw each one late:
+    # after it checks the session, or after the click before it, so each gets 10 s. A step whose control does not
+    # show while the email field is already there is not needed and is skipped (2 s): Foley's panel opens on "Create
+    # account" with its fields showing, and only "Sign in instead" turns it into a sign-in.
     for step in open_steps(login):
-        _wait(session, lambda s, step=step: (_pick(session, email_fields, "email")
-                                             or _pick_step(session, step, "open")), 10)
-        if _pick(session, email_fields, "email"):
-            break
+        wait = 2 if _pick(session, email_fields, "email") else 10
+        _wait(session, lambda s, step=step: _pick_step(session, step, "open"), wait)
         opener = _pick_step(session, step, "open")
         if not opener:
+            if _pick(session, email_fields, "email"):
+                continue
             raise SignInFailed(f"no {_named(step)} to open the sign-in form with on {login['url']}")
         session.trusted_click(opener["x"], opener["y"])
     if open_steps(login):
