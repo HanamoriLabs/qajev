@@ -11,6 +11,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- `QAJEV_LOCAL_RUNS=off` in `~/.qajev/.env`: this machine runs no QAJev test. Every browser run here is refused
+  before Chrome starts and says to send it to QAJev Cloud with `--runner cloud`. The file is read at every run, so a shell
+  cannot turn it back on, and a long-lived MCP server sees the change (José).
 - Each page of a smoke run records its `lcp` (ms) and `cls` in the report, as a check does. Smoke measured them but used
   them only for its "slow largest contentful paint" finding (figgyz.com).
 

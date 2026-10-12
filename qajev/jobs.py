@@ -50,6 +50,23 @@ class Busy(RuntimeError):
     """Another QAJev run kept the browser for longer than this run was willing to wait."""
 
 
+class LocalRunsOff(Busy):
+    """This machine runs no QAJev test: QAJEV_LOCAL_RUNS=off in its env file (José, 12 Oct). Runs go to QAJev Cloud."""
+
+
+def local_runs_off():
+    """True when QAJev's env file (or this process's environment) says QAJEV_LOCAL_RUNS=off. The file is read at every
+    run, and an "off" there wins over anything else: a shell cannot turn it back on, and a long-lived process (an MCP
+    server) sees the change without a restart."""
+    from . import config  # noqa: PLC0415
+
+    values = [os.environ.get("QAJEV_LOCAL_RUNS")]
+    for path in config.env_files():
+        if path.is_file():
+            values.append(config._read(path).get("QAJEV_LOCAL_RUNS"))
+    return any((v or "").strip().lower() in {"off", "0", "no", "false"} for v in values)
+
+
 class NotOurs(ValueError):
     """A stop refused: QAJev cannot prove the job's pid is still the job's own process."""
 
@@ -281,6 +298,9 @@ def _who(h):
 @contextlib.contextmanager
 def machine_lock(what, emit=None, wait=None, job=None):
     """Hold the one browser slot on this machine; queue (and say so) while another run has it."""
+    if local_runs_off():
+        raise LocalRunsOff("this machine runs no QAJev test (QAJEV_LOCAL_RUNS=off in ~/.qajev/.env): send it to QAJev "
+                           "Cloud with --runner cloud")
     wait = float(os.environ.get("QAJEV_LOCK_WAIT", "3600")) if wait is None else wait
     HOME.mkdir(parents=True, exist_ok=True)
     handle = open(LOCK, "a+")

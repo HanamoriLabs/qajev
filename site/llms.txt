@@ -109,7 +109,8 @@ Where it runs: `runner: "cloud"` (CLI `--runner cloud`) sends `qa_check`, `qa_ru
 a dev server on this machine. A read-only run on one 127.0.0.1 or localhost port goes through the read-only tunnel to
 this machine only when the call says `runner: "cloud"` (the tunnel passes no POST or WebSocket); `QAJEV_CLOUD_HOLD`
 keeps named suites here unless the call says it too; `serve: "DIR[:PORT]"` (CLI `--serve`) ships a built site instead. The key is `QAJEV_CLOUD_KEY` or Keychain `qajev-cloud-agent`;
-`qa_doctor` checks it. A cloud run's id starts with `r_`; `qa_job` and `qa_stop` take it.
+`qa_doctor` checks it. A cloud run's id starts with `r_`; `qa_job` and `qa_stop` take it. `QAJEV_LOCAL_RUNS=off` in `~/.qajev/.env` makes a machine cloud-only: every run there is refused before Chrome
+starts.
 
 Rules: never type, ask for or write down passwords, one-time codes or payment details (for a signed-in test,
 the person signs in once with `qa_browser(action="login", profile=NAME, url=LOGIN_URL)`, or, on a local dev host
