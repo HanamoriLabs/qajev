@@ -242,7 +242,8 @@ something else covers, or that lies outside the element, fails naming why. When 
 `{selector: "iframe#view", js: "window.findBench()"}` takes it from an expression that returns `{x, y}` (it may await).
 The expression runs on the top page: it can read a same-origin frame through `contentWindow`, not a cross-origin
 one), `fill`
-(`{selector: text}`), `navigate`, `wait_for` (JavaScript that must turn
+(`{selector: text}`: a date, time or month field gets its value set, in the form Chrome stores it, such as
+`2027-06-30`; a fill whose text never reaches the field fails, saying so), `navigate`, `wait_for` (JavaScript that must turn
 true, within `timeout` seconds: 15 by default, at most 300, e.g. `{js: "window.ready", timeout: 60}`; a Promise counts by what it resolves to; a wait, unlike a check, holds on any truthy value), `key` (a real key press, below), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
 cookies and storage), and `command` (a shell command, only with `--allow-commands`). Hooks refuse to click dangerous controls or fill password fields on a real site.
 A scenario's checks judge the page as it is after its `before:` hooks, so a `wait_for` there is what they see.

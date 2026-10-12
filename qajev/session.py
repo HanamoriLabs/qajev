@@ -311,6 +311,22 @@ FIND_JS = Template("""(() => {
   return { x, y, secret, covered, over, tag: el.tagName };
 })()""")
 
+# What a fill left in its field (null: no such field, or one with no value).
+VALUE_JS = Template("""(() => { const el = document.querySelector($selector);
+  return el && typeof el.value === 'string' ? el.value : null; })()""")
+# A field Chrome edits through a picker ignores typed text (dash-wholesale-links, 12 Oct: fill "2027-06-30" left a date
+# field on 06/30/2025). Its value is set as a person's edit sets it: the native setter, then input and change events.
+# -> the value it holds after, or null for any other field (typed as usual).
+PICKER_TYPES = ["date", "time", "datetime-local", "month", "week"]
+SET_PICKER_JS = Template("""(() => {
+  const el = document.querySelector($selector);
+  if (!el || el.tagName !== 'INPUT' || !$types.includes(el.type)) return null;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, $text);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  return el.value;
+})()""")
+
 # Chrome drops a click into an iframe sent too soon after the page loads: bare clicks at once landed 0 of 12, and 4 of
 # 4 after 0.5 s (measured on macOS, Chrome 153, 12 Oct 2026). The frame's load event had already fired, and two
 # animation frames did not help, so there is no event to wait on yet.
@@ -1205,6 +1221,24 @@ class Session:
         self.call("Input.dispatchKeyEvent", type="keyUp", key="a", code="KeyA", modifiers=mod)
         self.call("Input.insertText", text=text)
 
+    def fill(self, selector, found, text):
+        """Type `text` into a field located by find(), or set a picker field's value; then fail if the field did not
+        take it, instead of leaving the next step to time out (dash-wholesale-links, 12 Oct)."""
+        sel = json.dumps(selector)
+        before = self.evaluate(VALUE_JS.substitute(selector=sel))
+        held = self.evaluate(SET_PICKER_JS.substitute(selector=sel, types=json.dumps(PICKER_TYPES),
+                                                      text=json.dumps(text)))
+        if held is not None:
+            if held != text:
+                raise HookFailed(f"fill {selector!r}: the field took {held!r}, not {text!r}. A date, time or month "
+                                 "field takes the form Chrome stores (2027-06-30, 14:30, 2027-06)")
+            return
+        self.type_into(found, text)
+        after = self.evaluate(VALUE_JS.substitute(selector=sel))
+        if after is not None and after == before and before != text:  # a page may reformat; unchanged is a no-op
+            what = "what it held before" if found["secret"] else repr(after)
+            raise HookFailed(f"fill {selector!r}: the field still holds {what}; the typing did not reach it")
+
     def run_hook(self, hook, current_url):
         kind, value = next(iter(hook.items()))
         if kind == "js":
@@ -1219,7 +1253,7 @@ class Session:
                 found = self.find(selector)
                 if found["secret"] and not is_loopback(current_url):
                     raise HookFailed(f"refused: {selector!r} is a secret field on a non-loopback host")
-                self.type_into(found, os.path.expandvars(str(text)))
+                self.fill(selector, found, os.path.expandvars(str(text)))
         elif kind == "navigate":
             from urllib.parse import urljoin
 
