@@ -233,9 +233,20 @@
   const FIELD = 'input[type=password],input[autocomplete^="cc-"],input[name*=card i],input[name*=cvc i],input[name*=cvv i],' +
     'input[name*=iban i],input[autocomplete=one-time-code],input[autocomplete=new-password],input[autocomplete=current-password]';
   const squash = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-  // Everything a person could read on the control: deny patterns may appear in any of it.
-  const label = (el) => squash([el.innerText || el.textContent, el.getAttribute('aria-label'), el.getAttribute('title'),
-    el.tagName === 'INPUT' ? el.value : ''].join(' '));
+  // The names of the elements el's aria-labelledby points to: it may name several ids, and a hidden one still counts.
+  // Each is named by its aria-label, its text and its children's names (an img alt inside: redteam on #124). Like
+  // the browser, a label is followed once: an element it points to adds no aria-labelledby of its own, so a loop ends.
+  const referenced = (el, follow = true) => !follow ? '' : (el.getAttribute('aria-labelledby') || '').split(/\s+/)
+    .filter(Boolean).map((id) => {
+      const r = document.getElementById(id);
+      return r ? [r.getAttribute('aria-label'), r.textContent, childNames(r, false).inner].join(' ') : '';
+    }).join(' ');
+  // Everything a person or the browser could read as the control's name: deny patterns may appear in any of it, so it
+  // takes aria-labelledby and the names its children give it too (redteam, 13 Oct). Each part is squashed on its own,
+  // so a long caption cannot push the aria-label past squash's 200 characters.
+  const label = (el, kids = childNames(el)) => [el.innerText || el.textContent, el.getAttribute('aria-label'),
+    el.getAttribute('title'), referenced(el), kids.inner,
+    el.tagName === 'INPUT' ? el.value + ' ' + (el.getAttribute('alt') || '') : ''].map(squash).filter(Boolean).join(' ');
   // A to-do row's own title (Foley, 13 Oct: the task "Buy paint" is a button that opens the task, in a row whose
   // checkbox is "Toggle Buy paint"). It names the item, not an action, so it is shown, unless it reads as a purchase.
   // Only that one control: the row's other controls (its Delete) follow the usual rules (the Orchestrator). Every name
@@ -255,24 +266,35 @@
     if (inner && (ctx.destroys(inner) || ctx.deny(inner) || (ctx.purchase && ctx.purchase.test(inner)))) return false;
     return toggles.some((name) => squash(name).toLowerCase().replace(/^(toggle|complete|mark|check|done|finish)\b:?\s*/, '') === t);
   };
-  // What the control's children add to its name, for rowTitle's ctx: the browser names
-  // <button><img alt="Delete account">Buy paint</button> "Delete account Buy paint", and an inline svg by its <title>
-  // and <desc>. A child with aria-labelledby names the control from elsewhere on the page, like the control's own does
-  // (redteam, #123). -> {labelledby, inner}
-  const childNames = (el) => ({
-    labelledby: el.hasAttribute('aria-labelledby') || !!el.querySelector('[aria-labelledby]'),
-    inner: [...el.querySelectorAll('[alt], [aria-label], [title]')]
-      .map((d) => [d.getAttribute('alt'), d.getAttribute('aria-label'), d.getAttribute('title')].join(' '))
-      .concat([...el.querySelectorAll('svg title, svg desc')].map((d) => d.textContent)).join(' '),
-  });
+  // What the control's children add to its name: the browser names <button><img alt="Delete account">Buy paint</button>
+  // "Delete account Buy paint", an inline svg by its <title> and <desc>, and a child with aria-labelledby by the text
+  // it names, from elsewhere on the page, like the control's own does (redteam, #123).
+  // -> {labelledby, names: each child's name, inner: them all}
+  const childNames = (el, follow = true) => {
+    const names = [...el.querySelectorAll('[alt], [aria-label], [title], [aria-labelledby]')]
+      .map((d) => [d.getAttribute('alt'), d.getAttribute('aria-label'), d.getAttribute('title'), referenced(d, follow)].join(' '))
+      .concat([...el.querySelectorAll('svg title, svg desc')].map((d) => d.textContent)).map(squash).filter(Boolean);
+    return { labelledby: el.hasAttribute('aria-labelledby') || !!el.querySelector('[aria-labelledby]'), names,
+      inner: names.join(' ') };
+  };
   const toggleLabels = (el) => {
     const row = !el.matches('input, select, textarea') && el.closest('li, [role=listitem], [role=row]');
     return row ? [...row.querySelectorAll('input[type=checkbox], [role=checkbox], [role=switch]')]
       .filter((c) => c !== el).map((c) => c.getAttribute('aria-label') || c.getAttribute('title') || '') : [];
   };
-  // Its accessible name: what read-only patterns anchor to.
-  const accessibleName = (el) => squash(el.getAttribute('aria-label') || el.innerText || el.textContent ||
-    el.getAttribute('title') || (el.tagName === 'INPUT' ? el.value : ''));
+  // Its names, each on its own, for the read-only patterns, which anchor at the start of a name: the text the
+  // browser takes (aria-labelledby, aria-label), the text a person reads, an input's caption, and each child's name.
+  // A title is a name only when there is no other: "★" titled "Add to favourites" is not a write.
+  const accessibleNames = (el, kids = childNames(el)) => {
+    const said = [referenced(el), el.getAttribute('aria-label'), el.innerText || el.textContent,
+      el.tagName === 'INPUT' ? el.value || el.getAttribute('alt') : '', ...kids.names].map(squash).filter(Boolean);
+    return said.length ? said : [squash(el.getAttribute('title'))];
+  };
+  // The read-only word in any of its names, or null.
+  const writes = (el, kids) => {
+    for (const name of mutating ? accessibleNames(el, kids) : []) { const m = words(mutating, name); if (m) return m; }
+    return null;
+  };
   const offsite = (el) => {
     if (el.tagName !== 'A' || !el.href) return false;
     let url;
@@ -287,9 +309,11 @@
     return destructive.test(rest);
   };
   const dangerous = (el) => {
-    const text = label(el);
+    const kids = childNames(el);
+    const text = label(el, kids);
     const names = [el.innerText || el.textContent, el.getAttribute('aria-label'), el.getAttribute('title')];
-    const ctx = { purchase, destroys, deny: (s) => !!(deny && deny.test(s)), local, ...childNames(el) };
+    const ctx = { purchase, destroys, deny: (s) => !!(deny && deny.test(s)), local,
+      labelledby: kids.labelledby, inner: kids.inner };
     if (rowTitle(names, toggleLabels(el), ctx)) return offsite(el) ? OFFSITE : null;
     // destructive first: `allow` never shows it; allow_destructive does, on a local dev host only
     if (destroys(text) && !(cfg.allow_destructive && local)) return 'destructive: ' + text.slice(0, 60);
@@ -297,7 +321,7 @@
     if (allowed && local) return null;  // on production `allow` never shows a denied control either
     if (deny && deny.test(text)) return 'danger: ' + text.slice(0, 60);
     if (allowed) return null;
-    if (readOnly && mutating && mutating.test(accessibleName(el))) return 'read-only: ' + text.slice(0, 60);
+    if (readOnly && writes(el, kids)) return 'read-only: ' + text.slice(0, 60);
     if (offsite(el)) return OFFSITE;
     return null;
   };
@@ -317,7 +341,7 @@
     const kind = why === OFFSITE ? OFFSITE : why === 'field' ? 'secret field' : why.split(':')[0];
     // a button input's value is its caption, so the deny words may come from it; a secret field has no match
     const match = kind === 'danger' ? words(deny, label(el)) : kind === 'destructive' ? words(destructive, label(el))
-      : kind === 'read-only' ? words(mutating, accessibleName(el))
+      : kind === 'read-only' ? writes(el)
       : kind === OFFSITE ? (() => { try { return new URL(el.href, location.href).host; } catch (e) { return null; } })()
       : null;
     held.set(el, { label: named(el), why: kind, match });
@@ -395,6 +419,24 @@
   };
   const guardDoc = () => sweep(document.documentElement || document);
   // Observe `document`, never `document.documentElement`: at new-document time it is still null.
+  // The ids a batch of changes may have renamed a control through: every id above each change (the text in
+  // span#x > b#inner names what points to x), and an added element's own id and those under it (a label that
+  // arrives after its control). redteam on #124.
+  const changedIds = (records) => {
+    const ids = new Set();
+    for (const r of records) {
+      for (let e = r.target.nodeType === 1 ? r.target : r.target.parentElement; e; e = e.parentElement) {
+        if (e.id) ids.add(e.id);
+      }
+      if (r.type !== 'childList') continue;
+      for (const n of r.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        if (n.id) ids.add(n.id);
+        for (const d of n.querySelectorAll('[id]')) ids.add(d.id);
+      }
+    }
+    return ids;
+  };
   new MutationObserver((records) => {
     for (const r of records) {
       if (r.type === 'childList') { for (const n of r.addedNodes) sweep(n); }
@@ -402,8 +444,17 @@
       const control = host && host.closest && host.closest(CONTROL);
       if (control) judgeSoon(control);
     }
+    // A control named from elsewhere by aria-labelledby is judged again when that text changes: "Open" became "Delete".
+    // One pass over the labelled elements per batch, not one query per id.
+    const ids = changedIds(records);
+    if (!ids.size) return;
+    for (const el of document.querySelectorAll('[aria-labelledby]')) {
+      if (!el.getAttribute('aria-labelledby').split(/\s+/).some((id) => ids.has(id))) continue;
+      const control = el.closest(CONTROL);
+      if (control) judgeSoon(control);
+    }
   }).observe(document, { childList: true, subtree: true, characterData: true, attributes: true,
-    attributeFilter: ['aria-label', 'title', 'href', 'value', 'type', 'role'] });
+    attributeFilter: ['id', 'aria-label', 'aria-labelledby', 'alt', 'title', 'href', 'value', 'type', 'role'] });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', guardDoc, { once: true });
   guardDoc();
 

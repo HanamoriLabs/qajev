@@ -11,6 +11,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   it reads as a purchase ("Buy now", "Checkout", "Subscribe", a price in any common currency). On production a
   destructive title stays hidden. The row's other controls, its Delete included, keep the usual rules (Foley;
   redteam).
+- The guard missed a control's name when it came from `aria-labelledby` or from a child (an image's alt, a child's
+  aria-label, title or `aria-labelledby`, an inline svg's title), so a "Delete" or "Pay" named that way stayed
+  visible, on production too. Every name now counts, including the names inside the element `aria-labelledby` points
+  to. A long caption no longer hides the aria-label. A control is judged again when that element changes or arrives
+  after the control (redteam).
 
 ## 0.4.26: 13 Oct 2026
 

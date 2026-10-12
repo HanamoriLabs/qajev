@@ -219,6 +219,35 @@ def test_guard_holds_on_a_page_reached_by_a_click_and_on_late_controls(session, 
     assert hidden(session, "#pricing-buy, [data-plan=pro] button")
 
 
+def test_guard_hides_a_control_named_from_elsewhere_and_judges_it_again(session, site):
+    # redteam, 13 Oct: the browser names a control from aria-labelledby, a child's alt and an inline svg's title too
+    session.arm("readonly")
+    session.navigate(site + "/")
+    session.require_guard()
+    session.evaluate("""document.body.insertAdjacentHTML('beforeend',
+      '<span id="q-name" hidden>Open</span><button id="q-ref" aria-labelledby="q-name">→</button>' +
+      '<button id="q-img"><img alt="Delete account"></button>' +
+      '<button id="q-svg"><svg><title>Delete account</title></svg></button>')""")
+    time.sleep(0.5)
+    assert hidden(session, "#q-img") and hidden(session, "#q-svg")
+    assert not hidden(session, "#q-ref")
+    session.evaluate("document.getElementById('q-name').textContent = 'Delete account'")  # its name changes elsewhere
+    time.sleep(0.5)
+    assert hidden(session, "#q-ref")
+    # redteam on #124: text changed under a nested id, and a label added after its control
+    session.evaluate("""document.body.insertAdjacentHTML('beforeend',
+      '<span id="q-outer" hidden><b id="q-inner">Open</b></span>' +
+      '<button id="q-nested" aria-labelledby="q-outer">→</button>' +
+      '<button id="q-late" aria-labelledby="q-later">→</button><div id="q-holder"></div>')""")
+    time.sleep(0.5)
+    assert not hidden(session, "#q-nested") and not hidden(session, "#q-late")
+    session.evaluate("document.getElementById('q-inner').textContent = 'Delete account'")
+    session.evaluate("""document.getElementById('q-holder').insertAdjacentHTML('beforeend',
+      '<span id="q-later" hidden>Delete account</span>')""")
+    time.sleep(0.5)
+    assert hidden(session, "#q-nested") and hidden(session, "#q-late")
+
+
 def test_hooks_refuse_guarded_controls_and_secret_fields_are_disabled(session, site):
     from qajev.session import HookFailed
 
