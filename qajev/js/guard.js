@@ -233,9 +233,14 @@
   const FIELD = 'input[type=password],input[autocomplete^="cc-"],input[name*=card i],input[name*=cvc i],input[name*=cvv i],' +
     'input[name*=iban i],input[autocomplete=one-time-code],input[autocomplete=new-password],input[autocomplete=current-password]';
   const squash = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-  // The text of the elements el's aria-labelledby names: it may name several ids, and a hidden one still counts.
-  const referenced = (el) => (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean)
-    .map((id) => { const r = document.getElementById(id); return r ? r.getAttribute('aria-label') || r.textContent : ''; }).join(' ');
+  // The names of the elements el's aria-labelledby points to: it may name several ids, and a hidden one still counts.
+  // Each is named by its aria-label, its text and its children's names (an img alt inside: redteam on #124). Like
+  // the browser, a label is followed once: an element it points to adds no aria-labelledby of its own, so a loop ends.
+  const referenced = (el, follow = true) => !follow ? '' : (el.getAttribute('aria-labelledby') || '').split(/\s+/)
+    .filter(Boolean).map((id) => {
+      const r = document.getElementById(id);
+      return r ? [r.getAttribute('aria-label'), r.textContent, childNames(r, false).inner].join(' ') : '';
+    }).join(' ');
   // Everything a person or the browser could read as the control's name: deny patterns may appear in any of it, so it
   // takes aria-labelledby and the names its children give it too (redteam, 13 Oct). Each part is squashed on its own,
   // so a long caption cannot push the aria-label past squash's 200 characters.
@@ -265,9 +270,9 @@
   // "Delete account Buy paint", an inline svg by its <title> and <desc>, and a child with aria-labelledby by the text
   // it names, from elsewhere on the page, like the control's own does (redteam, #123).
   // -> {labelledby, names: each child's name, inner: them all}
-  const childNames = (el) => {
+  const childNames = (el, follow = true) => {
     const names = [...el.querySelectorAll('[alt], [aria-label], [title], [aria-labelledby]')]
-      .map((d) => [d.getAttribute('alt'), d.getAttribute('aria-label'), d.getAttribute('title'), referenced(d)].join(' '))
+      .map((d) => [d.getAttribute('alt'), d.getAttribute('aria-label'), d.getAttribute('title'), referenced(d, follow)].join(' '))
       .concat([...el.querySelectorAll('svg title, svg desc')].map((d) => d.textContent)).map(squash).filter(Boolean);
     return { labelledby: el.hasAttribute('aria-labelledby') || !!el.querySelector('[aria-labelledby]'), names,
       inner: names.join(' ') };
@@ -414,25 +419,42 @@
   };
   const guardDoc = () => sweep(document.documentElement || document);
   // Observe `document`, never `document.documentElement`: at new-document time it is still null.
-  new MutationObserver((records) => {
+  // The ids a batch of changes may have renamed a control through: every id above each change (the text in
+  // span#x > b#inner names what points to x), and an added element's own id and those under it (a label that
+  // arrives after its control). redteam on #124.
+  const changedIds = (records) => {
     const ids = new Set();
+    for (const r of records) {
+      for (let e = r.target.nodeType === 1 ? r.target : r.target.parentElement; e; e = e.parentElement) {
+        if (e.id) ids.add(e.id);
+      }
+      if (r.type !== 'childList') continue;
+      for (const n of r.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        if (n.id) ids.add(n.id);
+        for (const d of n.querySelectorAll('[id]')) ids.add(d.id);
+      }
+    }
+    return ids;
+  };
+  new MutationObserver((records) => {
     for (const r of records) {
       if (r.type === 'childList') { for (const n of r.addedNodes) sweep(n); }
       const host = (r.target.nodeType === 1 ? r.target : r.target.parentElement);
       const control = host && host.closest && host.closest(CONTROL);
       if (control) judgeSoon(control);
-      const source = host && host.closest && host.closest('[id]');
-      if (source) ids.add(source.id);
     }
     // A control named from elsewhere by aria-labelledby is judged again when that text changes: "Open" became "Delete".
-    for (const id of ids) {
-      for (const el of document.querySelectorAll('[aria-labelledby~="' + CSS.escape(id) + '"]')) {
-        const control = el.closest(CONTROL);
-        if (control) judgeSoon(control);
-      }
+    // One pass over the labelled elements per batch, not one query per id.
+    const ids = changedIds(records);
+    if (!ids.size) return;
+    for (const el of document.querySelectorAll('[aria-labelledby]')) {
+      if (!el.getAttribute('aria-labelledby').split(/\s+/).some((id) => ids.has(id))) continue;
+      const control = el.closest(CONTROL);
+      if (control) judgeSoon(control);
     }
   }).observe(document, { childList: true, subtree: true, characterData: true, attributes: true,
-    attributeFilter: ['aria-label', 'aria-labelledby', 'alt', 'title', 'href', 'value', 'type', 'role'] });
+    attributeFilter: ['id', 'aria-label', 'aria-labelledby', 'alt', 'title', 'href', 'value', 'type', 'role'] });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', guardDoc, { once: true });
   guardDoc();
 

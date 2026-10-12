@@ -234,6 +234,18 @@ def test_guard_hides_a_control_named_from_elsewhere_and_judges_it_again(session,
     session.evaluate("document.getElementById('q-name').textContent = 'Delete account'")  # its name changes elsewhere
     time.sleep(0.5)
     assert hidden(session, "#q-ref")
+    # redteam on #124: text changed under a nested id, and a label added after its control
+    session.evaluate("""document.body.insertAdjacentHTML('beforeend',
+      '<span id="q-outer" hidden><b id="q-inner">Open</b></span>' +
+      '<button id="q-nested" aria-labelledby="q-outer">→</button>' +
+      '<button id="q-late" aria-labelledby="q-later">→</button><div id="q-holder"></div>')""")
+    time.sleep(0.5)
+    assert not hidden(session, "#q-nested") and not hidden(session, "#q-late")
+    session.evaluate("document.getElementById('q-inner').textContent = 'Delete account'")
+    session.evaluate("""document.getElementById('q-holder').insertAdjacentHTML('beforeend',
+      '<span id="q-later" hidden>Delete account</span>')""")
+    time.sleep(0.5)
+    assert hidden(session, "#q-nested") and hidden(session, "#q-late")
 
 
 def test_hooks_refuse_guarded_controls_and_secret_fields_are_disabled(session, site):
