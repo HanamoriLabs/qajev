@@ -108,6 +108,41 @@ For a phone's real browser (Chrome on an Android emulator; iOS Safari is not rea
   INCOMPLETE), because its pass would not say what it proved. `qajev plan FILE` shows the plan and lists them
   without running anything ([CLI](cli.md#qajev-plan)).
 
+## Planted faults: a test meant to fail
+
+A planted fault proves a check can catch a fault: you break the page on purpose, and the check must fail. Mark such
+a test with `expect_fail`, naming the one check it plants against by its `says` text (or its words as `qajev plan`
+prints them). `expect_fail: true` works only on a test with exactly one check. The test must say in `about` what it
+plants.
+
+```yaml
+- name: wrong price
+  url: /pricing?plant=price
+  about: plants a wrong Pro price, so the price check must catch it
+  expect:
+    text: ["Pro"]
+    js: "document.querySelector('.pro .price').textContent === '£10'"
+    says: { js: "the Pro plan costs £10" }
+  expect_fail: "the Pro plan costs £10"
+```
+
+On the command line: `qajev check URL ... --says "the Pro plan costs £10" --expect-fail "the Pro plan costs £10"`
+(a bare `--expect-fail` names the test's only check).
+
+The test keeps its real outcome: a planted fault that fails is still **fail**. The gate counts it this way:
+
+| The planted test | Gate counts it as | Reason |
+|---|---|---|
+| fails on the named check, and every other check passes | met (like a pass) | "failed as expected on the planted check: ..." |
+| passes | **FAIL** | "expected to fail, but every check passed: the planted fault was not caught" |
+| fails on another check, or before the named check ran (a page that did not load) | **FAIL** | "failed, but not on the planted check: ..." |
+| stuck or harness, or the run broke off (a crash, a time-out) | as today: INCOMPLETE | never a catch |
+
+So a planted fault that stops being caught, or breaks somewhere else, turns the gate red. The report counts the
+planted tests at the top ("N test(s) expected to fail") and tags each one with the check it names, so no real
+failure can hide under the tag unseen. A scenario with `clients` cannot be planted. An `expect_fail` that names no
+check, or more than one, is refused before the run (exit 3), and `qajev plan` refuses it too.
+
 ## An approved test plan
 
 Before a run, write down what it will prove and have it approved. The plan is a Markdown file in the project, for

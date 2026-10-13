@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-from . import keys, pad
+from . import keys, pad, verdict
+from . import plan as plan_mod
 from .config import host_of, is_local_dev, is_loopback, is_test_email, plain_host, user_info_refusal
 from .guard import MODES
 
@@ -57,7 +58,7 @@ EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", 
 SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
-    "persona", "speech", "vision", "about", "clients", "steps", "state", "seed", "color_scheme",
+    "persona", "speech", "vision", "about", "clients", "steps", "state", "seed", "color_scheme", "expect_fail",
 }
 # A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
 MAX_CLIENTS = 12
@@ -118,6 +119,7 @@ class Scenario:
     state: str | None = None  # JS read on every client for the across checks and snapshots
     seed: int | None = None  # for `jitter`: the same seed gives the same offsets
     color_scheme: str | None = None  # light | dark: the page's prefers-color-scheme answers so; None: the browser's
+    expect_fail: dict | None = None  # a planted fault: {check, words}, the one check it must fail on (_expect_fail)
 
     @property
     def task(self):
@@ -603,6 +605,7 @@ def parse(data, path=None, devices=None):
             state=item.get("state"),
             seed=item.get("seed"),
             color_scheme=color_scheme(item.get("color_scheme", data.get("color_scheme")), f"{where}.color_scheme"),
+            expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where),
         ))
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")
@@ -721,6 +724,34 @@ def about(value, where):
     if not isinstance(value, str):
         raise SuiteError(f"{where} must be text: what the test proves and why")
     return " ".join(value.split()) or None
+
+
+def _expect_fail(value, expect, clients, about_text, where):
+    """`expect_fail`: a planted fault, a test meant to fail on one named check (the Orchestrator, 13 Oct). It names
+    that check by its `says`, its plain words or its name as `qajev plan` prints them; `true` only when the test has
+    one check. It must say in `about` what it plants. -> {check, words} or None. The gate reads it (verdict.planted)."""
+    if value is None or value is False:
+        return None
+    if clients is not None:
+        raise SuiteError(f"{where}.expect_fail: a scenario with clients cannot be expected to fail")
+    if not about(about_text, f"{where}.about"):
+        raise SuiteError(f"{where}: a test expected to fail must say in about: what fault it plants")
+    checks = verdict.planned(expect) + [{"check": f"looks: {s}"} for s in expect.get("looks") or []]
+    if value is True:
+        if len(checks) != 1:
+            raise SuiteError(f"{where}.expect_fail: true needs a test with exactly one check (this one has "
+                             f"{len(checks)}): name the planted check by its says text instead")
+        hit = checks
+    elif isinstance(value, str) and value.strip():
+        want = " ".join(value.split())
+        hit = [c for c in checks if want in (c.get("says"), plan_mod.words(c), c["check"])]
+        if len(hit) != 1:
+            raise SuiteError(f"{where}.expect_fail: {want!r} must name exactly one of the test's checks (it names "
+                             f"{len(hit)}); its checks: "
+                             + "; ".join(plan_mod.words(c) or c["check"] for c in checks))
+    else:
+        raise SuiteError(f"{where}.expect_fail must be the planted check's says text, or true")
+    return {"check": hit[0]["check"], "words": plan_mod.words(hit[0]) or hit[0]["check"]}
 
 
 def check_safety(suite):

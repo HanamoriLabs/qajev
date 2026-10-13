@@ -36,6 +36,11 @@ At the top: the verdict for the whole run.
 | **FAIL** | at least one scenario failed: the product is wrong somewhere | `1` |
 | **INCOMPLETE** | nothing failed, but something could not be judged (stuck, harness, skipped...), or a test is NOT DESCRIBED | `2` |
 
+A planted fault (`expect_fail`) counts as passed only when it failed on the check it names; a planted fault that
+passed, or failed on another check, makes the gate FAIL ([Planted faults](writing-tests.md#planted-faults-a-test-meant-to-fail)).
+Its own outcome stays as it was. report.json adds `expected: "fail"`, `expected_check`, `graded` (the outcome the
+gate counted) and `graded_reason` to the test, and `expected_fail` (how many) to the run.
+
 The exit codes make QAJev easy to use in CI. Other exit codes: `3` a mistake in the suite or options, `4` no
 browser available, `5` refused (the run would have changed a production site; nothing was started), `130` stopped.
 

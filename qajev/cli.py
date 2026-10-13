@@ -166,6 +166,10 @@ def build_parser():
                                        "(default: every device in --devices)")
     check.add_argument("--persona", help="who Jev is, prepended to the goal")
     check.add_argument("--about", help="what this test proves and why, in plain words (shown with its result)")
+    check.add_argument("--expect-fail", nargs="?", const=True, metavar="SAYS",
+                       help="a planted fault: the test must fail on the check SAYS names (its --says text or its "
+                            "words in the plan; bare: the test's only check). Failing there counts as met; a pass, "
+                            "or a failure on another check, turns the gate FAIL. Needs --about")
     check.add_argument("--speech", help="what the fake microphone 'hears' if the page listens")
     check.add_argument("--host", action="append", default=[], help="extra host Jev may visit (repeatable)")
     check.add_argument("--max-actions", type=int, default=20)
@@ -527,6 +531,9 @@ def _finish(args, report):
         print(f"\nGate: {report['gate']}{stopped}  ({c['pass']} pass, {c['fail']} fail, {c['stuck']} stuck, "
               f"{c['harness']} harness, {c['unverified']} unverified, {c['skipped']} skipped; "
               f"{len(report['findings'])} finding(s); ${cost['usd']:.4f})", file=sys.stderr)
+        for r in report["scenarios"]:
+            if r.get("expected"):  # a planted fault: how the gate counted it
+                print(f"  expected to fail: {r['name']}: {r['graded_reason']}", file=sys.stderr)
         print(f"Report: {Path(report['run_dir']) / 'report.html'} (also report.md, report.json)", file=sys.stderr)
     if report.get("interrupted"):
         return EXIT_INTERRUPTED
@@ -582,6 +589,8 @@ def check_suite(args):
         scenario["persona"] = args.persona
     if args.about:
         scenario["about"] = args.about
+    if args.expect_fail:
+        scenario["expect_fail"] = args.expect_fail
     if args.speech:
         scenario["speech"] = args.speech
     if args.vision:
@@ -1713,6 +1722,7 @@ def cmd_plan(args):
     try:
         spec = yaml.safe_load(args.file.read_text()) or {}
         blind = []  # the tests whose only checks are "lacks" checks
+        planted = []  # the planted faults (expect_fail), each with the check it must fail on
         if isinstance(spec, dict) and spec.get("steps") and not spec.get("scenarios"):  # a game's steps suite
             name, run_about = spec.get("name") or args.file.stem, about(spec.get("about"), "about")
             native.check_window(spec["steps"])
@@ -1724,6 +1734,7 @@ def cmd_plan(args):
             name, run_about, items = suite.name, suite.about, plan_mod.from_suite(suite.scenarios)
             named = suite.plan
             blind = plan_mod.absent_only(suite.scenarios)
+            planted = [{"name": s.name, "check": s.expect_fail["words"]} for s in suite.scenarios if s.expect_fail]
     except (OSError, yaml.YAMLError, SuiteError, native.NativeError) as e:
         return _fail(args, f"{args.file}: {e}", EXIT_CONFIG)
     missing = plan_mod.not_described(items)
@@ -1731,7 +1742,7 @@ def cmd_plan(args):
     unapproved = planfile.required() and not test_plan["approved"]
     if args.json:
         print(json.dumps({"name": name, "about": run_about, "plan": items, "not_described": missing,
-                          "absent_only": blind, "test_plan": test_plan}))
+                          "absent_only": blind, "expected_fail": planted, "test_plan": test_plan}))
     else:
         print(f"Test plan: {name}" + (f" — {run_about}" if run_about else ""))
         print(f"Plan file: {test_plan['path'] + ', ' if test_plan['path'] else ''}{planfile.words(test_plan)}")
@@ -1745,6 +1756,9 @@ def cmd_plan(args):
         if blind:
             print(f"ABSENT ONLY: {', '.join(blind)}: each only checks that a text is absent, and a blank page passes "
                   "that. Add a text or js check that must be there.")
+        if planted:
+            print(f"EXPECTED TO FAIL: {len(planted)} planted fault(s), each met only when it fails on its check: "
+                  + "; ".join(f"{p['name']} (on “{p['check']}”)" for p in planted))
     return 2 if missing or blind or unapproved else 0
 
 

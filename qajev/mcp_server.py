@@ -54,7 +54,8 @@ something on a site, and to catch errors a browser can see.
 Outcomes: pass; fail (product wrong); stuck (Jev found no way forward: verify by hand, often UX);
 harness (budget/stale/model/browser trouble, Jev said DONE without a single action, a local server not answering,
 or a js check whose own code broke: says nothing about the product); unverified (no checks);
-skipped. Gate: PASS, FAIL or INCOMPLETE.
+skipped. Gate: PASS, FAIL or INCOMPLETE. A planted fault (expect_fail: the says text of the check it must fail on)
+keeps its outcome; the gate counts its `graded`: met only when it failed on that check, else FAIL.
 
 Safety built in: production is read-only and destructive is never. Any host that is not a local dev host
 (localhost, 127.0.0.1, [::1], *.localhost, *.test) is production: mode="mutate" or allow_destructive there is
@@ -341,7 +342,8 @@ def _trim(report, verbose):
     """Keep tool results small enough for a model's context; the full report stays on disk."""
     if verbose or "scenarios" not in report:
         return report
-    keep = ("name", "about", "outcome", "reason", "stop", "stop_detail", "not_run", "seconds", "cost_usd", "end_url",
+    keep = ("name", "about", "outcome", "reason", "expected", "expected_check", "graded", "graded_reason", "stop",
+            "stop_detail", "not_run", "seconds", "cost_usd", "end_url",
             "checks", "findings", "shot", "jev", "blocked_writes", "allowed_writes", "dialogs", "page_says",
             "needs_sign_in", "block_list_requests", "frames_not_observed", "frames_accepted", "frame_console",
             "frame_requests")
@@ -392,6 +394,7 @@ async def qa_check(
     device: str | None = None,
     persona: str | None = None,
     about: str | None = None,
+    expect_fail: str | bool | None = None,
     hosts: list[str] | None = None,
     max_actions: int = 20,
     max_seconds: float = 90,
@@ -428,6 +431,8 @@ async def qa_check(
     device: desktop | tall | phone | tablet | WIDTHxHEIGHT pins one; otherwise `devices` (default desktop and
     phone). real_devices: also in ios Safari / android Chrome on a throwaway simulator (read-only, slower).
     about: what this test proves and why, in plain words, for the person reading the report (always give it).
+    expect_fail: a planted fault: the says text of the one check it must fail on (true: the test's only check). It
+    counts as met only when it fails there; a pass, or a failure on another check, turns the gate FAIL.
     Returns the report with a gate and findings.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
     runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot go,
@@ -465,6 +470,8 @@ async def qa_check(
         args += ["--persona", persona]
     if about:
         args += ["--about", about]
+    if expect_fail:
+        args += ["--expect-fail", *([] if expect_fail is True else [str(expect_fail)])]
     for host in hosts or []:
         args += ["--host", host]
     if cost_cap is not None:

@@ -75,7 +75,9 @@ Each scenario has one outcome:
 | `unverified` | no expectations were given | add expectations and run again |
 | `skipped` | a step it depends on did not pass, or the machine was too busy | fix the dependency first |
 
-The run's **gate** is `PASS`, `FAIL` or `INCOMPLETE`. **Findings** (S1 worst to S3) are extra problems seen along
+The run's **gate** is `PASS`, `FAIL` or `INCOMPLETE`. A planted fault (`expect_fail`: a test meant to fail on the
+check it names) keeps its outcome, and the gate counts it as `graded`: met when it failed on that check, `fail` when
+it passed or failed on another one. **Findings** (S1 worst to S3) are extra problems seen along
 the way: script errors, failed requests, HTTP errors, blank screens. Report findings separately from outcomes.
 
 When you tell the person the result, include: the gate, each non-pass outcome with its reason, the findings, the

@@ -474,6 +474,31 @@ def screens(decisions):
     return out
 
 
+PLANTED_MISSED = "expected to fail, but every check passed: the planted fault was not caught"
+
+
+def planted(result, check):
+    """A planted fault's grade for the gate (suite.expect_fail; the Orchestrator, 13 Oct). It is met only when it
+    failed on `check` (the check it names) and every other check passed. A pass means the fault was not caught; a
+    failure anywhere else, or before the check ran (a page that did not load), is no catch either. A crash or a
+    time-out is never a catch: stuck and harness stay as they are. The test's own outcome is not changed.
+    -> (the outcome the gate counts, its reason)"""
+    outcome, reason = result.get("outcome"), result.get("reason") or ""
+    if outcome == "pass":
+        return "fail", PLANTED_MISSED
+    if outcome != "fail":
+        return outcome, reason
+    if result.get("stop") in HARNESS_STOPS:
+        return "harness", (f"stopped ({result['stop']}) before its failure could count: a crash or a time-out is never "
+                           f"the planted fault caught. {reason}").strip()
+    named = [c for c in result.get("checks") or [] if c.get("check") == check]
+    others = [c for c in result.get("checks") or [] if c.get("check") != check]
+    if named and all(c.get("ok") is False and not c.get("broke") for c in named) \
+            and all(c.get("ok") is True for c in others):
+        return "pass", f"failed as expected on the planted check: {reason}".rstrip(": ")
+    return "fail", f"failed, but not on the planted check: {reason}".rstrip(": ")
+
+
 def gate(outcomes, strict=False):
     """PASS only when every scenario passed; FAIL on any product failure; otherwise INCOMPLETE."""
     if not outcomes:
