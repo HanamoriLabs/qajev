@@ -341,6 +341,73 @@ def test_a_suite_run_is_filed_under_the_project_that_holds_it(dash, local, monke
     assert local == []
 
 
+@pytest.fixture
+def registry(dash, monkeypatch, tmp_path):
+    """Registered projects: shop (repo tmp/shop, on shop.example), rooms (on 127.0.0.1:8871) and lab (also on
+    127.0.0.1:8871, so that host names no one). The dashboard knows all three."""
+    from qajev import project
+
+    monkeypatch.setattr(project, "HOME", tmp_path / "home")
+    folder = tmp_path / "projects"
+    folder.mkdir()
+    monkeypatch.setenv("QAJEV_PROJECTS", str(folder))
+    shop = checkout(tmp_path / "shop")
+    (folder / "shop.toml").write_text(f'name = "shop"\nrepo = "{shop}"\n[env.prod]\nbase_url = "https://shop.example"\n')
+    for name in ("rooms", "lab"):
+        (folder / f"{name}.toml").write_text(f'name = "{name}"\n[env.local]\nbase_url = "http://127.0.0.1:8871"\n')
+    dash.projects = {"shop", "rooms", "lab", "desk"}
+    loose = tmp_path / "loose"
+    loose.mkdir()
+    monkeypatch.chdir(loose)
+    return {"shop": shop, "loose": loose, "projects": folder}
+
+
+def _filed(dash, argv):
+    dash.calls.clear()
+    assert cli.main([*argv, "--runner", "cloud"]) == 0
+    return dash.created().get("project")
+
+
+def test_step_1_a_project_flag_names_the_project_before_anything_else(dash, local, registry, monkeypatch):
+    # the Orchestrator, 13 Oct: --project, then the suite's project, then the folder's, then the URL's host
+    desk = registry["loose"] / ".qajev"
+    desk.mkdir()
+    (desk / "project.toml").write_text('name = "desk"\n[env.prod]\nbase_url = "https://desk.example"\n')
+    assert _filed(dash, ["smoke", "--project", "shop"]) == "shop"
+
+
+def test_step_2_a_suites_own_project_comes_before_the_folder_it_runs_from(dash, local, registry):
+    desk = registry["loose"] / ".qajev"
+    desk.mkdir()
+    (desk / "project.toml").write_text('name = "desk"\n[env.prod]\nbase_url = "https://desk.example"\n')
+    assert _filed(dash, ["run", str(suite_file(registry["shop"] / "qa"))]) == "shop"
+
+
+def test_step_3_a_check_names_the_project_of_the_folder_it_runs_from(dash, local, registry):
+    desk = registry["loose"] / ".qajev"
+    desk.mkdir()
+    (desk / "project.toml").write_text('name = "desk"\n[env.prod]\nbase_url = "https://desk.example"\n')
+    assert _filed(dash, ["check", "https://shop.example/cart", "--expect-text", "Cart"]) == "desk"  # before the host
+
+
+def test_step_4_a_check_names_the_one_project_registered_for_its_host(dash, local, registry):
+    assert _filed(dash, ["check", "https://shop.example/cart", "--expect-text", "Cart"]) == "shop"
+    assert _filed(dash, ["smoke", "https://www.shop.example/"]) == "shop"  # www. is the same site
+    assert _filed(dash, ["check", "https://other.example/", "--expect-text", "x"]) is None  # no project has it
+    assert _filed(dash, ["check", "http://127.0.0.1:8871/", "--expect-text", "x"]) is None  # 2 projects: no guess
+    assert local == []
+
+
+def test_a_repo_that_only_starts_with_a_projects_repo_name_is_not_that_project(dash, local, registry, tmp_path):
+    # redteam on #130: /x/shop holds /x/shop/qa, never /x/shop-old/qa; a repo inside another names the inner one
+    assert _filed(dash, ["run", str(suite_file(checkout(tmp_path / "shop-old") / "qa"))]) is None
+    inner = checkout(registry["shop"] / "vendor" / "rooms")
+    (registry["projects"] / "rooms.toml").write_text(
+        f'name = "rooms"\nrepo = "{inner}"\n[env.local]\nbase_url = "http://127.0.0.1:8871"\n')
+    assert _filed(dash, ["run", str(suite_file(inner / "qa"))]) == "rooms"
+    assert _filed(dash, ["run", str(suite_file(registry["shop"] / "qa"))]) == "shop"
+
+
 def test_qajev_tunnel_prints_what_the_file_declares_for_the_dispatcher_to_check(capsys, tmp_path):
     # redteam, 12 Oct: the dispatcher reads the suite or project file on disk again and refuses a run whose tunnel
     # differs from it, so a run record alone cannot open a port.
