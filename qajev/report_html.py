@@ -77,6 +77,7 @@ ol.plan ul { list-style:none; padding:0; margin:4px 0 0; } ol.plan ul li { displ
 .box.fail { color:var(--fail); background:var(--fail-bg); border-color:var(--fail); }
 .box.warn { color:var(--stuck); background:var(--stuck-bg); border-color:var(--stuck); }
 .nd { color:var(--fail); font-weight:700; font-size:12px; letter-spacing:.04em; }
+.planted .tag { border:1px dashed currentColor; border-radius:4px; padding:1px 6px; font-size:12px; font-weight:700; }
 .shot { display:inline-block; cursor:zoom-in; }
 .shot img { max-width:100%; max-height:360px; border:1px solid var(--line); border-radius:6px; margin-top:8px; }
 .lb { display:none; position:fixed; inset:0; z-index:50; align-items:center; justify-content:center; padding:16px; }
@@ -257,6 +258,17 @@ def _plan(items, scenarios):
     return "".join(out)
 
 
+def planted_tag(r):
+    """A planted fault's tag (suite.expect_fail): the check it must fail on."""
+    return f"expected to fail on “{r.get('expected_check')}”"
+
+
+def planted_count(n):
+    """The count at the top of a report, so no real failure hides under the tag unseen."""
+    return (f"{n} test(s) expected to fail (planted faults). Each counts as met only when it fails on its planted "
+            "check; a pass, or a failure anywhere else, turns the gate FAIL.")
+
+
 def _scenario(i, r, who="Jev"):
     jev = r.get("jev") or {}
     it = plan_mod.item(i + 1, r.get("name"), r.get("about"), r.get("checks") or [], r.get("outcome"))
@@ -265,6 +277,9 @@ def _scenario(i, r, who="Jev"):
              f'<p class="about"><strong>{title}:</strong> '
              + (_e(r["about"]) if r.get("about") else f"{NOT_DESCRIBED}: this test has no about") + "</p>",
              f'<p>{_e(r.get("reason"))}</p>']
+    if r.get("expected"):
+        parts.append(f'<p class="planted"><span class="tag">{_e(planted_tag(r))}</span> Gate: '
+                     f'{_e(r.get("graded_reason"))}</p>')
     r = {**r, "_lines": [{**line, "detail": c.get("detail")} for line, c in zip(it["checks"], r.get("checks") or [])]}
     facts = []
     if r.get("url"):
@@ -539,6 +554,7 @@ def render(data):
         f'<div class="sub">{_e(" · ".join(sub))}</div>' if sub else "",
         f'<div class="gate {_e(data["gate"])}">Gate: {_e(data["gate"])}{interrupted}</div>',
         f'<div class="counts">{counts}</div><div class="muted">{_e(summary)}</div>',
+        f'<p class="planted">{_e(planted_count(data["expected_fail"]))}</p>' if data.get("expected_fail") else "",
     ]
     out.append(_test_plan(data.get("test_plan")))
     if data.get("allow_destructive"):

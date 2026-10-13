@@ -166,6 +166,10 @@ def build_parser():
                                        "(default: every device in --devices)")
     check.add_argument("--persona", help="who Jev is, prepended to the goal")
     check.add_argument("--about", help="what this test proves and why, in plain words (shown with its result)")
+    check.add_argument("--expect-fail", nargs="?", const=True, metavar="SAYS",
+                       help="a planted fault: the test must fail on the check SAYS names (its --says text or its "
+                            "words in the plan; bare: the test's only check). Failing there counts as met; a pass, "
+                            "or a failure on another check, turns the gate FAIL. Needs --about")
     check.add_argument("--speech", help="what the fake microphone 'hears' if the page listens")
     check.add_argument("--host", action="append", default=[], help="extra host Jev may visit (repeatable)")
     check.add_argument("--max-actions", type=int, default=20)
@@ -527,6 +531,9 @@ def _finish(args, report):
         print(f"\nGate: {report['gate']}{stopped}  ({c['pass']} pass, {c['fail']} fail, {c['stuck']} stuck, "
               f"{c['harness']} harness, {c['unverified']} unverified, {c['skipped']} skipped; "
               f"{len(report['findings'])} finding(s); ${cost['usd']:.4f})", file=sys.stderr)
+        for r in report["scenarios"]:
+            if r.get("expected"):  # a planted fault: how the gate counted it
+                print(f"  expected to fail: {r['name']}: {r['graded_reason']}", file=sys.stderr)
         print(f"Report: {Path(report['run_dir']) / 'report.html'} (also report.md, report.json)", file=sys.stderr)
     if report.get("interrupted"):
         return EXIT_INTERRUPTED
@@ -582,6 +589,8 @@ def check_suite(args):
         scenario["persona"] = args.persona
     if args.about:
         scenario["about"] = args.about
+    if args.expect_fail:
+        scenario["expect_fail"] = args.expect_fail
     if args.speech:
         scenario["speech"] = args.speech
     if args.vision:

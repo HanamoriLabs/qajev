@@ -50,9 +50,24 @@ def merge_ledgers(ledgers):
     return total
 
 
+def grade_planted(suite, results):
+    """The planted faults (expect_fail): each keeps its own outcome and gains `expected`, `expected_check` (the check
+    it names, in plain words) and `graded`, the outcome the gate counts, with `graded_reason` (verdict.planted)."""
+    planted = {s.name: s.expect_fail for s in getattr(suite, "scenarios", None) or []
+               if getattr(s, "expect_fail", None)}
+    for r in results:
+        named = planted.get(r.get("name"))
+        if named:
+            r["expected"], r["expected_check"] = "fail", named["words"]
+            r["graded"], r["graded_reason"] = verdict.planted(r, named["check"])
+    return sum(1 for r in results if r.get("expected") == "fail")
+
+
 def build(suite, results, ledgers, *, browser, started_at, strict, interrupted, run_dir):
+    expected_fail = grade_planted(suite, results)
     outcomes = [r["outcome"] for r in results]
     counts = {o: outcomes.count(o) for o in verdict.OUTCOMES}
+    outcomes = [r.get("graded", r["outcome"]) for r in results]  # a planted fault counts as its grade
     findings = verdict.dedupe([f for r in results for f in r.get("findings", [])])
     gate = "INCOMPLETE" if interrupted else verdict.gate(outcomes, strict=strict)
     screens = [s for r in results for s in r.get("screens", []) if s.get("p") is not None]
@@ -83,6 +98,7 @@ def build(suite, results, ledgers, *, browser, started_at, strict, interrupted, 
         "exit_code": verdict.EXIT_CODES[gate],
         "interrupted": interrupted,
         "counts": counts,
+        **({"expected_fail": expected_fail} if expected_fail else {}),  # how many tests are planted faults
         "started_at": started_at,
         "seconds": round(time.time() - started_at, 2),
         "run_dir": str(run_dir),
@@ -239,6 +255,7 @@ def markdown(data):
         f"${cost['usd']:.4f} of ${cost['cap_usd'] or 0:.2f} cap "
         f"({cost['calls']['typesafe']} {report_html.decider(data)} decisions, {cost['calls']['text']} text calls)",
         "",
+        *([report_html.planted_count(data["expected_fail"]), ""] if data.get("expected_fail") else []),
         "Legend: **fail** = the product is wrong (page or side effect). **stuck** = Jev found no way forward "
         "(check by hand: often a UX finding). **harness** = the tool ran out of budget, went stale or errored, or "
         "Jev said DONE without trying; it says nothing about the product. **unverified** = no expectations were given.",
@@ -253,7 +270,9 @@ def markdown(data):
         jev = r.get("jev") or {}
         shot = f"[shot]({r['shot']})" if r.get("shot") else ""
         ended = _cell(_where(r.get("end_url")), 80)
-        lines.append(f"| {_cell(r['name'], 60)} | **{r['outcome']}** | {_cell(r.get('reason'))} | "
+        planted = f" ({report_html.planted_tag(r)})" if r.get("expected") else ""
+        lines.append(f"| {_cell(r['name'], 60)} | **{r['outcome']}**{_cell(planted, 120)} | "
+                     f"{_cell(r.get('graded_reason') or r.get('reason'))} | "
                      f"{jev.get('actions', '')} | {r.get('seconds', '')} | {ended} | {shot} |")
 
     product = data["findings"]
@@ -281,6 +300,9 @@ def markdown(data):
         lines.append("")
         if r.get("about"):
             lines += [f"About: {r['about']}", ""]
+        if r.get("expected"):
+            tag = report_html.planted_tag(r)
+            lines += [f"{tag[:1].upper()}{tag[1:]}. Gate: {r['graded_reason']}", ""]
         if r.get("goal"):
             lines.append(f"Goal: {_cell(r['goal'], 400)}")
             lines.append("")
