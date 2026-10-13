@@ -6,6 +6,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Changed
 
+- `qajev plan` and `qa_plan` flag a website test whose only checks say a text is absent: a blank page passes it, so it
+  proves nothing, even with a `url` or `status` check. The plan lists it as ABSENT ONLY (`absent_only` in the JSON)
+  and exits 2. It reads each test's own `expect`, not a steps suite's or a client's. A Foley step that checked
+  only that "Sign in" was absent passed on a blank page in 0.89 s and briefly looked like a product bug (the Orchestrator).
+
 - When Jev says DONE after 0 actions and a check was already false before Jev moved, the run stays harness, but the
   reason now names the check, says it was false before Jev moved, and says how to get a FAIL: run the check without a
   goal (the Orchestrator).

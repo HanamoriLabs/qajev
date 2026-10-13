@@ -202,11 +202,15 @@ words, and the tests that are NOT DESCRIBED. Use it as a lint before you run a s
 ```bash
 qajev plan shop.qajev.yaml            # a website suite (scenarios:)
 qajev plan qa/plans/boss.suite.yaml   # a game's steps suite (steps:)
-qajev plan shop.qajev.yaml --json     # {name, about, plan, not_described}
+qajev plan shop.qajev.yaml --json     # {name, about, plan, not_described, absent_only}
 ```
 
 It exits `0` when every test says what it proves and `2` while any is NOT DESCRIBED (a run of it would be
-INCOMPLETE, never PASS). `qa_plan` is the same for agents.
+INCOMPLETE, never PASS). It also exits `2` for a website test whose only checks say a text is absent (`absent:` with no
+`text`, `visible`, `js`, `looks`, `across`, `fetch` or `command`): a blank page passes it, so it proves nothing. A `url`,
+`url_regex` or `status` check does not change that: a blank page at the right address passes it too. The plan lists such
+tests as ABSENT ONLY. It reads each test's own `expect`, not the expects of a steps suite's steps or of each client.
+`qa_plan` is the same for agents.
 
 It also checks the suite's **approved test plan** (`plan:`, see [Writing tests](writing-tests.md#an-approved-test-plan)):
 the line `Plan file: ...` says whether it is approved, and the JSON has `test_plan` (`path`, `approved`, `approval`,

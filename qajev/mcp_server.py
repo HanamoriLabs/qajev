@@ -691,7 +691,8 @@ async def qa_reports(project: str | None = None, limit: int = 20) -> dict:
 @server.tool()
 async def qa_plan(suite: str) -> dict:
     """A suite's test plan without running it (free, no browser): each test's about and its checks in plain words,
-    and `not_described`, the tests that do not say what they prove (a run would be INCOMPLETE). `suite`: a suite file
+    and `not_described`, the tests that do not say what they prove (a run would be INCOMPLETE), and `absent_only`, the
+    tests whose only checks say a text is absent (a blank page passes them). `suite`: a suite file
     (scenarios:) or a game's steps suite (steps:). Lint a suite with it before running or sending a PR.
     `test_plan`: the approved test plan file the suite names (`plan:`): its path, whether it is approved, the
     approval line, the sha256 of the plan text above that line, and the problem when it is not approved."""
