@@ -15,7 +15,7 @@ the model behaving well: the rules are enforced in the page and in QAJev itself.
   scenarios: only on that host, checked again where the browser is when it types, only into a password field, with
   the value redacted from everything it writes. A password from the Keychain, 1Password or an environment variable
   is refused, on every host ([Signed-in areas](writing-tests.md#signed-in-areas)). So is a URL that holds a user name
-  or password (`https://alice:s3cret@shop.example/`), in a check, a smoke, a suite or a project, before Chrome starts
+  or password (`https://alice:s3cret@shop.example/`, with or without the scheme), in a check, a smoke, a suite or a project, before Chrome starts
   and before anything is written or sent to QAJev Cloud: the URL would reach the report files.
 - **Change a production site.** Production is read-only. Destructive is never. Only a **local dev host** may
   change: `localhost`, `127.0.0.1`, `[::1]`, `*.localhost` and `*.test` (names that never reach the internet).

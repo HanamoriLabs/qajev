@@ -7,9 +7,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 ### Changed
 
 - `qajev check`, `smoke`, `run` (suites and projects) and the MCP tools refuse a URL that holds a user name or password
-  (`https://alice:s3cret@shop.example/`), before Chrome starts and before a job record or a cloud run keeps it. The
-  message says to sign in once with `qajev browser login --url URL` and run with that profile. Before, the password
-  reached report.json and report.html, which a cloud run uploads, and a smoke's report folder name (redteam).
+  (`https://alice:s3cret@shop.example/`, with or without the scheme), anywhere in a run's arguments or suite. They
+  refuse it before Chrome starts and before a job record or a cloud run keeps it. The message says to sign in once
+  with `qajev browser login --url URL` and run with that profile. Before, the password reached report.json and
+  report.html, which a cloud run uploads, and a smoke's report folder name (redteam).
 - `qajev check` and `qa_check` name their test by the site and path, plus the goal when there is one:
   "qajev.com /pricing · Find the Pro price", not "check". QAJev Cloud's Needs a look counts failures per project and
   test, so a test named "check" merged every check of a site into one problem (the Orchestrator). The phone copy keeps
