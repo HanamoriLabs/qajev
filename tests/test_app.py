@@ -14,9 +14,11 @@ from qajev.config import HOME
 from qajev.native import NativeError
 
 # A stand-in app: it speaks the Godot bridge's protocol on QAJEV_BRIDGE_PORT and reports, in its state, the
-# environment it was started with, how many times it has started in its home folder, and the last click.
+# environment it was started with, how many times it has started in its home folder, and the last click. With
+# QAJEV_BRIDGE_KEY it reads the key line first and closes on a wrong one, as Twinbox's bridge does; it reports the
+# files in its home, with their modes, so a test sees what QAJev wrote there.
 FAKE = r'''
-import json, os, socket, sys
+import hashlib, json, os, socket, stat, sys
 home = os.environ.get("TWINBOX_DESKTOP_HOME")
 if os.environ.get("FAKE_EXIT"):
     print("cannot start: no display", flush=True)
@@ -35,11 +37,23 @@ srv.bind(("127.0.0.1", int(os.environ["QAJEV_BRIDGE_PORT"])))
 srv.listen(1)
 conn, _ = srv.accept()
 f = conn.makefile("rw")
+key = os.environ.get("QAJEV_BRIDGE_KEY")
+if key is not None and f.readline().rstrip("\n") != key:
+    conn.close()
+    sys.exit(5)
 state = {"screen": "home", "home": home, "HOME": os.environ.get("HOME"), "api": os.environ.get("TWINBOX_API"),
          "launches": launches, "argv": sys.argv[1:], "cwd": os.getcwd(), "clicked": None,
-         "env_keys": sorted(os.environ)}
+         "env_keys": sorted(os.environ), "key": key and {"length": len(key), "hex": all(c in "0123456789abcdef"
+                                                                                          for c in key),
+                                                          "sha": hashlib.sha256(key.encode()).hexdigest()}}
 for line in f:
     req = json.loads(line)
+    if home:
+        paths = [os.path.join(d, n) for d, _, names in os.walk(home) for n in names if n != "launches"]
+        state["home_files"] = {os.path.relpath(p, home): [oct(stat.S_IMODE(os.stat(p).st_mode)), open(p).read()]
+                               for p in paths}
+    if req["op"] == "observe" and os.environ.get("FAKE_LEAK"):  # an app that logs what it holds
+        print("ERROR leaked " + " ".join(c for _, c in state.get("home_files", {}).values()).strip(), flush=True)
     if req["op"] == "observe":
         out = {"ok": True, "screen": state["screen"], "texts": ["Not signed in"],
                "actions": [{"id": "new", "label": "New box", "kind": "click", "x": 40, "y": 20}], "state": state}
@@ -216,3 +230,253 @@ def test_a_wrong_app_key_is_refused_at_load(tmp_path, monkeypatch, project, caps
     code, out = _play(tmp_path, monkeypatch, project, APP_SUITE.replace("  start_wait: 20\n", "  start_wait: 0\n"),
                       capsys)
     assert code == cli.EXIT_CONFIG and "app.start_wait" in out["error"]
+
+
+# ---- bridge_key: a new key each launch, given only to the app (Twinbox's bridge, 14 Oct) ----
+
+def test_with_bridge_key_qajev_gives_the_app_a_new_key_each_launch_and_sends_it_first(project):
+    with AppProcess(project, spec(bridge_key=True)) as app:
+        first = app.observe()["state"]["key"]  # the stand-in closes its bridge on a wrong key: this call proves it
+        assert first["length"] == 64 and first["hex"]
+        assert "QAJEV_BRIDGE_KEY" not in json.dumps(app.record) and app._key not in json.dumps(app.record)
+        app.relaunch()
+        assert app.observe()["state"]["key"]["sha"] != first["sha"]  # new for each launch
+
+
+def test_without_bridge_key_the_app_gets_no_key():
+    assert app_spec({"command": ["x"]})["bridge_key"] is False
+
+
+def test_the_bridge_key_is_redacted_from_what_qajev_writes(project):
+    from qajev.config import redact
+
+    with AppProcess(project, spec(bridge_key=True)) as app:
+        assert redact(f"the app printed {app._key}") == "the app printed [redacted]"
+
+
+# ---- app.files: a seeded TEST account's token, handed to the app under test (the Orchestrator, 14 Oct) ----
+
+TOKEN = "tb_test_token_7f3a9c51"
+TOKEN_PATH = ".twinbox/token@twinbox-staging.example"
+
+
+def fixture(tmp_path, **data):
+    data = {"test_account": True, "account": "qa-journey@twinbox.invalid", "token": TOKEN, **data}
+    path = tmp_path / "staging-test.json"
+    path.write_text(json.dumps(data))
+    return path
+
+
+def files_spec(path, **extra):
+    return spec(files={TOKEN_PATH: f"seed:{path}#token"}, test_domains=["twinbox.invalid"], **extra)
+
+
+def test_app_files_writes_the_token_0600_inside_the_throwaway_home_and_it_goes_with_the_home(project, tmp_path):
+    with AppProcess(project, files_spec(fixture(tmp_path))) as app:
+        files = app.observe()["state"]["home_files"]
+        assert files[TOKEN_PATH] == ["0o600", TOKEN + "\n"]
+        assert oct(os.stat(Path(app.user_dir) / "app" / ".twinbox").st_mode & 0o777) == "0o700"
+        assert app.file_notes == [f"{TOKEN_PATH}: test token from staging-test.json"]
+        user_dir = app.user_dir
+        app.relaunch()  # a relaunch keeps the home as the app left it, and writes nothing again
+        assert app.observe()["state"]["home_files"][TOKEN_PATH] == ["0o600", TOKEN + "\n"]
+    assert not Path(user_dir).exists()
+
+
+@pytest.mark.parametrize("files, says", [
+    ({"/etc/token": "seed:f.json#token"}, "inside the app's home"),
+    ({"../token": "seed:f.json#token"}, "inside the app's home"),
+    ({".twinbox/../../token": "seed:f.json#token"}, "inside the app's home"),
+    ({"./token": "seed:f.json#token"}, "inside the app's home"),
+    ({"token": "tb_live_value"}, "only from a test fixture"),
+    ({"token": "env:TWINBOX_TOKEN"}, "only from a test fixture"),
+    ({"token": "keychain:twinbox/me"}, "only from a test fixture"),
+    ({"token": "seed:f.json"}, "seed:FILE#KEY"),
+])
+def test_a_wrong_app_files_entry_is_refused(files, says):
+    with pytest.raises(NativeError, match=says):
+        app_spec({"command": ["x"], "home_env": "H", "files": files, "test_domains": ["twinbox.invalid"]})
+
+
+@pytest.mark.parametrize("value, says", [
+    ({"command": ["x"], "files": {"t": "seed:f.json#token"}, "test_domains": ["twinbox.invalid"]}, "needs home_env"),
+    ({"command": ["x"], "home_env": "H", "files": {"t": "seed:f.json#token"}}, "app.test_domains"),
+    ({"command": ["x"], "home_env": "H", "files": {"t": "seed:f.json#token"}, "test_domains": ["*.invalid"]},
+     "app.test_domains"),
+    ({"command": ["x"], "test_domains": ["twinbox.invalid"]}, "only with app.files"),
+    ({"command": ["x"], "bridge_key": "yes"}, "app.bridge_key"),
+])
+def test_app_files_needs_a_home_and_test_domains_and_bridge_key_is_true_or_false(value, says):
+    with pytest.raises(NativeError, match=says):
+        app_spec(value)
+
+
+@pytest.mark.parametrize("data, says", [
+    ({"test_account": False}, "not a test-user fixture"),
+    ({"account": "jose@hanamorilabs.com"}, "must name its test account"),
+    ({"account": "qa@twinbox.invalid.evil.example"}, "must name its test account"),
+    ({"account": None}, "must name its test account"),
+    ({"token": 42}, "no text value"),
+])
+def test_a_fixture_that_is_not_a_named_test_account_in_a_test_domain_is_refused(project, tmp_path, data, says):
+    from qajev.app import app_files
+
+    with pytest.raises(NativeError, match=says):
+        app_files(app_spec(files_spec(fixture(tmp_path, **data))))
+
+
+def test_a_symlink_or_a_file_already_there_is_never_written_through(tmp_path):
+    from qajev.app import write_private
+
+    home, elsewhere = tmp_path / "home", tmp_path / "elsewhere"
+    home.mkdir()
+    elsewhere.mkdir()
+    (home / ".twinbox").symlink_to(elsewhere)
+    with pytest.raises(NativeError, match="symbolic link"):
+        write_private(home, TOKEN_PATH, TOKEN)
+    assert list(elsewhere.iterdir()) == []
+    (home / "token").symlink_to(elsewhere / "stolen")
+    with pytest.raises(NativeError, match="cannot write it"):
+        write_private(home, "token", TOKEN)
+    assert not (elsewhere / "stolen").exists()
+
+
+def test_the_home_and_its_token_go_on_a_crash_a_failed_start_and_a_stop(project, tmp_path):
+    seed = fixture(tmp_path)
+    with pytest.raises(RuntimeError), AppProcess(project, files_spec(seed)) as app:  # a crash in the run
+        user_dir = app.user_dir
+        raise RuntimeError("the run broke")
+    assert not Path(user_dir).exists()
+    with pytest.raises(KeyboardInterrupt), AppProcess(project, files_spec(seed)) as app:  # qa_stop / SIGTERM
+        user_dir = app.user_dir
+        raise KeyboardInterrupt
+    assert not Path(user_dir).exists()
+    app = AppProcess(project, files_spec(seed, env={"FAKE_EXIT": "1"}))
+    with pytest.raises(NativeError, match="exited with 3"), app:  # the app dies before its bridge comes up
+        pass
+    assert app.user_dir and not Path(app.user_dir).exists()
+
+
+def test_a_home_left_by_a_killed_run_is_reaped_and_a_live_runs_home_is_not(tmp_path):
+    import subprocess
+
+    from qajev import native
+
+    (HOME / "tmp").mkdir(parents=True, exist_ok=True)
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    dead = HOME / "tmp" / f"qajev-app-{gone.pid}-x1"
+    live = HOME / "tmp" / f"qajev-app-{os.getppid()}-x2"
+    for folder in (dead, live):
+        (folder / "app" / ".twinbox").mkdir(parents=True)
+        (folder / "app" / TOKEN_PATH).write_text(TOKEN)
+    try:
+        assert f"app home {dead.name}" in native.reap()
+        assert not dead.exists() and live.exists()
+    finally:
+        import shutil
+
+        shutil.rmtree(live, ignore_errors=True)
+        shutil.rmtree(dead, ignore_errors=True)
+
+
+def test_a_web_suite_cannot_carry_app_files():
+    """Guard 1: app.files exists only on an app launch; a suite of pages refuses an app: block."""
+    from qajev.suite import SuiteError, parse
+
+    with pytest.raises(SuiteError, match=r"unknown key\(s\) \['app'\]"):
+        parse({"name": "x", "base_url": "https://example.com", "app": {"files": {"t": "seed:f.json#token"}},
+               "scenarios": [{"name": "a", "about": "b", "expect": {"text": ["c"]}}]})
+
+
+def test_play_events_and_logs_never_carry_a_token(tmp_path, monkeypatch):
+    from qajev.config import remember_secret
+
+    remember_secret(TOKEN)
+    monkeypatch.setattr(cli, "_job_dir", tmp_path)
+    emit = cli._printer(cli.build_parser().parse_args(["play", ".", "--quiet"]))
+    emit({"event": "step", "doing": f"the app shows {TOKEN}"})
+    log = (tmp_path / "events.jsonl").read_text()
+    assert TOKEN not in log and "[redacted]" in log
+
+
+PLAN = """# Twinbox journey, local
+
+The app gets the staging test account's token through app.files, from the test fixture.
+"""
+
+
+def _approved(tmp_path, text):
+    from qajev import planfile
+
+    (tmp_path / "plan.md").write_text(f"{text}\nApproved by the Orchestrator 14 Oct 2026 03:00 "
+                                      f"sha256:{planfile.digest(text)}\n")
+
+
+def _files_suite(tmp_path, seed, plan=True):
+    return APP_SUITE.replace("  start_wait: 20\n", f"  start_wait: 20\n  test_domains: [twinbox.invalid]\n  files:\n"
+                                                    f"    {TOKEN_PATH}: seed:{seed.name}#token\n").replace(
+        "steps:\n", "plan: plan.md\nsteps:\n" if plan else "steps:\n")
+
+
+def test_play_hands_the_token_to_the_app_and_the_report_shows_only_its_file_and_fixture(
+        tmp_path, monkeypatch, project, capsys):
+    seed = fixture(tmp_path)
+    _approved(tmp_path, PLAN)
+    suite = _files_suite(tmp_path, seed).replace("state: {api", f"state: {{home_files: {{'{TOKEN_PATH}': "
+                                                               f"['0o600', \"{TOKEN}\\n\"]}}, api")
+    code, out = _play(tmp_path, monkeypatch, project, suite, capsys)
+    assert code == 0 and out["gate"] == "PASS", out
+    assert out["browser"]["app_files"] == [f"{TOKEN_PATH}: test token from staging-test.json"]
+    assert TOKEN not in json.dumps(out)
+    report = next((tmp_path / "runs").glob("*/report.json")).read_text()
+    assert TOKEN not in report and TOKEN not in next((tmp_path / "runs").glob("*/report.html")).read_text()
+
+
+@pytest.mark.parametrize("plan, says", [
+    (None, "app.files needs an approved test plan"),
+    ("unapproved", "app.files needs an approved test plan"),
+    ("silent", "it does not name app.files"),
+])
+def test_play_refuses_app_files_unless_the_approved_plan_names_it(tmp_path, monkeypatch, project, capsys, plan, says):
+    seed = fixture(tmp_path)
+    if plan == "unapproved":
+        (tmp_path / "plan.md").write_text(PLAN)
+    elif plan == "silent":
+        _approved(tmp_path, "# Twinbox journey, local\n\nThe app shows Home.\n")
+    code, out = _play(tmp_path, monkeypatch, project, _files_suite(tmp_path, seed, plan=plan is not None), capsys)
+    assert code == cli.EXIT_CONFIG and says in out["error"]
+
+
+def test_play_refuses_a_fixture_outside_the_test_domains_at_load(tmp_path, monkeypatch, project, capsys):
+    seed = fixture(tmp_path, account="jose@hanamorilabs.com")
+    _approved(tmp_path, PLAN)
+    code, out = _play(tmp_path, monkeypatch, project, _files_suite(tmp_path, seed), capsys)
+    assert code == cli.EXIT_CONFIG and "must name its test account" in out["error"]
+    assert not list((tmp_path / "runs").glob("*")) if (tmp_path / "runs").exists() else True
+
+
+def test_a_token_the_app_leaks_into_its_log_is_redacted_from_the_report(tmp_path, monkeypatch, project, capsys):
+    leaked = "tb_test_token_only_this_test_d41c"  # remembered by no other test, so only app.files can redact it
+    seed = fixture(tmp_path, token=leaked)
+    _approved(tmp_path, PLAN)
+    suite = _files_suite(tmp_path, seed).replace('TWINBOX_API: "http://127.0.0.1:8790"}',
+                                                 'TWINBOX_API: "http://127.0.0.1:8790", FAKE_LEAK: "1"}')
+    code, out = _play(tmp_path, monkeypatch, project, suite, capsys)
+    report = next((tmp_path / "runs").glob("*/report.json")).read_text()
+    assert "ERROR leaked [redacted]" in report, out  # the app's error line is in the report, its token is not
+    assert leaked not in report and leaked not in json.dumps(out)
+
+
+def test_app_files_itself_refuses_a_fixture_that_is_not_a_test_account(project, tmp_path, monkeypatch):
+    """Guard 2 alone: with the vault's own test_account check stubbed out, app.files still refuses the fixture."""
+    from qajev import vault
+    from qajev.app import app_files
+
+    def lenient(ref):  # a vault that would hand over any fixture's value
+        _, file, key = vault.parse(ref)
+        return vault.seed_value(json.loads(Path(file).read_text()), key)
+
+    monkeypatch.setattr(vault, "resolve", lenient)
+    with pytest.raises(NativeError, match="not a test-user fixture"):
+        app_files(app_spec(files_spec(fixture(tmp_path, test_account=False))))

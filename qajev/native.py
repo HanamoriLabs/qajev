@@ -335,8 +335,9 @@ def reap():
             path.unlink(missing_ok=True)
             if not (record.get("profile") or {}).get("kept"):  # a kept test profile outlives its run (game_profile)
                 shutil.rmtree(record.get("user_dir") or "/nonexistent", ignore_errors=True)
-    from . import mobile  # clones whose run died before it could write a record
+    from . import app, mobile  # clones whose run died before it could write a record; app homes, with their files
 
+    reaped += app.reap_homes()
     return reaped + [r for r in mobile.reap_clones() if r.split(" (")[0] not in {x.split(" (")[0] for x in reaped}]
 
 

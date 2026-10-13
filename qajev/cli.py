@@ -441,12 +441,15 @@ _rerun = None  # {"of": job id, "failed": bool} while `qajev rerun` starts its r
 
 
 def _printer(args):
+    from .config import redact_tree
+
     screen = _screen_printer(args)
-    if _job_dir is None:
-        return screen
+    if _job_dir is None:  # a value read from a vault or a seed (a test token) never reaches the screen or the log
+        return screen and (lambda event: screen(redact_tree(event)))
     path = _job_dir / "events.jsonl"
 
     def emit(event):
+        event = redact_tree(event)
         try:
             with open(path, "a") as handle:
                 handle.write(json.dumps(event, default=str) + "\n")
@@ -1019,11 +1022,15 @@ def cmd_play(args):
             except native.NativeError as e:
                 return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
         if spec.get("app") is not None:  # a native app with a QAJev bridge, started from its own command
-            from .app import app_spec
+            from . import vault
+            from .app import app_files, app_spec
 
             try:
-                app_spec(spec["app"])
-            except native.NativeError as e:
+                if isinstance(spec["app"], dict) and isinstance(spec["app"].get("files"), dict):
+                    spec["app"]["files"] = {k: vault.anchor(v, args.suite.parent) if isinstance(v, str) else v
+                                            for k, v in spec["app"]["files"].items()}
+                app_files(app_spec(spec["app"]))  # each fixture checked now, before the queue and the app
+            except (native.NativeError, vault.VaultError) as e:
                 return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
             godot_only = [k for k in ("adapter", "seed", "headless", "game_profile") if spec.get(k)]
             if godot_only or args.adapter or args.headless:
@@ -1055,6 +1062,14 @@ def cmd_play(args):
     from . import vision
 
     app = spec.get("app") if args.suite else None
+    if app is not None and app.get("files"):  # a test token handed to the app: only under a plan that says so
+        from . import planfile
+
+        text = planfile.read(test_plan["path"])[0] if test_plan.get("approved") else None
+        if not text or "app.files" not in text:
+            why = "it does not name app.files" if text else test_plan.get("problem")
+            return _fail(args, f"{args.suite}: app.files needs an approved test plan that names app.files ({why})",
+                         EXIT_CONFIG)
     is_electron = electron.is_electron(args.project) and app is None  # a suite's app: wins over the .app guess
     # Vision is on by default for a game (José, 3 Oct): with Clef and a window to look at; else off, quietly.
     window = not headless or mobile.is_mobile(args.project) or is_electron or app is not None
@@ -1119,6 +1134,9 @@ def cmd_play(args):
                            "project": str(game.project), "adapter": game.adapter.stem if game.adapter else None,
                            "headless": headless, "env": game_env, "args": game_args,
                            "managed": True, "pid": game.proc.pid if game.proc else None, "vision": sees}
+                notes = getattr(game, "file_notes", None)
+                if notes:  # the file names and their fixtures, never the values
+                    browser["app_files"] = notes
                 if getattr(game, "record", None) and game.record.get("profile"):  # the save folder, kept or not
                     browser["game_profile"] = game.record["profile"]
                 emit({"event": "run", "suite": f"play {name}", "run_dir": str(run_dir), "browser": browser,
