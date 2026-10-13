@@ -439,3 +439,17 @@ def test_a_js_check_that_throws_did_not_run_and_says_nothing_about_the_page():
         assert V.classify("checked", ran, has_checks=True)[0] == "fail", js
     both = V.page_checks({"js": "x", "text": ["Score"]}, {"url": "http://x/", "js": thrown, "text": [False]})
     assert V.classify("checked", both, has_checks=True)[0] == "fail"  # a real miss beside a broken check
+
+
+def test_a_test_keeps_every_control_the_guard_hid_on_any_page_once():
+    # 13 Oct: the report must list each hidden control with its page; before, only the last page's were kept.
+    save = {"label": "Save", "why": "read-only", "match": "save", "page": "http://127.0.0.1:8/runners.html"}
+    delete = {"label": "Delete", "why": "destructive", "match": "delete", "page": "http://127.0.0.1:8/runners.html"}
+    save_there = {**save, "page": "http://127.0.0.1:8/settings.html"}
+    kept = V.keep_hidden([], [save, delete])
+    kept = V.keep_hidden(kept, [save])  # the same page again: nothing new
+    kept = V.keep_hidden(kept, [save_there])  # the next page: its own line, the first page's stay
+    assert kept == [save, delete, save_there]
+    assert V.hidden_list(kept)[0] == "'Save' (read-only: save) on http://127.0.0.1:8/runners.html"
+    many = V.keep_hidden([], [{**save, "label": f"Save {i}"} for i in range(V.HIDDEN_KEEP + 5)])
+    assert len(many) == V.HIDDEN_KEEP

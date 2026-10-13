@@ -909,11 +909,21 @@ class Session:
         if parts.netloc not in self.hosts:
             raise LeftSite(f"now on {parts.netloc}, allowed: {sorted(self.hosts)}")
 
-    def screenshot(self, path):
+    def screenshot(self, path, marked=True):
+        """The viewport as a JPEG at path. marked: where the read-only guard hid a control, the picture shows a dashed
+        box labelled "hidden by guard" (guard.js mark), so a missing button never reads as the page's bug (13 Oct)."""
+        mark = "window.__qajev && window.__qajev.mark ? window.__qajev.mark(%s) : 0"
         try:
+            if marked:
+                with contextlib.suppress(RuntimeError, KeyError, TimeoutError):
+                    self.evaluate(mark % "true", timeout_ms=2000)
             data = self.call("Page.captureScreenshot", format="jpeg", quality=70)["data"]
         except (RuntimeError, KeyError, TimeoutError):
             return None
+        finally:
+            if marked:
+                with contextlib.suppress(RuntimeError, KeyError, TimeoutError):
+                    self.evaluate(mark % "false", timeout_ms=2000)
         import base64
 
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1161,7 +1171,7 @@ class Session:
         self.react_frames = getattr(self, "react_frames", 0) + 1
         where = getattr(self, "shot_dir", None)
         name = f"{getattr(self, 'shot_prefix', 'react')}-{self.react_frames:03d}-{label}.jpg"
-        path = self.screenshot(where / name) if where else None
+        path = self.screenshot(where / name, marked=False) if where else None  # timed: no marking pass
         return {"shot": label, "at_s": round(at_s, 3), "took_s": round(time.monotonic() - start - at_s, 3),
                 "path": str(path) if path else None}
 

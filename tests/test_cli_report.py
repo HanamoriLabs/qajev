@@ -374,7 +374,8 @@ def test_the_guards_own_hydration_warnings_are_a_note_in_both_reports(tmp_path):
               "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
     result = {"name": "login", "url": "http://127.0.0.1:3100/login", "goal": None, "mode": "readonly",
               "outcome": "pass", "reason": "ok", "checks": [], "findings": [], "screens": [], "guard_hydration": 2,
-              "guard_hidden": 1, "guard_hidden_controls": [{"label": "Shop <b>", "why": "danger", "match": "buy"}],
+              "guard_hidden": 1, "guard_hidden_controls": [
+                  {"label": "Shop <b>", "why": "danger", "match": "buy", "page": "http://127.0.0.1:3100/login"}],
               "guard_hydration_details": [
                   "A tree hydrated but some attributes ... <input - data-qajev-guard=\"field\""],
               "seconds": 1.0}
@@ -385,8 +386,10 @@ def test_the_guards_own_hydration_warnings_are_a_note_in_both_reports(tmp_path):
             "page's)")
     md, html = (tmp_path / "report.md").read_text(), (tmp_path / "report.html").read_text()
     assert note in md and note in html
-    assert "- Guard hid or disabled 1 control(s) Jev must not use: 'Shop <b>' (danger: buy)" in md
-    assert "Guard hid or disabled 1 control(s) Jev must not use: &#x27;Shop &lt;b&gt;&#x27; (danger: buy)" in html
+    # each hidden control: its name, the rule that hid it and the page, under a note that pictures mark it (13 Oct)
+    assert ("- Guard hid or disabled 1 control(s) Jev must not use. A picture marks each hidden one with a dashed box, "
+            '"hidden by guard":\n  - \'Shop <b>\' (danger: buy) on http://127.0.0.1:3100/login') in md
+    assert ("<li>&#x27;Shop &lt;b&gt;&#x27; (danger: buy) on http://127.0.0.1:3100/login</li>") in html
     # re-classed, never hidden: React's own text under the note (escaped: it is the page's text)
     assert '  - A tree hydrated but some attributes ... <input - data-qajev-guard="field"' in md
     assert "A tree hydrated but some attributes ... &lt;input - data-qajev-guard=&quot;field&quot;" in html

@@ -325,7 +325,9 @@ remove, refund, cancel, archive, reset...) are hidden on every host; `allow` nev
 `allow_destructive: true` does, and only when every host is a local dev host. It reads everything a person could
 read on a control: its text, `aria-label`, `title` (the tooltip) and an input's value. A stuck or harness result
 names what it held back ("guard hid: 'Shop Show clothes and gear you can buy' (danger: buy)"), and so does the
-report. A suite can tune it:
+report: each hidden control with the rule that hid it and its page (`guard_hidden_controls` in the JSON). In the
+report's pictures a dashed box labelled "hidden by guard" marks where each one was, so a missing button never reads
+as the page's bug. A suite can tune it:
 
 ```yaml
 hosts: [accounts.example.com]      # other sites Jev may visit; anything else stops the scenario
