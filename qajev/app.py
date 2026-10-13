@@ -32,6 +32,25 @@ APP_KEYS = {"command", "env", "home_env", "start_wait"}
 APP_ERROR = re.compile(r"(^|\s)(ERROR|FATAL)(\s|:|$)|\bpanicked at\b")
 NOTHING = re.compile(r"(?!)")
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# What the app gets from QAJev's own environment: these names only, never the rest. QAJev's environment holds the
+# agent's keys (AWS, Stripe, model keys, an app's own token): none of it may reach the app (redteam on #138, 13 Oct).
+PASSED = {"PATH", "LANG", "TERM", "TMPDIR", "USER", "LOGNAME", "SHELL",
+          "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XAUTHORITY"}  # the last 4: a Linux app's display
+PASSED_PREFIX = ("LC_",)
+# Names only QAJev sets: the throwaway home and the bridge. A suite cannot point the app back at a real folder.
+RESERVED = re.compile(r"HOME|XDG_[A-Z_]+_HOME|QAJEV_[A-Z0-9_]*")
+
+
+def passed_env(environ):
+    """The part of `environ` an app may see: the names in PASSED, and LC_*."""
+    return {k: v for k, v in environ.items() if k in PASSED or k.startswith(PASSED_PREFIX)}
+
+
+def reserved(env, where):
+    taken = sorted(k for k in env if RESERVED.fullmatch(str(k)))
+    if taken:
+        raise NativeError(f"{where}: QAJev sets {', '.join(taken)} itself (the throwaway home and the bridge); "
+                          "do not set it")
 
 
 def app_spec(value):
@@ -49,6 +68,7 @@ def app_spec(value):
     env = value.get("env") or {}
     if not isinstance(env, dict) or not all(ENV_NAME.fullmatch(str(k)) for k in env):
         raise NativeError("app.env: a mapping of environment variable names to values")
+    reserved(env, "app.env")
     home_env = value.get("home_env")
     if home_env is not None and not ENV_NAME.fullmatch(str(home_env)):
         raise NativeError(f"app.home_env: {home_env!r} is not an environment variable name")
@@ -84,6 +104,7 @@ class AppProcess(GodotGame):
         self.adapter = self.seed = None
         self.hide, self.allow = list(hide or []), list(allow or [])
         self.headless, self.size, self.start_wait = False, size, self.spec["start_wait"]
+        reserved(env or {}, "--game-env")
         self.env = {**self.spec["env"], **(env or {})}
         self.proc = self.sock = self.file = None
         self.errors, self.log = [], []
@@ -97,7 +118,10 @@ class AppProcess(GodotGame):
         # first launch saved is what the next one reads (a setting that must survive a restart).
         if self.user_dir is None:
             self.user_dir = tempfile.mkdtemp(prefix=f"qajev-app-{os.getpid()}-", dir=HOME / "tmp")
-        env = {**os.environ, **self.env, **save_isolation(self.user_dir), "QAJEV_BRIDGE_PORT": str(self.port),
+        # The app's environment: the allowlist from QAJev's own, the suite's env, then the throwaway home and the
+        # bridge last, so nothing before them can move them.
+        env = {**passed_env(os.environ), **self.env, **save_isolation(self.user_dir),
+               "QAJEV_BRIDGE_PORT": str(self.port),
                "QAJEV_WINDOW": f"{self.size[0]}x{self.size[1]}"}
         if self.spec["home_env"]:
             app_home = Path(self.user_dir) / "app"

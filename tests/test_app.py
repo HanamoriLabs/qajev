@@ -36,7 +36,8 @@ srv.listen(1)
 conn, _ = srv.accept()
 f = conn.makefile("rw")
 state = {"screen": "home", "home": home, "HOME": os.environ.get("HOME"), "api": os.environ.get("TWINBOX_API"),
-         "launches": launches, "argv": sys.argv[1:], "cwd": os.getcwd(), "clicked": None}
+         "launches": launches, "argv": sys.argv[1:], "cwd": os.getcwd(), "clicked": None,
+         "env_keys": sorted(os.environ)}
 for line in f:
     req = json.loads(line)
     if req["op"] == "observe":
@@ -90,6 +91,36 @@ def test_the_app_starts_from_its_command_in_a_throwaway_home_and_its_bridge_driv
         user_dir = app.user_dir
     assert not Path(user_dir).exists()  # removed when the run ends
     assert app.proc.returncode == 0  # it was asked to quit and did
+
+
+def test_no_secret_in_qajevs_environment_reaches_the_app_only_the_allowlist_does(project, monkeypatch):
+    for name in ("TWINBOX_TOKEN", "AWS_SECRET_ACCESS_KEY", "STRIPE_SECRET_KEY", "OPENROUTER_API_KEY", "GH_TOKEN"):
+        monkeypatch.setenv(name, "secret-value")
+    monkeypatch.setenv("LC_ALL", "en_US.UTF-8")
+    with AppProcess(project, spec()) as app:
+        keys = set(app.observe()["state"]["env_keys"])
+    assert not keys & {"TWINBOX_TOKEN", "AWS_SECRET_ACCESS_KEY", "STRIPE_SECRET_KEY", "OPENROUTER_API_KEY", "GH_TOKEN"}
+    assert {"PATH", "LC_ALL", "HOME", "TWINBOX_API", "TWINBOX_DESKTOP_HOME", "QAJEV_BRIDGE_PORT"} <= keys
+    allowed = {"PATH", "LANG", "TERM", "TMPDIR", "USER", "LOGNAME", "SHELL", "DISPLAY", "WAYLAND_DISPLAY",
+               "XDG_RUNTIME_DIR", "XAUTHORITY", "TWINBOX_API", "TWINBOX_DESKTOP_HOME", "HOME", "XDG_DATA_HOME",
+               "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "QAJEV_USER_DIR", "QAJEV_BRIDGE_PORT", "QAJEV_WINDOW",
+               "__CF_USER_TEXT_ENCODING", "__CFBundleIdentifier", "PWD", "SHLVL", "_"}  # last 5: macOS or a shell
+    assert {k for k in keys if not k.startswith("LC_")} <= allowed, keys - allowed
+
+
+@pytest.mark.parametrize("name", ["HOME", "XDG_CONFIG_HOME", "QAJEV_BRIDGE_PORT", "QAJEV_USER_DIR"])
+def test_app_env_may_not_set_the_throwaway_home_or_the_bridge(project, name):
+    with pytest.raises(NativeError, match=f"QAJev sets {name} itself"):
+        app_spec({"command": ["x"], "env": {name: "/Users/someone"}})
+    with pytest.raises(NativeError, match=f"--game-env: QAJev sets {name} itself"):
+        AppProcess(project, spec(), env={name: "/Users/someone"})
+
+
+def test_the_throwaway_home_wins_over_any_env_that_reached_the_app(project):
+    app = AppProcess(project, spec())
+    app.env["HOME"] = "/Users/someone"  # past the refusals, as a later change could let through
+    with app:
+        assert app.observe()["state"]["HOME"] != "/Users/someone"
 
 
 def test_a_relaunch_keeps_the_apps_home_so_a_saved_setting_survives_a_restart(project):
