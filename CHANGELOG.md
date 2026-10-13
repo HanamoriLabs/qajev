@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.30: 14 Oct 2026
+
 ### Added
 
 - A page the app opened, checked in QAJev's Chrome: a play suite's `open_url:` step reads the URL from the app's state
