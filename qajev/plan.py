@@ -116,11 +116,10 @@ def from_steps(steps):
             from .pad import describe
 
             planned.insert(0, {"check": "the pad input was sent", "says": describe(step["pad"])})
-        if isinstance(step.get("open_url"), dict):  # the URL first, then the page's own checks (named in its run)
-            spec = step["open_url"]
-            planned.insert(0, {"check": f"state {spec.get('from')} matches {spec.get('url_regex')}",
-                               "says": spec.get("says") or f"the app opened a URL matching {spec.get('url_regex')}"})
-            planned.append({"check": "page: the checks in open_url.expect, in QAJev's Chrome"})
+        if isinstance(step.get("open_url"), dict):  # the URL first, then the page's own checks, as its run names them
+            from .openurl import planned_checks as url_checks
+
+            planned[:0] = url_checks(step["open_url"], step.get("name") or f"step {i}", step.get("about"))
         if isinstance(step.get("keys"), dict):  # the app in front, the clipboard, the keys; then the expect checks
             from .mackeys import planned_checks
 

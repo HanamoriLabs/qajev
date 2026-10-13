@@ -55,6 +55,22 @@ def _scenario(spec, name, about, url):
             "scenarios": [{"name": name, "about": about, "url": url, "expect": spec["expect"]}]}
 
 
+def planned_checks(spec, name, about=None):
+    """The checks an open_url step makes, named as the step and its page run name them (for `qajev plan`)."""
+    from .plan import from_suite
+    from .suite import SuiteError, parse
+
+    want = spec.get("url_regex")
+    first = {"check": f"state {spec.get('from')} matches {want}",
+             "says": spec.get("says") or f"the app opened a URL matching {want}"}
+    try:
+        page = from_suite(parse(_scenario(spec, name, about or name, PROBE_URL)).scenarios)[0]["checks"]
+    except (SuiteError, KeyError, IndexError, TypeError):
+        return [first]
+    return [first, *({"check": f"page: {c['check']}", **({"says": c["words"]} if c.get("words") else {})}
+                     for c in page)]
+
+
 def check_open_url(steps):
     """Each open_url step, checked when the suite loads: NativeError names the step and what is wrong."""
     from .suite import SuiteError, parse

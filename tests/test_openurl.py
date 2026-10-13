@@ -224,3 +224,13 @@ def test_a_url_that_is_not_https_holds_a_password_or_is_another_host_opens_nothi
                       run=inner)
     assert r["outcome"] == "fail" and inner.calls == [] and "nothing was opened" in r["reason"]
     assert says in r["checks"][0]["detail"]
+
+
+def test_the_plan_names_the_url_check_and_each_page_check_in_words():
+    from qajev.plan import from_steps, not_described
+
+    items = from_steps([{"name": "checkout", "about": "The app opened a Stripe test checkout.", "open_url": SPEC}])
+    assert [c["check"] for c in items[0]["checks"]] == [
+        r"state new_box.upgrade.checkout_url matches ^https://checkout\.stripe\.com/c/pay/cs_test_",
+        "page: page shows 'Twinbox Hobby: 3,700 credits a month'", "page: page shows '$10.00'"]
+    assert not not_described(items)
