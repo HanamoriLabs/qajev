@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.29: 14 Oct 2026
+
 ### Added
 
 - Any native app with a QAJev bridge: a play suite's `app:` names the app's `command`, its `env` and a `home_env`
