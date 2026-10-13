@@ -533,6 +533,19 @@ def _finish(args, report):
     return report["exit_code"]
 
 
+def check_name(url, goal=None):
+    """An ad-hoc check's test name: its site and path, plus the goal's intention. The cloud's Needs a look groups
+    failures by project and test, so each check needs its own name, not "check" (the Orchestrator, 13 Oct)."""
+    from urllib.parse import urlsplit
+
+    from .jobs import _goal, plain_host
+    parts = urlsplit(url if "://" in url else f"https://{url}")
+    host = plain_host(parts, url).removeprefix("www.")
+    path = parts.path.rstrip("/")
+    name = f"{host} {path[:30]}…" if len(path) > 30 else f"{host} {path}" if path else host
+    return name + (f" · {_goal(goal)}" if goal else "")
+
+
 def check_suite(args):
     """Build a one-scenario suite from `qajev check` flags."""
     from . import suite as suite_mod
@@ -560,8 +573,9 @@ def check_suite(args):
             url, _, status = item.partition("=")
             probes.append({"url": url, "status": int(status or 200)})
         expect["fetch"] = probes
-    scenario = {"name": "check", "url": args.url, "expect": expect, "mode": args.mode, "device": args.device,
-                "settle": args.settle, "budget": {"actions": args.max_actions, "seconds": args.max_seconds}}
+    scenario = {"name": check_name(args.url, args.goal), "url": args.url, "expect": expect, "mode": args.mode,
+                "device": args.device, "settle": args.settle,
+                "budget": {"actions": args.max_actions, "seconds": args.max_seconds}}
     if args.goal:
         scenario["goal"] = args.goal
     if args.persona:
@@ -1698,6 +1712,7 @@ def cmd_plan(args):
 
     try:
         spec = yaml.safe_load(args.file.read_text()) or {}
+        blind = []  # the tests whose only checks are "lacks" checks
         if isinstance(spec, dict) and spec.get("steps") and not spec.get("scenarios"):  # a game's steps suite
             name, run_about = spec.get("name") or args.file.stem, about(spec.get("about"), "about")
             native.check_window(spec["steps"])
@@ -1708,6 +1723,7 @@ def cmd_plan(args):
             suite = load(args.file)
             name, run_about, items = suite.name, suite.about, plan_mod.from_suite(suite.scenarios)
             named = suite.plan
+            blind = plan_mod.absent_only(suite.scenarios)
     except (OSError, yaml.YAMLError, SuiteError, native.NativeError) as e:
         return _fail(args, f"{args.file}: {e}", EXIT_CONFIG)
     missing = plan_mod.not_described(items)
@@ -1715,7 +1731,7 @@ def cmd_plan(args):
     unapproved = planfile.required() and not test_plan["approved"]
     if args.json:
         print(json.dumps({"name": name, "about": run_about, "plan": items, "not_described": missing,
-                          "test_plan": test_plan}))
+                          "absent_only": blind, "test_plan": test_plan}))
     else:
         print(f"Test plan: {name}" + (f" — {run_about}" if run_about else ""))
         print(f"Plan file: {test_plan['path'] + ', ' if test_plan['path'] else ''}{planfile.words(test_plan)}")
@@ -1726,7 +1742,23 @@ def cmd_plan(args):
         described = len(items) - len(missing)
         print(f"{described} of {len(items)} tests say what they prove"
               + (f"; NOT DESCRIBED: {', '.join(missing)} (a run would be INCOMPLETE)" if missing else ""))
-    return 2 if missing or unapproved else 0
+        if blind:
+            print(f"ABSENT ONLY: {', '.join(blind)}: each only checks that a text is absent, and a blank page passes "
+                  "that. Add a text or js check that must be there.")
+    return 2 if missing or blind or unapproved else 0
+
+
+def url_refusal(args):
+    """config.user_info_refusal for a parsed run's URL arguments, with or without a scheme ("alice:s3cret@host/x" is a
+    URL to check and smoke; redteam on #133), and for each --host, then for any other argument with "://". An e-mail
+    flag is no URL."""
+    from .config import user_info_in_args, user_info_refusal
+
+    named = [getattr(args, key, None) for key in ("url", "expect_url", "cdp_url")]
+    for value in [*named, *(getattr(args, "fetch", None) or []), *(getattr(args, "host", None) or [])]:
+        if value and (refused := user_info_refusal(value)):
+            return refused
+    return user_info_in_args(getattr(args, "argv", None) or [])
 
 
 def _fail(args, message, code):
@@ -1895,6 +1927,10 @@ def _cloud_job(args, stopping=False):
 def main(argv=None):
     args = build_parser().parse_args(argv)
     args.argv = list(sys.argv[1:] if argv is None else argv)
+    if args.command in {"check", "run", "smoke", "play"}:
+        # Before anything is recorded or sent: a job record and a cloud run keep the arguments as typed
+        if refused := url_refusal(args):
+            return _fail(args, refused, EXIT_CONFIG)
     # Where it runs, before anything starts here. A background job's run was routed when it started.
     if args.command in {"check", "run", "smoke", "play"} and not os.environ.get("QAJEV_JOB"):
         routed = _route(args)

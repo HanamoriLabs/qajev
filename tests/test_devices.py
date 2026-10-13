@@ -4,7 +4,7 @@
 import pytest
 
 from qajev import suite as suite_mod
-from qajev.cli import build_parser, check_suite
+from qajev.cli import build_parser, check_name, check_suite
 
 
 def base(**extra):
@@ -44,11 +44,28 @@ def test_a_pinned_device_runs_once_and_devices_can_be_narrowed(monkeypatch):
 def test_qajev_check_tests_the_phone_view_too_unless_a_device_is_pinned(monkeypatch):
     monkeypatch.delenv("QAJEV_DEVICES", raising=False)
     args = build_parser().parse_args(["check", "http://127.0.0.1:8765/", "--expect-text", "x"])
-    assert [s.name for s in check_suite(args).scenarios] == ["check", "check (phone)"]
+    assert [s.name for s in check_suite(args).scenarios] == ["127.0.0.1:8765", "127.0.0.1:8765 (phone)"]
     args = build_parser().parse_args(["check", "http://127.0.0.1:8765/", "--expect-text", "x", "--device", "desktop"])
-    assert [s.name for s in check_suite(args).scenarios] == ["check"]
+    assert [s.name for s in check_suite(args).scenarios] == ["127.0.0.1:8765"]
     args = build_parser().parse_args(["check", "http://127.0.0.1:8765/", "--expect-text", "x", "--devices", "desktop"])
-    assert [s.name for s in check_suite(args).scenarios] == ["check"]
+    assert [s.name for s in check_suite(args).scenarios] == ["127.0.0.1:8765"]
+
+
+def test_qajev_check_names_its_test_by_site_path_and_goal():
+    # The cloud's Needs a look groups failures by project and test: a test named "check" would merge every check of a
+    # site into one problem (the Orchestrator, 13 Oct).
+    def name(*argv):
+        args = build_parser().parse_args(["check", *argv, "--expect-text", "x", "--device", "desktop"])
+        return check_suite(args).scenarios[0].name
+    long = "https://www.figgyz.com/products/world-of-warcraft-bonus-figure?ref=1"
+    assert name(long) == "figgyz.com /products/world-of-warcraft-bo…"
+    assert name("https://figgyz.com/products/heroes/") == "figgyz.com /products/heroes"
+    goal = "Find the Pro price. Stop when you see it."
+    assert name("https://qajev.com/pricing", "--goal", goal) == "qajev.com /pricing · Find the Pro price"
+    # The name goes to the Cloud as a card headline and a grouping key: never the URL's user info (redteam, #131).
+    # Such a URL is refused before a check is built (test_url_password.py), so the name is checked on its own.
+    assert check_name("https://alice:s3cret@staging.example.com/admin") == "staging.example.com /admin"
+    assert check_name("http://bob@127.0.0.1:8765/") == "127.0.0.1:8765"
 
 
 def test_a_phone_tab_also_says_it_is_a_phone():

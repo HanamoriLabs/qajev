@@ -9,6 +9,25 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - A suite sent with `--runner cloud` is now filed under its project on QAJev Cloud: the one in its repo's
   `.qajev/project.toml`, else the project whose `repo` holds the suite. Before, only a `--project` run named one, so
   the run's page could not say which project it belonged to (José).
+
+## 0.4.28: 13 Oct 2026
+
+### Changed
+
+- `qajev check`, `smoke`, `run` (suites and projects) and the MCP tools refuse a URL that holds a user name or password
+  (`https://alice:s3cret@shop.example/`, with or without the scheme), anywhere in a run's arguments or suite. They
+  refuse it before Chrome starts and before a job record or a cloud run keeps it. The message says to sign in once
+  with `qajev browser login --url URL` and run with that profile. Before, the password reached report.json and
+  report.html, which a cloud run uploads, and a smoke's report folder name (redteam).
+- `qajev check` and `qa_check` name their test by the site and path, plus the goal when there is one:
+  "qajev.com /pricing · Find the Pro price", not "check". QAJev Cloud's Needs a look counts failures per project and
+  test, so a test named "check" merged every check of a site into one problem (the Orchestrator). The phone copy keeps
+  its " (phone)" ending.
+- `qajev plan` and `qa_plan` flag a website test whose only checks say a text is absent: a blank page passes it, so it
+  proves nothing, even with a `url` or `status` check. The plan lists it as ABSENT ONLY (`absent_only` in the JSON)
+  and exits 2. It reads each test's own `expect`, not a steps suite's or a client's. A Foley step that checked
+  only that "Sign in" was absent passed on a blank page in 0.89 s and briefly looked like a product bug (the Orchestrator).
+
 - When Jev says DONE after 0 actions and a check was already false before Jev moved, the run stays harness, but the
   reason now names the check, says it was false before Jev moved, and says how to get a FAIL: run the check without a
   goal (the Orchestrator).

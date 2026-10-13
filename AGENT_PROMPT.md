@@ -107,7 +107,8 @@ starts with `r_`: `qa_job` and `qa_stop` take it. Tell the person the run's `url
   then run with that `profile`. Only on a local dev site (localhost, 127.0.0.1, *.test) can a seeded test account
   sign in by itself: an `account:` block with `password: seed:FILE#KEY` (and, for a second factor, `totp:` or a
   `cookie:` value from `seed:` too), from the app's fixture that says `"test_account": true` and lists the host in
-  `allowed_hosts`. A `keychain:`, `op://` or `env:` password is refused.
+  `allowed_hosts`. A `keychain:`, `op://` or `env:` password is refused, and so is a URL with a user name or
+  password in it (`https://user:pass@host/`).
 - **A result with `needs_sign_in` means runs met a sign-in page**, not that the product failed (those scenarios are
   `harness`). Ask the person how QAJev should get in, as its `next_step` says: they sign in once (above); on a
   local dev site a seeded test account (`password: seed:FILE#KEY`) can sign in by itself. Never ask for a password.
