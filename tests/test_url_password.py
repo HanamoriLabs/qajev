@@ -7,7 +7,7 @@ through a profile. Each test searches every file the run left behind for the pas
 
 import pytest
 
-from qajev import chrome, cli, config
+from qajev import chrome, cli, config, jobs
 
 PASSWORD = "s3cret"
 URL = f"https://alice:{PASSWORD}@shop.example:8443/"
@@ -31,6 +31,11 @@ def started(monkeypatch, tmp_path):
 
     monkeypatch.setattr(chrome, "start", start)
     monkeypatch.setattr(chrome, "reap", lambda: [])
+    monkeypatch.setattr(jobs, "JOBS", home / "jobs")
+    monkeypatch.setattr(jobs, "LOCK", home / "run.lock")
+    real_start = jobs.start  # a background job records itself for real, but runs nothing
+    monkeypatch.setattr(jobs, "start",
+                        lambda argv, *a, **k: real_start(argv, *a, **{**k, "command": ["/usr/bin/true"]}))
     return seen
 
 
@@ -118,3 +123,56 @@ def test_an_agent_run_with_a_password_in_its_url_is_refused_before_its_job_is_re
     with pytest.raises(ToolError, match="user name or password") as refused:
         asyncio.run(mcp_server._run_report(["check", URL, "--expect-text", "Welcome"], None, background=True))
     assert recorded == [] and PASSWORD not in str(refused.value)
+
+
+BARE = f"alice:{PASSWORD}@127.0.0.1:1"  # no scheme: check and smoke still read it as a URL (redteam on #133)
+
+
+@pytest.mark.parametrize("argv", [
+    ["check", f"{BARE}/x", "--expect-text", "x", "--background"],
+    ["check", f"{BARE}/x", "--expect-text", "x"],
+    ["smoke", BARE, "--background"],
+    ["check", "https://shop.example/", "--expect-text", "x", "--expect-url", f"{BARE}/done"],
+], ids=["check background", "check", "smoke background", "expect-url"])
+def test_a_url_with_a_password_and_no_scheme_is_refused_too(started, tmp_path, capsys, argv):
+    code = cli.main(argv)
+
+    out, err = capsys.readouterr()
+    assert code == cli.EXIT_CONFIG and started == []
+    assert "user name or password" in err
+    assert PASSWORD not in out + err
+    assert leaked(tmp_path) == []
+
+
+def test_an_email_flag_is_no_url():
+    args = cli.build_parser().parse_args(["check", "https://shop.example/", "--expect-text", "alice@shop.example"])
+    args.argv = ["check", "https://shop.example/", "--expect-text", "alice@shop.example"]
+    assert cli.url_refusal(args) is None
+
+
+@pytest.mark.parametrize("scenario", [
+    {"name": "home", "url": f"{BARE}/x", "about": "a", "expect": {"text": ["x"]}},  # an error would quote this url
+    {"name": "duo", "url": "https://shop.example/", "about": "a", "expect": {"text": ["x"]},
+     "clients": [{"name": "a"}, {"name": "b", "url": f"https://alice:{PASSWORD}@shop.example/"}]},
+], ids=["scenario url, no scheme", "a client's url"])
+def test_a_suite_never_quotes_a_password_in_its_refusal(scenario):
+    from qajev import suite
+
+    with pytest.raises(suite.SuiteError, match="user name or password") as refused:
+        suite.parse({"name": "s", "scenarios": [scenario]})
+    assert PASSWORD not in str(refused.value)
+
+
+def test_an_agent_cloud_run_with_a_password_in_its_url_is_refused_before_anything_is_sent(monkeypatch):
+    import asyncio
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    from qajev import cloud, mcp_server
+
+    monkeypatch.setattr(cloud, "connect", lambda *a, **k: pytest.fail("nothing goes to the cloud"))
+    monkeypatch.setattr(jobs, "start", lambda *a, **k: pytest.fail("no job record"))
+    with pytest.raises(ToolError, match="user name or password") as refused:
+        asyncio.run(mcp_server._dispatch(["check", f"{BARE}/x", "--expect-text", "x"], ["--runner", "cloud"],
+                                         None, True))
+    assert PASSWORD not in str(refused.value)

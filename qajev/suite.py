@@ -480,15 +480,26 @@ def _account(raw, base, folder=None):
     return out
 
 
+def _user_info_anywhere(value):
+    """user_info_refusal for the first string with "://" anywhere in a suite's data, or None."""
+    if isinstance(value, dict):
+        value = list(value.values())
+    if isinstance(value, list):
+        return next((r for r in map(_user_info_anywhere, value) if r), None)
+    return user_info_refusal(value) if isinstance(value, str) and "://" in value else None
+
+
 def parse(data, path=None, devices=None):
     if not isinstance(data, dict):
         raise SuiteError("a suite must be a mapping with a scenarios list")
     _unknown("suite", data, SUITE_KEYS)
     base = data.get("base_url")
+    if base and (refused := user_info_refusal(base)):  # first: no later error may quote the URL
+        raise SuiteError(f"base_url: {refused}")
     if base and urlsplit(base).scheme not in {"http", "https"}:
         raise SuiteError("base_url must be http(s)")
-    if base and (refused := user_info_refusal(base)):
-        raise SuiteError(f"base_url: {refused}")
+    if refused := _user_info_anywhere(data):  # a client's URL, a fetch probe's...: every URL in the suite
+        raise SuiteError(refused)
     guard = data.get("guard") or {}
     _unknown("guard", guard, GUARD_KEYS)
     _unguarded_frames(guard.get("unguarded_frames"))
@@ -523,11 +534,11 @@ def parse(data, path=None, devices=None):
         names.add(name)
         url = item.get("url")
         if url:
+            if refused := user_info_refusal(url):  # with or without a scheme, before the error below quotes it
+                raise SuiteError(f"{where}: {refused}")
             url = urljoin(base, url) if base else url
             if urlsplit(url).scheme not in {"http", "https"}:
                 raise SuiteError(f"{where}: url must be http(s) or relative to base_url (got {item.get('url')!r})")
-            if refused := user_info_refusal(url):
-                raise SuiteError(f"{where}: {refused}")
         elif i == 0:
             if not base:
                 raise SuiteError(f"{where}: the first scenario needs a url (or set base_url)")

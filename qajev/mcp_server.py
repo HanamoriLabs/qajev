@@ -8,6 +8,7 @@ at a time on the whole machine (a lock shared with the CLI); later runs queue.
 
 import asyncio
 import contextlib
+import io
 import json
 import os
 import sys
@@ -183,12 +184,26 @@ async def _progress(ctx, event, counts):
                                   f"{event.get('scenario')}: {event.get('doing')}{spent}")
 
 
+def _refuse_user_info(argv):
+    """A ToolError for a URL argument with a user name or password (cli.url_refusal), before anything keeps it."""
+    from .cli import build_parser, url_refusal
+
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            parsed = build_parser().parse_args(argv)
+        parsed.argv = list(argv)
+        refused = url_refusal(parsed)
+    except SystemExit:  # arguments the CLI cannot read: it refuses them itself, and the "://" ones are checked here
+        refused = config.user_info_in_args(argv)
+    if refused:
+        raise ToolError(refused)
+
+
 async def _run_report(args, ctx, background=False, title=None, cwd=None, rerun=None):
     """A browser run as a QAJev job. background: return the job at once. Otherwise wait for it (relaying its
     progress) and return the report JSON; cancelling the call stops the job. cwd: where it runs (default: here);
     rerun: the job it reruns (jobs.start)."""
-    if refused := config.user_info_in_args(args):  # before the job record keeps the arguments as typed
-        raise ToolError(refused)
+    _refuse_user_info(args)  # before the job record keeps the arguments as typed
     job = await asyncio.to_thread(jobs.start, args, title, cwd=cwd, rerun=rerun)
     if background:
         return {"job": job["id"], "state": job["state"], "title": job["title"],
@@ -232,10 +247,12 @@ async def _dispatch(args, where, ctx, background, title=None):
     from . import cloud
     from .cli import build_parser
 
+    _refuse_user_info([*args, *where])  # before a job record or the cloud keeps the arguments as typed
     try:
         parsed = build_parser().parse_args([*args, *where])
     except SystemExit:
-        raise ToolError(f"qajev cannot read these arguments: {[*args, *where]}") from None
+        shown = [a if "@" not in str(a) else "…" for a in [*args, *where]]  # never a URL's user info
+        raise ToolError(f"qajev cannot read these arguments: {shown}") from None
     parsed.argv = [*args, *where]
     note = None
     try:
