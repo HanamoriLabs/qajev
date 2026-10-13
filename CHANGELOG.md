@@ -6,6 +6,15 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- A page the app opened, checked in QAJev's Chrome: a play suite's `open_url:` step reads the URL from the app's state
+  (`from`), fails and opens nothing unless it matches `url_regex` (`^https://<host>/...`, the host written out) and
+  is on that host, then runs the page as one scenario of `qajev run` on the same machine, with a suite's `expect`
+  and `guard`. `{last}` in `guard.allow_requests` (each pattern one host, written out) is the URL's own last path
+  part, escaped, so a Stripe checkout's `/init` POST goes through for that session only. The guard takes nothing
+  else, so payment fields stay disabled, and a URL that is not https or holds a user name or password opens nothing.
+  Each step's page run writes to a new folder. A page check that cannot judge is harness. The inner run takes the
+  browser slot from its parent play run. Twinbox step 21 checks its Stripe test checkout this way.
+
 - Real keys on a QAJev Cloud Mac: a play suite's `keys:` step brings the app (`app`, its bundle id) to the front, can
   put text on the clipboard (`clipboard`) and click one of the app's controls (`click`, at its real screen point from
   the app's `state.window`), then presses keys and chords (`press`, with `{type: text}` for typed text). Then its

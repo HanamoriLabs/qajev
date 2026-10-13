@@ -43,7 +43,7 @@ KEYS_KEYS = {"app", "clipboard", "click", "press"}
 MAX_TYPED = 200
 MAX_CLIPBOARD = 1000
 # The other things a step can do: a keys step only presses keys, then checks what they did
-OTHER_ACTS = ("goal", "play", "js", "pad", "idle", "crash_renderer", "relaunch", "handoff")
+OTHER_ACTS = ("goal", "play", "js", "pad", "open_url", "idle", "crash_renderer", "relaunch", "handoff")
 
 # macOS virtual key codes (HIToolbox Events.h, a US keyboard), by the key's DOM code as keys.py names it
 MAC_CODES = {

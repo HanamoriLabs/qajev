@@ -804,7 +804,9 @@ async def qa_play(
     ({who, does, until, minutes}) waits, sending no input, for a person to do a step by hand (a personal sign-in):
     pass when `until` holds, stuck when time runs out. A `keys:` step ({app, clipboard, click, press}) sends real
     macOS keys and clicks through the qajev-keys helper of a QAJev Cloud per-run Mac (harness anywhere else), then
-    the step's expect checks: a paste, a shortcut or focus that bridge input cannot prove.
+    the step's expect checks: a paste, a shortcut or focus that bridge input cannot prove. An `open_url:` step
+    ({from, url_regex, says, expect, guard, settle}) reads a URL the app opened from its state, refuses it unless it
+    matches url_regex, then checks that page in QAJev's own Chrome as one suite scenario.
     `only`: run these steps of the suite, plus the steps they name in `depends_on` and every `setup: true` step.
     `game_env`: environment settings for the game; `game_args`: switches for an Electron app. `game_profile`: keep
     an Electron game's save folder between runs (~/.qajev/game-profiles/NAME, a test profile; reset_game_profile
