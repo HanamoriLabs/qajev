@@ -10,6 +10,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   place. The control itself stays invisible and inert, and the page is put back after the picture. The report lists
   each hidden control with the rule that hid it and its page (`page` is new in `guard_hidden_controls`), from every
   page of the test, not only the last. A missing "Save" button read as a page bug twice (13 Oct).
+- A suite sent with `--runner cloud` is now filed under its project on QAJev Cloud: the one in its repo's
+  `.qajev/project.toml`, else the project whose `repo` holds the suite. Before, only a `--project` run named one, so
+  the run's page could not say which project it belonged to (José).
 
 ## 0.4.28: 13 Oct 2026
 
