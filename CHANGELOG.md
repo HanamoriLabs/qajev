@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Changed
+
+- A suite sent with `--runner cloud` is now filed under its project on QAJev Cloud: the one in its repo's
+  `.qajev/project.toml`, else the project whose `repo` holds the suite. Before, only a `--project` run named one, so
+  the run's page could not say which project it belonged to (José).
+
 ## 0.4.28: 13 Oct 2026
 
 ### Changed

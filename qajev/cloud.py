@@ -487,6 +487,7 @@ def plan(args):
     if getattr(args, "allow_commands", False):
         raise NotAllowed("a suite's shell commands (--allow-commands) run on this Mac only")
     files, targets, account, named_plan, plan_base, project_name, swap = [], [], None, None, Path.cwd(), None, {}
+    owner = None  # a suite's project: filed with it on the dashboard, but never held by its name
     seed_base = None
     full, root, source, writes = None, None, None, getattr(args, "mode", None) == "mutate"
     if getattr(args, "project", None):
@@ -539,6 +540,9 @@ def plan(args):
         files.append((remote, args.suite.resolve()))
         swap["suite"] = remote
         named_plan, plan_base = suite.plan, args.suite.resolve().parent
+        from . import project as project_mod
+
+        owner = project_mod.owner_of(args.suite)  # the dashboard files the run under it (José, 13 Oct)
     else:
         targets = [args.url]
         if not args.url:
@@ -596,7 +600,7 @@ def plan(args):
     from .jobs import describe_argv
 
     return Plan(kind=cmd, args=forwarded, name=describe_argv(args.argv)[:160], files=files, serve_root=serve_root,
-                port=port, tunnel_port=tunnel_port, tunnel=tunnel, inline=inline, project=project_name,
+                port=port, tunnel_port=tunnel_port, tunnel=tunnel, inline=inline, project=project_name or owner,
                 model=getattr(args, "model", None), sees_screen=True if getattr(args, "vision", None) else None,
                 warnings=warnings)
 

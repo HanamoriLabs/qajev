@@ -28,6 +28,7 @@ class FakeDashboard:
         self.runs = [{"id": RUN, "gate": "pass", "counts": {"pass": 1}, "tests": []}]  # GET answers, the last repeats
         self.refuse_put = False
         self.default_runner = "cloud"  # the Settings page's "Where runs go by default"
+        self.projects = set()  # the projects the dashboard knows (synced from project.toml)
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -63,6 +64,8 @@ class FakeDashboard:
                 if self.path == "/api/v1/me":
                     me = {"kind": "agent", "scopes": ["read", "run"], "default_runner": outer.default_runner}
                     return self._reply(200, me)
+                if self.path.startswith("/api/v1/projects/") and self.path.rsplit("/", 1)[1] in outer.projects:
+                    return self._reply(200, {"name": self.path.rsplit("/", 1)[1]})
                 if self.path == f"/api/v1/runs/{RUN}":
                     run = outer.runs.pop(0) if len(outer.runs) > 1 else outer.runs[0]
                     return self._reply(200, {"id": RUN, **run})
@@ -303,6 +306,38 @@ def test_a_suite_with_a_tunnel_goes_to_the_cloud_with_its_ports_writes_and_folde
     assert dash.created()["tunnel"] == {
         "ports": {"8871": {"command": "node serve-folder.mjs"}, "8787": {"command": "wrangler dev"}},
         "data": "local", "root": str(repo.resolve()), "writes": True, "source": {"file": str(path.resolve())}}
+    assert local == []
+
+
+def test_a_suite_run_is_filed_under_the_project_that_holds_it(dash, local, monkeypatch, tmp_path):
+    # José, 13 Oct: a cloud run's page must name its project. A suite sent alone named none, so the CLI finds it: the
+    # repo's own .qajev/project.toml, else the project file whose repo holds the suite (a worktree inside it too).
+    from qajev import project
+
+    monkeypatch.setattr(project, "HOME", tmp_path / "home")
+    folder = tmp_path / "projects"
+    folder.mkdir()
+    monkeypatch.setenv("QAJEV_PROJECTS", str(folder))
+    repo = checkout(tmp_path)
+    (folder / "shop.toml").write_text(f'name = "shop"\nrepo = "{repo}"\n[env.prod]\nbase_url = "https://shop.example"\n')
+    worktree = repo / ".claude" / "worktrees" / "fix"
+    (worktree / "qa").mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: ../../../.git/worktrees/fix\n")
+    (tmp_path / "loose").mkdir()
+
+    def filed(folder, known=("shop", "rooms")):
+        dash.calls.clear()
+        dash.projects = set(known)
+        assert cli.main(["run", str(suite_file(folder)), "--runner", "cloud"]) == 0
+        return dash.created().get("project")
+
+    assert filed(repo / "qa") == "shop"
+    assert filed(worktree / "qa") == "shop"
+    assert filed(tmp_path / "loose") is None  # no project holds it: the dashboard says "No project"
+    assert filed(repo / "qa", known=()) is None  # a project the dashboard does not know is not sent
+    (repo / ".qajev").mkdir()
+    (repo / ".qajev" / "project.toml").write_text('name = "rooms"\n[env.local]\nbase_url = "http://127.0.0.1:8871"\n')
+    assert filed(repo / "qa") == "rooms"  # the repo's own project file names it first
     assert local == []
 
 
