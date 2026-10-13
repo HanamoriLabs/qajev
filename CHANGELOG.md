@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- A native app's throwaway home, with any `app.files` token in it, is removed by the next run's reaper even when the
+  killed run's pid now belongs to another process. Each home records when its run started, so a reused pid no longer
+  keeps it.
+
 ## 0.4.31: 14 Oct 2026
 
 ### Added
