@@ -169,10 +169,21 @@ def _projects(_minute):
         return []
 
 
+def plain_host(parts, fallback=""):
+    """A URL's host and port as a person writes them, never its user info: names go to the Cloud as card headlines
+    and grouping keys ("https://alice:s3cret@host/" names "host", redteam on #131)."""
+    try:
+        port = parts.port
+    except ValueError:  # a port that is not a number: no port
+        port = None
+    host = parts.hostname or fallback
+    return f"{host}:{port}" if host and port else host
+
+
 def _site(url):
     """A website as a person names it: the QAJev project it belongs to, else its host; plus a non-root path."""
     parts = urlsplit(url if "://" in url else f"https://{url}")
-    host = parts.netloc or url
+    host = plain_host(parts, url)
     name = next((n for h, n in _projects(int(time.time() // 60)) if h == host), host.removeprefix("www."))
     path = parts.path.rstrip("/")
     return f"{name} {path[:30]}" if path else name

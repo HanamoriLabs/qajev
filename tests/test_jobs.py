@@ -267,6 +267,13 @@ def test_cli_jobs_and_stop(capsys):
     assert main(["stop", "no-such-job"]) == 3
 
 
+def test_describe_argv_never_names_a_urls_user_info():
+    # A run's title goes to the Cloud as its name (redteam on #131).
+    url = "https://alice:s3cret@staging.example.com/admin"
+    assert jobs.describe_argv(["check", url]) == "check staging.example.com /admin"
+    assert jobs.describe_argv(["smoke", "http://bob@127.0.0.1:8765/"]) == "smoke 127.0.0.1:8765"
+
+
 def test_describe_argv():
     assert jobs.describe_argv(["run", "--project", "shop", "--suite", "core", "--json"]) == "run project shop · core"
     assert jobs.describe_argv(["check", "https://a.example", "--goal", "x"]) == "check a.example · x"
