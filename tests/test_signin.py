@@ -352,6 +352,34 @@ def test_a_failed_sign_in_names_the_requests_that_failed_after_it_began(tmp_path
     assert "fixture-pass-local" not in said
 
 
+def test_a_failed_request_never_shows_a_password_a_user_part_or_a_token_in_its_path(tmp_path):
+    # redteam on #128: the reason goes through the real raise, so redact() must hide the password QAJev typed, even
+    # where only redact() can see it (in a path segment). A user part is never shown (hostname, not netloc), and a long
+    # opaque path segment (a reset or magic-link token, a session id) is masked: redact knows only QAJev's own values.
+    from qajev import netlog
+
+    class Leaky(FormPage):
+        def press(self, _key):
+            _failed(self.net, "r2", "https://joe:hunter2@cdn.example:8443/reset/AbCdEfGhIjKlMnOpQrSt123/"
+                                    "k=fixture-pass-local/app.js", "net::ERR_CONNECTION_REFUSED")
+
+    page = Leaky("http://127.0.0.1:4000/login", lets_in=False)
+    page.net = netlog.Failures("ws://unused")
+    with pytest.raises(signin.SignInFailed) as e:
+        signin.sign_in(page, _local_account(tmp_path), timeout=1)
+    said = str(e.value)
+    assert "cdn.example:8443/reset/" in said and "app.js (net::ERR_CONNECTION_REFUSED)" in said, said
+    for secret in ("fixture-pass-local", "hunter2", "joe", "AbCdEfGhIjKlMnOpQrSt123"):
+        assert secret not in said, (secret, said)
+    # redteam: short secrets stay under the 16-character mask: a code of 6 or more digits, and the segment after
+    # verify, reset, invite, token, magic or session
+    for path, secret in (("/verify/482913", "482913"), ("/invite/abc123def456", "abc123def456"),
+                         ("/auth/Session/s3cr3t", "s3cr3t"), ("/u/1234567/profile.png", "1234567")):
+        shown = signin._where("https://app.example" + path)
+        assert secret not in shown and shown.startswith("app.example/"), (path, shown)
+    assert signin._where("https://app.example/v1/item/42") == "app.example/v1/item/42"  # short ids stay readable
+
+
 def test_a_failed_sign_in_with_no_failed_request_says_nothing_more(tmp_path):
     from qajev import netlog
 
