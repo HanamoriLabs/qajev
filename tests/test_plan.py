@@ -95,6 +95,27 @@ def test_a_test_whose_only_checks_say_a_text_is_absent_is_flagged(tmp_path, caps
     assert json.loads(capsys.readouterr().out)["absent_only"] == []
 
 
+def test_every_expect_key_is_decided_for_the_absent_only_lint():
+    # redteam, 13 Oct (#129): each check kind either proves something is there or does not. A new expect key fails here
+    # until someone decides which list it belongs to. An address or a status alone lets a blank page pass.
+    from types import SimpleNamespace
+
+    from qajev import plan
+    from qajev import suite as suite_mod
+
+    meta = {"absent", "ignore_case", "says"}
+    assert set(plan.POSITIVE) | set(plan.WHERE_ONLY) | meta == suite_mod.EXPECT_KEYS
+    assert not set(plan.POSITIVE) & set(plan.WHERE_ONLY)
+
+    def flagged(kind, value):
+        return plan.absent_only([SimpleNamespace(name=kind, expect={"absent": ["Sign in"], kind: value})]) == [kind]
+
+    for kind in plan.POSITIVE:
+        assert not flagged(kind, ["something"]), kind
+    for kind, value in (("url", "/accept"), ("url_regex", ".*"), ("status", 200)):
+        assert flagged(kind, value), kind
+
+
 def test_the_plan_before_a_run_names_the_checks_as_the_run_will(tmp_path):
     # The dashboard shows the plan before the run and ticks it live: a planned check must match the one that runs.
     from qajev import suite as suite_mod
