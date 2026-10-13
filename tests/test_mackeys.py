@@ -3,6 +3,7 @@
 import json
 
 import pytest
+import yaml
 
 from qajev import cli, native
 from qajev.cli import main
@@ -280,3 +281,15 @@ def test_keys_go_only_to_the_suites_own_app_when_it_is_known(tmp_path):
     with pytest.raises(NativeError, match=r"refused: com\.other\.app is not the suite's own app \(com\.hanamorilabs"):
         check_keys([{"name": "paste", "keys": {**PASTE, "app": "com.other.app"}}], spec)
     check_keys([{"name": "paste", "keys": {**PASTE, "app": "com.other.app"}}], {"command": ["/nowhere/X.app/x"]})
+
+
+def test_qajev_play_refuses_keys_for_another_app_than_the_suites_own(tmp_path, capsys):
+    spec = _app_bundle(tmp_path, "com.hanamorilabs.twinbox")
+    suite = tmp_path / "s.yaml"
+    suite.write_text(yaml.safe_dump({"app": spec, "steps": [
+        {"name": "paste", "about": "x", "keys": {"app": "com.other.app", "press": ["cmd+v"]}}]}))
+    env = tmp_path / ".env"
+    env.write_text("")
+    assert main(["play", str(tmp_path), "--suite", str(suite), "--json", "--env-file", str(env)]) == cli.EXIT_CONFIG
+    out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert "com.other.app is not the suite's own app (com.hanamorilabs.twinbox)" in out["error"]
