@@ -469,7 +469,8 @@ def _screen_printer(args):
         kind = event["event"]
         if kind == "run":
             b = event["browser"]
-            where = (f"{b.get('engine')} game {b.get('project')}" if b.get("surface") == "native"
+            where = (f"app {b.get('project')}" if b.get("engine") == "app"
+                     else f"{b.get('engine')} game {b.get('project')}" if b.get("surface") == "native"
                      else f"Chrome {b.get('cdp_url')}")
             print(f"qajev: {event['suite']} -> {event['run_dir']} ({where})", file=sys.stderr)
         elif kind == "waiting":
@@ -1010,6 +1011,18 @@ def cmd_play(args):
                 session_steps = native.select_steps(session_steps, args.only)
             except native.NativeError as e:
                 return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
+        if spec.get("app") is not None:  # a native app with a QAJev bridge, started from its own command
+            from .app import app_spec
+
+            try:
+                app_spec(spec["app"])
+            except native.NativeError as e:
+                return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
+            godot_only = [k for k in ("adapter", "seed", "headless", "game_profile") if spec.get(k)]
+            if godot_only or args.adapter or args.headless:
+                return _fail(args, f"{args.suite}: app: starts the app from its own command; "
+                                   f"{', '.join(godot_only) or '--adapter/--headless'} is for a Godot or Electron game",
+                             EXIT_CONFIG)
         game_env.update({str(k): str(v) for k, v in (spec.get("env") or {}).items()})
         game_args += [str(a) for a in spec.get("args") or []]
         adapter = adapter or spec.get("adapter")
@@ -1034,8 +1047,10 @@ def cmd_play(args):
         return _fail(args, str(e), EXIT_CONFIG)
     from . import vision
 
+    app = spec.get("app") if args.suite else None
+    is_electron = electron.is_electron(args.project) and app is None  # a suite's app: wins over the .app guess
     # Vision is on by default for a game (José, 3 Oct): with Clef and a window to look at; else off, quietly.
-    window = not headless or mobile.is_mobile(args.project) or electron.is_electron(args.project)
+    window = not headless or mobile.is_mobile(args.project) or is_electron or app is not None
     sees, refused = vision.for_play(asked, window=window)
     if refused:
         return _fail(args, refused, EXIT_CONFIG)
@@ -1053,7 +1068,7 @@ def cmd_play(args):
     # A kept TEST profile (game_profile.py): --game-profile NAME, or the suite's game_profile:; Electron only
     game_profile_name = args.game_profile or (spec.get("game_profile") if args.suite else None)
     reset_profile = args.reset_game_profile or bool(spec.get("reset_game_profile") if args.suite else False)
-    if (game_profile_name or reset_profile) and not electron.is_electron(args.project):
+    if (game_profile_name or reset_profile) and not is_electron:
         return _fail(args, "--game-profile keeps an Electron game's save folder; this game is not Electron (a Godot "
                            "game's saves come from seed:)", EXIT_CONFIG)
     name = args.name or (spec.get("name") if args.suite else None) or (
@@ -1076,7 +1091,13 @@ def cmd_play(args):
                                            hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
                                            allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow],
                                            install=args.install or (spec.get("install") if args.suite else None))
-            elif electron.is_electron(args.project):  # a web game in Electron (I'm Him's desktop build)
+            elif app is not None:  # any native app with a QAJev bridge (Twinbox Desktop)
+                from .app import AppProcess
+
+                game_cm = AppProcess(args.project, app, env=game_env, args=game_args,
+                                     hide=[*(spec.get("hide") or []), *args.hide],
+                                     allow=[*(spec.get("allow") or []), *args.allow])
+            elif is_electron:  # a web game in Electron (I'm Him's desktop build)
                 game_cm = electron.ElectronGame(args.project, adapter=adapter, args=game_args, env=game_env,
                                                 hide=[*(spec.get("hide") or [] if args.suite else []), *args.hide],
                                                 allow=[*(spec.get("allow") or [] if args.suite else []), *args.allow],
