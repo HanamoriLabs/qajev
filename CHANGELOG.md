@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.28: 13 Oct 2026
+
 ### Changed
 
 - `qajev check`, `smoke`, `run` (suites and projects) and the MCP tools refuse a URL that holds a user name or password
