@@ -89,7 +89,8 @@ How to write a check:
 4. Give every value Jev must type, and start from a URL close to the target.
 5. Say what each test proves: `about` on every test, and `says` (plain words) on every `js`, `url_regex`, `fetch` or
    `command` check (`says` with `expect_js` on `qa_check`). Without them the test is NOT DESCRIBED and the gate is
-   INCOMPLETE, never PASS. Reports open with this test plan. Lint a suite first with `qa_plan` (CLI `qajev plan
+   INCOMPLETE, never PASS. A planted fault, a test meant to fail, names its check: `expect_fail: "<says>"` (CLI
+   `--expect-fail`); it counts as met only when it fails there, and a pass turns the gate FAIL. Reports open with this test plan. Lint a suite first with `qa_plan` (CLI `qajev plan
    FILE`): free, no browser, and it lists the tests that are NOT DESCRIBED, and the tests whose only checks say a
    text is absent (ABSENT ONLY: a blank page passes them, so add a text or js check that must be there).
 6. Name the approved test plan the run follows: `plan:` in a suite, or `plan` on any run tool (CLI `--plan FILE`).

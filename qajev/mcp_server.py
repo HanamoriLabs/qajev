@@ -54,7 +54,8 @@ something on a site, and to catch errors a browser can see.
 Outcomes: pass; fail (product wrong); stuck (Jev found no way forward: verify by hand, often UX);
 harness (budget/stale/model/browser trouble, Jev said DONE without a single action, a local server not answering,
 or a js check whose own code broke: says nothing about the product); unverified (no checks);
-skipped. Gate: PASS, FAIL or INCOMPLETE.
+skipped. Gate: PASS, FAIL or INCOMPLETE. A planted fault (expect_fail: the says text of the check it must fail on)
+keeps its outcome; the gate counts its `graded`: met only when it failed on that check, else FAIL.
 
 Safety built in: production is read-only and destructive is never. Any host that is not a local dev host
 (localhost, 127.0.0.1, [::1], *.localhost, *.test) is production: mode="mutate" or allow_destructive there is

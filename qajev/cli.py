@@ -1722,6 +1722,7 @@ def cmd_plan(args):
     try:
         spec = yaml.safe_load(args.file.read_text()) or {}
         blind = []  # the tests whose only checks are "lacks" checks
+        planted = []  # the planted faults (expect_fail), each with the check it must fail on
         if isinstance(spec, dict) and spec.get("steps") and not spec.get("scenarios"):  # a game's steps suite
             name, run_about = spec.get("name") or args.file.stem, about(spec.get("about"), "about")
             native.check_window(spec["steps"])
@@ -1733,6 +1734,7 @@ def cmd_plan(args):
             name, run_about, items = suite.name, suite.about, plan_mod.from_suite(suite.scenarios)
             named = suite.plan
             blind = plan_mod.absent_only(suite.scenarios)
+            planted = [{"name": s.name, "check": s.expect_fail["words"]} for s in suite.scenarios if s.expect_fail]
     except (OSError, yaml.YAMLError, SuiteError, native.NativeError) as e:
         return _fail(args, f"{args.file}: {e}", EXIT_CONFIG)
     missing = plan_mod.not_described(items)
@@ -1740,7 +1742,7 @@ def cmd_plan(args):
     unapproved = planfile.required() and not test_plan["approved"]
     if args.json:
         print(json.dumps({"name": name, "about": run_about, "plan": items, "not_described": missing,
-                          "absent_only": blind, "test_plan": test_plan}))
+                          "absent_only": blind, "expected_fail": planted, "test_plan": test_plan}))
     else:
         print(f"Test plan: {name}" + (f" — {run_about}" if run_about else ""))
         print(f"Plan file: {test_plan['path'] + ', ' if test_plan['path'] else ''}{planfile.words(test_plan)}")
@@ -1754,6 +1756,9 @@ def cmd_plan(args):
         if blind:
             print(f"ABSENT ONLY: {', '.join(blind)}: each only checks that a text is absent, and a blank page passes "
                   "that. Add a text or js check that must be there.")
+        if planted:
+            print(f"EXPECTED TO FAIL: {len(planted)} planted fault(s), each met only when it fails on its check: "
+                  + "; ".join(f"{p['name']} (on “{p['check']}”)" for p in planted))
     return 2 if missing or blind or unapproved else 0
 
 

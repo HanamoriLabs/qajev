@@ -219,3 +219,15 @@ def test_the_terminal_says_how_each_planted_test_counted(tmp_path, capsys):
     args = SimpleNamespace(json=False, quiet=False)
     assert cli._finish(args, run(tmp_path)) == 1
     assert f"expected to fail: price: {verdict.PLANTED_MISSED}" in capsys.readouterr().err
+
+
+def test_qajev_plan_lists_the_planted_tests_apart(tmp_path, capsys):
+    f = tmp_path / "s.yaml"
+    f.write_text(yaml.safe_dump({"name": "x", "device": "desktop", "scenarios": [
+        {"name": "plain", "url": URL, "about": "the shop opens", "expect": {"text": ["Shop"]}},
+        {"name": "t", "url": URL, "about": "plants a missing title", "expect": {"text": ["Cart"]},
+         "expect_fail": True}]}, allow_unicode=True))
+    assert cli.main(["plan", str(f)]) == 0  # a planted test is described: nothing to flag
+    assert "EXPECTED TO FAIL: 1 planted fault(s)" in capsys.readouterr().out
+    assert cli.main(["plan", str(f), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["expected_fail"] == [{"name": "t", "check": "the page shows “Cart”"}]

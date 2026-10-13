@@ -129,6 +129,7 @@ qajev check https://shop.example \
 | `--device NAME` | `desktop`, `tall`, `phone`, `tablet` or `WIDTHxHEIGHT` |
 | `--persona TEXT` | who Jev is, e.g. "You are on your phone and new to this site" |
 | `--about TEXT` | what this test proves and why, in plain words; shown with its result in the report and dashboard |
+| `--expect-fail [SAYS]` | a planted fault: the test must fail on the check SAYS names (its `--says` text; bare: the test's only check). A pass, or a failure on another check, turns the gate FAIL ([Planted faults](writing-tests.md#planted-faults-a-test-meant-to-fail)) |
 | `--host HOST` | another host Jev may visit (repeatable) |
 | `--max-actions N`, `--max-seconds N` | Jev's budget |
 | `--settle SECONDS` | how long to wait for the expectations after Jev stops |

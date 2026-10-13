@@ -4,6 +4,16 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- Planted faults: a test can say it is meant to fail, and on which check: `expect_fail: "<the check's says>"` on a
+  suite's scenario, `--expect-fail` on `qajev check`, `expect_fail` on `qa_check` (`true`: the test's only check).
+  It keeps its real outcome. The gate counts it as met only when it failed on that check and every other check
+  passed. A pass ("the planted fault was not caught"), or a failure on another check, turns the gate FAIL, and a
+  crash or a time-out is never a catch. Reports count the planted tests and tag each one, and report.json carries
+  `expected`, `expected_check`, `graded` and `graded_reason`. Before, our own planted tests read as product
+  failures and filled QAJev Cloud's Needs a look (the Orchestrator).
+
 ### Changed
 
 - A suite sent with `--runner cloud` is now filed under its project on QAJev Cloud: the one in its repo's
