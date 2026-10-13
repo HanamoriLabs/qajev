@@ -193,19 +193,28 @@ class GodotGame:
                        "headless": self.headless, "started_at": time.time(), "user_dir": self.user_dir,
                        "identity": chrome.identity(self.proc.pid)}  # the reaper kills only this very process
         (STATE / f"{self.proc.pid}.json").write_text(json.dumps(self.record))
+        return self._wait_for_bridge()
+
+    def _exited(self, code):
+        """Why the process ended before its bridge came up: a refusal it printed, else its exit code and last lines."""
+        refused = next((line for line in self.log if line.startswith(SAVE_NOT_ISOLATED)), None)
+        if refused:
+            return ("refused to start the game: its save folder would be the player's real one ("
+                    + refused[len(SAVE_NOT_ISOLATED):].strip(" :") + ")")
+        unseeded = next((line for line in self.log if line.startswith("QAJEV_SEED_FAILED")), None)
+        if unseeded:
+            return f"could not seed the save folder: {unseeded.split(':', 1)[1].strip()}"
+        return f"the game exited with {code} before its bridge came up: " + " | ".join(self.log[-5:])
+
+    def _wait_for_bridge(self):
+        proc = self.proc
+        if proc is None:
+            raise NativeError("the game was not started")
         deadline = time.monotonic() + self.start_wait
         while time.monotonic() < deadline:
-            if self.proc.poll() is not None:
+            if proc.poll() is not None:
                 time.sleep(0.2)  # its last lines
-                refused = next((line for line in self.log if line.startswith(SAVE_NOT_ISOLATED)), None)
-                if refused:
-                    raise NativeError("refused to start the game: its save folder would be the player's real one ("
-                                      + refused[len(SAVE_NOT_ISOLATED):].strip(" :") + ")")
-                unseeded = next((line for line in self.log if line.startswith("QAJEV_SEED_FAILED")), None)
-                if unseeded:
-                    raise NativeError(f"could not seed the save folder: {unseeded.split(':', 1)[1].strip()}")
-                raise NativeError(f"the game exited with {self.proc.returncode} before its bridge came up: "
-                                  + " | ".join(self.log[-5:]))
+                raise NativeError(self._exited(proc.returncode))
             try:
                 self.sock = socket.create_connection(("127.0.0.1", self.port), timeout=1)
                 break
@@ -219,6 +228,8 @@ class GodotGame:
         self.boot_seconds = round(time.monotonic() - (deadline - self.start_wait), 2)
         return self
 
+    error_line, harmless = ERROR_LINE, HARMLESS
+
     def _read_output(self):
         if self.proc is None or self.proc.stdout is None:
             return
@@ -226,7 +237,7 @@ class GodotGame:
             line = line.rstrip()
             self.log.append(line)
             del self.log[:-200]
-            if ERROR_LINE.search(line) and not HARMLESS.search(line):
+            if self.error_line.search(line) and not self.harmless.search(line):
                 self.errors.append(line[:300])
 
     def call(self, **request):

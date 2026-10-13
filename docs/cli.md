@@ -160,8 +160,9 @@ qajev run --project shop --objective "A visitor finds the refund policy" --expec
 
 ## `qajev play`
 
-Test a game (a Godot project folder, an Electron `.app` or Electron project folder) or a mobile app
-(`ios:<bundle id or URL>`, `android:<package or URL>`). See [Games](games.md) and [Mobile](mobile.md).
+Test a game (a Godot project folder, an Electron `.app` or Electron project folder), any native app with a QAJev
+bridge (a suite's `app:` names its command), or a mobile app (`ios:<bundle id or URL>`, `android:<package or URL>`).
+See [Games](games.md) and [Mobile](mobile.md).
 
 ```bash
 qajev play path/to/game --goal "Start a new game. Stop when you are playing." --expect-screen GAME

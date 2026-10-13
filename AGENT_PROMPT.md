@@ -23,7 +23,7 @@ Use it to check that a change actually works for a user, before you say it does.
 | Can a visitor do *one* thing? | `qa_check` / `qajev check URL --goal ... --expect-text ...` | about $0.001–0.01 |
 | Do *several* things work, in order? | `qa_run_suite` / `qajev run suite.yaml` | a few cents |
 | Does a known product still meet its stored objectives? | `qa_project_run` / `qajev run --project NAME` | a few cents |
-| Does a mobile app or a game work? | `qa_play` / `qajev play ios:BUNDLE_ID`, `android:PACKAGE`, `path/to/game` | a few cents |
+| Does a mobile app, a game or a native app work? | `qa_play` / `qajev play ios:BUNDLE_ID`, `android:PACKAGE`, `path/to/game`, `path/to/app --suite app.yaml` (`app:` starts an app with a QAJev bridge) | a few cents |
 | Does each test in a suite say what it proves, and is its test plan approved? (lint it before running) | `qa_plan` / `qajev plan suite.yaml` | free |
 | Run again only what did not pass | `qa_rerun` / `qajev rerun JOB --failed` | a few cents |
 | What did a run find? | `qa_report`, `qa_screenshot` / `qajev report RUN_DIR` | free |

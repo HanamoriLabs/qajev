@@ -6,6 +6,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- Any native app with a QAJev bridge: a play suite's `app:` names the app's `command`, its `env` and a `home_env`
+  that QAJev points at a throwaway folder (`HOME` is throwaway too), so the app never reads the person's real
+  settings or tokens. The app speaks the Godot bridge's protocol, so Jev's choices, state checks, `relaunch`, shots
+  and `looks` work as for a game. A log line at `ERROR` or `FATAL`, or a Rust panic, fails `no_errors`. `app:` wins
+  over the `.app` folder guess, which took any `.app` for an Electron game. The app starts from an allowlist of
+  variables (PATH, LANG, LC_*, TERM and a few more), never QAJev's whole environment, so no key reaches it.
+  Built for Twinbox Desktop's test suite.
 - A handoff step in a play suite: `handoff: {who, does, until, minutes}` hands a step to a person (a GitHub device
   login, a sign-in to their own account) and waits up to 30 minutes, sending no input. It tells the run's watchers
   ("waiting for José: ..."), passes once the app's state shows `until`, and ends **stuck**, never fail, when time
