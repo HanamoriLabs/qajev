@@ -181,7 +181,7 @@ def test_qajev_play_refuses_a_wrong_open_url_step_when_the_suite_loads(tmp_path,
 
 
 def test_the_page_opens_only_in_qajevs_own_throwaway_chrome(tmp_path, monkeypatch):
-    """Proof 1: never José's browser, the system's default browser or `open`: one `qajev run` with a throwaway profile."""
+    """Proof 1: never José's browser, the system's default browser or `open`: one `qajev run`, throwaway profile."""
     import webbrowser
 
     def refuse(*a, **k):

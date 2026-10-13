@@ -134,7 +134,7 @@ def open_url_step(game, *, name, spec, about=None, run_dir=None, emit=None, run=
     ok = isinstance(url, str) and re.search(want, url) is not None
     shown = url if url is None or not isinstance(url, str) else url[:120]
     detail = None if ok else f"{spec['from']} was {shown!r}"
-    if ok and (urlsplit(url).scheme != "https" or user_info_refusal(url)):  # whatever url_regex says
+    if ok and (urlsplit(str(url)).scheme != "https" or user_info_refusal(url)):  # whatever url_regex says
         ok, detail = False, user_info_refusal(url) or f"{spec['from']} is not an https URL"
     first = {"check": f"state {spec['from']} matches {want}", "says": says, "ok": ok, "detail": detail}
     if not ok:
