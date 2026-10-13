@@ -6,6 +6,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Changed
 
+- A suite sent with `--runner cloud` is now filed under its project on QAJev Cloud: the one in its repo's
+  `.qajev/project.toml`, else the project whose `repo` holds the suite. Before, only a `--project` run named one, so
+  the run's page could not say which project it belonged to (José).
 - When Jev says DONE after 0 actions and a check was already false before Jev moved, the run stays harness, but the
   reason now names the check, says it was false before Jev moved, and says how to get a FAIL: run the check without a
   goal (the Orchestrator).

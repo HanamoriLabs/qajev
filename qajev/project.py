@@ -379,6 +379,22 @@ def listing():
     return out
 
 
+def owner_of(path):
+    """The project a file (a suite) belongs to: the name in the nearest .qajev/project.toml at or above it, else the
+    project whose repo holds it (the deepest repo when two do, so a worktree inside a repo counts). -> name or None"""
+    path = Path(path).expanduser().resolve()
+    for folder in path.parents:
+        here = folder / CONFIG_NAME
+        if here.is_file():
+            try:
+                return tomllib.loads(here.read_text()).get("name") or None
+            except (tomllib.TOMLDecodeError, OSError):
+                return None
+    held = [(Path(p["repo"]).resolve(), p["name"]) for p in listing() if p.get("repo") and not p.get("error")]
+    held = [(repo, name) for repo, name in held if path.is_relative_to(repo)]
+    return max(held, key=lambda h: len(h[0].parts))[1] if held else None
+
+
 def set_runner(ref, value):
     """Where a project's runs go: `runner = "<value>"` at the top of its project.toml, or no line ("default": this
     Mac's mode decides). Every other line stays as it is. -> the project (as loaded again)."""
