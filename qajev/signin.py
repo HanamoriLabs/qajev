@@ -180,6 +180,39 @@ def _state(session):
         return {}
 
 
+OPAQUE = re.compile(r"[A-Za-z0-9._~%+=-]{16,}|[0-9]{6,}")  # a long opaque segment (a JWT, percent-encoded), or a code
+SECRET_AFTER = ("verify", "reset", "invite", "token", "magic", "session")  # the segment after a segment holding one
+
+
+def _where(url):
+    """A failed request's host[:port] and path, safe to show: no user part, no query, long opaque segments masked
+    (redteam on #128: redact knows only QAJev's own values, not a token the site puts in a path)."""
+    from urllib.parse import urlsplit
+
+    u = urlsplit(url)
+    try:
+        host = f"{u.hostname or ''}{f':{u.port}' if u.port else ''}"
+    except ValueError:  # a port that is not a number
+        host = u.hostname or ""
+    parts = u.path.split("/")
+    after = [i > 0 and any(w in parts[i - 1].lower() for w in SECRET_AFTER) for i in range(len(parts))]
+    path = "/".join("…" if OPAQUE.fullmatch(part) or after[i] else part for i, part in enumerate(parts))
+    return f"{host}{path[:80]}"
+
+
+def failed_requests(session, since, shown=4):
+    """The requests that failed on the page since `since`, by host and path (no query: it can carry a token), with
+    Chrome's reason. 13 Oct: on a QAJev Cloud machine a test user was "not signed in after 20 s" with nothing to say
+    why; a request to another site, outside the machine's network lock, can be the cause. -> words, or ''"""
+    net = getattr(session, "net", None)
+    failed = net.failed_since(since) if net is not None and hasattr(net, "failed_since") else []
+    if not failed:
+        return ""
+    words = [f"{_where(url)} ({why})" for url, why in failed[-shown:]]
+    more = f" and {len(failed) - shown} more" if len(failed) > shown else ""
+    return f"; requests that failed: {', '.join(words)}{more}"
+
+
 def page_seen(session):
     """Where the browser is and the start of what its page says, in one line: for a failed sign-in's reason."""
     state = _state(session)
@@ -312,7 +345,8 @@ def sign_in(session, account, *, timeout=20.0):
     if not state:
         last = _state(session)
         says = f"; the page says: {last['error']}" if last.get("error") else ""
-        raise SignInFailed(redact(f"not signed in after {timeout:.0f} s: still on {last.get('path', '?')}{says}"))
+        raise SignInFailed(redact(f"not signed in after {timeout:.0f} s: still on {last.get('path', '?')}{says}"
+                                  f"{failed_requests(session, started)}"))
     return {**out, "ok": True, "landed": state.get("href", "").split("?")[0],
             "seconds": round(time.monotonic() - started, 1)}
 

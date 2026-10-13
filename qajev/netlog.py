@@ -230,6 +230,12 @@ class Failures(threading.Thread):
                        filter=ATTACH)  # a worker's own workers
         self._send("Runtime.runIfWaitingForDebugger", child)
 
+    def failed_since(self, since):
+        """The requests that failed since `since` (time.monotonic()), oldest first: what a failed sign-in names.
+        -> [(url, why)]"""
+        with self.lock:
+            return [(url, why) for url, (why, at) in self.failed.items() if at >= since]
+
     def take_worker_logs(self):
         """The workers' console errors and warnings since the last take."""
         with self.lock:
