@@ -396,6 +396,7 @@ app:
   env: {MY_APP_API: "http://127.0.0.1:8790"}          # e.g. a stand-in API on this machine
   home_env: MY_APP_HOME                               # QAJev sets it to a throwaway folder
   start_wait: 60                                      # seconds for the bridge to answer (1-600)
+  bridge_key: true                                    # optional: a new key each launch (see below)
 steps:
   - name: Home shows signed out
     about: With no token the app says so, and calls nothing.
@@ -405,6 +406,28 @@ steps:
 - **A throwaway home.** The app starts with `HOME` (and the XDG folders) in a throwaway folder, and `home_env`, if
   given, names a folder inside it. The app never reads the person's real settings or tokens. A `relaunch` step keeps
   the folder, so a setting saved before it must still be there after it. It is deleted when the run ends.
+- **A bridge key** (`bridge_key: true`). QAJev makes a new `QAJEV_BRIDGE_KEY` (64 hex characters) for each launch,
+  gives it only to the app, and sends it as the first line on the bridge, before any request. A bridge that checks it
+  closes on a wrong key, so no other process on the machine can drive the app. The key never appears in the report,
+  the logs or the JSON.
+- **A test token for the app** (`files:`). A narrow exception: it hands a seeded TEST account's token to the app
+  under test, and never lets QAJev's browser sign in anywhere.
+
+  ```yaml
+  app:
+    home_env: TWINBOX_DESKTOP_HOME
+    test_domains: [twinbox.invalid]                   # the test accounts' email domains
+    files:                                            # a path in home_env's folder: seed:FILE#KEY
+      .twinbox/token@twinbox-staging.example: seed:fixtures/staging-test.json#token
+  ```
+
+  Each value comes only from a seed fixture that says `"test_account": true` and names its `account`, an email at
+  one of `test_domains`. Any other fixture is refused when the suite loads (exit 3). The run's approved test plan
+  must name app.files, or the run is refused. The file is written 0600 (its folders 0700) inside the throwaway home,
+  never through a symbolic link, and a path that is absolute or holds `.` or `..` is refused. The report shows only
+  the file and its fixture ("test token from staging-test.json"). The value is redacted from the report, the logs
+  and the JSON. The home and the file go when the run ends, on a crash or a stop too, and a run killed outright has
+  its home removed by the next run's reaper. A web suite has no `app:`, so its pages never get one.
 - **Errors.** A log line at `ERROR` or `FATAL`, and a Rust panic (`panicked at`), fail the step's `no_errors` check.
   A line that only mentions the word "error" does not.
 - **What stays the Godot driver's:** Jev's choices among the app's actions, the guard's hidden labels (sign in, buy,

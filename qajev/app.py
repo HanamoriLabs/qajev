@@ -10,23 +10,39 @@ its command, and QAJev gives it a throwaway home folder (Twinbox Desktop, 13 Oct
       env: {TWINBOX_API: "http://127.0.0.1:8790"}
       home_env: TWINBOX_DESKTOP_HOME               # also named the throwaway folder, for an app that reads its own
       start_wait: 60                               # seconds until the bridge must answer
+      bridge_key: true                             # a new QAJEV_BRIDGE_KEY each launch, sent as the first line
+      test_domains: [twinbox.invalid]              # the test accounts' email domains, for files:
+      files:                                       # written into home_env's folder before the app starts
+        .twinbox/token@staging.example: seed:fixtures/staging.json#token
+
+`files` is a narrow exception (the Orchestrator, 14 Oct): it hands a seeded TEST account's token to the app under test,
+and never lets QAJev's browser sign in anywhere. Each value comes only from a seed fixture that says "test_account":
+true and names its `account`, an email in one of `test_domains`. The file is written 0600 inside the run's throwaway
+home and goes with it. The value is redacted from the report, the logs and the JSON. The run's approved test plan must
+name app.files.
 """
 
 import json
 import os
 import re
+import secrets
+import shutil
 import subprocess
 import tempfile
 import threading
 import time
 from pathlib import Path
 
-from . import chrome
-from .config import HOME
+from . import chrome, vault
+from .config import HOME, remember_secret
 from .lowprio import niced
 from .native import STATE, GodotGame, NativeError, free_port, save_isolation
 
-APP_KEYS = {"command", "env", "home_env", "start_wait"}
+APP_KEYS = {"command", "env", "home_env", "start_wait", "bridge_key", "files", "test_domains"}
+# A file's place in the app's home: names of these characters joined by /, never absolute, never . or .. (_inside).
+FILE_NAME = re.compile(r"[A-Za-z0-9._@+-]+")
+DOMAIN = re.compile(r"(?:[a-z0-9-]+\.)+[a-z0-9-]+")
+HOME_PREFIX = re.compile(r"qajev-app-(\d+)-")
 # An app's own log: a line logged at ERROR or FATAL (Rust's tracing and log, most loggers), and a Rust panic. Not a
 # line that only says "error" in its text.
 APP_ERROR = re.compile(r"(^|\s)(ERROR|FATAL)(\s|:|$)|\bpanicked at\b")
@@ -80,8 +96,100 @@ def app_spec(value):
         start_wait = 0
     if not 1 <= start_wait <= 600:
         raise NativeError("app.start_wait: seconds, from 1 to 600")
+    bridge_key = value.get("bridge_key", False)
+    if not isinstance(bridge_key, bool):
+        raise NativeError("app.bridge_key: true or false")
+    files, domains = _files_spec(value, home_env)
     return {"command": [str(c) for c in command], "env": {str(k): str(v) for k, v in env.items()},
-            "home_env": str(home_env) if home_env else None, "start_wait": start_wait}
+            "home_env": str(home_env) if home_env else None, "start_wait": start_wait, "bridge_key": bridge_key,
+            "files": files, "test_domains": domains}
+
+
+def _files_spec(value, home_env):
+    """app.files and app.test_domains checked for their form; the fixtures are read by app_files."""
+    files, domains = value.get("files") or {}, value.get("test_domains")
+    if not files:
+        if domains is not None:
+            raise NativeError("app.test_domains: only with app.files")
+        return {}, []
+    if not isinstance(files, dict):
+        raise NativeError("app.files: a mapping of file paths in the app's home to seed:FILE#KEY")
+    if not home_env:
+        raise NativeError("app.files: needs home_env (the files go in that throwaway folder)")
+    for path, ref in files.items():
+        if not _inside(path):
+            raise NativeError(f"app.files: {path!r} must be a path inside the app's home: names joined by /, not "
+                              "absolute, and no . or ..")
+        if not (isinstance(ref, str) and ref.startswith("seed:")):
+            raise NativeError(f"app.files.{path}: comes only from a test fixture, as seed:FILE#KEY")
+        try:
+            vault.parse(ref)
+        except vault.VaultError as e:
+            raise NativeError(f"app.files.{path}: {e}") from None
+    if not (isinstance(domains, list) and domains and all(isinstance(d, str) and DOMAIN.fullmatch(d)
+                                                           for d in domains)):
+        raise NativeError("app.test_domains: the email domains of the test accounts app.files may use, in lowercase "
+                          "(such as [twinbox.invalid])")
+    return {str(k): v for k, v in files.items()}, list(domains)
+
+
+def _inside(path):
+    parts = str(path).split("/")
+    return all(FILE_NAME.fullmatch(p) and p not in (".", "..") for p in parts)
+
+
+def app_files(spec):
+    """Each app.files value, from its seed fixture. -> {path: (value, fixture file name)}, or NativeError naming the
+    file and what is wrong (never the value). The fixture must say "test_account": true and name its `account`, an
+    email in one of app.test_domains."""
+    out = {}
+    for path, ref in spec["files"].items():
+        file = str(vault.parse(ref)[1])
+        try:
+            data = vault.seed(file)
+        except vault.VaultError as e:
+            raise NativeError(f"app.files.{path}: {e}") from None
+        account = data.get("account")
+        domain = account.rpartition("@")[2].lower() if isinstance(account, str) and "@" in account else None
+        if domain not in spec["test_domains"]:
+            raise NativeError(f"app.files.{path}: seed:{Path(file).name} must name its test account (\"account\": an "
+                              f"email at {' or '.join(spec['test_domains'])})")
+        try:
+            out[path] = (vault.resolve(ref), Path(file).name)  # resolve remembers it, so it is redacted everywhere
+        except vault.VaultError as e:
+            raise NativeError(f"app.files.{path}: {e}") from None
+    return out
+
+
+def write_private(home, path, value):
+    """`value` and a newline into home/path, 0600, its folders 0700. Refused: a symlink on the way, or a file there."""
+    home = Path(home)
+    folder = home
+    for part in Path(path).parts[:-1]:
+        folder = folder / part
+        if folder.is_symlink():
+            raise NativeError(f"app.files.{path}: {folder.name} is a symbolic link; nothing was written")
+        folder.mkdir(mode=0o700, exist_ok=True)
+    target = home / path
+    if not target.parent.resolve().is_relative_to(home.resolve()):
+        raise NativeError(f"app.files.{path}: outside the app's home; nothing was written")
+    try:
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except OSError as e:
+        raise NativeError(f"app.files.{path}: cannot write it ({type(e).__name__})") from None
+    with os.fdopen(fd, "w") as f:
+        f.write(value + "\n")
+
+
+def reap_homes():
+    """Throwaway app homes whose QAJev run died without removing them (a kill -9): removed, with any file in them."""
+    removed = []
+    for folder in (HOME / "tmp").glob("qajev-app-*") if (HOME / "tmp").is_dir() else []:
+        m = HOME_PREFIX.match(folder.name)
+        if m and int(m[1]) != os.getpid() and not chrome.alive(int(m[1])):
+            shutil.rmtree(folder, ignore_errors=True)
+            removed.append(f"app home {folder.name}")
+    return removed
 
 
 class AppProcess(GodotGame):
@@ -108,7 +216,9 @@ class AppProcess(GodotGame):
         self.env = {**self.spec["env"], **(env or {})}
         self.proc = self.sock = self.file = None
         self.errors, self.log = [], []
-        self.user_dir = None
+        self.user_dir = self._key = None
+        self.file_notes = [f"{path}: test token from {Path(str(vault.parse(ref)[1])).name}"
+                           for path, ref in self.spec["files"].items()]
 
     def start(self):
         self.port = free_port()
@@ -116,6 +226,7 @@ class AppProcess(GodotGame):
         (HOME / "tmp").mkdir(parents=True, exist_ok=True)
         # A throwaway home: the app never reads or writes the person's real one. A relaunch keeps it, so what the
         # first launch saved is what the next one reads (a setting that must survive a restart).
+        first = self.user_dir is None
         if self.user_dir is None:
             self.user_dir = tempfile.mkdtemp(prefix=f"qajev-app-{os.getpid()}-", dir=HOME / "tmp")
         # The app's environment: the allowlist from QAJev's own, the suite's env, then the throwaway home and the
@@ -127,6 +238,13 @@ class AppProcess(GodotGame):
             app_home = Path(self.user_dir) / "app"
             app_home.mkdir(exist_ok=True)
             env[self.spec["home_env"]] = str(app_home)
+            if first:  # a relaunch keeps what the app made of them
+                for path, (value, _fixture) in app_files(self.spec).items():
+                    write_private(app_home, path, value)
+        if self.spec["bridge_key"]:  # new for each launch; only the app and its bridge's first line see it
+            self._key = secrets.token_hex(32)
+            remember_secret(self._key)
+            env["QAJEV_BRIDGE_KEY"] = self._key
         self.errors, self.log = [], []
         self.proc = subprocess.Popen(niced(self.command), cwd=self.project, env=env, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, text=True, stdin=subprocess.DEVNULL,
@@ -138,6 +256,24 @@ class AppProcess(GodotGame):
                        "identity": chrome.identity(self.proc.pid)}  # the reaper kills only this very process
         (STATE / f"{self.proc.pid}.json").write_text(json.dumps(self.record))
         return self._wait_for_bridge()
+
+    def __enter__(self):
+        try:
+            self.start()
+        except BaseException:  # a start that fails part-way still removes the home and any file written into it
+            self.close()
+            raise
+        return self
+
+    def _wait_for_bridge(self):
+        super()._wait_for_bridge()
+        if self._key and self.file is not None:
+            try:
+                self.file.write(self._key + "\n")
+                self.file.flush()
+            except OSError as e:
+                raise NativeError(f"lost the app's bridge while sending its key: {e}") from None
+        return self
 
     def _exited(self, code):
         return (f"the app exited with {code} before its bridge came up: "

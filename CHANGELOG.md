@@ -6,6 +6,20 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- A bridge key for a native app: `app.bridge_key: true` gives the app a new `QAJEV_BRIDGE_KEY` each launch, and
+  QAJev sends it as the bridge's first line, so only that run can drive the app (Twinbox Desktop's bridge needs it).
+- A test token for a native app: `app.files` writes a seeded TEST account's value into the app's throwaway home
+  before it starts, such as Twinbox's staging token file. The value comes only from a `"test_account": true`
+  fixture whose `account` is at one of `app.test_domains`, and only under an approved test plan that names
+  app.files. The file is 0600, never written through a symbolic link, and goes with the home, on a crash or a stop
+  too. The report shows only the file and its fixture. QAJev's browser never gets it.
+
+### Fixed
+
+- Play's event stream (`--events` and a job's events.jsonl) now redacts secrets as the report does.
+
+### Added
+
 - A page the app opened, checked in QAJev's Chrome: a play suite's `open_url:` step reads the URL from the app's state
   (`from`), fails and opens nothing unless it matches `url_regex` (`^https://<host>/...`, the host written out) and
   is on that host, then runs the page as one scenario of `qajev run` on the same machine, with a suite's `expect`
