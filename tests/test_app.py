@@ -522,3 +522,44 @@ def test_play_refuses_a_suite_that_calls_gmail_a_test_domain_even_with_its_env_f
     # the run's --env-file says gmail.com is a test domain: it is not QAJev's own ~/.qajev/.env, so it does not count
     code, out = _play(tmp_path, monkeypatch, project, suite, capsys, env_text="QAJEV_TEST_DOMAINS=gmail.com\n")
     assert code == cli.EXIT_CONFIG and "may only narrow the test domains" in out["error"]
+
+
+# ---- a reused pid (redteam's second note on #145) ----
+
+def _home_of(pid, name, start=None):
+    folder = HOME / "tmp" / f"qajev-app-{pid}-{name}"
+    (folder / "app" / ".twinbox").mkdir(parents=True)
+    (folder / "app" / TOKEN_PATH).write_text(TOKEN)
+    if start is not None:
+        (folder / "owner.json").write_text(json.dumps({"pid": pid, "proc_start": start}))
+    return folder
+
+
+def test_a_home_whose_pid_now_belongs_to_another_process_is_reaped_and_its_owners_is_not(monkeypatch):
+    import shutil
+
+    from qajev import chrome
+    from qajev.app import reap_homes
+
+    owner = os.getppid()  # alive for the whole test
+    reused = _home_of(owner, "r1", start="Mon Jan  1 00:00:00 2001")  # the run that made it started long before
+    ours = _home_of(owner, "r2", start=chrome.started(owner))
+    unknown = _home_of(owner, "r3")  # no owner record: kept, nothing is removed on a guess
+    try:
+        removed = reap_homes()
+        assert f"app home {reused.name}" in removed and not reused.exists()
+        assert ours.exists() and unknown.exists()
+        monkeypatch.setattr(chrome, "started", lambda pid: None)  # a live pid whose start cannot be read: kept
+        again = _home_of(owner, "r4", start="Mon Jan  1 00:00:00 2001")
+        assert reap_homes() == [] and again.exists()
+    finally:
+        for folder in (HOME / "tmp").glob(f"qajev-app-{owner}-r*"):
+            shutil.rmtree(folder, ignore_errors=True)
+
+
+def test_each_app_home_records_when_its_run_started(project):
+    from qajev import chrome
+
+    with AppProcess(project, spec()) as app:
+        owner = json.loads((Path(app.user_dir) / "owner.json").read_text())
+    assert owner == {"pid": os.getpid(), "proc_start": chrome.started(os.getpid())} and owner["proc_start"]

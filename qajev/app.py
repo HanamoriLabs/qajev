@@ -199,12 +199,29 @@ def write_private(home, path, value):
         f.write(value + "\n")
 
 
+OWNER = "owner.json"  # in each throwaway home: when the QAJev run that made it started, so a reused pid is not it
+
+
+def _owner_gone(folder, pid):
+    """The run that made `folder` is gone: its pid is free, or another process now has it (a later start). A live pid
+    whose start cannot be read, or a home with no owner record, counts as still running: nothing is removed on a
+    guess (redteam's note on #145)."""
+    if not chrome.alive(pid):
+        return True
+    try:
+        known = json.loads((folder / OWNER).read_text()).get("proc_start")
+    except (OSError, ValueError, AttributeError):
+        return False
+    now = chrome.started(pid)
+    return bool(known) and now is not None and now != known
+
+
 def reap_homes():
     """Throwaway app homes whose QAJev run died without removing them (a kill -9): removed, with any file in them."""
     removed = []
     for folder in (HOME / "tmp").glob("qajev-app-*") if (HOME / "tmp").is_dir() else []:
         m = HOME_PREFIX.match(folder.name)
-        if m and int(m[1]) != os.getpid() and not chrome.alive(int(m[1])):
+        if m and int(m[1]) != os.getpid() and _owner_gone(folder, int(m[1])):
             shutil.rmtree(folder, ignore_errors=True)
             removed.append(f"app home {folder.name}")
     return removed
@@ -247,6 +264,8 @@ class AppProcess(GodotGame):
         first = self.user_dir is None
         if self.user_dir is None:
             self.user_dir = tempfile.mkdtemp(prefix=f"qajev-app-{os.getpid()}-", dir=HOME / "tmp")
+            (Path(self.user_dir) / OWNER).write_text(json.dumps({"pid": os.getpid(),
+                                                                 "proc_start": chrome.started(os.getpid())}))
         # The app's environment: the allowlist from QAJev's own, the suite's env, then the throwaway home and the
         # bridge last, so nothing before them can move them.
         env = {**passed_env(os.environ), **self.env, **save_isolation(self.user_dir),
