@@ -135,6 +135,17 @@ def describe(p):
     return f"{said}, after putting {p['clipboard']!r} on the clipboard" if p["clipboard"] is not None else said
 
 
+def planned_checks(value):
+    """The checks a keys step makes before its expect checks, named as keys_step names them (for `qajev plan`)."""
+    try:
+        p = plan(value)
+    except ValueError:
+        return []
+    return [{"check": f"{p['app']} was in front"},
+            *([{"check": "the clipboard held the text"}] if p["clipboard"] is not None else []),
+            {"check": f"the keys were pressed in {p['app']}", "says": describe(p)}]
+
+
 def check_keys(steps):
     """Each keys step, checked when the suite loads. NativeError names the step and what is wrong."""
     for i, step in enumerate(steps or []):
@@ -166,11 +177,11 @@ def _last(out):
 
 
 def keys_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shots=True, emit=None, helper=None,
-              run=_run):
+              run=None):
     """A suite's `keys:` step: the app to the front, the clipboard set, the keys pressed (all through qajev-keys),
     then the step's `expect` checks, if it has any. Each part is a check; the first that fails ends the step."""
     p = plan(value)
-    helper = Path(helper or HELPER)
+    helper, run = Path(helper or HELPER), run or _run
     if not helper.is_file():
         return _step_result(name, "browser_error", [], "real keys run only on a QAJev Cloud Mac with the qajev-keys "
                                                        f"helper, and {helper} is not here: nothing was pressed")

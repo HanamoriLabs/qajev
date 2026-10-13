@@ -1004,8 +1004,10 @@ def cmd_play(args):
             native.check_window(session_steps)
             native.check_pad(session_steps)
             from .handoff import check_handoff
+            from .mackeys import check_keys
 
             check_handoff(session_steps)
+            check_keys(session_steps)
         except native.NativeError as e:
             return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
         if args.only:
@@ -1730,6 +1732,9 @@ def cmd_plan(args):
             name, run_about = spec.get("name") or args.file.stem, about(spec.get("about"), "about")
             native.check_window(spec["steps"])
             native.check_pad(spec["steps"])
+            from .mackeys import check_keys
+
+            check_keys(spec["steps"])
             items = plan_mod.from_steps(native.check_judged_by(spec["steps"]))
             named = spec.get("plan")
         else:
