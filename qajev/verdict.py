@@ -171,9 +171,11 @@ def unreachable(url, error):
     return "fail", f"page did not load: {error}"
 
 
-def classify(stop, checks, *, has_checks, stop_detail=None, not_run=(), actions=None, url=None) -> tuple[str, str]:
+def classify(stop, checks, *, has_checks, stop_detail=None, not_run=(), actions=None, url=None,
+             before=None) -> tuple[str, str]:
     """not_run: the expectations or steps that never ran (the run stopped first). actions: how many Jev took, when it
-    pursued a goal. url: the page it tried to load (for a page that did not). -> (outcome, reason)."""
+    pursued a goal. url: the page it tried to load (for a page that did not). before: the page checks as Jev found the
+    page, before its first move. -> (outcome, reason)."""
     failed = [c for c in checks if not c["ok"]]
     why = "; ".join(f"{c['check']}" + (f" ({c['detail']})" if c.get("detail") else "") for c in failed)
     if stop == "skipped":
@@ -198,7 +200,14 @@ def classify(stop, checks, *, has_checks, stop_detail=None, not_run=(), actions=
                                     for c in failed)
     if stop == "done" and actions == 0:
         # it declared victory on a page it never tried: says nothing about the page (audit, 6 Oct: 52% of these
-        # FAILs were wrong)
+        # FAILs were wrong). A check already false before Jev moved stays harness too: QAJev cannot tell one that
+        # needs no action from one Jev never tried. The reason says how to judge the page as it loads (13 Oct).
+        found = {c["check"]: c for c in before or []}
+        if failed and all(c["check"] in found and not found[c["check"]]["ok"]
+                          and found[c["check"]].get("detail") == c.get("detail") for c in failed):
+            return "harness", (f"{why}: already false before Jev moved and never changed, and Jev said DONE after "
+                               "0 actions, so this says nothing about the page. To judge the page as it loads, run "
+                               "the check without a goal: a false check is then a FAIL")
         return "harness", f"Jev said DONE without taking a single action; unmet: {why}"
     if stop == "done":
         return "fail", f"Jev reported DONE but: {why}"

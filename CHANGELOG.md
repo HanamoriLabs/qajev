@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Changed
+
+- When Jev says DONE after 0 actions and a check was already false before Jev moved, the run stays harness, but the
+  reason now names the check, says it was false before Jev moved, and says how to get a FAIL: run the check without a
+  goal (the Orchestrator).
+
 ## 0.4.27: 13 Oct 2026
 
 ### Fixed

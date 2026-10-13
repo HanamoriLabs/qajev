@@ -322,6 +322,44 @@ def test_done_without_a_single_action_and_a_failed_check_is_harness_not_a_produc
     assert V.classify("done", passed, has_checks=True, actions=0)[0] == "pass"  # already there: still a pass
 
 
+def test_a_check_false_before_jev_moved_with_0_actions_is_harness_and_says_how_to_get_a_fail(monkeypatch):
+    # 0.4.27's proof, 13 Oct: on 0.4.26 the check read the page as wrong, but Jev said DONE after 0 actions, so the run
+    # was harness. That stays (the audit above). The reason names the check, says it was already false before Jev
+    # moved, and tells the author that the same check without a goal gives FAIL (the Orchestrator).
+    from types import SimpleNamespace
+
+    from qajev import runner, suite
+
+    class Page:
+        assists = []
+
+        def __init__(self):
+            self.agent = SimpleNamespace(state={"status": "done", "history": [], "decisions": [], "text_calls": [],
+                                                "elapsed_ms": 900})
+            self.ledger = SimpleNamespace(spent=lambda: 0.0)
+
+        def set_device(self, device): pass
+        def arm(self, mode, speech=None): pass
+        def check_host(self, url): pass
+        def navigate(self, url): self.url = url
+        def reset_agent(self, task): pass
+        def why_failed(self, url): return None
+        def probe(self, expect): return {"url": self.url, "status": 200, "text": [False], "probe": {}}
+
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda opts: (True, 1.0))
+    monkeypatch.setattr(runner, "drive", lambda *a, **k: ("done", None))
+    page = {"name": "account", "url": "http://127.0.0.1:8765/", "settle": 0, "expect": {"text": "Account page"}}
+    goal = "Read the page. Stop when you see the heading Account page."
+    with_goal, without = suite.parse({"scenarios": [{**page, "goal": goal}, {**page, "name": "bare"}]}).scenarios
+    held = runner.run_scenario(Page(), with_goal, opts=runner.Options(), hosts={"127.0.0.1"}, run_dir=None)
+    assert held["outcome"] == "harness", held["reason"]
+    for words in ("page shows 'Account page'", "already false before Jev moved", "0 actions",
+                  "run the check without a goal"):
+        assert words in held["reason"], held["reason"]
+    bare = runner.run_scenario(Page(), without, opts=runner.Options(), hosts={"127.0.0.1"}, run_dir=None)
+    assert bare["outcome"] == "fail", bare["reason"]
+
+
 @pytest.mark.parametrize("url, error", [("http://localhost:3000/", "net::ERR_CONNECTION_REFUSED"),
                                         ("http://shop.test/cart", "net::ERR_NAME_NOT_RESOLVED"),
                                         ("http://127.0.0.1:4031/", "net::ERR_CONNECTION_RESET")])
