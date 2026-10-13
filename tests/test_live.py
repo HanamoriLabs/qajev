@@ -409,6 +409,23 @@ def test_a_hook_never_clicks_a_control_the_guard_has_not_judged(session, site, m
         session.require_guard()
 
 
+def test_a_marked_control_stays_inert_no_click_reaches_it_while_the_box_shows(session, site):
+    # The Orchestrator, 13 Oct: the picture's pass must not open a way to a control the guard hid. A real mouse click at
+    # the control's centre, while it has its space back under the box, never reaches the page's own handler.
+    session.arm("readonly")
+    session.navigate(site + "/shop.html")
+    session.evaluate("window.reached = 0; shop.addEventListener('click', () => { window.reached++; })")
+    assert session.evaluate("window.__qajev.mark(true)") == 1
+    x, y = session.evaluate(
+        "(() => { const r = shop.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
+    for kind in ("mousePressed", "mouseReleased"):
+        session.call("Input.dispatchMouseEvent", type=kind, x=x, y=y, button="left", clickCount=1)
+    assert session.evaluate("[window.reached, shop.inert, document.elementFromPoint(%s, %s) === shop]" % (x, y)) == [
+        0, True, False]
+    session.evaluate("window.__qajev.mark(false)")
+    assert session.evaluate("window.reached") == 0
+
+
 def test_a_picture_marks_where_the_guard_hid_a_control_then_puts_the_page_back(session, site, tmp_path):
     # 13 Oct: a "Save" the guard hid read as the page's bug twice. For a picture only, the hidden control gets its
     # space back, stays invisible and inert, under a dashed box labelled "hidden by guard"; then all is as before.
