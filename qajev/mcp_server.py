@@ -204,6 +204,7 @@ async def _run_report(args, ctx, background=False, title=None, cwd=None, rerun=N
     """A browser run as a QAJev job. background: return the job at once. Otherwise wait for it (relaying its
     progress) and return the report JSON; cancelling the call stops the job. cwd: where it runs (default: here);
     rerun: the job it reruns (jobs.start)."""
+    config.reload_env()  # this server lives for hours: ~/.qajev/.env as it is now, not as it was at the start
     _refuse_user_info(args)  # before the job record keeps the arguments as typed
     job = await asyncio.to_thread(jobs.start, args, title, cwd=cwd, rerun=rerun)
     if background:
@@ -248,6 +249,7 @@ async def _dispatch(args, where, ctx, background, title=None):
     from . import cloud
     from .cli import build_parser
 
+    config.reload_env()  # where runs go (QAJEV_RUNNER, QAJEV_CLOUD_URL) as ~/.qajev/.env says now
     _refuse_user_info([*args, *where])  # before a job record or the cloud keeps the arguments as typed
     try:
         parsed = build_parser().parse_args([*args, *where])

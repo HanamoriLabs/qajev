@@ -16,8 +16,10 @@ def places(tmp_path, monkeypatch):
     repo.mkdir()
     monkeypatch.setattr(config, "HOME", home)
     monkeypatch.chdir(repo)
-    for key in [*config.OWN_KEYS, "QAJEV_ENV_FILE", "PROJECT_ONLY", *(f"QAJEV_{k}" for k in config.OWN_KEYS)]:
+    for key in [*config.OWN_KEYS, "QAJEV_ENV_FILE", "PROJECT_ONLY", "QAJEV_RUNNER", "QAJEV_CLOUD_URL",
+                *(f"QAJEV_{k}" for k in config.OWN_KEYS)]:
         monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(config, "_FROM_FILES", {})
     return home, repo
 
 
@@ -63,3 +65,56 @@ def test_an_env_file_named_on_purpose_is_still_read(places, tmp_path):
     named.write_text("TYPESAFE_API_KEY=from-named\n")
     assert str(named) in config.load_env(str(named))
     assert os.environ["TYPESAFE_API_KEY"] == "from-named"
+
+
+def test_a_long_lived_process_follows_an_edited_env_file(places):
+    home, _ = places
+    env = home / ".env"
+    env.write_text("QAJEV_RUNNER=cloud\nOPENROUTER_API_KEY=key-one\n")
+    config.load_env()
+    assert os.environ["QAJEV_RUNNER"] == "cloud"
+    env.write_text("QAJEV_RUNNER=local\nQAJEV_CLOUD_URL=http://cloud-off.invalid\nOPENROUTER_API_KEY=key-two\n")
+    config.reload_env()
+    assert os.environ["QAJEV_RUNNER"] == "local"  # `qajev mode local` reaches an MCP server started before it
+    assert os.environ["QAJEV_CLOUD_URL"] == "http://cloud-off.invalid"
+    assert os.environ["OPENROUTER_API_KEY"] == "key-two"
+    env.write_text("OPENROUTER_API_KEY=key-two\n")
+    config.reload_env()
+    assert "QAJEV_RUNNER" not in os.environ and "QAJEV_CLOUD_URL" not in os.environ  # a removed line is gone
+
+
+def test_a_value_the_shell_or_the_process_set_is_never_taken_back(places, monkeypatch):
+    home, _ = places
+    env = home / ".env"
+    env.write_text("QAJEV_RUNNER=cloud\nQAJEV_CLOUD_URL=https://cloud.qajev.com\n")
+    monkeypatch.setenv("QAJEV_RUNNER", "auto")  # the shell's: it wins over the file, now and after a reload
+    config.load_env()
+    os.environ["QAJEV_CLOUD_URL"] = "https://staging.example"  # the process changed it after loading
+    env.write_text("QAJEV_RUNNER=local\nQAJEV_CLOUD_URL=http://cloud-off.invalid\n")
+    config.reload_env()
+    assert os.environ["QAJEV_RUNNER"] == "auto" and os.environ["QAJEV_CLOUD_URL"] == "https://staging.example"
+
+
+@pytest.mark.parametrize("call", ["dispatch", "run_report"])
+def test_every_mcp_run_reads_the_env_file_again_before_it_decides_anything(monkeypatch, call):
+    import asyncio
+
+    from qajev import cloud, jobs, mcp_server
+
+    seen = []
+
+    class Stop(Exception):
+        pass
+
+    def decided(*a, **k):  # where the run goes (dispatch) or the job starting (run_report): the first decision
+        seen.append("decided")
+        raise Stop
+
+    monkeypatch.setattr(config, "reload_env", lambda: seen.append("reload"))
+    monkeypatch.setattr(cloud, "runner_for", decided)
+    monkeypatch.setattr(jobs, "start", decided)
+    run = (mcp_server._dispatch(["check", "https://example.com/"], [], None, True) if call == "dispatch"
+           else mcp_server._run_report(["check", "https://example.com/"], None, background=True))
+    with pytest.raises(Stop):
+        asyncio.run(run)
+    assert seen == ["reload", "decided"]

@@ -25,6 +25,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   Input pushed through an app's bridge cannot prove a paste, a shortcut or focus (Twinbox step 20a: a box name that
   would not paste).
 
+### Fixed
+
+- A running MCP server now reads `~/.qajev/.env` again before each run. Before, it kept the values the file had when
+  the server started, so `qajev mode local` never reached it: servers started before 01:10 on 14 Oct kept sending
+  runs to QAJev Cloud after the Mac was set to local. A changed line now wins, and a removed line is gone. A value
+  the shell set, or the process changed, still wins over the file.
+
 ## 0.4.29: 14 Oct 2026
 
 ### Added

@@ -63,6 +63,10 @@ OWN_KEYS = ("TYPESAFE_API_KEY", "TYPESAFE_MODEL", "OPENROUTER_API_KEY", "TEXT_MO
             "TEXT_MODEL", "TEXT_MODEL_REASONING", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID")
 _SOURCES: dict[str, str] = {}  # own key -> where its value came from (a file, QAJEV_<NAME>, the shell): names only
 _SHELL_SET_ASIDE: list[str] = []  # own keys the shell set, not used
+# A setting load_env copied in from a file, with the value it copied: the file's, not the shell's. A later load_env
+# reads the files again for these, so a long-lived process (the MCP server) follows an edited ~/.qajev/.env.
+_FROM_FILES: dict[str, str] = {}
+_EXPLICIT: list = [None]  # the env file the last load_env was given, for reload_env
 
 
 def env_files(explicit=None):
@@ -115,6 +119,14 @@ def load_env(explicit=None):
     for key, value in list(os.environ.items()):
         if value == ROUTING_PLACEHOLDER:
             del os.environ[key]
+    # What an earlier call copied from a file, and nothing changed since, is read from the files again below: a
+    # changed file wins, and a line removed from it is gone (QAJEV_RUNNER=cloud outlived `qajev mode local` in
+    # every MCP server started before it, 14 Oct). A value the shell or the process set stays theirs.
+    for key, value in list(_FROM_FILES.items()):
+        if os.environ.get(key) == value:
+            del os.environ[key]
+    _FROM_FILES.clear()
+    _EXPLICIT[0] = explicit
     shell = {k: os.environ[k] for k in OWN_KEYS if k in os.environ}
     loaded, own = [], {}
     for path in env_files(explicit):
@@ -125,8 +137,8 @@ def load_env(explicit=None):
         for key, value in _read(path).items():
             if key in OWN_KEYS:
                 own.setdefault(key, (value, str(path)))
-            else:
-                os.environ.setdefault(key, value)
+            elif key not in os.environ:
+                os.environ[key] = _FROM_FILES[key] = value
         loaded.append(str(path))
     _SOURCES.clear()
     _SHELL_SET_ASIDE.clear()
@@ -139,11 +151,18 @@ def load_env(explicit=None):
             if key in shell and shell[key] != value:
                 _SHELL_SET_ASIDE.append(key)
             os.environ[key], _SOURCES[key] = value, path
+            if key not in shell:
+                _FROM_FILES[key] = value
         elif key in shell:
             _SOURCES[key] = "the shell"
     for key, value in DEFAULTS.items():
         os.environ.setdefault(key, value)
     return loaded
+
+
+def reload_env():
+    """load_env again with the env file it was last given: a long-lived process follows edits to ~/.qajev/.env."""
+    return load_env(_EXPLICIT[0])
 
 
 def key_sources():
