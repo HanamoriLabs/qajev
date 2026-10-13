@@ -127,7 +127,10 @@ def test_an_open_url_step_in_a_session_runs_as_its_own_step(tmp_path, monkeypatc
     ({**SPEC, "url_regex": "^https://(["}, "url_regex: "),
     ({**SPEC, "expect": {}}, "open_url.expect"),
     ({**SPEC, "expect": {"textt": ["x"]}}, "textt"),
-    ({**SPEC, "guard": {"allow_everything": True}}, "allow_everything"),
+    ({**SPEC, "guard": {"allow_everything": True}}, "takes allow_requests only"),
+    ({**SPEC, "guard": {"allow_secret_fields": True}}, "payment fields stay disabled"),
+    ({**SPEC, "guard": {"allow_requests": ["^https://api\\.stripe\\.com/.*$"]}}, "with {last} in it"),
+    ({**SPEC, "guard": {"allow_requests": ["https://api\\.stripe\\.com/{last}"]}}, "from \\^ to \\$"),
 ])
 def test_a_wrong_open_url_step_is_refused_when_the_suite_loads(spec, says):
     with pytest.raises(NativeError, match=says):
@@ -175,3 +178,49 @@ def test_qajev_play_refuses_a_wrong_open_url_step_when_the_suite_loads(tmp_path,
     assert cli.main(["play", str(tmp_path), "--suite", str(suite), "--json", "--env-file", str(env)]) == cli.EXIT_CONFIG
     out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert "url_regex" in out["error"]
+
+
+def test_the_page_opens_only_in_qajevs_own_throwaway_chrome(tmp_path, monkeypatch):
+    """Proof 1: never José's browser, the system's default browser or `open`: one `qajev run` with a throwaway profile."""
+    import webbrowser
+
+    def refuse(*a, **k):
+        raise AssertionError(f"the page went somewhere else: {a}")
+
+    monkeypatch.setattr(webbrowser, "open", refuse)
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+    monkeypatch.setattr(os, "system", refuse)
+    inner = InnerRun()
+    r = open_url_step(App(), name="checkout", spec=SPEC, run_dir=tmp_path, run=inner)
+    assert r["outcome"] == "pass" and len(inner.calls) == 1
+    args = inner.calls[0]
+    assert args[0] == sys.executable and args[1:4] == ["-m", "qajev", "run"]
+    assert {"--ephemeral", "--headless"} <= set(args) and args[args.index("--runner") + 1] == "local"
+    assert "--profile" not in args and "--cdp-url" not in args
+
+
+def test_on_a_checkout_page_payment_fields_stay_disabled_and_only_its_own_init_posts(tmp_path):
+    """Proof 2: the page's run is read-only with QAJev's guard as is; the one request let through is this session's."""
+    inner = InnerRun()
+    open_url_step(App(), name="checkout", spec=SPEC, run_dir=tmp_path, run=inner)
+    assert inner.suite["guard"] == {"allow_requests": [rf"^https://api\.stripe\.com/v1/payment_pages/{SESSION}/init$"]}
+    assert "mode" not in inner.suite and "mode" not in inner.suite["scenarios"][0]  # read-only, as production is
+    from qajev.suite import parse
+
+    suite = parse(inner.suite)
+    assert not suite.guard.get("allow_secret_fields") and suite.scenarios[0].mode == "readonly"
+
+
+@pytest.mark.parametrize("url, says", [
+    ("http://checkout.stripe.com/c/pay/cs_test_x", "not an https URL"),
+    ("https://user:pass@checkout.stripe.com/c/pay/cs_test_x", "user name or password is refused"),
+    ("https://checkout.stripe.com.evil.example/c/pay/cs_test_x", "was 'https://checkout.stripe.com.evil"),
+])
+def test_a_url_that_is_not_https_holds_a_password_or_is_another_host_opens_nothing(tmp_path, url, says):
+    """Proof 3, with a url_regex loose enough to let each one match: the step's own rules still refuse them."""
+    inner = InnerRun()
+    loose = {**SPEC, "url_regex": r"^https?://(.*@)?checkout\.stripe\.com/c/pay/cs_test_"}
+    r = open_url_step(App(url=url), name="checkout", spec=loose if "evil" not in url else SPEC, run_dir=tmp_path,
+                      run=inner)
+    assert r["outcome"] == "fail" and inner.calls == [] and "nothing was opened" in r["reason"]
+    assert says in r["checks"][0]["detail"]

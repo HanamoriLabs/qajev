@@ -32,9 +32,13 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from .config import user_info_refusal
 from .native import NativeError, _step, _step_result
 
 SPEC_KEYS = {"from", "url_regex", "says", "expect", "guard", "settle"}
+# The only guard key an open_url step may set. Payment and password fields stay disabled, the page stays read-only,
+# and each allowed request is one https address pinned to this URL's own {last} (the Orchestrator, 14 Oct).
+GUARD_KEYS = {"allow_requests"}
 OTHER_ACTS = ("goal", "play", "js", "pad", "keys", "idle", "crash_renderer", "relaunch", "handoff")
 PROBE_URL = "https://example.invalid/c/pay/probe"
 TIMEOUT_S = 600
@@ -75,6 +79,15 @@ def check_open_url(steps):
             re.compile(spec["url_regex"])
         except re.error as e:
             raise NativeError(f"{where}.url_regex: {e}") from None
+        guard = spec.get("guard") or {}
+        if not isinstance(guard, dict) or set(guard) - GUARD_KEYS:
+            raise NativeError(f"{where}.guard: takes allow_requests only; payment fields stay disabled and the page "
+                              "stays read-only")
+        for pattern in guard.get("allow_requests") or []:
+            if not (isinstance(pattern, str) and pattern.startswith("^https://") and pattern.endswith("$")
+                    and "{last}" in pattern):
+                raise NativeError(f"{where}.guard.allow_requests: {pattern!r} must be one https address from ^ to $ "
+                                  "with {last} in it, so it lets through only this URL's own request")
         if not isinstance(spec.get("expect"), dict) or not spec["expect"]:
             raise NativeError(f"{where}.expect: what the page must show (text, js, url_regex...)")
         try:
@@ -120,8 +133,10 @@ def open_url_step(game, *, name, spec, about=None, run_dir=None, emit=None, run=
     url = _value(obs.get("state") or {}, spec["from"])
     ok = isinstance(url, str) and re.search(want, url) is not None
     shown = url if url is None or not isinstance(url, str) else url[:120]
-    first = {"check": f"state {spec['from']} matches {want}", "says": says, "ok": ok,
-             "detail": None if ok else f"{spec['from']} was {shown!r}"}
+    detail = None if ok else f"{spec['from']} was {shown!r}"
+    if ok and (urlsplit(url).scheme != "https" or user_info_refusal(url)):  # whatever url_regex says
+        ok, detail = False, user_info_refusal(url) or f"{spec['from']} is not an https URL"
+    first = {"check": f"state {spec['from']} matches {want}", "says": says, "ok": ok, "detail": detail}
     if not ok:
         r = _step_result(name, "reached", [first])
         r["reason"] += "; nothing was opened"

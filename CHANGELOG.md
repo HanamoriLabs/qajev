@@ -10,7 +10,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   (`from`), fails and opens nothing unless it matches `url_regex` (`^https://...`), then runs the page as one
   scenario of `qajev run` on the same machine, with a suite's `expect` and `guard`. `{last}` in
   `guard.allow_requests` is the URL's own last path part, so a Stripe checkout's `/init` POST goes through for that
-  session only. A page check that cannot judge is harness. The inner run takes the browser slot from its parent play
+  session only. The guard takes nothing else, so payment fields stay disabled, and a URL that is not https or holds
+  a user name or password opens nothing. A page check that cannot judge is harness. The inner run takes the browser slot from its parent play
   run. Twinbox step 21 checks its Stripe test checkout this way.
 
 - Real keys on a QAJev Cloud Mac: a play suite's `keys:` step brings the app (`app`, its bundle id) to the front, can

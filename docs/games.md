@@ -304,7 +304,9 @@ state. An `open_url` step reads it there and checks that page in QAJev's own Chr
 ```
 
 The first check is the URL itself: when the state has no URL, or it does not match `url_regex` (which must start
-with `^https://`), the step fails and nothing opens. Then QAJev runs the page as one scenario of `qajev run`, on
+with `^https://`), or it is not https or holds a user name or password, the step fails and nothing opens. The
+step's `guard` takes `allow_requests` only, and each pattern is one https address from `^` to `$` with `{last}` in
+it: payment and password fields stay disabled, and nothing else may post. Then QAJev runs the page as one scenario of `qajev run`, on
 this machine, on desktop, with a throwaway profile and every rule a suite has: production is read-only, and a POST
 goes only where `allow_requests` names it. `{last}` there is the URL path's last part, escaped, so the guard lets
 through one session's own request and no other's. The page's checks join the step as "page: ...", and its report
