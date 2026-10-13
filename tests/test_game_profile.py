@@ -85,15 +85,18 @@ def test_the_reaper_kills_only_the_very_game_it_started_never_a_reused_pid(tmp_p
     # to another process. It is killed only when its start time and command still match the record.
     import json
 
-    from qajev import chrome, native
+    from qajev import chrome, mobile, native
 
     monkeypatch.setattr(native, "STATE", tmp_path / "native")
     native.STATE.mkdir()
+    # Simulator clones are not this test's subject. On a cold macOS runner `xcrun simctl list` took over 30 s, and a
+    # "sleep 30" below ended by itself, so the test read it as killed (macOS CI, 13 Oct).
+    monkeypatch.setattr(mobile, "reap_clones", lambda: [])
     owner = subprocess.Popen(["true"])  # the run that started the game: gone
     owner.wait()
-    unrelated = subprocess.Popen(["sleep", "30"], start_new_session=True)  # now holds a recorded pid
-    ours = subprocess.Popen(["sleep", "31"], start_new_session=True)  # a game the dead run really started
-    legacy = subprocess.Popen(["sleep", "32"], start_new_session=True)  # a record from before identities
+    unrelated = subprocess.Popen(["sleep", "600"], start_new_session=True)  # now holds a recorded pid
+    ours = subprocess.Popen(["sleep", "601"], start_new_session=True)  # a game the dead run really started
+    legacy = subprocess.Popen(["sleep", "602"], start_new_session=True)  # a record from before identities
     try:
         records = {unrelated.pid: {"proc_start": "Mon Jan  1 00:00:00 2024", "command": "/Applications/Game.app"},
                    ours.pid: chrome.identity(ours.pid), legacy.pid: None}
