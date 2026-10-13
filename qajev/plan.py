@@ -116,6 +116,14 @@ def from_steps(steps):
             from .pad import describe
 
             planned.insert(0, {"check": "the pad input was sent", "says": describe(step["pad"])})
+        if isinstance(step.get("open_url"), dict):  # the URL first, then the page's own checks, as its run names them
+            from .openurl import planned_checks as url_checks
+
+            planned[:0] = url_checks(step["open_url"], step.get("name") or f"step {i}", step.get("about"))
+        if isinstance(step.get("keys"), dict):  # the app in front, the clipboard, the keys; then the expect checks
+            from .mackeys import planned_checks
+
+            planned[:0] = planned_checks(step["keys"])
         before = step.get("before") if isinstance(step.get("before"), dict) else None
         if before and isinstance(step.get("lasted"), dict):  # checked first, then the idle's measured window
             planned.insert(0, lasted_words(before, step["lasted"]))

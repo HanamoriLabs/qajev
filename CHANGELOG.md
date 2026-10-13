@@ -4,6 +4,27 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- A page the app opened, checked in QAJev's Chrome: a play suite's `open_url:` step reads the URL from the app's state
+  (`from`), fails and opens nothing unless it matches `url_regex` (`^https://<host>/...`, the host written out) and
+  is on that host, then runs the page as one scenario of `qajev run` on the same machine, with a suite's `expect`
+  and `guard`. `{last}` in `guard.allow_requests` (each pattern one host, written out) is the URL's own last path
+  part, escaped, so a Stripe checkout's `/init` POST goes through for that session only. The guard takes nothing
+  else, so payment fields stay disabled, and a URL that is not https or holds a user name or password opens nothing.
+  Each step's page run writes to a new folder. A page check that cannot judge is harness. The inner run takes the
+  browser slot from its parent play run. Twinbox step 21 checks its Stripe test checkout this way.
+
+- Real keys on a QAJev Cloud Mac: a play suite's `keys:` step brings the app (`app`, its bundle id) to the front, can
+  put text on the clipboard (`clipboard`) and click one of the app's controls (`click`, at its real screen point from
+  the app's `state.window`), then presses keys and chords (`press`, with `{type: text}` for typed text). Then its
+  `expect` checks judge what the keys did. The presses are macOS events from the per-run Mac's `qajev-keys` helper,
+  only while the app is in front. Anywhere without that trusted helper, this Mac too, the step presses nothing and is
+  harness. A suite is refused when it loads if a key is a system shortcut (Cmd+Q, Cmd+Tab, Cmd+Space...), or if the
+  app is one of Apple's, a browser, a terminal or a password manager, or not the suite's own app.
+  Input pushed through an app's bridge cannot prove a paste, a shortcut or focus (Twinbox step 20a: a box name that
+  would not paste).
+
 ### Fixed
 
 - A running MCP server now reads `~/.qajev/.env` again before each run. Before, it kept the values the file had when

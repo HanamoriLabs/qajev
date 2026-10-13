@@ -25,7 +25,7 @@ HANDOFF_KEYS = {"who", "does", "until", "minutes"}
 MAX_MINUTES = 30
 # A handoff step only waits: anything that would make QAJev act goes in a step of its own. `open` switches the app
 # or page before the step, which is an action too (redteam on #139).
-ACTING = ("goal", "play", "js", "pad", "idle", "crash_renderer", "relaunch", "open")
+ACTING = ("goal", "play", "js", "pad", "keys", "open_url", "idle", "crash_renderer", "relaunch", "open")
 
 
 def check_handoff(steps):
