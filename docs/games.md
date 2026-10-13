@@ -278,9 +278,11 @@ control's x and y are its centre from that top-left.
 Keys are names as in a `key` hook (letters, digits, punctuation, Enter, Tab, Space, Escape, Backspace, Delete, the
 arrows), with Cmd, Ctrl, Alt or Shift (`cmd+k`, `shift+Tab`). `type:` types letters, digits, space and plain
 punctuation, with Shift for capitals, on a US keyboard. The suite is refused when it loads if a key is a system
-shortcut (quit, close, hide, minimize, switch apps or Spaces, Spotlight, force quit) or `app` is a system app
-(Finder, Terminal, System Settings). A keys step cannot also have a `goal`, `play`, `js`, `pad`, `idle`,
-`relaunch` or `handoff`.
+shortcut (quit, close, hide, minimize, hide the Dock, switch apps or Spaces, Spotlight, force quit), or if `app` is
+one of Apple's own apps (any `com.apple.` id), a browser, a terminal or a password manager, in any case. When the
+suite's `app:` command sits in a .app on the machine that loads it, a keys step may name only that app's bundle id.
+A helper too old to know a command answers with its usage, and the step is harness. A keys step cannot also have a
+`goal`, `play`, `js`, `pad`, `idle`, `relaunch` or `handoff`.
 
 ### Quitting on purpose
 

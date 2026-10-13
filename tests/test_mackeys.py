@@ -15,13 +15,16 @@ PASTE = {"app": "com.hanamorilabs.twinbox", "clipboard": "qa-paste-7f3", "press"
 class Helper:
     """A stand-in qajev-keys: answers each command as the real one does, and records every call."""
 
-    def __init__(self, trusted=True, front=True, clip=True, sent=True):
+    def __init__(self, trusted=True, front=True, clip=True, sent=True, knows=("front", "clip", "click", "keys")):
         self.calls, self.trusted, self.front, self.clip, self.sent = [], trusted, front, clip, sent
+        self.knows = knows  # an older helper (main before qajev-cloud #36) knows only front
 
     def __call__(self, args, timeout=60):
         self.calls.append(args[1:])
         head = f"trusted: {'true' if self.trusted else 'false'}"
         what = args[1]
+        if what not in self.knows:
+            return 2, f"{head}\nusage: qajev-keys press shift|cmd+v, or qajev-keys read"
         if what == "front":
             return (0, f"{head}\nfrontmost: {args[2]}") if self.front else (1, f"{head}\nfrontmost: com.apple.finder")
         if what == "clip":
@@ -90,6 +93,15 @@ def test_text_is_typed_key_by_key_with_shift_for_capitals():
     ({**PASTE, "app": "com.x; rm -rf"}, "bundle id"),
     ({**PASTE, "app": "com.apple.Terminal"}, "system app"),
     ({**PASTE, "app": "com.apple.finder"}, "system app"),
+    ({**PASTE, "app": "com.apple.Finder"}, "system app"),
+    ({**PASTE, "app": "COM.APPLE.TERMINAL"}, "system app"),
+    ({**PASTE, "app": "com.apple.keychainaccess"}, "system app"),
+    ({**PASTE, "app": "com.apple.ActivityMonitor"}, "system app"),
+    ({**PASTE, "app": "com.apple.Safari"}, "system app"),
+    ({**PASTE, "app": "com.apple.systemsettings"}, "system app"),
+    ({**PASTE, "app": "com.google.Chrome"}, "a browser"),
+    ({**PASTE, "app": "com.1password.1password"}, "a password manager"),
+    ({**PASTE, "press": ["cmd+alt+d"]}, "system shortcut"),
     ({**PASTE, "clipboard": ""}, "clipboard: text of 1"),
     ({**PASTE, "press": []}, "press: takes 1 to 20"),
     ({**PASTE, "press": ["cmd+q"]}, "refused: 'cmd\\+q' is a system shortcut"),
@@ -236,3 +248,35 @@ def test_a_click_that_cannot_be_placed_fails_by_name_and_presses_no_keys(helper_
     assert r["outcome"] == "fail"
     assert r["checks"][-1]["check"] == f"{click} was clicked" and says in r["checks"][-1]["detail"]
     assert [c[0] for c in helper.calls] == ["front", "clip"]  # no click, no keys
+
+
+@pytest.mark.parametrize("old", ["clip", "keys"])
+def test_a_helper_that_lacks_a_command_is_harness_not_a_product_failure(helper_file, old):
+    knows = tuple(c for c in ("front", "clip", "click", "keys") if c != old)
+    r = keys_step(App(), name="paste", value=PASTE, helper=helper_file, run=Helper(knows=knows))
+    assert r["outcome"] == "harness"
+    assert "could not run this command (an older helper?)" in r["reason"] and "usage: qajev-keys" in r["reason"]
+    assert all(c["ok"] for c in r["checks"])  # nothing it did is counted against the app
+
+
+def test_a_helper_that_answers_front_with_its_usage_is_harness(helper_file):
+    r = keys_step(App(), name="paste", value=PASTE, helper=helper_file, run=Helper(knows=()))
+    assert r["outcome"] == "harness" and r["checks"] == [] and "nothing was pressed" in r["reason"]
+
+
+def _app_bundle(tmp_path, bundle):
+    app = tmp_path / "Twinbox.app"
+    (app / "Contents" / "MacOS").mkdir(parents=True)
+    import plistlib
+
+    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": bundle}))
+    return {"command": [str(app / "Contents" / "MacOS" / "twinbox-desktop")]}
+
+
+def test_keys_go_only_to_the_suites_own_app_when_it_is_known(tmp_path):
+    spec = _app_bundle(tmp_path, "com.hanamorilabs.twinbox")
+    check_keys([{"name": "paste", "keys": PASTE}], spec)  # the same app: fine
+    check_keys([{"name": "paste", "keys": {**PASTE, "app": "COM.hanamorilabs.TWINBOX"}}], spec)
+    with pytest.raises(NativeError, match=r"refused: com\.other\.app is not the suite's own app \(com\.hanamorilabs"):
+        check_keys([{"name": "paste", "keys": {**PASTE, "app": "com.other.app"}}], spec)
+    check_keys([{"name": "paste", "keys": {**PASTE, "app": "com.other.app"}}], {"command": ["/nowhere/X.app/x"]})

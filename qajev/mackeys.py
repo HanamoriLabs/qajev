@@ -62,9 +62,13 @@ _MODS = {4: "cmd", 2: "ctrl", 1: "alt", 8: "shift"}
 # windows, Spotlight, force quit; and Ctrl+arrows switch Spaces
 SYSTEM_SHORTCUTS = {"KeyQ", "KeyW", "KeyH", "KeyM", "KeyN", "KeyT", "KeyR", "KeyL", "KeyP", "Tab", "Space",
                     "Escape", "Backquote"}
-SYSTEM_APPS = {"com.apple.finder", "com.apple.systempreferences", "com.apple.Terminal", "com.googlecode.iterm2",
-               "com.apple.ScriptEditor2", "com.apple.loginwindow", "com.apple.SecurityAgent", "com.apple.dock",
-               "com.apple.Spotlight"}
+# Keys never go to Apple's own apps (Finder, Terminal, Keychain Access, System Settings...: every com.apple. id), nor
+# to a browser, a terminal or a password manager. Matched without case, as macOS matches bundle ids (redteam on #141).
+SYSTEM_PREFIX = "com.apple."
+SYSTEM_APPS = {"com.googlecode.iterm2", "dev.warp.warp-stable", "com.mitchellh.ghostty", "net.kovidgoyal.kitty",
+               "org.alacritty", "com.github.wez.wezterm", "com.google.chrome", "com.google.chrome.canary",
+               "org.mozilla.firefox", "com.microsoft.edgemac", "com.brave.browser", "company.thebrowser.browser",
+               "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop"}
 BUNDLE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]{0,154}")
 
 
@@ -81,7 +85,8 @@ def chord(name):
             raise ValueError(f"{name!r}: a chord is Cmd, Ctrl, Alt or Shift (each once) + one plain key")
         bits |= bit
     code = page_keys._plain(base.strip())["code"]
-    if bits & (2 | 4) and code in SYSTEM_SHORTCUTS or bits & 2 and code.startswith("Arrow"):
+    if bits & (2 | 4) and code in SYSTEM_SHORTCUTS or bits & 2 and code.startswith("Arrow") \
+            or bits & 4 and bits & 1 and code == "KeyD":  # Cmd+Alt+D hides the Dock
         raise ValueError(f"refused: {name!r} is a system shortcut (quit, close, hide, minimize, switch apps or "
                          "Spaces, Spotlight, force quit)")
     mods_text = "+".join(_MODS[b] for b in (4, 2, 1, 8) if bits & b)
@@ -113,8 +118,9 @@ def plan(value):
     app = value.get("app")
     if not isinstance(app, str) or not BUNDLE.fullmatch(app):
         raise ValueError("app: the bundle id of the app that gets the keys, such as com.hanamorilabs.twinbox")
-    if app in SYSTEM_APPS:
-        raise ValueError(f"refused: {app} is a system app; keys go only to the app under test")
+    if app.lower().startswith(SYSTEM_PREFIX) or app.lower() in SYSTEM_APPS:
+        raise ValueError(f"refused: {app} is a system app, a browser, a terminal or a password manager; keys go only "
+                         "to the app under test")
     clip = value.get("clipboard")
     if clip is not None and (not isinstance(clip, str) or not 1 <= len(clip) <= MAX_CLIPBOARD):
         raise ValueError(f"clipboard: text of 1 to {MAX_CLIPBOARD} characters")
@@ -173,16 +179,37 @@ def planned_checks(value):
             {"check": f"the keys were pressed in {p['app']}", "says": describe(p)}]
 
 
-def check_keys(steps):
-    """Each keys step, checked when the suite loads. NativeError names the step and what is wrong."""
+def suite_bundle(app_spec):
+    """The bundle id of a suite's `app:` when its command sits in a .app this machine has (its Info.plist), else
+    None."""
+    import plistlib
+
+    command = (app_spec or {}).get("command") if isinstance(app_spec, dict) else None
+    first = command[0] if isinstance(command, list) and command else command
+    if not isinstance(first, str) or ".app/" not in first:
+        return None
+    info = Path(first[:first.index(".app/") + 4]).expanduser() / "Contents" / "Info.plist"
+    try:
+        bundle = plistlib.loads(info.read_bytes()).get("CFBundleIdentifier")
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return None
+    return bundle if isinstance(bundle, str) and bundle else None
+
+
+def check_keys(steps, app_spec=None):
+    """Each keys step, checked when the suite loads. NativeError names the step and what is wrong. When the suite's
+    own app is a .app on this machine, a keys step may name only that app."""
+    own = suite_bundle(app_spec)
     for i, step in enumerate(steps or []):
         if not isinstance(step, dict) or step.get("keys") is None:
             continue
         where = f"step {step.get('name') or f'step {i + 1}'!r}"
         try:
-            plan(step["keys"])
+            p = plan(step["keys"])
         except ValueError as e:
             raise NativeError(f"{where}: keys: {e}") from None
+        if own and p["app"].lower() != own.lower():
+            raise NativeError(f"{where}: keys: refused: {p['app']} is not the suite's own app ({own})")
         acting = [k for k in OTHER_ACTS if step.get(k)]
         if acting:
             raise NativeError(f"{where}: a keys step only presses keys, then checks expect:; put "
@@ -203,6 +230,12 @@ def _last(out):
     return (out.splitlines() or ["no output"])[-1][:300]
 
 
+def _unknown(out):
+    """The helper did not run the command (no answer, or exit 2: its usage, as an older helper answers a command it
+    lacks). That says nothing about the app."""
+    return f"the qajev-keys helper could not run this command (an older helper?): {_last(out)}"
+
+
 def keys_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shots=True, emit=None, helper=None,
               run=None):
     """A suite's `keys:` step: the app to the front, the clipboard set, the keys pressed (all through qajev-keys),
@@ -218,9 +251,13 @@ def keys_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shot
         why = f"the helper did not run: {out[:200]}" if code is None else \
             "the helper is not trusted for Accessibility on this Mac"
         return _step_result(name, "browser_error", [], f"{why}: nothing was pressed")
+    if code == 2:
+        return _step_result(name, "browser_error", [], f"{_unknown(out)}: nothing was pressed")
     checks = [{"check": f"{p['app']} was in front", "ok": code == 0, "detail": None if code == 0 else _last(out)}]
     if code == 0 and p["clipboard"] is not None:
         code, out = run([str(helper), "clip", p["clipboard"]])
+        if code in (None, 2):
+            return _step_result(name, "browser_error", checks, f"{_unknown(out)}: no key was pressed")
         checks.append({"check": "the clipboard held the text", "ok": code == 0,
                        "detail": None if code == 0 else _last(out)})
     if code == 0 and p["click"]:
@@ -232,10 +269,14 @@ def keys_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shot
             code, out = 1, why
         else:
             code, out = run([str(helper), "click", p["app"], str(at[0]), str(at[1])])
+            if code in (None, 2):
+                return _step_result(name, "browser_error", checks, f"{_unknown(out)}: no key was pressed")
         checks.append({"check": f"{p['click']} was clicked", "ok": code == 0,
                        "detail": None if code == 0 else _last(out)})
     if code == 0:
         code, out = run([str(helper), "keys", p["app"], *p["codes"]])
+        if code in (None, 2):
+            return _step_result(name, "browser_error", checks, f"{_unknown(out)}: no key was pressed")
         checks.append({"check": f"the keys were pressed in {p['app']}", "says": describe(p), "ok": code == 0,
                        "detail": None if code == 0 else _last(out)})
     if code != 0 or not expect:
