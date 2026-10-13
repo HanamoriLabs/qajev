@@ -112,11 +112,11 @@ def test_a_planted_check_whose_own_code_broke_is_no_catch():
 
 @pytest.mark.parametrize("other", [False, True])
 def test_a_planted_check_that_never_ran_is_no_catch(other):
-    # redteam on #137: the named check is listed but never judged (ok None); a failure elsewhere is no catch, and
-    # neither is a failed test whose only failure is somewhere the planted check never reached.
-    r = {"outcome": "fail", "stop": "checked", "reason": "failed: page shows \x27Shop\x27",
-         "checks": [{"check": "js \x27a\x27", "ok": None}, {"check": "page shows \x27Shop\x27", "ok": other}]}
-    assert verdict.planted(r, "js \x27a\x27") == ("fail", "failed, but not on the planted check: failed: page shows \x27Shop\x27")
+    # redteam on #137: the named check is listed but never judged (ok None). With a failure elsewhere, or with none,
+    # the test did not fail on its planted check, so it is no catch.
+    r = {"outcome": "fail", "stop": "checked", "reason": "1 check failed",
+         "checks": [{"check": "js 'a'", "ok": None}, {"check": "page shows 'Shop'", "ok": other}]}
+    assert verdict.planted(r, "js 'a'") == ("fail", "failed, but not on the planted check: 1 check failed")
 
 
 def test_a_run_without_planted_faults_is_unchanged(tmp_path):
