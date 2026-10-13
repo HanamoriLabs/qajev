@@ -316,6 +316,38 @@ files without that mark: naming a git-ignored `node_modules/left-pad` never uses
 folder. QAJev never deletes a kept profile (`--reset-game-profile` empties it, after the same checks, and keeps the
 mark), and the report says which folder was used and that it was kept.
 
+## Any native app with a bridge
+
+A native app that is not a Godot or Electron game (a Rust app, a desktop client) can carry its own QAJev bridge
+and be played the same way. The bridge speaks the Godot bridge's protocol: on `127.0.0.1:$QAJEV_BRIDGE_PORT` it
+answers one JSON line per request, `{"op":"observe"}` with `screen`, `texts`, `actions` and `state` as in the adapter
+below, `{"op":"act","click":[x,y]}` or `{"op":"act","key":"Escape"}`, `{"op":"shot","path":"/abs/x.png"}` and
+`{"op":"quit"}`. It opens the port once its first frame is drawn. A suite's `app:` names how to start it:
+
+```yaml
+# run: qajev play path/to/the-app --suite app.yaml
+app:
+  command: ["target/debug/my-app", "--some-switch"]   # relative to the app's folder, or absolute
+  env: {MY_APP_API: "http://127.0.0.1:8790"}          # e.g. a stand-in API on this machine
+  home_env: MY_APP_HOME                               # QAJev sets it to a throwaway folder
+  start_wait: 60                                      # seconds for the bridge to answer (1-600)
+steps:
+  - name: Home shows signed out
+    about: With no token the app says so, and calls nothing.
+    expect: {screen: home, text: ["Not signed in"], state: {boxes_loaded: false}}
+```
+
+- **A throwaway home.** The app starts with `HOME` (and the XDG folders) in a throwaway folder, and `home_env`, if
+  given, names a folder inside it. The app never reads the person's real settings or tokens. A `relaunch` step keeps
+  the folder, so a setting saved before it must still be there after it. It is deleted when the run ends.
+- **Errors.** A log line at `ERROR` or `FATAL`, and a Rust panic (`panicked at`), fail the step's `no_errors` check.
+  A line that only mentions the word "error" does not.
+- **What stays the Godot driver's:** Jev's choices among the app's actions, the guard's hidden labels (sign in, buy,
+  quit...), state checks, `relaunch`, shots and `looks`.
+- `app:` wins over the guess from the folder's name: a folder named `Something.app` with an `app:` suite is not
+  taken for an Electron game. `adapter`, `seed`, `headless` and `game_profile` are for Godot and Electron games and
+  are refused next to `app:`.
+
 ## Adapters
 
 Games built from standard UI controls (Godot `Button`s and `Label`s, HTML buttons) work without an adapter: the
