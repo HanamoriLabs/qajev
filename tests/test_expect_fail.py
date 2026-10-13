@@ -110,6 +110,15 @@ def test_a_planted_check_whose_own_code_broke_is_no_catch():
     assert verdict.planted(r, "js 'a'")[0] == "fail"
 
 
+@pytest.mark.parametrize("other", [False, True])
+def test_a_planted_check_that_never_ran_is_no_catch(other):
+    # redteam on #137: the named check is listed but never judged (ok None); a failure elsewhere is no catch, and
+    # neither is a failed test whose only failure is somewhere the planted check never reached.
+    r = {"outcome": "fail", "stop": "checked", "reason": "failed: page shows \x27Shop\x27",
+         "checks": [{"check": "js \x27a\x27", "ok": None}, {"check": "page shows \x27Shop\x27", "ok": other}]}
+    assert verdict.planted(r, "js \x27a\x27") == ("fail", "failed, but not on the planted check: failed: page shows \x27Shop\x27")
+
+
 def test_a_run_without_planted_faults_is_unchanged(tmp_path):
     s = suite.parse({"name": "plain", "device": "desktop", "scenarios": [
         {"name": "plain", "url": URL, "about": "the shop opens", "expect": {"text": ["Shop"]}}]})
