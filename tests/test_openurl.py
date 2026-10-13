@@ -107,6 +107,37 @@ def test_a_page_check_that_never_ran_is_harness(tmp_path):
     assert r["outcome"] == "harness" and "the page check did not run" in r["reason"]
 
 
+def test_a_second_step_of_the_same_name_never_reads_the_first_steps_report(tmp_path):
+    """redteam: the second page run wrote no report, so it must be harness, not the first run's pass."""
+    first = open_url_step(App(), name="checkout", spec=SPEC, run_dir=tmp_path, run=InnerRun())
+    second = open_url_step(App(), name="checkout", spec=SPEC, run_dir=tmp_path, run=InnerRun(writes=False))
+    assert first["outcome"] == "pass"
+    assert second["outcome"] == "harness" and "the page check did not run" in second["reason"]
+
+
+def test_a_look_alike_host_opens_nothing_even_when_url_regex_stops_at_the_host(tmp_path):
+    """redteam: url_regex without / after the host matches <host>.evil.example; the step compares the host itself."""
+    inner = InnerRun()
+    loose = {**SPEC, "url_regex": r"^https://checkout\.stripe\.com"}
+    r = open_url_step(App(url="https://checkout.stripe.com.evil.example/c/pay/cs_test_x"), name="checkout",
+                      spec=loose, run_dir=tmp_path, run=inner)
+    assert r["outcome"] == "fail" and inner.calls == [] and "nothing was opened" in r["reason"]
+    assert "checkout.stripe.com.evil.example" in r["checks"][0]["detail"]
+
+
+def test_last_is_escaped_so_a_regex_character_in_it_matches_only_itself(tmp_path):
+    """redteam O6: a . in the last path part must not let through another session's request."""
+    import re
+
+    inner = InnerRun()
+    open_url_step(App(url="https://checkout.stripe.com/c/pay/cs_test_a.b"), name="checkout", spec=SPEC,
+                  run_dir=tmp_path, run=inner)
+    [pattern] = inner.suite["guard"]["allow_requests"]
+    assert pattern == r"^https://api\.stripe\.com/v1/payment_pages/cs_test_a\.b/init$"
+    assert re.search(pattern, "https://api.stripe.com/v1/payment_pages/cs_test_a.b/init")
+    assert not re.search(pattern, "https://api.stripe.com/v1/payment_pages/cs_test_aXb/init")
+
+
 def test_an_open_url_step_in_a_session_runs_as_its_own_step(tmp_path, monkeypatch):
     from qajev import openurl
     from qajev.ledger import Ledger
@@ -131,6 +162,16 @@ def test_an_open_url_step_in_a_session_runs_as_its_own_step(tmp_path, monkeypatc
     ({**SPEC, "guard": {"allow_secret_fields": True}}, "payment fields stay disabled"),
     ({**SPEC, "guard": {"allow_requests": ["^https://api\\.stripe\\.com/.*$"]}}, "with {last} in it"),
     ({**SPEC, "guard": {"allow_requests": ["https://api\\.stripe\\.com/{last}"]}}, "from \\^ to \\$"),
+    # redteam: a url_regex that stops at the host, or a host with a regex operator in it, lets a look-alike host open
+    ({**SPEC, "url_regex": r"^https://checkout\.stripe\.com"}, "host written out and followed by /"),
+    ({**SPEC, "url_regex": r"^https://checkout.stripe.com/c/pay/"}, "host written out"),
+    ({**SPEC, "url_regex": r"^https://.*/c/pay/cs_test_"}, "host written out"),
+    ({**SPEC, "url_regex": r"^https://checkout\.stripe\.com/c/pay/|evil"}, "host written out"),
+    # redteam: an allowed request on any host whose path ends in this session's id
+    ({**SPEC, "guard": {"allow_requests": [r"^https://.*/{last}$"]}}, "host written out"),
+    ({**SPEC, "guard": {"allow_requests": [r"^https://[^/]+/v1/{last}$"]}}, "host written out"),
+    ({**SPEC, "guard": {"allow_requests": [r"^https://api\.stripe\.com/{last}$|^https://evil\.example/.*$"]}},
+     "host written out"),
 ])
 def test_a_wrong_open_url_step_is_refused_when_the_suite_loads(spec, says):
     with pytest.raises(NativeError, match=says):

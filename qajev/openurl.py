@@ -27,6 +27,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -42,6 +43,14 @@ GUARD_KEYS = {"allow_requests"}
 OTHER_ACTS = ("goal", "play", "js", "pad", "keys", "idle", "crash_renderer", "relaunch", "handoff")
 PROBE_URL = "https://example.invalid/c/pay/probe"
 TIMEOUT_S = 600
+# ^https://, a literal host (letters, digits, -, \. between labels), then /: no regex operator in the host (redteam).
+LITERAL_HOST = re.compile(r"\^https://((?:[A-Za-z0-9-]+\\\.)*[A-Za-z0-9-]+)/")
+
+
+def literal_host(pattern):
+    """The host a url_regex or allow_requests pattern names, or None unless it is ^https://<literal host>/ with no |."""
+    m = LITERAL_HOST.match(pattern) if isinstance(pattern, str) and "|" not in pattern else None
+    return m.group(1).replace("\\.", ".").lower() if m else None
 
 
 def _scenario(spec, name, about, url):
@@ -88,9 +97,10 @@ def check_open_url(steps):
             raise NativeError(f"{where}: unknown key(s) {unknown}; known: {sorted(SPEC_KEYS)}")
         if not isinstance(spec.get("from"), str) or not spec["from"].strip():
             raise NativeError(f"{where}.from: the app's state field that holds the URL, such as opened_url")
-        if not isinstance(spec.get("url_regex"), str) or not spec["url_regex"].startswith("^https://"):
+        if not literal_host(spec.get("url_regex")):
             raise NativeError(f"{where}.url_regex: a regular expression from ^https:// to the site and path the URL "
-                              "must have (nothing opens unless it matches)")
+                              "must have, its host written out and followed by / (such as ^https://checkout\\.stripe"
+                              "\\.com/c/pay/); nothing opens unless it matches")
         try:
             re.compile(spec["url_regex"])
         except re.error as e:
@@ -100,10 +110,10 @@ def check_open_url(steps):
             raise NativeError(f"{where}.guard: takes allow_requests only; payment fields stay disabled and the page "
                               "stays read-only")
         for pattern in guard.get("allow_requests") or []:
-            if not (isinstance(pattern, str) and pattern.startswith("^https://") and pattern.endswith("$")
-                    and "{last}" in pattern):
-                raise NativeError(f"{where}.guard.allow_requests: {pattern!r} must be one https address from ^ to $ "
-                                  "with {last} in it, so it lets through only this URL's own request")
+            if not (literal_host(pattern) and pattern.endswith("$") and "{last}" in pattern):
+                raise NativeError(f"{where}.guard.allow_requests: {pattern!r} must be one https address from ^ to $, "
+                                  "its host written out and followed by /, with {last} in it, so it lets through only "
+                                  "this URL's own request")
         if not isinstance(spec.get("expect"), dict) or not spec["expect"]:
             raise NativeError(f"{where}.expect: what the page must show (text, js, url_regex...)")
         try:
@@ -152,6 +162,9 @@ def open_url_step(game, *, name, spec, about=None, run_dir=None, emit=None, run=
     detail = None if ok else f"{spec['from']} was {shown!r}"
     if ok and (urlsplit(str(url)).scheme != "https" or user_info_refusal(url)):  # whatever url_regex says
         ok, detail = False, user_info_refusal(url) or f"{spec['from']} is not an https URL"
+    host = literal_host(want)
+    if ok and (not host or urlsplit(str(url)).hostname != host):  # a look-alike host such as <host>.evil.example
+        ok, detail = False, f"{spec['from']} is on {urlsplit(str(url)).hostname!r}, not on url_regex's host {host!r}"
     first = {"check": f"state {spec['from']} matches {want}", "says": says, "ok": ok, "detail": detail}
     if not ok:
         r = _step_result(name, "reached", [first])
@@ -159,8 +172,10 @@ def open_url_step(game, *, name, spec, about=None, run_dir=None, emit=None, run=
         return r
     url = str(url)
     _step(emit, name, None, f"opening {spec['from']} in QAJev's Chrome: {urlsplit(url).netloc}")
-    folder = Path(run_dir or ".") / "open-url" / re.sub(r"[^A-Za-z0-9._-]+", "-", name)[:60]
-    folder.mkdir(parents=True, exist_ok=True)
+    base = Path(run_dir or ".") / "open-url"
+    base.mkdir(parents=True, exist_ok=True)
+    # A new folder for each call: a page run that writes no report never reads an earlier step's report (redteam).
+    folder = Path(tempfile.mkdtemp(prefix=re.sub(r"[^A-Za-z0-9._-]+", "-", name)[:60] + "-", dir=base))
     suite = folder / "suite.yaml"
     suite.write_text(yaml.safe_dump(_scenario(spec, name, about or name, url), sort_keys=False))
     code, out = run([sys.executable, "-m", "qajev", "run", str(suite), "--json", "--ephemeral", "--headless",

@@ -303,14 +303,15 @@ state. An `open_url` step reads it there and checks that page in QAJev's own Chr
       settle: 3
 ```
 
-The first check is the URL itself: when the state has no URL, or it does not match `url_regex` (which must start
-with `^https://`), or it is not https or holds a user name or password, the step fails and nothing opens. The
-step's `guard` takes `allow_requests` only, and each pattern is one https address from `^` to `$` with `{last}` in
-it: payment and password fields stay disabled, and nothing else may post. Then QAJev runs the page as one scenario of `qajev run`, on
+The first check is the URL itself: when the state has no URL, or it does not match `url_regex`, or its host is not
+the one `url_regex` names, or it is not https or holds a user name or password, the step fails and nothing opens.
+`url_regex` starts `^https://`, then the host written out (`\.` between its parts, no other regex) and a `/`. The
+step's `guard` takes `allow_requests` only, and each pattern is one https address from `^` to `$`, its host written
+out the same way, with `{last}` in it: payment and password fields stay disabled, and nothing else may post. Then QAJev runs the page as one scenario of `qajev run`, on
 this machine, on desktop, with a throwaway profile and every rule a suite has: production is read-only, and a POST
 goes only where `allow_requests` names it. `{last}` there is the URL path's last part, escaped, so the guard lets
 through one session's own request and no other's. The page's checks join the step as "page: ...", and its report
-sits in the play run's folder under `open-url/`. A page check that could not judge (harness, stuck) makes the step
+sits in a new folder of the play run's `open-url/` for each step. A page check that could not judge (harness, stuck) makes the step
 harness. The play run already holds this machine's browser slot, so the page check takes it from its parent run
 instead of queueing behind it. An open_url step does nothing else and has no `expect:` of its own.
 
