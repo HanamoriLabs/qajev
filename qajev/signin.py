@@ -180,8 +180,8 @@ def _state(session):
         return {}
 
 
-OPAQUE = re.compile(r"[A-Za-z0-9_-]{16,}|[0-9]{6,}")  # a long opaque segment, or a code of 6 or more digits
-SECRET_AFTER = {"verify", "reset", "invite", "token", "magic", "session"}  # the segment after one of these is a secret
+OPAQUE = re.compile(r"[A-Za-z0-9._~%+=-]{16,}|[0-9]{6,}")  # a long opaque segment (a JWT, percent-encoded), or a code
+SECRET_AFTER = ("verify", "reset", "invite", "token", "magic", "session")  # the segment after a segment holding one
 
 
 def _where(url):
@@ -195,8 +195,8 @@ def _where(url):
     except ValueError:  # a port that is not a number
         host = u.hostname or ""
     parts = u.path.split("/")
-    path = "/".join("…" if OPAQUE.fullmatch(part) or (i and parts[i - 1].lower() in SECRET_AFTER) else part
-                    for i, part in enumerate(parts))
+    after = [i > 0 and any(w in parts[i - 1].lower() for w in SECRET_AFTER) for i in range(len(parts))]
+    path = "/".join("…" if OPAQUE.fullmatch(part) or after[i] else part for i, part in enumerate(parts))
     return f"{host}{path[:80]}"
 
 

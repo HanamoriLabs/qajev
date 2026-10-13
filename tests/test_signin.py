@@ -361,7 +361,7 @@ def test_a_failed_request_never_shows_a_password_a_user_part_or_a_token_in_its_p
     class Leaky(FormPage):
         def press(self, _key):
             _failed(self.net, "r2", "https://joe:hunter2@cdn.example:8443/reset/AbCdEfGhIjKlMnOpQrSt123/"
-                                    "k=fixture-pass-local/app.js", "net::ERR_CONNECTION_REFUSED")
+                                    "k:fixture-pass-local/app.js", "net::ERR_CONNECTION_REFUSED")
 
     page = Leaky("http://127.0.0.1:4000/login", lets_in=False)
     page.net = netlog.Failures("ws://unused")
@@ -374,7 +374,10 @@ def test_a_failed_request_never_shows_a_password_a_user_part_or_a_token_in_its_p
     # redteam: short secrets stay under the 16-character mask: a code of 6 or more digits, and the segment after
     # verify, reset, invite, token, magic or session
     for path, secret in (("/verify/482913", "482913"), ("/invite/abc123def456", "abc123def456"),
-                         ("/auth/Session/s3cr3t", "s3cr3t"), ("/u/1234567/profile.png", "1234567")):
+                         ("/auth/Session/s3cr3t", "s3cr3t"), ("/u/1234567/profile.png", "1234567"),
+                         ("/api/s/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln", "eyJhbGciOiJIUzI1NiJ9"),  # a JWT
+                         ("/t/%2Babc%2Fdef%3D%3Dghij", "%2Babc%2Fdef"),  # a percent-encoded token
+                         ("/reset-password/a1b2c3", "a1b2c3")):  # a short token after reset-password
         shown = signin._where("https://app.example" + path)
         assert secret not in shown and shown.startswith("app.example/"), (path, shown)
     assert signin._where("https://app.example/v1/item/42") == "app.example/v1/item/42"  # short ids stay readable
