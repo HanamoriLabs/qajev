@@ -18,6 +18,7 @@ class App:
 
     def __init__(self, after=None, dies_at=None):
         self.looks, self.after, self.dies_at, self.inputs = 0, after, dies_at, []
+        self.errors = []  # as a real game's: a step that is not a handoff reads it, and must fail by name, not crash
 
     def observe(self):
         self.looks += 1
@@ -89,10 +90,15 @@ def test_a_wrong_handoff_is_refused_naming_what_is_wrong(handoff, says):
         check_handoff([{"name": "sign-in", "handoff": handoff}])
 
 
-@pytest.mark.parametrize("acting", ["goal", "play", "js", "pad", "idle", "relaunch"])
+@pytest.mark.parametrize("acting", ["goal", "play", "js", "pad", "idle", "relaunch", "open"])
 def test_a_handoff_step_that_would_also_act_is_refused(acting):
     with pytest.raises(NativeError, match=f"only waits, and QAJev acts nowhere in it: put {acting}"):
         check_handoff([{"name": "sign-in", "handoff": SPEC, acting: "x"}])
+
+
+def test_a_handoff_step_with_its_own_expect_is_refused_because_until_is_its_one_check():
+    with pytest.raises(NativeError, match="only check is handoff.until; put expect: in the next step"):
+        check_handoff([{"name": "sign-in", "handoff": SPEC, "expect": {"text": ["Signed in"]}}])
 
 
 def test_qajev_play_refuses_a_wrong_handoff_when_the_suite_loads(tmp_path, capsys):

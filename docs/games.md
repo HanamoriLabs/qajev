@@ -247,7 +247,8 @@ The step sends no input at all: no click, no key, no pilot. It sends a `handoff`
 `qajev top` and `qa_job` show "waiting for José: ..."), then reads the state every 2 s until `until` holds. Done in
 time: pass. Not done in time: **stuck**, never fail, because a person who did not come proves nothing about the
 product. QAJev never reads, types or records a code or a password in this step. A handoff step cannot also have a
-`goal`, `play`, `js`, `pad`, `idle` or `relaunch`: put those in a step of their own.
+`goal`, `play`, `js`, `pad`, `idle`, `relaunch` or `open`: put those in a step of their own. It takes no `expect:`
+either: `until` is its one check, and other checks go in the next step.
 
 ### Quitting on purpose
 

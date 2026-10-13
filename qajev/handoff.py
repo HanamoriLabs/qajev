@@ -11,7 +11,7 @@ for anyone, so a play suite hands that step over and waits:
         until: {github_signed_in: true}          # the app's state once it is done (as a play step's until)
         minutes: 10                              # how long to wait, 1 to 30
 
-The step sends no input at all. It tells the run's watchers (a `handoff` event: the live page, `qajev top`, qa_job),
+The step sends no input at all, and takes no `expect:` or `open:` (refused when the suite loads). It tells the run's watchers (a `handoff` event: the live page, `qajev top`, qa_job),
 then reads the app's state until `until` holds. Done: pass. Not done in time: stuck, never fail, because a person who
 did not come proves nothing about the product. QAJev never reads, types or records a code or a password here.
 """
@@ -22,8 +22,9 @@ from .native import NativeError, _shown, _step, _step_result, _until_text, _unti
 
 HANDOFF_KEYS = {"who", "does", "until", "minutes"}
 MAX_MINUTES = 30
-# A handoff step only waits: anything that would make QAJev act goes in a step of its own.
-ACTING = ("goal", "play", "js", "pad", "idle", "crash_renderer", "relaunch")
+# A handoff step only waits: anything that would make QAJev act goes in a step of its own. `open` switches the app
+# or page before the step, which is an action too (redteam on #139).
+ACTING = ("goal", "play", "js", "pad", "idle", "crash_renderer", "relaunch", "open")
 
 
 def check_handoff(steps):
@@ -55,6 +56,8 @@ def check_handoff(steps):
         if acting:
             raise NativeError(f"{where}: a handoff step only waits, and QAJev acts nowhere in it: put "
                               f"{', '.join(acting)} in a step of its own")
+        if step.get("expect"):  # it would never be checked: until: is the step's one check (redteam on #139)
+            raise NativeError(f"{where}: a handoff step's only check is handoff.until; put expect: in the next step")
 
 
 def handoff_step(game, *, name, spec, emit=None, look=2.0, every=10.0):
