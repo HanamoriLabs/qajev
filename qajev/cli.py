@@ -1750,11 +1750,12 @@ def cmd_plan(args):
 
 def url_refusal(args):
     """config.user_info_refusal for a parsed run's URL arguments, with or without a scheme ("alice:s3cret@host/x" is a
-    URL to check and smoke; redteam on #133), then for any other argument with "://". An e-mail flag is no URL."""
+    URL to check and smoke; redteam on #133), and for each --host, then for any other argument with "://". An e-mail
+    flag is no URL."""
     from .config import user_info_in_args, user_info_refusal
 
     named = [getattr(args, key, None) for key in ("url", "expect_url", "cdp_url")]
-    for value in [*named, *(getattr(args, "fetch", None) or [])]:
+    for value in [*named, *(getattr(args, "fetch", None) or []), *(getattr(args, "host", None) or [])]:
         if value and (refused := user_info_refusal(value)):
             return refused
     return user_info_in_args(getattr(args, "argv", None) or [])

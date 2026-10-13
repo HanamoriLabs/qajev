@@ -133,7 +133,9 @@ BARE = f"alice:{PASSWORD}@127.0.0.1:1"  # no scheme: check and smoke still read 
     ["check", f"{BARE}/x", "--expect-text", "x"],
     ["smoke", BARE, "--background"],
     ["check", "https://shop.example/", "--expect-text", "x", "--expect-url", f"{BARE}/done"],
-], ids=["check background", "check", "smoke background", "expect-url"])
+    ["check", "https://shop.example/", "--expect-text", "x", "--fetch", f"{BARE}/health=200", "--background"],
+    ["check", "https://shop.example/", "--expect-text", "x", "--host", BARE, "--background"],
+], ids=["check background", "check", "smoke background", "expect-url", "fetch", "host"])
 def test_a_url_with_a_password_and_no_scheme_is_refused_too(started, tmp_path, capsys, argv):
     code = cli.main(argv)
 
@@ -175,4 +177,16 @@ def test_an_agent_cloud_run_with_a_password_in_its_url_is_refused_before_anythin
     with pytest.raises(ToolError, match="user name or password") as refused:
         asyncio.run(mcp_server._dispatch(["check", f"{BARE}/x", "--expect-text", "x"], ["--runner", "cloud"],
                                          None, True))
+    assert PASSWORD not in str(refused.value)
+
+
+def test_an_agent_run_whose_arguments_cannot_be_read_never_quotes_a_password():
+    import asyncio
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    from qajev import mcp_server
+
+    with pytest.raises(ToolError) as refused:  # --no-such-flag: argparse cannot read it, so no URL is known
+        asyncio.run(mcp_server._dispatch(["check", f"{BARE}/x", "--no-such-flag"], [], None, True))
     assert PASSWORD not in str(refused.value)
