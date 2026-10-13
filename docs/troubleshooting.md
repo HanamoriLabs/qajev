@@ -40,6 +40,11 @@ That is QAJev's side, not your product:
   page"). Jev clicking around and not arriving is still a failure: the way may really be missing.
 - *cost cap reached*: raise `--cost-cap`, or narrow the goals.
 
+**"a URL with a user name or password is refused"**
+The URL holds a user name or password (`https://alice:s3cret@shop.example/`). QAJev never writes down a password,
+and the URL would reach the report files. Sign in once with `qajev browser login --url URL`, then run the plain URL
+with that `--profile`.
+
 **"sign-in failed: ..." and every scenario is `harness`**
 The seeded test account could not sign in, so nothing was tested. The reason is the site's own message ("Wrong
 email or password") or the seed fixture's: check that your app's seed wrote the fixture, that it says

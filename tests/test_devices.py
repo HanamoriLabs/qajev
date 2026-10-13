@@ -4,7 +4,7 @@
 import pytest
 
 from qajev import suite as suite_mod
-from qajev.cli import build_parser, check_suite
+from qajev.cli import build_parser, check_name, check_suite
 
 
 def base(**extra):
@@ -63,8 +63,9 @@ def test_qajev_check_names_its_test_by_site_path_and_goal():
     goal = "Find the Pro price. Stop when you see it."
     assert name("https://qajev.com/pricing", "--goal", goal) == "qajev.com /pricing · Find the Pro price"
     # The name goes to the Cloud as a card headline and a grouping key: never the URL's user info (redteam, #131).
-    assert name("https://alice:s3cret@staging.example.com/admin") == "staging.example.com /admin"
-    assert name("http://bob@127.0.0.1:8765/") == "127.0.0.1:8765"
+    # Such a URL is refused before a check is built (test_url_password.py), so the name is checked on its own.
+    assert check_name("https://alice:s3cret@staging.example.com/admin") == "staging.example.com /admin"
+    assert check_name("http://bob@127.0.0.1:8765/") == "127.0.0.1:8765"
 
 
 def test_a_phone_tab_also_says_it_is_a_phone():

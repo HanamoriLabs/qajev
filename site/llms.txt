@@ -121,7 +121,7 @@ the person signs in once with `qa_browser(action="login", profile=NAME, url=LOGI
 only, the suite names a seeded TEST account, `account: {email: ..., password: seed:FILE#KEY, login: {url: /login}}`,
 and QAJev signs in by itself (`login.open`: buttons to click first that show the form, each a CSS selector or `{text: ...}`); it can also give `totp: seed:FILE#KEY` for its one-time code, or
 `cookie: {name, value: seed:FILE#KEY}`, from a fixture that says `"test_account": true` and lists the host in
-`allowed_hosts`. A `keychain:`, `op://` or `env:` password is refused). A result with `needs_sign_in` means runs met a sign-in
+`allowed_hosts`. A `keychain:`, `op://` or `env:` password is refused, and so is a URL with a user name or password in it). A result with `needs_sign_in` means runs met a sign-in
 page (harness, not a bug): ask the person to sign in once in QAJev's window (`qajev browser login --url URL`), as its `next_step`
 says; never ask for a password. Production is read-only and destructive is never:
 only a local dev host (localhost, 127.0.0.1, [::1], *.localhost, *.test) may change; `mode: mutate` or

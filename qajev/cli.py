@@ -1748,6 +1748,19 @@ def cmd_plan(args):
     return 2 if missing or blind or unapproved else 0
 
 
+def url_refusal(args):
+    """config.user_info_refusal for a parsed run's URL arguments, with or without a scheme ("alice:s3cret@host/x" is a
+    URL to check and smoke; redteam on #133), and for each --host, then for any other argument with "://". An e-mail
+    flag is no URL."""
+    from .config import user_info_in_args, user_info_refusal
+
+    named = [getattr(args, key, None) for key in ("url", "expect_url", "cdp_url")]
+    for value in [*named, *(getattr(args, "fetch", None) or []), *(getattr(args, "host", None) or [])]:
+        if value and (refused := user_info_refusal(value)):
+            return refused
+    return user_info_in_args(getattr(args, "argv", None) or [])
+
+
 def _fail(args, message, code):
     _record({"error": message, "exit_code": code})
     if getattr(args, "json", False):
@@ -1914,6 +1927,10 @@ def _cloud_job(args, stopping=False):
 def main(argv=None):
     args = build_parser().parse_args(argv)
     args.argv = list(sys.argv[1:] if argv is None else argv)
+    if args.command in {"check", "run", "smoke", "play"}:
+        # Before anything is recorded or sent: a job record and a cloud run keep the arguments as typed
+        if refused := url_refusal(args):
+            return _fail(args, refused, EXIT_CONFIG)
     # Where it runs, before anything starts here. A background job's run was routed when it started.
     if args.command in {"check", "run", "smoke", "play"} and not os.environ.get("QAJEV_JOB"):
         routed = _route(args)
