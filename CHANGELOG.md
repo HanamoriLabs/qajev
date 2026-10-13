@@ -11,7 +11,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - A test token for a native app: `app.files` writes a seeded TEST account's value into the app's throwaway home
   before it starts, such as Twinbox's staging token file. The value comes only from a `"test_account": true`
   fixture whose `account` is at one of `app.test_domains`, and only under an approved test plan that names
-  app.files. The file is 0600, never written through a symbolic link, and goes with the home, on a crash or a stop
+  app.files. A suite may only narrow the test domains: names reserved for testing, or ones listed in
+  `QAJEV_TEST_DOMAINS` in `~/.qajev/.env`. The file is 0600, never written through a symbolic link, and goes with the home, on a crash or a stop
   too. The report shows only the file and its fixture. QAJev's browser never gets it.
 
 ### Fixed
