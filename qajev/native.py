@@ -1374,6 +1374,11 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
             from .handoff import handoff_step
 
             r = handoff_step(game, name=name, spec=step["handoff"], emit=emit)
+        elif step.get("keys") is not None:  # real macOS keys through qajev-keys (a QAJev Cloud Mac)
+            from .mackeys import keys_step
+
+            r = keys_step(game, name=name, value=step["keys"], expect=step.get("expect"), ledger=ledger,
+                          run_dir=run_dir, shots=shots, emit=emit)
         elif step.get("js") is not None:
             r = js_step(game, name=name, expression=str(step["js"]), emit=emit)
         elif step.get("pad") is not None:

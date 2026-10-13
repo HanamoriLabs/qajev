@@ -4,6 +4,18 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- Real keys on a QAJev Cloud Mac: a play suite's `keys:` step brings the app (`app`, its bundle id) to the front, can
+  put text on the clipboard (`clipboard`) and click one of the app's controls (`click`, at its real screen point from
+  the app's `state.window`), then presses keys and chords (`press`, with `{type: text}` for typed text). Then its
+  `expect` checks judge what the keys did. The presses are macOS events from the per-run Mac's `qajev-keys` helper,
+  only while the app is in front. Anywhere without that trusted helper, this Mac too, the step presses nothing and is
+  harness. A suite is refused when it loads if a key is a system shortcut (Cmd+Q, Cmd+Tab, Cmd+Space...), or if the
+  app is one of Apple's, a browser, a terminal or a password manager, or not the suite's own app.
+  Input pushed through an app's bridge cannot prove a paste, a shortcut or focus (Twinbox step 20a: a box name that
+  would not paste).
+
 ## 0.4.29: 14 Oct 2026
 
 ### Added
