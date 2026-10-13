@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 from . import keys, pad
-from .config import host_of, is_local_dev, is_loopback, is_test_email, plain_host
+from .config import host_of, is_local_dev, is_loopback, is_test_email, plain_host, user_info_refusal
 from .guard import MODES
 
 DEVICES = {
@@ -487,6 +487,8 @@ def parse(data, path=None, devices=None):
     base = data.get("base_url")
     if base and urlsplit(base).scheme not in {"http", "https"}:
         raise SuiteError("base_url must be http(s)")
+    if base and (refused := user_info_refusal(base)):
+        raise SuiteError(f"base_url: {refused}")
     guard = data.get("guard") or {}
     _unknown("guard", guard, GUARD_KEYS)
     _unguarded_frames(guard.get("unguarded_frames"))
@@ -524,6 +526,8 @@ def parse(data, path=None, devices=None):
             url = urljoin(base, url) if base else url
             if urlsplit(url).scheme not in {"http", "https"}:
                 raise SuiteError(f"{where}: url must be http(s) or relative to base_url (got {item.get('url')!r})")
+            if refused := user_info_refusal(url):
+                raise SuiteError(f"{where}: {refused}")
         elif i == 0:
             if not base:
                 raise SuiteError(f"{where}: the first scenario needs a url (or set base_url)")

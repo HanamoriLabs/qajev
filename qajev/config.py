@@ -206,6 +206,26 @@ def is_loopback(url):
     return bool(LOOPBACK.match(plain_host(url)))
 
 
+def user_info_refusal(url):
+    """Why a URL that holds a user name or password is refused, or None. QAJev never writes down a password, and the
+    URL would reach the report files, which a cloud run uploads (redteam, 13 Oct; the Orchestrator: refuse it). The
+    reason names the host only."""
+    head = str(url).split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    if "@" not in head:
+        return None
+    return (f"a URL with a user name or password is refused ({head.rsplit('@', 1)[1] or 'no host'}): QAJev never "
+            "writes down a password. Sign in once with `qajev browser login URL`, then run with that --profile")
+
+
+def user_info_in_args(argv):
+    """user_info_refusal for the first argument that is a URL with user info, or None. Checked before a job record is
+    written or a run goes to the cloud: both keep the arguments as typed."""
+    for item in argv:
+        if "://" in str(item) and (refused := user_info_refusal(item)):
+            return refused
+    return None
+
+
 # What is_local_dev accepts, as `qajev doctor` prints it. Every other host is production: read-only, no override.
 LOCAL_DEV_HOSTS = ("localhost", "127.0.0.1", "[::1]", "*.localhost", "*.test")
 

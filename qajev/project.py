@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import vault
-from .config import HOME, RUNNERS
+from .config import HOME, RUNNERS, user_info_refusal
 
 CONFIG_NAME = Path(".qajev") / "project.toml"
 PROJECT_KEYS = {"name", "repo", "default_env", "env", "accounts", "account", "budget", "guard", "persona", "device",
@@ -139,6 +139,8 @@ def load(ref):
             raise ProjectError(f"{path}: env.{name}: unknown key(s) {sorted(set(env) - ENV_KEYS)}")
         if not env.get("base_url"):
             raise ProjectError(f"{path}: env.{name} needs base_url")
+        if refused := user_info_refusal(env["base_url"]):
+            raise ProjectError(f"{path}: env.{name}: base_url: {refused}")
         if "tunnel" in env:  # checked as a suite's tunnel:, so the cloud gets the same shape from either
             from .suite import SuiteError, tunnel_spec  # noqa: PLC0415
 

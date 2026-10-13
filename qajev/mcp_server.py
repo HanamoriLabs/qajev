@@ -19,7 +19,7 @@ import yaml
 from mcp.server.mcpserver import Context, Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from . import __version__, jobs
+from . import __version__, config, jobs
 from .config import HOME
 
 INSTRUCTIONS = """\
@@ -186,6 +186,8 @@ async def _run_report(args, ctx, background=False, title=None, cwd=None, rerun=N
     """A browser run as a QAJev job. background: return the job at once. Otherwise wait for it (relaying its
     progress) and return the report JSON; cancelling the call stops the job. cwd: where it runs (default: here);
     rerun: the job it reruns (jobs.start)."""
+    if refused := config.user_info_in_args(args):  # before the job record keeps the arguments as typed
+        raise ToolError(refused)
     job = await asyncio.to_thread(jobs.start, args, title, cwd=cwd, rerun=rerun)
     if background:
         return {"job": job["id"], "state": job["state"], "title": job["title"],

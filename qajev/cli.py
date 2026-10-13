@@ -1914,6 +1914,12 @@ def _cloud_job(args, stopping=False):
 def main(argv=None):
     args = build_parser().parse_args(argv)
     args.argv = list(sys.argv[1:] if argv is None else argv)
+    if args.command in {"check", "run", "smoke", "play"}:
+        # Before anything is recorded or sent: a job record and a cloud run keep the arguments as typed
+        from .config import user_info_in_args
+
+        if refused := user_info_in_args(args.argv):
+            return _fail(args, refused, EXIT_CONFIG)
     # Where it runs, before anything starts here. A background job's run was routed when it started.
     if args.command in {"check", "run", "smoke", "play"} and not os.environ.get("QAJEV_JOB"):
         routed = _route(args)
