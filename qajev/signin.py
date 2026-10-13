@@ -180,6 +180,21 @@ def _state(session):
         return {}
 
 
+def failed_requests(session, since, shown=4):
+    """The requests that failed on the page since `since`, by host and path (no query: it can carry a token), with
+    Chrome's reason. 13 Oct: on a QAJev Cloud machine a test user was "not signed in after 20 s" with nothing to say
+    why; a request to another site, outside the machine's network lock, can be the cause. -> words, or ''"""
+    from urllib.parse import urlsplit
+
+    net = getattr(session, "net", None)
+    failed = net.failed_since(since) if net is not None and hasattr(net, "failed_since") else []
+    if not failed:
+        return ""
+    words = [f"{urlsplit(url).netloc}{urlsplit(url).path[:80]} ({why})" for url, why in failed[-shown:]]
+    more = f" and {len(failed) - shown} more" if len(failed) > shown else ""
+    return f"; requests that failed: {', '.join(words)}{more}"
+
+
 def page_seen(session):
     """Where the browser is and the start of what its page says, in one line: for a failed sign-in's reason."""
     state = _state(session)
@@ -312,7 +327,8 @@ def sign_in(session, account, *, timeout=20.0):
     if not state:
         last = _state(session)
         says = f"; the page says: {last['error']}" if last.get("error") else ""
-        raise SignInFailed(redact(f"not signed in after {timeout:.0f} s: still on {last.get('path', '?')}{says}"))
+        raise SignInFailed(redact(f"not signed in after {timeout:.0f} s: still on {last.get('path', '?')}{says}"
+                                  f"{failed_requests(session, started)}"))
     return {**out, "ok": True, "landed": state.get("href", "").split("?")[0],
             "seconds": round(time.monotonic() - started, 1)}
 

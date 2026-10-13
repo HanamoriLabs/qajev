@@ -322,3 +322,44 @@ def test_a_session_the_app_loads_late_is_taken_as_signed_in_during_the_open_step
     page = FormPage("http://127.0.0.1:4000/", closed=True, drawn_after=50, signed_in_after=2)
     done = signin.sign_in(page, account, timeout=5)
     assert done["ok"] and done["already"] and page.typed == []  # nothing typed
+
+
+def _failed(net, rid, url, error):
+    net.take({"method": "Network.requestWillBeSent", "params": {"requestId": rid, "type": "Script",
+                                                                "request": {"url": url, "method": "GET"}}})
+    net.take({"method": "Network.loadingFailed", "params": {"requestId": rid, "errorText": error}})
+
+
+def test_a_failed_sign_in_names_the_requests_that_failed_after_it_began(tmp_path):
+    # 13 Oct: on a QAJev Cloud machine, Foley's test user was "not signed in after 20 s" with nothing to say why. A
+    # request the page needed may have failed there (a sign-in widget from another site, outside the machine's network
+    # lock). The reason now names the requests that failed, and Chrome's reason, without their query strings.
+    from qajev import netlog
+
+    class Blocked(FormPage):
+        def press(self, _key):  # the page tries to load reCAPTCHA and never signs in
+            _failed(self.net, "r2", "https://www.google.com/recaptcha/api.js?render=abc&token=SECRET",
+                    "net::ERR_NAME_NOT_RESOLVED")
+
+    page = Blocked("http://127.0.0.1:4000/login", lets_in=False)
+    page.net = netlog.Failures("ws://unused")
+    _failed(page.net, "r1", "http://127.0.0.1:4000/old.css", "net::ERR_ABORTED")  # before the sign-in: not named
+    with pytest.raises(signin.SignInFailed) as e:
+        signin.sign_in(page, _local_account(tmp_path), timeout=1)
+    said = str(e.value)
+    assert "requests that failed: www.google.com/recaptcha/api.js (net::ERR_NAME_NOT_RESOLVED)" in said, said
+    assert "old.css" not in said and "SECRET" not in said and "token" not in said
+    assert "fixture-pass-local" not in said
+
+
+def test_a_failed_sign_in_with_no_failed_request_says_nothing_more(tmp_path):
+    from qajev import netlog
+
+    page = FormPage("http://127.0.0.1:4000/login", lets_in=False)
+    page.net = netlog.Failures("ws://unused")
+    with pytest.raises(signin.SignInFailed) as e:
+        signin.sign_in(page, _local_account(tmp_path), timeout=1)
+    assert "requests that failed" not in str(e.value)
+    page = FormPage("http://127.0.0.1:4000/login", lets_in=False)  # a session with no network log at all
+    with pytest.raises(signin.SignInFailed):
+        signin.sign_in(page, _local_account(tmp_path), timeout=1)
