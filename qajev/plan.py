@@ -146,6 +146,17 @@ def from_results(scenarios):
             for i, s in enumerate(scenarios, 1)]
 
 
+# Checks that need something to be on the page. A test with only `absent` checks passes on a blank page, so it proves
+# nothing (Foley claim 13, 13 Oct: an accept step passed in 0.89 s on a blank page, before its request went out).
+POSITIVE = ("url", "url_regex", "status", "text", "visible", "js", "fetch", "command", "looks", "across")
+
+
+def absent_only(scenarios):
+    """The tests whose only checks say a text is absent: a blank page passes them. -> [name]"""
+    return [s.name for s in scenarios
+            if s.expect.get("absent") and not any(s.expect.get(k) for k in POSITIVE)]
+
+
 def not_described(plan):
     """The tests the plan flags: no `about`, or a check without plain words. -> [name]"""
     return [it["name"] for it in plan if not it["described"]]

@@ -69,6 +69,32 @@ def test_qajev_plan_lists_a_suites_plan_and_its_not_described_tests_without_runn
     assert cli.main(["plan", str(site)]) == 0
 
 
+def test_a_test_whose_only_checks_say_a_text_is_absent_is_flagged(tmp_path, capsys):
+    # Foley claim 13, 13 Oct: "B accepts A's invite" only checked that the page lacks "Sign in or create account". A
+    # blank page passes that: the step passed in 0.89 s with 0 actions, the next step closed the page before its accept
+    # went out, and we reported a Foley bug that was not there (r_mv68tohf521ef3f1). A test with "lacks" checks and
+    # nothing that must be there proves nothing, so the plan flags it and exits 2.
+    from qajev import cli
+
+    site = tmp_path / "site.qajev.yaml"
+    site.write_text(
+        "name: invite\nbase_url: http://127.0.0.1:9\nscenarios:\n"
+        "  - name: accept\n    about: B accepts the invite\n    url: /accept\n"
+        "    expect: {absent: [Sign in or create account]}\n"
+        "  - name: list\n    about: B sees the project\n    url: /\n"
+        "    expect: {text: [Shared test], absent: [That did not work]}\n")
+    assert cli.main(["plan", str(site), "--json"]) == 2
+    data = json.loads(capsys.readouterr().out)
+    assert data["absent_only"] == ["accept"] and data["not_described"] == []
+    assert cli.main(["plan", str(site)]) == 2
+    out = capsys.readouterr().out
+    assert "ABSENT ONLY: accept" in out and "a blank page passes" in out
+    site.write_text(site.read_text().replace("expect: {absent: [Sign in or create account]}",
+                                             "expect: {text: [You are in], absent: [Sign in or create account]}"))
+    assert cli.main(["plan", str(site), "--json"]) == 0  # with a text that must be there, it proves something
+    assert json.loads(capsys.readouterr().out)["absent_only"] == []
+
+
 def test_the_plan_before_a_run_names_the_checks_as_the_run_will(tmp_path):
     # The dashboard shows the plan before the run and ticks it live: a planned check must match the one that runs.
     from qajev import suite as suite_mod
