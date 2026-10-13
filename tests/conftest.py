@@ -22,3 +22,13 @@ def _no_parent_watch(monkeypatch):
     move its clock, and CI hung 120 s (run 38284007154, test_idle_window). tests/test_parent_watch.py turns it on
     again."""
     monkeypatch.setenv("QAJEV_OUTLIVE_PARENT", "1")
+
+
+@pytest.fixture(autouse=True)
+def _no_cached_projects():
+    """Each test reads the projects afresh. jobs._projects keeps them for the minute, so a test's own "shop" project
+    on shop.example renamed a later test's run "shop" when both ran in the same minute (CI run 38431014320,
+    macOS 3.12)."""
+    from qajev import jobs
+
+    jobs._projects.cache_clear()
