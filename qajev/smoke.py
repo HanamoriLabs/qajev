@@ -219,6 +219,7 @@ def _examine(session, result, page, dev, *, settle, host, opts, run_dir):
 def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links=False, settle=0.8, delay=None):
     from . import report
     from . import session as session_mod
+    from .jobs import plain_host
     from .suite import _device, wanted_devices
 
     if urlsplit(start_url).scheme not in {"http", "https"}:
@@ -226,7 +227,8 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     names = [device] if device else wanted_devices(devices)  # desktop and a phone, unless one device is pinned
     dev = _device(names[0], "device")
     host = urlsplit(start_url).netloc
-    name = f"smoke {host}"
+    # The name is the report folder's name too: never the URL's user info (redteam, 13 Oct: "alice:s3cret@host")
+    name = f"smoke {plain_host(urlsplit(start_url))}"
     reaped = chrome.reap()
     if reaped and callable(opts.emit):
         opts.emit({"event": "reaped", "items": reaped})
