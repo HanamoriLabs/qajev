@@ -79,8 +79,8 @@ class FakePage:
         self.timeouts = []
         self.page.evaluate = lambda expression, timeout_ms=15000: (
             self.timeouts.append(timeout_ms), self.answers.pop(0) if self.answers else {})[1]
-        self.page.screenshot = lambda path: (path.parent.mkdir(parents=True, exist_ok=True), path.write_bytes(b"jpg"),
-                                             path)[2]
+        self.page.screenshot = lambda path, marked=True: (path.parent.mkdir(parents=True, exist_ok=True),
+                                                          path.write_bytes(b"jpg"), path)[2]
         monkeypatch.setattr("qajev.session.time.monotonic", lambda: self.now)
         monkeypatch.setattr("qajev.session.time.sleep", lambda s: setattr(self, "now", self.now + max(s, tick_s)))
 
@@ -145,7 +145,7 @@ def test_the_frames_a_react_hook_kept_reach_the_result_and_both_reports(monkeypa
         def navigate(self, url): self.url = url
         def probe(self, expect): return {"url": self.url, "status": 200, "text": [True], "probe": {}}
         def why_failed(self, url): return None
-        def screenshot(self, path): return None
+        def screenshot(self, path, marked=True): return None
 
         def run_hook(self, hook, url):
             path = self.shot_dir / f"{self.shot_prefix}-grip-flash.jpg"
