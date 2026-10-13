@@ -18,6 +18,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 ### Fixed
 
 - Play's event stream (`--events` and a job's events.jsonl) now redacts secrets as the report does.
+- An env file (`--env-file`, `$QAJEV_ENV_FILE`, `~/.qajev/.env`) can no longer set `QAJEV_HOME`, `QAJEV_ENV_FILE` or
+  `QAJEV_TEST_DOMAINS`. Before, one that set `QAJEV_HOME` pointed every child process at another folder's `.env`.
 
 ## 0.4.30: 14 Oct 2026
 

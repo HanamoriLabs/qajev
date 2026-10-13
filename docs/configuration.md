@@ -14,6 +14,10 @@ those files even when your shell has another value; to use another one on purpos
 over the files. `qajev doctor` and each report's header say where each of QAJev's keys came from (names, never
 values), and a key the model refused (HTTP 401 or 403) points you there.
 
+Three settings come only from the shell, never from an env file: `QAJEV_HOME`, `QAJEV_ENV_FILE` and
+`QAJEV_TEST_DOMAINS` (QAJev reads that one straight from `~/.qajev/.env`). An env file that moved `QAJEV_HOME` would
+point every QAJev process it starts at another `.env`, without your settings.
+
 ## Keys
 
 | Variable | For | Default |
