@@ -360,6 +360,53 @@ def test_a_check_false_before_jev_moved_with_0_actions_is_harness_and_says_how_t
     assert bare["outcome"] == "fail", bare["reason"]
 
 
+def changing_page(first, later):
+    """A page whose first read is `first` and every later read `later`: it changed by itself, with no action."""
+    from types import SimpleNamespace
+
+    class Page:
+        assists = []
+
+        def __init__(self):
+            self.calls = 0
+            self.agent = SimpleNamespace(state={"status": "done", "history": [], "decisions": [], "text_calls": [],
+                                                "elapsed_ms": 900})
+            self.ledger = SimpleNamespace(spent=lambda: 0.0)
+
+        def set_device(self, device): pass
+        def arm(self, mode, speech=None): pass
+        def check_host(self, url): pass
+        def navigate(self, url): self.url = url
+        def reset_agent(self, task): pass
+        def why_failed(self, url): return None
+
+        def probe(self, expect):
+            self.calls += 1
+            return {"url": self.url, "status": 200, "probe": {}, **(first if self.calls == 1 else later)}
+    return Page()
+
+
+@pytest.mark.parametrize("first, later", [
+    ({"text": [False], "says": "Loading..."}, {"text": [False], "says": "Something went wrong"}),  # the page changed
+    ({"text": [True], "says": "Account page"}, {"text": [False], "says": "Signed out"}),            # true, then false
+])
+def test_a_page_that_changed_by_itself_keeps_the_old_reason(monkeypatch, first, later):
+    # redteam on #127: only a check the same before Jev moved and at the end gets the new reason. A page that changed
+    # by itself while Jev took 0 actions must not read "already false before Jev moved".
+    from qajev import runner, suite
+
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda opts: (True, 1.0))
+    monkeypatch.setattr(runner, "drive", lambda session, scenario, read, *a, **k: (read(), ("done", None))[1])
+    page = {"name": "account", "url": "http://127.0.0.1:8765/", "settle": 0, "expect": {"text": "Account page"},
+            "goal": "Read the page. Stop when you see the heading Account page."}
+    (sc,) = suite.parse({"scenarios": [page]}).scenarios
+    got = runner.run_scenario(changing_page(first, later), sc, opts=runner.Options(), hosts={"127.0.0.1"},
+                              run_dir=None)
+    assert got["outcome"] == "harness", got["reason"]
+    assert "already false before Jev moved" not in got["reason"], got["reason"]
+    assert "without taking a single action" in got["reason"], got["reason"]
+
+
 @pytest.mark.parametrize("url, error", [("http://localhost:3000/", "net::ERR_CONNECTION_REFUSED"),
                                         ("http://shop.test/cart", "net::ERR_NAME_NOT_RESOLVED"),
                                         ("http://127.0.0.1:4031/", "net::ERR_CONNECTION_RESET")])

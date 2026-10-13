@@ -205,9 +205,9 @@ def classify(stop, checks, *, has_checks, stop_detail=None, not_run=(), actions=
         found = {c["check"]: c for c in before or []}
         if failed and all(c["check"] in found and not found[c["check"]]["ok"]
                           and found[c["check"]].get("detail") == c.get("detail") for c in failed):
-            return "harness", (f"{why}: already false before Jev moved and never changed, and Jev said DONE after "
-                               "0 actions, so this says nothing about the page. To judge the page as it loads, run "
-                               "the check without a goal: a false check is then a FAIL")
+            return "harness", (f"{why}: already false before Jev moved and the same at the end, and Jev said DONE "
+                               "after 0 actions, so this says nothing about the page. To judge the page as it loads, "
+                               "run the check without a goal: a false check is then a FAIL")
         return "harness", f"Jev said DONE without taking a single action; unmet: {why}"
     if stop == "done":
         return "fail", f"Jev reported DONE but: {why}"
