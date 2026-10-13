@@ -466,3 +466,17 @@ def test_a_token_the_app_leaks_into_its_log_is_redacted_from_the_report(tmp_path
     report = next((tmp_path / "runs").glob("*/report.json")).read_text()
     assert "ERROR leaked [redacted]" in report, out  # the app's error line is in the report, its token is not
     assert leaked not in report and leaked not in json.dumps(out)
+
+
+def test_app_files_itself_refuses_a_fixture_that_is_not_a_test_account(project, tmp_path, monkeypatch):
+    """Guard 2 alone: with the vault's own test_account check stubbed out, app.files still refuses the fixture."""
+    from qajev import vault
+    from qajev.app import app_files
+
+    def lenient(ref):  # a vault that would hand over any fixture's value
+        _, file, key = vault.parse(ref)
+        return vault.seed_value(json.loads(Path(file).read_text()), key)
+
+    monkeypatch.setattr(vault, "resolve", lenient)
+    with pytest.raises(NativeError, match="not a test-user fixture"):
+        app_files(app_spec(files_spec(fixture(tmp_path, test_account=False))))
