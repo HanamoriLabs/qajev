@@ -4,8 +4,6 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
-## 0.4.29: 14 Oct 2026
-
 ### Added
 
 - Real keys on a QAJev Cloud Mac: a play suite's `keys:` step brings the app (`app`, its bundle id) to the front, can
@@ -16,6 +14,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   harness. A suite with a system shortcut (Cmd+Q, Cmd+Tab, Cmd+Space...) or a system app is refused when it loads.
   Input pushed through an app's bridge cannot prove a paste, a shortcut or focus (Twinbox step 20a: a box name that
   would not paste).
+
+## 0.4.29: 14 Oct 2026
 
 ### Added
 
