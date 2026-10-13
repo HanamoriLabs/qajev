@@ -430,7 +430,8 @@ steps:
   never through a symbolic link, and a path that is absolute or holds `.` or `..` is refused. The report shows only
   the file and its fixture ("test token from staging-test.json"). The value is redacted from the report, the logs
   and the JSON. The home and the file go when the run ends, on a crash or a stop too, and a run killed outright has
-  its home removed by the next run's reaper, even when another process has its pid by then. A web suite has no `app:`, so its pages never get one.
+  its home removed by the next run's reaper, even when another process has its pid by then. A web suite has no
+  `app:`, so its pages never get one.
 - **Errors.** A log line at `ERROR` or `FATAL`, and a Rust panic (`panicked at`), fail the step's `no_errors` check.
   A line that only mentions the word "error" does not.
 - **What stays the Godot driver's:** Jev's choices among the app's actions, the guard's hidden labels (sign in, buy,
