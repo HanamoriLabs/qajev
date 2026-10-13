@@ -9,6 +9,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - A suite sent with `--runner cloud` is now filed under its project on QAJev Cloud: the one in its repo's
   `.qajev/project.toml`, else the project whose `repo` holds the suite. Before, only a `--project` run named one, so
   the run's page could not say which project it belonged to (José).
+- Every cloud run now names its project when one is known, in this order: `--project`, the suite's project, the
+  folder the run starts from (its `.qajev/project.toml`, else the project whose `repo` holds it), then the one
+  registered project with an environment on the URL's host and port. A check or smoke of a URL named none before, so
+  all 435 cloud runs this month showed "No project" on the Usage page (the Orchestrator).
 
 ## 0.4.28: 13 Oct 2026
 

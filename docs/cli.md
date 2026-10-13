@@ -272,9 +272,16 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
   `qajev mode default --project shop` removes it. The order: `--runner`, then the project's `runner`, then this
   Mac's mode, else this Mac.
 - **Its project on the dashboard.** A cloud run is filed under its project, so the run's page and the run lists name
-  it. A `--project` run names its own. A suite names the project in its repo's `.qajev/project.toml`, else the
-  project whose `repo` holds the suite (a worktree inside that repo too). The dashboard must know the project (it is
-  synced from `project.toml`); otherwise the run shows "No project".
+  it. QAJev takes the first of these that names one:
+  1. `--project`.
+  2. For a suite, the project in its repo's `.qajev/project.toml`, else the project whose `repo` holds the suite (a
+     worktree inside that repo too).
+  3. The folder the run starts from: its `.qajev/project.toml` (or one above it), else the project whose `repo` holds
+     it.
+  4. The one registered project with an environment on the URL's site (host and port; `www.` makes no difference).
+     A site two projects share, such as one `127.0.0.1` port, names neither.
+
+  The dashboard must know the project (it is synced from `project.toml`); otherwise the run shows "No project".
 
 - **The key.** `QAJEV_CLOUD_KEY`, else macOS Keychain (service `qajev-cloud-agent`). QAJev never prints it.
   `QAJEV_CLOUD_URL` names another dashboard (default `https://cloud.qajev.com`). `qajev doctor` checks both.
