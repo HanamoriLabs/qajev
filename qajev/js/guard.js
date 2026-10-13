@@ -344,7 +344,7 @@
       : kind === 'read-only' ? writes(el)
       : kind === OFFSITE ? (() => { try { return new URL(el.href, location.href).host; } catch (e) { return null; } })()
       : null;
-    held.set(el, { label: named(el), why: kind, match });
+    held.set(el, { label: named(el), why: kind, match, page: location.origin + location.pathname });
   };
   const hide = (el, why) => {
     if (el.dataset.qajevGuard === why) return;
@@ -472,6 +472,53 @@
   const forgetGone = () => {
     for (const el of held.keys()) if (!el.isConnected) held.delete(el);
     return [...held.values()];
+  };
+
+  // A report picture marks where the guard hid a control: a missing "Save" read as a bug twice (13 Oct). For the
+  // picture only, each hidden control gets its space back but stays invisible and inert, under a dashed box labelled
+  // "hidden by guard". mark(false) puts it all back. A disabled secret field and an offsite link are on screen already.
+  let marks = null;
+  state.mark = (on) => {
+    if (marks) {
+      for (const [el, vis, prio] of marks.shown) {
+        if (vis) el.style.setProperty('visibility', vis, prio); else el.style.removeProperty('visibility');
+        if (el.dataset.qajevGuard) el.style.setProperty('display', 'none', 'important');  // still held: hidden again
+      }
+      marks.box.remove();
+      marks = null;
+    }
+    if (!on) return 0;
+    const shown = [];
+    for (const el of held.keys()) {
+      const why = el.dataset.qajevGuard;
+      if (!el.isConnected || !why || why === 'field' || why === OFFSITE) continue;
+      shown.push([el, el.style.getPropertyValue('visibility'), el.style.getPropertyPriority('visibility')]);
+      el.style.removeProperty('display');
+      if (el.dataset.qajevDisplay) el.style.setProperty('display', el.dataset.qajevDisplay);
+      el.style.setProperty('visibility', 'hidden', 'important');
+    }
+    const box = document.createElement('div');
+    box.setAttribute('aria-hidden', 'true');
+    box.dataset.qajevMarks = '';
+    box.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647';
+    for (const [el] of shown) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1 || r.bottom < 0 || r.top > innerHeight) continue;  // no box, or off screen
+      const m = document.createElement('div');
+      m.style.cssText = `position:fixed;left:${r.left - 3}px;top:${r.top - 3}px;width:${r.width + 6}px;` +
+        `height:${r.height + 6}px;border:2px dashed #c62828;border-radius:4px;box-sizing:border-box;` +
+        'background:rgba(198,40,40,.07)';
+      const tag = document.createElement('span');
+      tag.textContent = 'hidden by guard';
+      tag.style.cssText = `position:absolute;left:-2px;${r.top < 22 ? 'top:100%;margin-top:2px' : 'bottom:100%;margin-bottom:2px'};` +
+        'font:600 11px/1.4 system-ui,sans-serif;color:#fff;background:#c62828;padding:0 5px;border-radius:3px;' +
+        'white-space:nowrap';
+      m.append(tag);
+      box.append(m);
+    }
+    document.documentElement.append(box);
+    marks = { shown, box };
+    return box.childElementCount;
   };
 
   const BUSY = '[aria-busy="true"],[role=progressbar],.spinner,.loading,[data-loading="true"]';

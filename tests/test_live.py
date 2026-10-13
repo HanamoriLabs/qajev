@@ -409,6 +409,28 @@ def test_a_hook_never_clicks_a_control_the_guard_has_not_judged(session, site, m
         session.require_guard()
 
 
+def test_a_picture_marks_where_the_guard_hid_a_control_then_puts_the_page_back(session, site, tmp_path):
+    # 13 Oct: a "Save" the guard hid read as the page's bug twice. For a picture only, the hidden control gets its
+    # space back, stays invisible and inert, under a dashed box labelled "hidden by guard"; then all is as before.
+    session.arm("readonly")
+    session.navigate(site + "/shop.html")
+    state = ("[getComputedStyle(shop).display, getComputedStyle(shop).visibility, shop.inert, "
+             "document.querySelectorAll('[data-qajev-marks]').length]")
+    before = session.evaluate(state)
+    assert before == ["none", "visible", True, 0]
+    assert session.evaluate("window.__qajev.mark(true)") == 1  # Shop only: a disabled field and a link stay on screen
+    assert session.evaluate(state) == ["inline-block", "hidden", True, 1]
+    box = session.evaluate(
+        "(() => { const m = document.querySelector('[data-qajev-marks] > div'), r = m.getBoundingClientRect(),"
+        " s = shop.getBoundingClientRect(); return [m.textContent, getComputedStyle(m).borderTopStyle,"
+        " r.left <= s.left && r.right >= s.right && r.top <= s.top && r.bottom >= s.bottom]; })()")
+    assert box == ["hidden by guard", "dashed", True]  # the box covers where the control is
+    session.evaluate("window.__qajev.mark(false)")
+    assert session.evaluate(state) == before
+    assert session.screenshot(tmp_path / "shop.jpg").stat().st_size > 0  # the picture's own pass leaves no trace
+    assert session.evaluate(state) == before
+
+
 def test_the_guard_names_what_it_held_back_and_the_words_that_did_it(session, site):
     # verse1, 4 Oct: a tooltip's "buy" hid the wardrobe's "Shop" button; the stuck result read as a layout bug.
     from qajev import verdict
@@ -416,10 +438,11 @@ def test_the_guard_names_what_it_held_back_and_the_words_that_did_it(session, si
     session.arm("readonly")
     session.navigate(site + "/shop.html")
     held = session.probe({})["probe"]["hidden_controls"]
-    assert held == [{"label": "Shop Show clothes and gear you can buy", "why": "danger", "match": "buy"},
-                    {"label": "Card number", "why": "secret field", "match": None},
-                    {"label": "password", "why": "secret field", "match": None},
-                    {"label": "Elsewhere", "why": "off-site link", "match": "elsewhere.example"}]
+    page = site + "/shop.html"  # each says which page it was on (13 Oct)
+    assert held == [{"label": "Shop Show clothes and gear you can buy", "why": "danger", "match": "buy", "page": page},
+                    {"label": "Card number", "why": "secret field", "match": None, "page": page},
+                    {"label": "password", "why": "secret field", "match": None, "page": page},
+                    {"label": "Elsewhere", "why": "off-site link", "match": "elsewhere.example", "page": page}]
     assert verdict.with_guard_note("stuck", "Jev found no way forward; unmet: text 'Crown'", held) == (
         "Jev found no way forward; unmet: text 'Crown'; guard hid: 'Shop Show clothes and gear you can buy' "
         "(danger: buy), 'Card number' (secret field), 'password' (secret field) and 1 more")

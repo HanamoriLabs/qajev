@@ -380,6 +380,25 @@ def dedupe(findings):
     return sorted(out, key=lambda f: SEVERITY_ORDER.get(f["severity"], 9))
 
 
+HIDDEN_KEEP = 50  # hidden controls a test keeps for its report
+
+
+def keep_hidden(kept, seen):
+    """Add the controls the guard holds back on the page now to the test's list: every one it hid during the test,
+    on any page, once per name, rule and page (13 Oct). Before, the list held only the last page's."""
+    for h in seen or []:
+        key = (h.get("label"), h.get("why"), h.get("page"))
+        if len(kept) < HIDDEN_KEEP and all((k.get("label"), k.get("why"), k.get("page")) != key for k in kept):
+            kept.append(h)
+    return kept
+
+
+def hidden_list(hidden):
+    """Each control the guard held back, as a report line: its name, the rule that hid it, and the page."""
+    return [f"{str(h.get('label') or '?')[:80]!r} ({h.get('why')}{': ' + str(h['match']) if h.get('match') else ''})"
+            + (f" on {h['page']}" if h.get("page") else "") for h in hidden]
+
+
 def hidden_words(hidden, limit=3):
     """What the guard held back, in words: "'Shop Show clothes and gear you can buy' (danger: buy), 'Card number'
     (secret field) and 2 more"."""
