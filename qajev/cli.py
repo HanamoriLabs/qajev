@@ -538,9 +538,9 @@ def check_name(url, goal=None):
     failures by project and test, so each check needs its own name, not "check" (the Orchestrator, 13 Oct)."""
     from urllib.parse import urlsplit
 
-    from .jobs import _goal
+    from .jobs import _goal, plain_host
     parts = urlsplit(url if "://" in url else f"https://{url}")
-    host = (parts.netloc or url).removeprefix("www.")
+    host = plain_host(parts, url).removeprefix("www.")
     path = parts.path.rstrip("/")
     name = f"{host} {path[:30]}…" if len(path) > 30 else f"{host} {path}" if path else host
     return name + (f" · {_goal(goal)}" if goal else "")

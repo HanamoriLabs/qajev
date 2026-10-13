@@ -62,6 +62,9 @@ def test_qajev_check_names_its_test_by_site_path_and_goal():
     assert name("https://figgyz.com/products/heroes/") == "figgyz.com /products/heroes"
     goal = "Find the Pro price. Stop when you see it."
     assert name("https://qajev.com/pricing", "--goal", goal) == "qajev.com /pricing · Find the Pro price"
+    # The name goes to the Cloud as a card headline and a grouping key: never the URL's user info (redteam, #131).
+    assert name("https://alice:s3cret@staging.example.com/admin") == "staging.example.com /admin"
+    assert name("http://bob@127.0.0.1:8765/") == "127.0.0.1:8765"
 
 
 def test_a_phone_tab_also_says_it_is_a_phone():
