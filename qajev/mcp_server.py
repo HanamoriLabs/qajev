@@ -66,7 +66,8 @@ is stubbed. Sign-in: qa_browser(action="login", url=...) opens
 QAJev's own Chrome for the person, who signs in once (the profile keeps it); or, for a seeded TEST account on a
 local dev host only, a suite/project names it (account: with password: seed:FILE#KEY, and totp: or a cookie:
 value from seed: for a second factor, from a fixture that says "test_account": true) and QAJev signs in itself.
-keychain:, op:// and env: passwords are refused. Never ask for, type or write down a password.
+keychain:, op:// and env: passwords are refused, and so is a URL with a user name or password in it
+(https://user:pass@host/). Never ask for, type or write down a password.
 
 Images: with Clef as the decision model (QAJEV_JEV_PROVIDER=cloudflare), `expect_looks` judges plain statements
 from the final screenshot (layout, a canvas, a cut-off button: what text checks cannot see), and `vision` sends the

@@ -209,12 +209,13 @@ def is_loopback(url):
 def user_info_refusal(url):
     """Why a URL that holds a user name or password is refused, or None. QAJev never writes down a password, and the
     URL would reach the report files, which a cloud run uploads (redteam, 13 Oct; the Orchestrator: refuse it). The
-    reason names the host only."""
-    head = str(url).split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    reason names the host only. A browser reads "\\" as "/" (plain_host), so "http://evil.com\\@localhost/" holds no
+    user info: it goes to evil.com, and the other checks judge that host."""
+    head = str(url).replace("\\", "/").split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
     if "@" not in head:
         return None
     return (f"a URL with a user name or password is refused ({head.rsplit('@', 1)[1] or 'no host'}): QAJev never "
-            "writes down a password. Sign in once with `qajev browser login URL`, then run with that --profile")
+            "writes down a password. Sign in once with `qajev browser login --url URL`, then run with that --profile")
 
 
 def user_info_in_args(argv):

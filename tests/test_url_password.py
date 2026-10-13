@@ -20,7 +20,8 @@ def started(monkeypatch, tmp_path):
     home.mkdir()
     monkeypatch.setattr(config, "HOME", home)
     monkeypatch.chdir(tmp_path)
-    for name in ("QAJEV_RUNNER", "QAJEV_CLOUD_URL", "QAJEV_CLOUD_KEY", "QAJEV_PROFILE", "QAJEV_REQUIRE_PLAN", "QAJEV_JOB"):
+    for name in ("QAJEV_RUNNER", "QAJEV_CLOUD_URL", "QAJEV_CLOUD_KEY", "QAJEV_PROFILE", "QAJEV_REQUIRE_PLAN",
+                 "QAJEV_JOB"):
         monkeypatch.delenv(name, raising=False)
     seen = []
 
@@ -35,7 +36,8 @@ def started(monkeypatch, tmp_path):
 
 def leaked(root, inputs=()):
     """Every file under root, except the inputs this test wrote itself, that holds the password."""
-    return [str(p) for p in root.rglob("*") if p.is_file() and p not in inputs and PASSWORD in p.read_bytes().decode("utf-8", "replace")]
+    return [str(p) for p in root.rglob("*")
+            if p.is_file() and p not in inputs and PASSWORD in p.read_bytes().decode("utf-8", "replace")]
 
 
 def suite_with(tmp_path, base, url="/"):
@@ -64,7 +66,8 @@ def project_with(tmp_path, base):
     lambda tmp: (lambda p: (["run", str(p)], (p,)))(suite_with(tmp, "https://shop.example", URL + "cart")),
     lambda tmp: (lambda r: (["run", "--project", str(r[0])], (r[1],)))(project_with(tmp, URL)),
     lambda tmp: (lambda r: (["smoke", "--project", str(r[0])], (r[1],)))(project_with(tmp, URL)),
-], ids=["check", "smoke", "suite base_url", "suite base_url alone", "suite scenario url", "project run", "project smoke"])
+], ids=["check", "smoke", "suite base_url", "suite base_url alone", "suite scenario url", "project run",
+        "project smoke"])
 def test_a_url_with_a_password_is_refused_and_written_nowhere(started, tmp_path, capsys, make):
     argv, inputs = make(tmp_path)
 
@@ -81,11 +84,13 @@ def test_a_url_with_a_password_is_refused_and_written_nowhere(started, tmp_path,
 def test_a_url_without_user_info_is_not_refused_for_it():
     assert config.user_info_refusal("https://shop.example:8443/a@b?c=d@e") is None  # an "@" in the path or query
     assert config.user_info_refusal("http://127.0.0.1:3000/") is None
+    assert config.user_info_refusal("http://evil.com\\@localhost/") is None  # a browser goes to evil.com: no user info
     said = config.user_info_refusal(URL)
     assert said and PASSWORD not in said and "alice" not in said and "shop.example:8443" in said
 
 
-@pytest.mark.parametrize("argv", [["check", URL], ["smoke", URL], ["check", "https://shop.example/", "--fetch", URL + "health=200"]])
+@pytest.mark.parametrize("argv", [["check", URL], ["smoke", URL],
+                                  ["check", "https://shop.example/", "--fetch", URL + "health=200"]])
 def test_a_cloud_run_with_a_password_in_a_url_is_refused_before_anything_is_sent(started, monkeypatch, capsys, argv):
     from qajev import cloud
 
