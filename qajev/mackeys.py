@@ -7,6 +7,7 @@ A play suite's `keys:` step:
       keys:
         app: com.hanamorilabs.twinbox      # the app that gets the keys (its bundle id)
         clipboard: qa-paste-7f3            # first, put this text on the clipboard (optional)
+        click: new-box.name                # then a real click on this control of the app (optional)
         press: [cmd+v]                     # keys and chords in order; {type: "some text"} types it key by key
       expect:
         state: {new_box_name: qa-paste-7f3}
@@ -19,9 +20,14 @@ the frontmost app, and stops at the first key it cannot send there. The suite is
 system's own shortcuts (quit, close, hide, minimize, switch apps or Spaces, Spotlight, force quit) or a system app.
 Key codes are a US keyboard's, as the cloud Macs have.
 
+`click` names one of the app's actions (its bridge id). QAJev reads that action's x and y (egui points from the
+drawing area's top-left) and the app's `state.window` {x, y, zoom} (the drawing area's top-left in macOS screen
+points, and screen points per egui point), and clicks at x + action.x * zoom, y + action.y * zoom.
+
 The helper's commands (each prints "trusted: true|false" first, and exits 0 when it did what it says):
     qajev-keys front BUNDLE                  that app is brought to the front and is frontmost
     qajev-keys clip TEXT                     the clipboard holds TEXT (read back)
+    qajev-keys click BUNDLE X Y              one left click at screen point X,Y while BUNDLE was frontmost
     qajev-keys keys BUNDLE CODE:MODS ...     each key posted while BUNDLE was frontmost; MODS is cmd+shift+alt+ctrl
 """
 
@@ -33,7 +39,7 @@ from . import keys as page_keys
 from .native import NativeError, _step, _step_result, play
 
 HELPER = Path.home() / ".qcloud-keys" / "qajev-keys"
-KEYS_KEYS = {"app", "clipboard", "press"}
+KEYS_KEYS = {"app", "clipboard", "click", "press"}
 MAX_TYPED = 200
 MAX_CLIPBOARD = 1000
 # The other things a step can do: a keys step only presses keys, then checks what they did
@@ -112,6 +118,9 @@ def plan(value):
     clip = value.get("clipboard")
     if clip is not None and (not isinstance(clip, str) or not 1 <= len(clip) <= MAX_CLIPBOARD):
         raise ValueError(f"clipboard: text of 1 to {MAX_CLIPBOARD} characters")
+    click = value.get("click")
+    if click is not None and (not isinstance(click, str) or not click.strip()):
+        raise ValueError("click: the id of the app's control to click, such as new-box.name")
     press = value.get("press")
     press = press if isinstance(press, list) else [press]
     if not 1 <= len(press) <= page_keys.MAX_KEYS or press == [None]:
@@ -127,12 +136,29 @@ def plan(value):
             label, code = chord(item)
             labels.append(label)
             codes.append(code)
-    return {"app": app, "clipboard": clip, "press": labels, "codes": codes}
+    return {"app": app, "clipboard": clip, "click": click, "press": labels, "codes": codes}
 
 
 def describe(p):
     said = f"{', '.join(p['press'])} in {p['app']}"
-    return f"{said}, after putting {p['clipboard']!r} on the clipboard" if p["clipboard"] is not None else said
+    first = [*([f"putting {p['clipboard']!r} on the clipboard"] if p["clipboard"] is not None else []),
+             *([f"a click on {p['click']}"] if p["click"] else [])]
+    return f"{said}, after {' and '.join(first)}" if first else said
+
+
+def screen_point(obs, action_id):
+    """Where a control of the app is on the screen: (x, y) in macOS screen points, or a reason it cannot be known."""
+    action = next((a for a in obs.get("actions") or [] if a.get("id") == action_id), None)
+    if action is None:
+        return None, f"the app shows no control {action_id!r}"
+    window = (obs.get("state") or {}).get("window")
+    nums = (int, float)
+    if not isinstance(window, dict) or not all(isinstance(window.get(k), nums) and not isinstance(window.get(k), bool)
+                                               for k in ("x", "y", "zoom")) or window["zoom"] <= 0:
+        return None, "the app does not say where its window is (state.window x, y and zoom)"
+    if not all(isinstance(action.get(k), nums) and not isinstance(action.get(k), bool) for k in ("x", "y")):
+        return None, f"the control {action_id!r} has no x and y"
+    return (round(window["x"] + action["x"] * window["zoom"]), round(window["y"] + action["y"] * window["zoom"])), None
 
 
 def planned_checks(value):
@@ -143,6 +169,7 @@ def planned_checks(value):
         return []
     return [{"check": f"{p['app']} was in front"},
             *([{"check": "the clipboard held the text"}] if p["clipboard"] is not None else []),
+            *([{"check": f"{p['click']} was clicked"}] if p["click"] else []),
             {"check": f"the keys were pressed in {p['app']}", "says": describe(p)}]
 
 
@@ -195,6 +222,17 @@ def keys_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shot
     if code == 0 and p["clipboard"] is not None:
         code, out = run([str(helper), "clip", p["clipboard"]])
         checks.append({"check": "the clipboard held the text", "ok": code == 0,
+                       "detail": None if code == 0 else _last(out)})
+    if code == 0 and p["click"]:
+        try:
+            at, why = screen_point(game.observe(), p["click"])
+        except NativeError as e:
+            return _step_result(name, "browser_error", checks, f"could not read the app before the click: {e}")
+        if at is None:
+            code, out = 1, why
+        else:
+            code, out = run([str(helper), "click", p["app"], str(at[0]), str(at[1])])
+        checks.append({"check": f"{p['click']} was clicked", "ok": code == 0,
                        "detail": None if code == 0 else _last(out)})
     if code == 0:
         code, out = run([str(helper), "keys", p["app"], *p["codes"]])

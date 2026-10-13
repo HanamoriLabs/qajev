@@ -250,6 +250,38 @@ product. QAJev never reads, types or records a code or a password in this step. 
 `goal`, `play`, `js`, `pad`, `idle`, `relaunch` or `open`: put those in a step of their own. It takes no `expect:`
 either: `until` is its one check, and other checks go in the next step.
 
+### Real keys on a cloud Mac: keys
+
+Input pushed into an app through its bridge skips macOS, so it cannot prove a paste, a shortcut or focus. A `keys:`
+step sends real macOS key presses and clicks instead:
+
+```yaml
+  - name: Paste a box name
+    about: A name copied elsewhere pastes into the new box's name field with a real Cmd+V.
+    keys:
+      app: com.hanamorilabs.twinbox             # the app that gets the keys (its bundle id)
+      clipboard: qa-paste-7f3                   # first, this text on the clipboard (optional)
+      click: new-box.name                       # then a real click on this control (optional)
+      press: [cmd+v]                            # keys and chords in order; {type: "text"} types text key by key
+    expect:
+      state: {new_box_name: qa-paste-7f3}
+```
+
+The keys come from one small helper, `qajev-keys`, that a QAJev Cloud per-run Mac builds and trusts for Accessibility.
+The step runs only where that helper is found and trusted. Anywhere else, your own Mac too, it presses nothing and is
+**harness**. Each part is a check: the app was in front, the clipboard held the text, the control was clicked, the
+keys were pressed. The first one that fails ends the step, then the `expect` checks judge what the keys did. The
+helper presses each key only while `app` is the frontmost app. A click needs the app to report `state.window`
+{x, y, zoom}: the top-left of its drawing area in macOS screen points, and screen points per bridge point. The
+control's x and y are its centre from that top-left.
+
+Keys are names as in a `key` hook (letters, digits, punctuation, Enter, Tab, Space, Escape, Backspace, Delete, the
+arrows), with Cmd, Ctrl, Alt or Shift (`cmd+k`, `shift+Tab`). `type:` types letters, digits, space and plain
+punctuation, with Shift for capitals, on a US keyboard. The suite is refused when it loads if a key is a system
+shortcut (quit, close, hide, minimize, switch apps or Spaces, Spotlight, force quit) or `app` is a system app
+(Finder, Terminal, System Settings). A keys step cannot also have a `goal`, `play`, `js`, `pad`, `idle`,
+`relaunch` or `handoff`.
+
 ### Quitting on purpose
 
 QUIT is hidden from Jev, because quitting ends the session. To test a normal quit (say, that the game sends its

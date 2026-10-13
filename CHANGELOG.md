@@ -6,6 +6,17 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- Real keys on a QAJev Cloud Mac: a play suite's `keys:` step brings the app (`app`, its bundle id) to the front, can
+  put text on the clipboard (`clipboard`) and click one of the app's controls (`click`, at its real screen point from
+  the app's `state.window`), then presses keys and chords (`press`, with `{type: text}` for typed text). Then its
+  `expect` checks judge what the keys did. The presses are macOS events from the per-run Mac's `qajev-keys` helper,
+  only while the app is in front. Anywhere without that trusted helper, this Mac too, the step presses nothing and is
+  harness. A suite with a system shortcut (Cmd+Q, Cmd+Tab, Cmd+Space...) or a system app is refused when it loads.
+  Input pushed through an app's bridge cannot prove a paste, a shortcut or focus (Twinbox step 20a: a box name that
+  would not paste).
+
+### Added
+
 - Any native app with a QAJev bridge: a play suite's `app:` names the app's `command`, its `env` and a `home_env`
   that QAJev points at a throwaway folder (`HOME` is throwaway too), so the app never reads the person's real
   settings or tokens. The app speaks the Godot bridge's protocol, so Jev's choices, state checks, `relaunch`, shots
