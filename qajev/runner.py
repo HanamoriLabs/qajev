@@ -148,6 +148,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     findings = []
     observed = {}
     stop, detail = None, None
+    before = None  # the page's checks as Jev found it, before its first move
 
     def absorb(obs):
         probe = (obs or {}).get("probe") or {}
@@ -220,6 +221,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if scenario.before:  # the checks judge the page after its hooks (verse2, 6 Oct: a wait_for "did not
                 read()           # wait" because the checks used the page as read before it ran)
             if scenario.goal:
+                if has_page_checks(scenario.expect):
+                    before = verdict.page_checks(scenario.expect, observed)
                 session.reset_agent(scenario.task)
 
                 def step(doing, **extra):  # what Jev is doing and the money spent so far, for qajev top
@@ -331,7 +334,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     not_run = [NOT_RUN[k] for k, v in wanted.items() if v and k not in ran]
     outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail,
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),
-                                       url=scenario.url)
+                                       url=scenario.url, before=before)
     result.update({k: v for k, v in (("stop_detail", detail), ("not_run", not_run)) if v})
     idle = verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
                                  session.agent.state["history"]) if scenario.goal else None
