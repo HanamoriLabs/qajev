@@ -195,7 +195,7 @@ class GodotGame:
         (STATE / f"{self.proc.pid}.json").write_text(json.dumps(self.record))
         return self._wait_for_bridge()
 
-    def _exited(self):
+    def _exited(self, code):
         """Why the process ended before its bridge came up: a refusal it printed, else its exit code and last lines."""
         refused = next((line for line in self.log if line.startswith(SAVE_NOT_ISOLATED)), None)
         if refused:
@@ -204,14 +204,17 @@ class GodotGame:
         unseeded = next((line for line in self.log if line.startswith("QAJEV_SEED_FAILED")), None)
         if unseeded:
             return f"could not seed the save folder: {unseeded.split(':', 1)[1].strip()}"
-        return f"the game exited with {self.proc.returncode} before its bridge came up: " + " | ".join(self.log[-5:])
+        return f"the game exited with {code} before its bridge came up: " + " | ".join(self.log[-5:])
 
     def _wait_for_bridge(self):
+        proc = self.proc
+        if proc is None:
+            raise NativeError("the game was not started")
         deadline = time.monotonic() + self.start_wait
         while time.monotonic() < deadline:
-            if self.proc.poll() is not None:
+            if proc.poll() is not None:
                 time.sleep(0.2)  # its last lines
-                raise NativeError(self._exited())
+                raise NativeError(self._exited(proc.returncode))
             try:
                 self.sock = socket.create_connection(("127.0.0.1", self.port), timeout=1)
                 break

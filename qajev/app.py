@@ -139,6 +139,6 @@ class AppProcess(GodotGame):
         (STATE / f"{self.proc.pid}.json").write_text(json.dumps(self.record))
         return self._wait_for_bridge()
 
-    def _exited(self):
-        return (f"the app exited with {self.proc.returncode} before its bridge came up: "
+    def _exited(self, code):
+        return (f"the app exited with {code} before its bridge came up: "
                 + (" | ".join(self.log[-5:]) or "it printed nothing"))
