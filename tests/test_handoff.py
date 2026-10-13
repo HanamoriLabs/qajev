@@ -24,8 +24,8 @@ class App:
         if self.dies_at is not None and self.looks >= self.dies_at:
             raise NativeError("the game closed its bridge (crashed or quit)")
         done = self.after is not None and self.looks > self.after
-        return {"screen": "box", "texts": [], "actions": [{"id": "x", "label": "Copy", "kind": "click", "x": 1, "y": 1}],
-                "state": {"github_signed_in": done}}
+        copy = {"id": "x", "label": "Copy", "kind": "click", "x": 1, "y": 1}
+        return {"screen": "box", "texts": [], "actions": [copy], "state": {"github_signed_in": done}}
 
     def act(self, action):
         self.inputs.append(action)

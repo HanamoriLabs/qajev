@@ -799,7 +799,9 @@ async def qa_play(
     game's bot), idle steps (`idle: SECONDS`, the game runs untouched), with top-level `allow`/`hide` labels. A step's
     `before:` (screen/text/state) must hold when it starts; an idle step's `lasted: {min, max}` measures how long that
     state held with no input. A `pad:` step (Electron) presses buttons, pushes a stick or pulls a trigger on a
-    virtual gamepad (`pad: A`, `{press: [A, DpadDown]}`, `{stick: left, x: 1}`, `{trigger: RT}`).
+    virtual gamepad (`pad: A`, `{press: [A, DpadDown]}`, `{stick: left, x: 1}`, `{trigger: RT}`). A `handoff:` step
+    ({who, does, until, minutes}) waits, sending no input, for a person to do a step by hand (a personal sign-in):
+    pass when `until` holds, stuck when time runs out.
     `only`: run these steps of the suite, plus the steps they name in `depends_on` and every `setup: true` step.
     `game_env`: environment settings for the game; `game_args`: switches for an Electron app. `game_profile`: keep
     an Electron game's save folder between runs (~/.qajev/game-profiles/NAME, a test profile; reset_game_profile

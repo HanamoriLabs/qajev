@@ -228,6 +228,27 @@ steps:
 name is `step N`, its place in the whole suite. To run only what failed last time: `qajev rerun JOB --failed`
 ([CLI](cli.md#qajev-rerun)).
 
+### A person's step: handoff
+
+Some steps belong to a person alone: a GitHub device login, a sign-in to their own account. QAJev never signs in for
+anyone, so the suite hands that step over and waits:
+
+```yaml
+  - name: GitHub sign-in on the box
+    about: The box's setup waits for its owner to authorize GitHub, then goes on by itself.
+    handoff:
+      who: José                                 # the person who does it
+      does: Authorize GitHub on the box with the code it shows
+      until: {github_signed_in: true}           # the app's state once it is done, as a play step's until
+      minutes: 10                               # how long to wait, 1 to 30 (default 10)
+```
+
+The step sends no input at all: no click, no key, no pilot. It sends a `handoff` event (the run's live page,
+`qajev top` and `qa_job` show "waiting for José: ..."), then reads the state every 2 s until `until` holds. Done in
+time: pass. Not done in time: **stuck**, never fail, because a person who did not come proves nothing about the
+product. QAJev never reads, types or records a code or a password in this step. A handoff step cannot also have a
+`goal`, `play`, `js`, `pad`, `idle` or `relaunch`: put those in a step of their own.
+
 ### Quitting on purpose
 
 QUIT is hidden from Jev, because quitting ends the session. To test a normal quit (say, that the game sends its
