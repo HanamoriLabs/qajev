@@ -90,7 +90,7 @@ def test_a_wrong_handoff_is_refused_naming_what_is_wrong(handoff, says):
         check_handoff([{"name": "sign-in", "handoff": handoff}])
 
 
-@pytest.mark.parametrize("acting", ["goal", "play", "js", "pad", "idle", "relaunch", "open"])
+@pytest.mark.parametrize("acting", ["goal", "play", "js", "pad", "keys", "idle", "relaunch", "open"])
 def test_a_handoff_step_that_would_also_act_is_refused(acting):
     with pytest.raises(NativeError, match=f"only waits, and QAJev acts nowhere in it: put {acting}"):
         check_handoff([{"name": "sign-in", "handoff": SPEC, acting: "x"}])
