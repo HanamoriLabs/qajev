@@ -11,9 +11,10 @@ for anyone, so a play suite hands that step over and waits:
         until: {github_signed_in: true}          # the app's state once it is done (as a play step's until)
         minutes: 10                              # how long to wait, 1 to 30
 
-The step sends no input at all, and takes no `expect:` or `open:` (refused when the suite loads). It tells the run's watchers (a `handoff` event: the live page, `qajev top`, qa_job),
-then reads the app's state until `until` holds. Done: pass. Not done in time: stuck, never fail, because a person who
-did not come proves nothing about the product. QAJev never reads, types or records a code or a password here.
+The step sends no input at all, and takes no `expect:` or `open:` (refused when the suite loads). It tells the
+run's watchers (a `handoff` event: the live page, `qajev top`, qa_job), then reads the app's state until `until`
+holds. Done: pass. Not done in time: stuck, never fail, because a person who did not come proves nothing about the
+product. QAJev never reads, types or records a code or a password here.
 """
 
 import time
