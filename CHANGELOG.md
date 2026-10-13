@@ -6,6 +6,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- Any native app with a QAJev bridge: a play suite's `app:` names the app's `command`, its `env` and a `home_env`
+  that QAJev points at a throwaway folder (`HOME` is throwaway too), so the app never reads the person's real
+  settings or tokens. The app speaks the Godot bridge's protocol, so Jev's choices, state checks, `relaunch`, shots
+  and `looks` work as for a game. A log line at `ERROR` or `FATAL`, or a Rust panic, fails `no_errors`. `app:` wins
+  over the `.app` folder guess, which took any `.app` for an Electron game. Built for Twinbox Desktop's test suite.
 - Planted faults: a test can say it is meant to fail, and on which check: `expect_fail: "<the check's says>"` on a
   suite's scenario, `--expect-fail` on `qajev check`, `expect_fail` on `qa_check` (`true`: the test's only check).
   It keeps its real outcome. The gate counts it as met only when it failed on that check and every other check

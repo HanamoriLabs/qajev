@@ -792,8 +792,9 @@ async def qa_play(
     plan: str | None = None,
 ) -> dict:
     """Native: QA a game or a mobile app through QAJev's bridge: a Godot project folder, an Electron .app or project
-    folder, or a mobile target (ios:<bundle id or URL>, android:<package or URL>). Jev plays the UI a player uses
-    (menus, start, pause, choices), reading each screen as text; input goes into the game only, and the game gets a
+    folder, any native app with a QAJev bridge (the suite's `app:` names its command, env and home_env; the app gets a
+    throwaway home), or a mobile target (ios:<bundle id or URL>, android:<package or URL>). Jev plays the UI a player
+    uses (menus, start, pause, choices), reading each screen as text; input goes into the game only, and the game gets a
     throwaway save folder. `adapter`: a bundled name (suho, hypervolley, imhim) or a path, for games that draw their
     own UI. `suite`: a YAML file of steps in one session: goal steps, real-time play steps (`play:`, needs the
     game's bot), idle steps (`idle: SECONDS`, the game runs untouched), with top-level `allow`/`hide` labels. A step's
