@@ -181,12 +181,12 @@ def test_a_command_with_no_program_is_refused_before_anything_starts(project):
         AppProcess(project, spec(command=["bin/missing"]))
 
 
-def _play(tmp_path, monkeypatch, project, suite_text, capsys):
+def _play(tmp_path, monkeypatch, project, suite_text, capsys, env_text=""):
     monkeypatch.setattr(cli, "_wait_for_quiet", lambda args: None)
     suite = tmp_path / "app.yaml"
     suite.write_text(suite_text)
     env = tmp_path / ".env"
-    env.write_text("")
+    env.write_text(env_text)
     code = main(["play", str(project), "--suite", str(suite), "--json", "--env-file", str(env),
                  "--out", str(tmp_path / "runs"), "--no-shots"])
     out = capsys.readouterr().out.strip()
@@ -480,3 +480,45 @@ def test_app_files_itself_refuses_a_fixture_that_is_not_a_test_account(project, 
     monkeypatch.setattr(vault, "resolve", lenient)
     with pytest.raises(NativeError, match="not a test-user fixture"):
         app_files(app_spec(files_spec(fixture(tmp_path, test_account=False))))
+
+
+# ---- test_domains: a suite may only narrow them (redteam's note on #145, the Orchestrator, 14 Oct) ----
+
+def _files(domains):
+    return {"command": ["x"], "home_env": "H", "files": {"t": "seed:f.json#token"}, "test_domains": domains}
+
+
+@pytest.mark.parametrize("domains", [["twinbox.invalid"], ["example.com"], ["example.net", "example.org"],
+                                     ["qa.test"], ["staging.example"]])
+def test_reserved_test_domains_are_allowed(domains):
+    assert app_spec(_files(domains))["test_domains"] == domains
+
+
+@pytest.mark.parametrize("domains", [["gmail.com"], ["twinbox.invalid", "gmail.com"], ["hanamorilabs.com"],
+                                     ["example.com.evil.io"], ["invalid.io"]])
+def test_a_suite_that_lists_a_real_mail_domain_as_a_test_domain_is_refused(domains):
+    with pytest.raises(NativeError, match="may only narrow the test domains"):
+        app_spec(_files(domains))
+
+
+def test_only_qajevs_own_env_file_widens_the_test_domains(tmp_path, monkeypatch):
+    from qajev import config
+
+    monkeypatch.setattr(config, "HOME", tmp_path)
+    monkeypatch.setenv("QAJEV_TEST_DOMAINS", "gmail.com")  # the shell: not a way to widen them
+    with pytest.raises(NativeError, match="may only narrow"):
+        app_spec(_files(["gmail.com"]))
+    (tmp_path / ".env").write_text("QAJEV_TEST_DOMAINS=qa-mail.twinbox.dev, other.example.io\n")
+    assert app_spec(_files(["qa-mail.twinbox.dev"]))["test_domains"] == ["qa-mail.twinbox.dev"]
+    with pytest.raises(NativeError, match="may only narrow"):
+        app_spec(_files(["gmail.com"]))
+
+
+def test_play_refuses_a_suite_that_calls_gmail_a_test_domain_even_with_its_env_file_saying_so(
+        tmp_path, monkeypatch, project, capsys):
+    seed = fixture(tmp_path, account="someone@gmail.com")
+    _approved(tmp_path, PLAN)
+    suite = _files_suite(tmp_path, seed).replace("test_domains: [twinbox.invalid]", "test_domains: [gmail.com]")
+    # the run's --env-file says gmail.com is a test domain: it is not QAJev's own ~/.qajev/.env, so it does not count
+    code, out = _play(tmp_path, monkeypatch, project, suite, capsys, env_text="QAJEV_TEST_DOMAINS=gmail.com\n")
+    assert code == cli.EXIT_CONFIG and "may only narrow the test domains" in out["error"]

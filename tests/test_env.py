@@ -118,3 +118,60 @@ def test_every_mcp_run_reads_the_env_file_again_before_it_decides_anything(monke
     with pytest.raises(Stop):
         asyncio.run(run)
     assert seen == ["reload", "decided"]
+
+
+CHILD = """
+import os
+from qajev import app, config
+config.load_env()
+print(config.HOME)
+print(os.environ.get("QAJEV_CLOUD_URL"))
+print(app.test_domain("gmail.com"))
+"""
+
+
+def _child(env):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    out = subprocess.run([sys.executable, "-c", CHILD], env={**env, "PYTHONPATH": str(root)}, capture_output=True,
+                         text=True, timeout=60)
+    assert out.returncode == 0, out.stderr
+    return out.stdout.splitlines()
+
+
+@pytest.fixture
+def moved(places, tmp_path, monkeypatch):
+    """A run's --env-file that tries to move QAJev's home to a folder whose .env has no cloud-off line and widens the
+    test domains (redteam's probe on #147). QAJEV_HOME is unset, as on this Mac: QAJev's home is ~/.qajev."""
+    user = tmp_path / "user"
+    home = user / ".qajev"
+    home.mkdir(parents=True)
+    monkeypatch.setattr(config, "HOME", home)
+    monkeypatch.setenv("HOME", str(user))
+    for name in ("QAJEV_HOME", "QAJEV_CLOUD_URL", "QAJEV_TEST_DOMAINS", "QAJEV_ENV_FILE"):  # set, then delete:
+        monkeypatch.setenv(name, "x")  # pytest then puts back what was there, so what load_env copies in does not leak
+        monkeypatch.delenv(name)
+    (home / ".env").write_text("QAJEV_CLOUD_URL=http://cloud-off.invalid\n")
+    other = tmp_path / "other-home"
+    other.mkdir()
+    (other / ".env").write_text("QAJEV_CLOUD_URL=https://cloud.qajev.com\nQAJEV_TEST_DOMAINS=gmail.com\n")
+    run_env = tmp_path / "run.env"
+    run_env.write_text(f"QAJEV_HOME={other}\nQAJEV_ENV_FILE={other / '.env'}\nQAJEV_TEST_DOMAINS=gmail.com\n")
+    return home, other, run_env
+
+
+def test_an_env_file_never_sets_qajevs_home_its_env_file_or_the_test_domains(moved):
+    home, other, run_env = moved
+    config.load_env(run_env)
+    assert not {"QAJEV_HOME", "QAJEV_ENV_FILE", "QAJEV_TEST_DOMAINS"} & set(os.environ)
+
+
+def test_a_child_keeps_qajevs_home_the_cloud_off_line_and_the_test_domains(moved):
+    """The Orchestrator, 14 Oct: an env file that moves QAJEV_HOME must not take a child off the cloud-off switch."""
+    home, _, run_env = moved
+    config.load_env(run_env)
+    env = {k: v for k, v in os.environ.items() if k != "QAJEV_CLOUD_URL"}  # the child reads its own files
+    assert _child(env) == [str(home), "http://cloud-off.invalid", "False"]

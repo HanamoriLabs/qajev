@@ -67,6 +67,10 @@ _SHELL_SET_ASIDE: list[str] = []  # own keys the shell set, not used
 # reads the files again for these, so a long-lived process (the MCP server) follows an edited ~/.qajev/.env.
 _FROM_FILES: dict[str, str] = {}
 _EXPLICIT: list = [None]  # the env file the last load_env was given, for reload_env
+# Never copied from an env file: where QAJev's own home and files are, and who may widen the test domains. An env file
+# that set QAJEV_HOME would point every child at another .env, one without the cloud-off line or with
+# QAJEV_TEST_DOMAINS=gmail.com (redteam on #147, 14 Oct). Only the shell sets these.
+NOT_FROM_FILES = frozenset({"QAJEV_HOME", "QAJEV_ENV_FILE", "QAJEV_TEST_DOMAINS"})
 
 
 def env_files(explicit=None):
@@ -135,6 +139,8 @@ def load_env(explicit=None):
                 raise FileNotFoundError(f"env file not found: {path}")
             continue
         for key, value in _read(path).items():
+            if key in NOT_FROM_FILES:
+                continue
             if key in OWN_KEYS:
                 own.setdefault(key, (value, str(path)))
             elif key not in os.environ:
