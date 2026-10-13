@@ -4,8 +4,6 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
-## 0.4.30: 14 Oct 2026
-
 ### Added
 
 - A bridge key for a native app: `app.bridge_key: true` gives the app a new `QAJEV_BRIDGE_KEY` each launch, and
@@ -19,6 +17,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 ### Fixed
 
 - Play's event stream (`--events` and a job's events.jsonl) now redacts secrets as the report does.
+
+## 0.4.30: 14 Oct 2026
 
 ### Added
 
