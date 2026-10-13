@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Changed
+
+- A report picture marks where the read-only guard hid a control: a dashed box labelled "hidden by guard" in its
+  place. The control itself stays invisible and inert, and the page is put back after the picture. The report lists
+  each hidden control with the rule that hid it and its page (`page` is new in `guard_hidden_controls`), from every
+  page of the test, not only the last. A missing "Save" button read as a page bug twice (13 Oct).
+
 ## 0.4.28: 13 Oct 2026
 
 ### Changed
