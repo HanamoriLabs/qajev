@@ -533,6 +533,19 @@ def _finish(args, report):
     return report["exit_code"]
 
 
+def check_name(url, goal=None):
+    """An ad-hoc check's test name: its site and path, plus the goal's intention. The cloud's Needs a look groups
+    failures by project and test, so each check needs its own name, not "check" (the Orchestrator, 13 Oct)."""
+    from urllib.parse import urlsplit
+
+    from .jobs import _goal
+    parts = urlsplit(url if "://" in url else f"https://{url}")
+    host = (parts.netloc or url).removeprefix("www.")
+    path = parts.path.rstrip("/")
+    name = f"{host} {path[:30]}…" if len(path) > 30 else f"{host} {path}" if path else host
+    return name + (f" · {_goal(goal)}" if goal else "")
+
+
 def check_suite(args):
     """Build a one-scenario suite from `qajev check` flags."""
     from . import suite as suite_mod
@@ -560,8 +573,9 @@ def check_suite(args):
             url, _, status = item.partition("=")
             probes.append({"url": url, "status": int(status or 200)})
         expect["fetch"] = probes
-    scenario = {"name": "check", "url": args.url, "expect": expect, "mode": args.mode, "device": args.device,
-                "settle": args.settle, "budget": {"actions": args.max_actions, "seconds": args.max_seconds}}
+    scenario = {"name": check_name(args.url, args.goal), "url": args.url, "expect": expect, "mode": args.mode,
+                "device": args.device, "settle": args.settle,
+                "budget": {"actions": args.max_actions, "seconds": args.max_seconds}}
     if args.goal:
         scenario["goal"] = args.goal
     if args.persona:
