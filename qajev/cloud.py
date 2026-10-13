@@ -547,6 +547,12 @@ def plan(args):
         targets = [args.url]
         if not args.url:
             raise CloudError("give a URL or --project", EXIT_CONFIG)
+    if not project_name and not owner:  # every cloud run names its project when one is known (the Orchestrator, 13 Oct)
+        from . import project as project_mod
+
+        # after --project and the suite's own: the folder the run starts from, then the one project on the URL's site
+        owner = project_mod.owner_of(Path.cwd()) or next(
+            (name for name in map(project_mod.owner_of_url, [t for t in targets if t]) if name), None)
     if account and not full:
         raise NotAllowed("signed-in runs stay on this Mac (the run signs in with an account; a seeded test account "
                          "goes to the cloud through tunnel: with data: local)")

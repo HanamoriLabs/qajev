@@ -382,10 +382,11 @@ def listing():
 
 
 def owner_of(path):
-    """The project a file (a suite) belongs to: the name in the nearest .qajev/project.toml at or above it, else the
-    project whose repo holds it (the deepest repo when two do, so a worktree inside a repo counts). -> name or None"""
+    """The project a file (a suite) or a folder belongs to: the name in the nearest .qajev/project.toml at or above
+    it, else the project whose repo holds it (the deepest repo when two do, so a worktree inside a repo counts).
+    -> name or None"""
     path = Path(path).expanduser().resolve()
-    for folder in path.parents:
+    for folder in ([path] if path.is_dir() else []) + list(path.parents):
         here = folder / CONFIG_NAME
         if here.is_file():
             try:
@@ -395,6 +396,33 @@ def owner_of(path):
     held = [(Path(p["repo"]).resolve(), p["name"]) for p in listing() if p.get("repo") and not p.get("error")]
     held = [(repo, name) for repo, name in held if path.is_relative_to(repo)]
     return max(held, key=lambda h: len(h[0].parts))[1] if held else None
+
+
+def _site(url):
+    """A URL's host and port as one site: "www." and the scheme's default port make no difference."""
+    from urllib.parse import urlsplit  # noqa: PLC0415
+
+    from .config import plain_host  # noqa: PLC0415
+
+    host = plain_host(url)
+    if not host:
+        return None
+    parts = urlsplit(str(url))
+    try:
+        port = parts.port or {"http": 80, "https": 443}.get(parts.scheme)
+    except ValueError:
+        return None
+    return host.removeprefix("www."), port
+
+
+def owner_of_url(url):
+    """The one registered project with an environment on this URL's site, or None: no project, or several (a shared
+    127.0.0.1 port names no one)."""
+    site = _site(url)
+    if not site:
+        return None
+    names = {p["name"] for p in listing() if not p.get("error") and any(_site(b) == site for b in p["envs"].values())}
+    return names.pop() if len(names) == 1 else None
 
 
 def set_runner(ref, value):
