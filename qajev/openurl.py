@@ -1,4 +1,4 @@
-"""Open URL: a play step that opens, in QAJev's own Chrome, a URL the app opened, and checks that page (Twinbox, 14 Oct).
+"""Open URL: a play step that opens a URL the app opened in QAJev's own Chrome, and checks that page (Twinbox, 14 Oct).
 
 An app that sends its person to a web page (a Stripe checkout, a sign-in, a help page) records the URL in its state.
 The step reads it there, refuses it unless it matches `url_regex`, then checks the page as a suite's scenario would:
@@ -126,13 +126,14 @@ def open_url_step(game, *, name, spec, about=None, run_dir=None, emit=None, run=
         r = _step_result(name, "reached", [first])
         r["reason"] += "; nothing was opened"
         return r
+    url = str(url)
     _step(emit, name, None, f"opening {spec['from']} in QAJev's Chrome: {urlsplit(url).netloc}")
     folder = Path(run_dir or ".") / "open-url" / re.sub(r"[^A-Za-z0-9._-]+", "-", name)[:60]
     folder.mkdir(parents=True, exist_ok=True)
     suite = folder / "suite.yaml"
     suite.write_text(yaml.safe_dump(_scenario(spec, name, about or name, url), sort_keys=False))
     code, out = run([sys.executable, "-m", "qajev", "run", str(suite), "--json", "--ephemeral", "--headless",
-                     "--jobs", "1", "--out", str(folder)])
+                     "--jobs", "1", "--runner", "local", "--out", str(folder)])  # on this machine, beside the app
     reports = sorted(folder.glob("*/report.json"))
     report = {}
     with contextlib.suppress(OSError, ValueError, IndexError):

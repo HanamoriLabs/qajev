@@ -1374,6 +1374,11 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
             from .handoff import handoff_step
 
             r = handoff_step(game, name=name, spec=step["handoff"], emit=emit)
+        elif step.get("open_url") is not None:  # a page the app opened, checked in QAJev's own Chrome
+            from .openurl import open_url_step
+
+            r = open_url_step(game, name=name, spec=step["open_url"], about=step.get("about"), run_dir=run_dir,
+                              emit=emit)
         elif step.get("keys") is not None:  # real macOS keys through qajev-keys (a QAJev Cloud Mac)
             from .mackeys import keys_step
 

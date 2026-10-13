@@ -313,6 +313,10 @@ def machine_lock(what, emit=None, wait=None, job=None):
         raise LocalRunsOff("this machine runs no QAJev test (QAJEV_LOCAL_RUNS=off in ~/.qajev/.env): send it to QAJev "
                            "Cloud with --runner cloud")
     wait = float(os.environ.get("QAJEV_LOCK_WAIT", "3600")) if wait is None else wait
+    held = holder()
+    if held and held.get("pid") == os.getppid():  # a play run's open_url step: its parent already holds the slot
+        yield
+        return
     HOME.mkdir(parents=True, exist_ok=True)
     handle = open(LOCK, "a+")
     try:

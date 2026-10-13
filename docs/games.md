@@ -284,6 +284,34 @@ suite's `app:` command sits in a .app on the machine that loads it, a keys step 
 A helper too old to know a command answers with its usage, and the step is harness. A keys step cannot also have a
 `goal`, `play`, `js`, `pad`, `idle`, `relaunch` or `handoff`.
 
+### A page the app opened: open_url
+
+An app that sends its person to a web page (a Stripe checkout, a sign-in page, a help page) keeps the URL in its
+state. An `open_url` step reads it there and checks that page in QAJev's own Chrome:
+
+```yaml
+  - name: The checkout is a test session for Twinbox Hobby
+    about: The app opened a Stripe test checkout for the Hobby plan at $10.00 a month.
+    open_url:
+      from: new_box.upgrade.checkout_url           # the state field with the URL (a.b for a nested one)
+      url_regex: ^https://checkout\.stripe\.com/c/pay/cs_test_   # nothing opens unless the URL matches
+      says: the app opened a Stripe test checkout
+      expect:                                      # as a suite scenario's expect
+        text: ["Twinbox Hobby: 3,700 credits a month", "$10.00"]
+      guard:                                       # as a suite's guard
+        allow_requests: ["^https://api\.stripe\.com/v1/payment_pages/{last}/init$"]
+      settle: 3
+```
+
+The first check is the URL itself: when the state has no URL, or it does not match `url_regex` (which must start
+with `^https://`), the step fails and nothing opens. Then QAJev runs the page as one scenario of `qajev run`, on
+this machine, on desktop, with a throwaway profile and every rule a suite has: production is read-only, and a POST
+goes only where `allow_requests` names it. `{last}` there is the URL path's last part, escaped, so the guard lets
+through one session's own request and no other's. The page's checks join the step as "page: ...", and its report
+sits in the play run's folder under `open-url/`. A page check that could not judge (harness, stuck) makes the step
+harness. The play run already holds this machine's browser slot, so the page check takes it from its parent run
+instead of queueing behind it. An open_url step does nothing else and has no `expect:` of its own.
+
 ### Quitting on purpose
 
 QUIT is hidden from Jev, because quitting ends the session. To test a normal quit (say, that the game sends its

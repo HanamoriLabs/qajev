@@ -1006,9 +1006,11 @@ def cmd_play(args):
             native.check_pad(session_steps)
             from .handoff import check_handoff
             from .mackeys import check_keys
+            from .openurl import check_open_url
 
             check_handoff(session_steps)
             check_keys(session_steps, spec.get("app"))
+            check_open_url(session_steps)
         except native.NativeError as e:
             return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
         if args.only:
@@ -1756,6 +1758,9 @@ def cmd_plan(args):
             from .mackeys import check_keys
 
             check_keys(spec["steps"], spec.get("app"))
+            from .openurl import check_open_url
+
+            check_open_url(spec["steps"])
             items = plan_mod.from_steps(native.check_judged_by(spec["steps"]))
             named = spec.get("plan")
         else:
