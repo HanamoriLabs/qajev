@@ -1004,6 +1004,9 @@ def cmd_play(args):
             native.check_judged_by(session_steps)
             native.check_window(session_steps)
             native.check_pad(session_steps)
+            from .handoff import check_handoff
+
+            check_handoff(session_steps)
         except native.NativeError as e:
             return _fail(args, f"{args.suite}: {e}", EXIT_CONFIG)
         if args.only:

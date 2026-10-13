@@ -1370,6 +1370,10 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
         start, refused = _before(game, step, name)
         if refused:
             r = refused
+        elif step.get("handoff") is not None:  # a person's step (a personal sign-in): QAJev only watches
+            from .handoff import handoff_step
+
+            r = handoff_step(game, name=name, spec=step["handoff"], emit=emit)
         elif step.get("js") is not None:
             r = js_step(game, name=name, expression=str(step["js"]), emit=emit)
         elif step.get("pad") is not None:

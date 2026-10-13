@@ -10,7 +10,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   that QAJev points at a throwaway folder (`HOME` is throwaway too), so the app never reads the person's real
   settings or tokens. The app speaks the Godot bridge's protocol, so Jev's choices, state checks, `relaunch`, shots
   and `looks` work as for a game. A log line at `ERROR` or `FATAL`, or a Rust panic, fails `no_errors`. `app:` wins
-  over the `.app` folder guess, which took any `.app` for an Electron game. Built for Twinbox Desktop's test suite.
+  over the `.app` folder guess, which took any `.app` for an Electron game. The app starts from an allowlist of
+  variables (PATH, LANG, LC_*, TERM and a few more), never QAJev's whole environment, so no key reaches it.
+  Built for Twinbox Desktop's test suite.
+- A handoff step in a play suite: `handoff: {who, does, until, minutes}` hands a step to a person (a GitHub device
+  login, a sign-in to their own account) and waits up to 30 minutes, sending no input. It tells the run's watchers
+  ("waiting for José: ..."), passes once the app's state shows `until`, and ends **stuck**, never fail, when time
+  runs out. QAJev never reads, types or records a code or a password in it.
 - Planted faults: a test can say it is meant to fail, and on which check: `expect_fail: "<the check's says>"` on a
   suite's scenario, `--expect-fail` on `qajev check`, `expect_fail` on `qa_check` (`true`: the test's only check).
   It keeps its real outcome. The gate counts it as met only when it failed on that check and every other check
