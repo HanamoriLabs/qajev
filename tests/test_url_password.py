@@ -40,7 +40,8 @@ def leaked(root, inputs=()):
 
 def suite_with(tmp_path, base, url="/"):
     path = tmp_path / "s.yaml"
-    path.write_text(f"name: shop\nbase_url: {base}\nscenarios:\n  - name: home\n    url: {url}\n"
+    where = f"    url: {url}\n" if url else ""  # no url: the first scenario opens base_url as it is
+    path.write_text(f"name: shop\nbase_url: {base}\nscenarios:\n  - name: home\n{where}"
                     "    about: the home page greets a visitor\n    expect: {text: [Welcome]}\n")
     return path
 
@@ -59,10 +60,11 @@ def project_with(tmp_path, base):
     lambda tmp: (["check", URL, "--expect-text", "Welcome"], ()),
     lambda tmp: (["smoke", URL, "--max-pages", "1"], ()),
     lambda tmp: (lambda p: (["run", str(p)], (p,)))(suite_with(tmp, URL)),
+    lambda tmp: (lambda p: (["run", str(p)], (p,)))(suite_with(tmp, URL, None)),
     lambda tmp: (lambda p: (["run", str(p)], (p,)))(suite_with(tmp, "https://shop.example", URL + "cart")),
     lambda tmp: (lambda r: (["run", "--project", str(r[0])], (r[1],)))(project_with(tmp, URL)),
     lambda tmp: (lambda r: (["smoke", "--project", str(r[0])], (r[1],)))(project_with(tmp, URL)),
-], ids=["check", "smoke", "suite base_url", "suite scenario url", "project run", "project smoke"])
+], ids=["check", "smoke", "suite base_url", "suite base_url alone", "suite scenario url", "project run", "project smoke"])
 def test_a_url_with_a_password_is_refused_and_written_nowhere(started, tmp_path, capsys, make):
     argv, inputs = make(tmp_path)
 
