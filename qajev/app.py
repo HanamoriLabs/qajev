@@ -33,8 +33,8 @@ import threading
 import time
 from pathlib import Path
 
-from . import chrome, vault
-from .config import HOME, remember_secret
+from . import chrome, config, vault
+from .config import HOME, is_test_email, remember_secret
 from .lowprio import niced
 from .native import STATE, GodotGame, NativeError, free_port, save_isolation
 
@@ -130,7 +130,25 @@ def _files_spec(value, home_env):
                                                            for d in domains)):
         raise NativeError("app.test_domains: the email domains of the test accounts app.files may use, in lowercase "
                           "(such as [twinbox.invalid])")
+    wider = [d for d in domains if not test_domain(d)]
+    if wider:
+        raise NativeError(f"app.test_domains: {wider} is not a test domain. A suite may only narrow the test domains: "
+                          "names reserved for testing (.invalid, .test, .example, example.com, .net, .org), or one "
+                          "listed in QAJEV_TEST_DOMAINS in ~/.qajev/.env")
     return {str(k): v for k, v in files.items()}, list(domains)
+
+
+def test_domain(domain):
+    """A domain no real person has mail at (RFC 2606 and 6761), or one the person lists in ~/.qajev/.env as
+    QAJEV_TEST_DOMAINS (comma-separated). Only that file widens it: never a suite, a project or its env file
+    (redteam on #145, the Orchestrator, 14 Oct)."""
+    if is_test_email(f"x@{domain}"):
+        return True
+    try:
+        listed = config._read(config.HOME / ".env").get("QAJEV_TEST_DOMAINS", "")
+    except OSError:
+        return False
+    return domain in {d.strip().lower() for d in listed.split(",") if d.strip()}
 
 
 def _inside(path):

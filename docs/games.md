@@ -422,7 +422,10 @@ steps:
   ```
 
   Each value comes only from a seed fixture that says `"test_account": true` and names its `account`, an email at
-  one of `test_domains`. Any other fixture is refused when the suite loads (exit 3). The run's approved test plan
+  one of `test_domains`. Any other fixture is refused when the suite loads (exit 3). A suite may only narrow the test
+  domains: each must be a name reserved for testing (`.invalid`, `.test`, `.example`, `example.com`, `.net`,
+  `.org`), or listed in `QAJEV_TEST_DOMAINS` (comma-separated) in `~/.qajev/.env`. Neither the shell, a project nor
+  a run's `--env-file` can add one. The run's approved test plan
   must name app.files, or the run is refused. The file is written 0600 (its folders 0700) inside the throwaway home,
   never through a symbolic link, and a path that is absolute or holds `.` or `..` is refused. The report shows only
   the file and its fixture ("test token from staging-test.json"). The value is redacted from the report, the logs
