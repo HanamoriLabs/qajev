@@ -408,7 +408,9 @@ guard:
 An accepted frame that QAJev could not guard is still listed (`frames_accepted` in `report.json`; "Frame <address>:
 accepted: not guarded (<why>)" in the report), and it does not make the test harness. One QAJev guards needs
 nothing. Any other frame on another site still does. Host names
-are exact: no wildcard, scheme, port or path. **An accepted host is a reviewed exception.** The Orchestrator approves
+are exact: no wildcard, scheme, port or path. For a frame with no address yet, the host is its iframe's `src`, which is
+what the page says the frame loads, not proof of where it goes: page script can change it, or send the frame elsewhere.
+**An accepted host is a reviewed exception.** The Orchestrator approves
 each one. The agent that wrote the suite never adds one on its own.
 
 Each test also lists what its frames said and asked for: `frame_console` in `report.json` (each frame's console

@@ -814,9 +814,12 @@ class Session:
 
     def frame_address(self, frame_id, url, page_url):
         """A frame's address. While it has none (its document has not loaded yet, as a video starting), the web address
-        its iframe asks for: the iframe's src attribute, read from the DOM, which the page's own script cannot fake,
-        resolved against the page's address. "" when that is not a web address either: such a frame stays unproven,
-        and the harness reason calls it a frame with no address yet (Verse check 4, 14 Oct 2026)."""
+        its iframe asks for: the iframe's src attribute, read from the DOM (not through the page's script), resolved
+        against the page's address. "" when that is not a web address either: such a frame stays unproven, and the
+        harness reason calls it a frame with no address yet (Verse check 4, 14 Oct 2026).
+        The src is what the page last asked for, not proof of where the frame goes: page script can set it, or send a
+        named frame elsewhere while the attribute still names another host (redteam on #152). So an unguarded_frames
+        host that matches a src accepts what the page says it loads."""
         if url:
             return url
         from urllib.parse import urljoin, urlsplit
