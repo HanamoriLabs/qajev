@@ -189,6 +189,11 @@ def classify(stop, checks, *, has_checks, stop_detail=None, not_run=(), actions=
     if all_ok(checks) and (stop in BROKEN_STOPS or not_run):
         missing = f"; not run: {', '.join(not_run)}" if not_run else ""
         return "harness", f"{_stop_text(stop, stop_detail)}; {len(checks)} check(s) ran and passed{missing}"
+    if all_ok(checks) and actions == 0 and before and all_ok(before):
+        # The checks held before the goal began and Jev took no action: nothing was tried, so this says nothing about
+        # the goal (14 Oct). A goal whose checks already hold needs checks that only the goal can make true.
+        return "harness", (f"the {len(checks)} check(s) held before Jev moved and Jev took no action, so this says "
+                           "nothing about the goal; give it a check that only the goal can make true")
     if all_ok(checks):
         tail = f" (Jev ended with {stop})" if stop not in {"reached", "checked"} else ""
         return "pass", f"all {len(checks)} check(s) passed{tail}"

@@ -11,7 +11,7 @@ import sys
 import threading
 from pathlib import Path
 
-from . import __version__, lowprio
+from . import __version__, config, lowprio
 
 EXIT_CONFIG, EXIT_BROWSER, EXIT_REFUSED, EXIT_INTERRUPTED = 3, 4, 5, 130
 DASHBOARD_STOP_S = 15  # `qajev dashboard --stop` waits this long for the dashboard to exit and free its lock
@@ -1630,7 +1630,7 @@ def cmd_dashboard(args):
         log = dashboard.STATE.with_suffix(".log")
         start = log.stat().st_size if log.exists() else 0
         with open(log, "a") as out:
-            child = subprocess.Popen([sys.executable, "-m", "qajev", "dashboard", "--port", str(args.port)],
+            child = subprocess.Popen(config.qajev_argv("dashboard", "--port", args.port),
                                      stdout=out, stderr=out, stdin=subprocess.DEVNULL, start_new_session=True)
         there = dashboard.wait_running(timeout=45, starting=child)
         if not there:

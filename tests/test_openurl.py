@@ -69,7 +69,7 @@ def test_the_page_the_app_opened_is_checked_in_qajevs_chrome(tmp_path):
         "page: page shows 'Twinbox Hobby: 3,700 credits a month'", "page: page shows '$10.00'"]
     assert r["checks"][0]["says"] == "the app opened a Stripe test checkout"
     args = inner.calls[0]
-    assert args[1:4] == ["-m", "qajev", "run"] and "--ephemeral" in args and "--headless" in args
+    assert args[1:5] == ["-P", "-m", "qajev", "run"] and "--ephemeral" in args and "--headless" in args
     assert args[args.index("--runner") + 1] == "local"  # beside the app, whatever QAJEV_RUNNER says
     scenario = inner.suite["scenarios"][0]
     assert scenario["url"] == URL and scenario["expect"] == SPEC["expect"] and inner.suite["device"] == "desktop"
@@ -235,7 +235,7 @@ def test_the_page_opens_only_in_qajevs_own_throwaway_chrome(tmp_path, monkeypatc
     r = open_url_step(App(), name="checkout", spec=SPEC, run_dir=tmp_path, run=inner)
     assert r["outcome"] == "pass" and len(inner.calls) == 1
     args = inner.calls[0]
-    assert args[0] == sys.executable and args[1:4] == ["-m", "qajev", "run"]
+    assert args[0] == sys.executable and args[1:5] == ["-P", "-m", "qajev", "run"]
     assert {"--ephemeral", "--headless"} <= set(args) and args[args.index("--runner") + 1] == "local"
     assert "--profile" not in args and "--cdp-url" not in args
 

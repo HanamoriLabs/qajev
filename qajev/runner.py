@@ -236,8 +236,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                           runner_up_p=s["runner_up_p"], options=s["options"], ms=s["ms"],
                           **({"stale": s["stale"]} if s.get("stale") else {}))
 
+                held = bool(before) and verdict.all_ok(before)
                 with vision.seeing(session.screen_image if scenario.vision else None):
-                    stop, detail = drive(session, scenario, read, page_ok, started, step, decided)
+                    stop, detail = drive(session, scenario, read, page_ok, started, step, decided, held=held)
             else:
                 stop = "checked"
     except HookFailed as e:
@@ -417,9 +418,10 @@ def _last_stale(session):
     return f"; the last: {words}" if words else ""
 
 
-def drive(session, scenario, read, page_ok, started, step=None, decided=None):
+def drive(session, scenario, read, page_ok, started, step=None, decided=None, held=False):
     """Jev's loop with QAJev's judgment around it. Returns (stop, detail). step(doing, **extra) hears each move;
-    decided(decision) hears each of the model's decisions as it is made, stale ones too (qajev top's decisions view)."""
+    decided(decision) hears each of the model's decisions as it is made, stale ones too (qajev top's decisions view).
+    held: the page's checks already held before Jev's first move, so they count as reached only after one."""
     agent = session.agent
     state = agent.state
     step = step or (lambda doing, **extra: None)
@@ -429,7 +431,9 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None):
     assists = session.assists = []
     while True:
         read()
-        if page_ok():
+        # A goal whose checks held before it began is not reached by holding still: the Orchestrator's sign-in goal
+        # ended "reached" in 5 s with 0 decisions, its url check matching the sign-in page's ?next= (14 Oct).
+        if page_ok() and (state["history"] or not held):
             return "reached", None
         if state["status"] == "done":
             step("said DONE", n=len(state["history"]) + 1)

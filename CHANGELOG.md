@@ -6,6 +6,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- A goal whose checks already held before Jev moved no longer ends "reached" before Jev's first action. A sign-in
+  goal ended in 5 s with 0 decisions, because its `url` check matched the sign-in page's `?next=/workshop`. Jev now
+  acts at least once first, and if it takes no action, the run is harness: the checks say nothing about the goal.
+- QAJev's own child processes (the MCP server's runs, background jobs, nightly, the dashboard, open_url's page run)
+  run the installed QAJev, never a `qajev/` folder in the working folder. A session started in an old checkout ran
+  that checkout's 0.1.0, which refused `--says`. They start Python with `-P`.
 - A native app's throwaway home, with any `app.files` token in it, is removed by the next run's reaper even when the
   killed run's pid now belongs to another process. Each home records when its run started, so a reused pid no longer
   keeps it.

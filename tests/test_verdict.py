@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+import time
 
 import pytest
 
@@ -453,3 +454,65 @@ def test_a_test_keeps_every_control_the_guard_hid_on_any_page_once():
     assert V.hidden_list(kept)[0] == "'Save' (read-only: save) on http://127.0.0.1:8/runners.html"
     many = V.keep_hidden([], [{**save, "label": f"Save {i}"} for i in range(V.HIDDEN_KEEP + 5)])
     assert len(many) == V.HIDDEN_KEEP
+
+
+# ---- a goal whose checks held before it began (the Orchestrator's sign-in goal, 14 Oct) ----
+
+def _driver(held):
+    """A stand-in session for runner.drive: each tick is one of Jev's actions."""
+    from types import SimpleNamespace
+
+    from qajev import runner
+
+    state = {"status": "ready", "history": [], "decisions": []}
+    session = SimpleNamespace(agent=SimpleNamespace(state=state), assists=[], ticks=0)
+
+    def tick():
+        session.ticks += 1
+        state["decisions"].append({"operation": "CLICK"})
+        state["history"].append({"action": "Sign in with FiGGYZ", "kind": "click", "step": session.ticks})
+
+    session.tick = tick
+    scenario = SimpleNamespace(budget={"seconds": 60, "actions": 10})
+    stop = runner.drive(session, scenario, read=lambda: None, page_ok=lambda: True, started=time.monotonic(),
+                        held=held)
+    return stop, session.ticks
+
+
+def test_a_goal_whose_checks_held_before_it_began_takes_an_action_before_it_counts_as_reached():
+    assert _driver(held=True) == (("reached", None), 1)  # it did the goal's first move, then checked
+    assert _driver(held=False) == (("reached", None), 0)  # checks that came true while Jev worked: as before
+
+
+def test_checks_that_held_before_the_goal_and_no_action_say_nothing_about_the_goal():
+    ok = [{"check": "url contains 'workshop'", "ok": True}]
+    outcome, reason = V.classify("done", ok, has_checks=True, actions=0, before=ok)
+    assert outcome == "harness" and "held before Jev moved" in reason and "only the goal can make true" in reason
+    assert V.classify("reached", ok, has_checks=True, actions=0, before=ok)[0] == "harness"
+    assert V.classify("reached", ok, has_checks=True, actions=1, before=ok)[0] == "pass"  # Jev did the goal
+    false_before = [{"check": "url contains 'workshop'", "ok": False, "detail": "on /__gate/login"}]
+    assert V.classify("done", ok, has_checks=True, actions=0, before=false_before)[0] == "pass"  # it came true
+    assert V.classify("done", ok, has_checks=True, actions=0)[0] == "pass"  # nothing known before: as before
+
+
+def test_the_orchestrators_sign_in_goal_is_never_judged_on_the_sign_in_page(monkeypatch):
+    """The check 'url contains workshop' matched /__gate/login?next=%2Fworkshop%2F before Jev moved."""
+    from qajev import runner, suite
+
+    page = changing_page({"url": "http://verse.localhost:8823/__gate/login?next=%2Fworkshop%2F"},
+                         {"url": "http://verse.localhost:8823/__gate/login?next=%2Fworkshop%2F"})
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda opts: (True, 1.0))
+    told = []
+
+    def drive(session, scenario, read, page_ok, started, *a, held=False, **k):
+        told.append(held)
+        return "done", None
+
+    monkeypatch.setattr(runner, "drive", drive)
+    (sc,) = suite.parse({"scenarios": [{"name": "workshop", "url": "http://verse.localhost:8823/workshop/",
+                                        "settle": 0, "expect": {"url": "workshop"},
+                                        "goal": "Click Sign in with FiGGYZ. Stop when the Workshop shows."}]}).scenarios
+    got = runner.run_scenario(page, sc, opts=runner.Options(), hosts={"verse.localhost"}, run_dir=None)
+    assert told == [True]  # Jev was told the checks already held, so it must act before they count as reached
+    assert got["outcome"] == "harness", got["reason"]
+    assert "held before Jev moved" in got["reason"]

@@ -9,12 +9,13 @@ headless in a throwaway profile, read-only on production, and files its report w
 import json
 import os
 import plistlib
+import shlex
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
+from . import config
 from .config import HOME
 
 NIGHTLY = HOME / "nightly"
@@ -43,7 +44,7 @@ def plan(names=None, smoke_pages=10):
 def _run(argv) -> dict:
     env = {k: v for k, v in os.environ.items() if k != "QAJEV_JOB"}
     try:
-        out = subprocess.run([sys.executable, "-m", "qajev", *argv, "--ephemeral", "--headless", "--json", "--quiet"],
+        out = subprocess.run(config.qajev_argv(*argv, "--ephemeral", "--headless", "--json", "--quiet"),
                              capture_output=True, text=True, timeout=RUN_TIMEOUT, env=env)
     except subprocess.TimeoutExpired:
         return {"error": f"did not finish within {RUN_TIMEOUT} s"}
@@ -136,8 +137,8 @@ def install(at="03:30", names=None):
     hour, minute = (int(x) for x in at.split(":"))
     if not shutil.which("launchctl"):
         raise RuntimeError(f"--install uses launchd (macOS). Elsewhere, add a cron line instead: "
-                           f"{minute} {hour} * * * {sys.executable} -m qajev nightly")
-    args = [sys.executable, "-m", "qajev", "nightly"] + [a for n in names or [] for a in ("--project", n)]
+                           f"{minute} {hour} * * * {shlex.join(config.qajev_argv('nightly'))}")
+    args = config.qajev_argv("nightly") + [a for n in names or [] for a in ("--project", n)]
     NIGHTLY.mkdir(parents=True, exist_ok=True)
     plist = {
         "Label": LABEL, "ProgramArguments": args,

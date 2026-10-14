@@ -25,7 +25,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from . import chrome, plan
+from . import chrome, config, plan
 from .config import HOME
 
 JOBS = HOME / "jobs"
@@ -386,7 +386,7 @@ def start(argv, title=None, *, command=None, cwd=None, rerun=None):
     rerun as for register()."""
     folder = _new_folder()
     job_id = folder.name
-    command = command or [sys.executable, "-m", "qajev", *argv, "--json", "--events"]
+    command = command or config.qajev_argv(*argv, "--json", "--events")
     env = {**os.environ, "QAJEV_JOB": job_id, "QAJEV_JOB_DIR": str(folder)}
     proc = subprocess.Popen(["/bin/sh", "-c", WRAPPER, "qajev-job", *command], cwd=cwd or os.getcwd(), env=env,
                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
