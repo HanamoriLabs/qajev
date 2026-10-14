@@ -317,7 +317,7 @@ def markdown(data):
         for w in r.get("allowed_writes") or []:  # every write production let through (allow_requests) is listed
             lines.append(f"- Allowed write: {_cell(w.get('method'))} {_cell(_where(w.get('url')))}")
         for url in r.get("frames_not_observed") or []:  # its writes and requests are in no list: never "none"
-            lines.append("- " + _cell(report_html.NOT_OBSERVED.format(where=_where(url))))
+            lines.append("- " + _cell(report_html.NOT_OBSERVED.format(where=_where(url) or verdict.NO_ADDRESS)))
         for f in r.get("frames_accepted") or []:
             lines.append("- " + _cell(report_html.ACCEPTED.format(where=_where(f.get("url")), why=f.get("why", ""))))
         lines += ["- " + _cell(line, 400) for line in report_html.frame_lines(r)]

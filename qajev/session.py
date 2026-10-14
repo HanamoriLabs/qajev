@@ -778,25 +778,28 @@ class Session:
                 drained, missed = self.net.drain_frames(set(urls), FRAME_DRAIN_JS)
             except (RuntimeError, TimeoutError):
                 drained, missed = [], set(urls)
-            unread += [urls[f] for f in missed]
+            unread += [(f, urls[f]) for f in missed]
             for frame, items in drained:
                 keep(items, urls.get(frame, ""))
         apart = self.frame_targets({tree["frame"]["id"], *urls})
         if apart:
             guarded = self.net.guarded_targets()
             sessions = {guarded[t]: url for t, url in apart if t in guarded}
-            unread += [url for t, url in apart if t not in guarded]
+            ids = {guarded[t]: t for t, _ in apart if t in guarded}
+            unread += [(t, url) for t, url in apart if t not in guarded]
             try:
                 drained, missed = self.net.drain_sessions(set(sessions), FRAME_DRAIN_JS)
             except (RuntimeError, TimeoutError):
                 drained, missed = [], set(sessions)
-            unread += [sessions[c] for c in missed]
+            unread += [(ids[c], sessions[c]) for c in missed]
             for child, items in drained:
                 keep(items, sessions.get(child, ""))
         docs = set(urls.values()) | {url for _, url in apart}
         asked = self.net.frame_requests(docs) if docs else []
         if asked:  # what the frames asked for that failed, or still waits
             got["frame_requests"] = asked
+        page = tree["frame"].get("url", "")
+        unread = [self.frame_address(frame, url, page) for frame, url in unread]
         accepted = {f["host"]: f["why"] for f in self.guard_opts.get("unguarded_frames") or ()}
         if accepted:  # reviewed exceptions: listed as accepted, and they never make a test harness
             from urllib.parse import urlsplit
@@ -808,6 +811,24 @@ class Session:
         if unread:
             got["frames_not_observed"] = [u[:300] for u in unread]
         return got
+
+    def frame_address(self, frame_id, url, page_url):
+        """A frame's address. While it has none (its document has not loaded yet, as a video starting), the web address
+        its iframe asks for: the iframe's src attribute, read from the DOM, which the page's own script cannot fake,
+        resolved against the page's address. "" when that is not a web address either: such a frame stays unproven,
+        and the harness reason calls it a frame with no address yet (Verse check 4, 14 Oct 2026)."""
+        if url:
+            return url
+        from urllib.parse import urljoin, urlsplit
+
+        try:
+            node = self.call("DOM.getFrameOwner", frameId=frame_id)["backendNodeId"]
+            attributes = self.call("DOM.describeNode", backendNodeId=node)["node"].get("attributes") or []
+        except (RuntimeError, TimeoutError, KeyError, TypeError):
+            return ""
+        src = dict(zip(attributes[::2], attributes[1::2])).get("src", "").strip()
+        address = urljoin(page_url, src) if src else ""
+        return address if urlsplit(address).scheme in ("http", "https") else ""
 
     def frame_targets(self, ours):
         """[(target id, address)] of this page's frames that run as targets of their own (a frame on another site,

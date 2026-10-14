@@ -2,6 +2,15 @@
 
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Fixed
+
+- A frame on another site that QAJev could not guard, and whose document had not loaded yet, is named by its iframe's
+  `src`. Before, the harness reason read "the frame on another site ()", and a reviewed `unguarded_frames` host could
+  never match it (a plaza screen's starting video, 14 Oct). A frame with no web `src` either is still not proven
+  read-only: it is called "a frame with no address yet".
+
 ## 0.4.32: 14 Oct 2026
 
 ### Fixed
