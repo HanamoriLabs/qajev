@@ -71,7 +71,7 @@ $0.00024 with Clef. Both need Clef: with Jev, which reads text only, QAJev refus
 ## Desktop and phone
 
 Every website test runs **twice by default: on desktop and on a phone** (a 390×844 screen with touch and an
-iPhone user agent, like a browser's device mode). The phone copy of a scenario is named `... (phone)` in the report,
+iPhone user agent, like a browser's device mode; it ends in `QAJev/<version>`, as the desktop one does). The phone copy of a scenario is named `... (phone)` in the report,
 and costs the same again. The smoke crawl checks every page on both too.
 
 | To | Do |

@@ -20,7 +20,7 @@ from string import Template
 from types import SimpleNamespace
 from typing import Any
 
-from . import chrome, keys, live, netlog, providers
+from . import __version__, chrome, keys, live, netlog, providers
 from . import guard as guard_mod
 from . import pad as pad_mod
 from .config import is_loopback
@@ -497,6 +497,57 @@ def page_changes(before, after, now=None, node=None):
     return out[:6]
 
 
+# The browser's own user-agent client hints, in CDP's UserAgentMetadata shape: an override without them drops them.
+UA_HINTS_JS = """(async () => {
+  const d = navigator.userAgentData;
+  if (!d) return null;
+  const v = await d.getHighEntropyValues(["architecture", "bitness", "model", "platformVersion", "fullVersionList",
+                                          "wow64", "formFactors"]);
+  const out = {brands: d.brands, mobile: d.mobile, platform: d.platform};
+  for (const k of ["fullVersionList", "platformVersion", "architecture", "model", "bitness", "wow64", "formFactors"])
+    if (v[k] !== undefined) out[k] = v[k];
+  return out;
+})()"""
+
+
+_HINTS = {}  # each Chrome's client hints (by its CDP address), read once
+
+
+def client_hints(cdp, cdp_url):
+    """The browser's own user-agent client hints, or None. navigator.userAgentData exists only in a secure context,
+    which QAJev's about:blank tab is not. Chrome's own debugging page on 127.0.0.1 is one, and loads nothing from a
+    site, so a throwaway tab reads them there once per Chrome."""
+    if cdp_url in _HINTS:
+        return _HINTS[cdp_url]
+    if not is_loopback(cdp_url):
+        return None
+    hints, target = None, None
+    try:
+        target = cdp("Target.createTarget", url=f"{cdp_url}/json/version", background=True)["targetId"]
+        tab = cdp("Target.attachToTarget", targetId=target, flatten=True)["sessionId"]
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            got = cdp("Runtime.evaluate", session_id=tab, expression=f"isSecureContext && {UA_HINTS_JS}",
+                      returnByValue=True, awaitPromise=True)
+            hints = (got.get("result") or {}).get("value")
+            if isinstance(hints, dict):
+                break
+            time.sleep(0.1)  # still the new tab's first about:blank
+    except (RuntimeError, TimeoutError, KeyError):
+        pass
+    finally:
+        if target:
+            with contextlib.suppress(RuntimeError, TimeoutError):
+                cdp("Target.closeTarget", targetId=target)
+    _HINTS[cdp_url] = hints if isinstance(hints, dict) else None
+    return _HINTS[cdp_url]
+
+
+def with_qajev(user_agent):
+    """A user agent with QAJev's name on the end, once: "... Chrome/141.0.0.0 Safari/537.36 QAJev/<version>"."""
+    return user_agent if "QAJev/" in user_agent else f"{user_agent} QAJev/{__version__}"
+
+
 class Tab:
     """What a Session uses of Jev's Browser (its tab, and calls into it), for a tab in a browser context of its own:
     a multiplayer client's own cookies, storage, cache and service workers (clients.py). No Jev on it."""
@@ -552,6 +603,7 @@ class Session:
         self.script_id = None
         self.guard_cfg = None
         self.device = None
+        self.user_agent = None  # the browser's own, with QAJev's name on the end, and its client hints
         self.assists = []
         self.last_stale = None
         self.net = None
@@ -581,12 +633,13 @@ class Session:
             if blocked:
                 self.call("Network.enable")
                 self.call("Network.setBlockedURLs", urls=blocked)
+            try:
+                version = self.jev.cdp("Browser.getVersion") or {}
+            except (RuntimeError, TimeoutError, AttributeError):
+                version = {}
             if not self.headless:  # attached over --cdp-url: ask the browser itself
-                try:
-                    product = self.jev.cdp("Browser.getVersion").get("product", "")
-                    self.headless = "Headless" in product
-                except (RuntimeError, TimeoutError, AttributeError):
-                    pass
+                self.headless = "Headless" in version.get("product", "")
+            self._own_user_agent(version.get("userAgent", ""))
             self._keep_safe()
             for name in ("microphone", "camera"):
                 try:
@@ -725,12 +778,29 @@ class Session:
         self.call("Emulation.setDeviceMetricsOverride", width=device["width"], height=device["height"],
                   deviceScaleFactor=device.get("scale", 1), mobile=bool(device.get("mobile")))
         self.call("Emulation.setTouchEmulationEnabled", enabled=bool(device.get("mobile")))
-        # A phone also says it is one (sites that serve a mobile page by user agent); "" restores the browser's own.
+        # A phone also says it is one (sites that serve a mobile page by user agent). Either way it names QAJev.
         if device.get("ua"):
-            self.call("Emulation.setUserAgentOverride", userAgent=device["ua"], platform=device.get("platform", ""))
+            self.call("Emulation.setUserAgentOverride", userAgent=with_qajev(device["ua"]),
+                      platform=device.get("platform", ""))
+        elif self.user_agent:
+            self._set_user_agent(**self.user_agent)
         else:
             self.call("Emulation.setUserAgentOverride", userAgent="")
         self.device = device
+
+    def _own_user_agent(self, user_agent):
+        """Every page says QAJev drove it: the browser's own user agent with "QAJev/<version>" on the end, so a site,
+        or a person's page that counts their visits, can tell QAJev from a person (FlockTab1, 14 Oct 2026). Set before
+        the first navigation, so the first request says it. The client hints keep the browser's own values."""
+        if not user_agent:
+            return
+        hints = client_hints(self.jev.cdp, os.environ.get("BU_CDP_URL", ""))
+        self.user_agent = {"user_agent": with_qajev(user_agent), "hints": hints}
+        self._set_user_agent(**self.user_agent)
+
+    def _set_user_agent(self, user_agent, hints):
+        self.call("Emulation.setUserAgentOverride", userAgent=user_agent,
+                  **({"userAgentMetadata": hints} if hints else {}))
 
     # ---- navigation and page reads ----
     def carry(self):
