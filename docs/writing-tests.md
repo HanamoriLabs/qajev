@@ -395,7 +395,9 @@ forever. 0.4.15 lets each worker run at once.
 If QAJev cannot guard such a frame (attaching failed, or the frame started before the guard), it names it in
 `frames_not_observed`. The report says "Frame not observed: <address>. QAJev's read-only guard and block_urls do not
 reach it, so it may send writes", and the test's outcome is harness in every mode, because the run is not proven
-read-only. A suite can accept one such frame by its exact host, with the reason:
+read-only. A frame whose document has not loaded yet (a video still starting) has no address of its own: QAJev names
+it by its iframe's `src`, read from the page's DOM. One with no web `src` either is "a frame with no address yet", and
+stays not observed. A suite can accept one such frame by its exact host, with the reason:
 
 ```yaml
 guard:
@@ -406,7 +408,9 @@ guard:
 An accepted frame that QAJev could not guard is still listed (`frames_accepted` in `report.json`; "Frame <address>:
 accepted: not guarded (<why>)" in the report), and it does not make the test harness. One QAJev guards needs
 nothing. Any other frame on another site still does. Host names
-are exact: no wildcard, scheme, port or path. **An accepted host is a reviewed exception.** The Orchestrator approves
+are exact: no wildcard, scheme, port or path. For a frame with no address yet, the host is its iframe's `src`, which is
+what the page says the frame loads, not proof of where it goes: page script can change it, or send the frame elsewhere.
+**An accepted host is a reviewed exception.** The Orchestrator approves
 each one. The agent that wrote the suite never adds one on its own.
 
 Each test also lists what its frames said and asked for: `frame_console` in `report.json` (each frame's console

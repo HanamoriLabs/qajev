@@ -427,3 +427,92 @@ def test_a_new_test_does_not_inherit_the_last_tests_frames_but_a_later_page_name
     s.loader = "L2"  # a page this test opened
     s.carry()
     assert s.carried["frames_not_observed"] == ["http://other.test:8795/x.html"]
+
+
+# ---- a frame with no address yet: named by its iframe's src, never let through unnamed (Verse check 4, 14 Oct) ----
+# The plaza screen's YouTube video ran as a frame on another site whose document had not loaded: its target had no
+# address, so the harness reason read "(... the frame on another site ())" and an unguarded_frames host could never
+# match it. QAJev now names it by its iframe element's src attribute, read from the DOM (not from the page's script).
+
+VIDEO = "https://www.youtube-nocookie.com/embed/plaza?si=secret"
+ACCEPT_VIDEO = [{"host": "www.youtube-nocookie.com", "why": "plaza screen video, reviewed"}]
+
+
+def owners(s, srcs):
+    """The page's iframe elements: {frame id: src attribute, or None for a frame whose owner QAJev cannot find}."""
+    tree = {"frameTree": {"frame": {"id": "MAIN", "loaderId": s.loader, "url": "http://127.0.0.1:8877/plaza/"}}}
+
+    def call(method, **params):
+        if method == "Page.getFrameTree":
+            return tree
+        if method == "DOM.getFrameOwner":
+            if srcs.get(params["frameId"]) is None:
+                raise RuntimeError("Frame with the given id was not found.")
+            return {"backendNodeId": 40 + list(srcs).index(params["frameId"])}
+        if method == "DOM.describeNode":
+            frame = list(srcs)[params["backendNodeId"] - 40]
+            return {"node": {"nodeName": "IFRAME", "attributes": ["title", "plaza", "src", srcs[frame]]}}
+        raise AssertionError(method)
+
+    s.call = call
+    s.evaluate = lambda *_, **__: (_ for _ in ()).throw(AssertionError("the src comes from the DOM, not the page"))
+    return s
+
+
+def test_a_frame_with_no_address_yet_is_named_by_its_iframes_src():
+    s = owners(fake_session(FakeNet(), [("T1", "")]), {"T1": VIDEO})
+    assert s.frames_drained()["frames_not_observed"] == [VIDEO]
+
+
+def test_an_accepted_host_matches_a_frame_named_by_its_src():
+    s = owners(fake_session(FakeNet(), [("T1", "")], {"unguarded_frames": ACCEPT_VIDEO}), {"T1": VIDEO})
+    got = s.frames_drained()
+    assert got["frames_accepted"] == [{"url": VIDEO, "why": "plaza screen video, reviewed"}]
+    assert "frames_not_observed" not in got
+
+
+@pytest.mark.parametrize("src", [None, "", "about:blank", "javascript:void(0)", "data:text/html,x"])
+def test_a_frame_with_no_address_and_no_web_src_stays_unproven(src):
+    s = owners(fake_session(FakeNet(), [("T1", "")], {"unguarded_frames": ACCEPT_VIDEO}), {"T1": src})
+    got = s.frames_drained()
+    assert got["frames_not_observed"] == [""] and "frames_accepted" not in got
+
+
+def test_a_relative_src_is_named_from_the_page_address():
+    s = owners(fake_session(FakeNet(), [("T1", "")]), {"T1": "/embed/x.html"})
+    assert s.frames_drained()["frames_not_observed"] == ["http://127.0.0.1:8877/embed/x.html"]
+
+
+def test_a_frame_with_no_address_is_called_that_in_the_harness_reason():
+    from qajev import verdict
+
+    outcome, reason = verdict.unguarded("pass", "ok", [""])
+    assert outcome == "harness"
+    assert "the frame on another site (a frame with no address yet)" in reason
+
+
+def test_an_attached_frame_that_could_not_be_read_is_named_by_its_src_too():
+    class Missed(FakeNet):
+        def drain_sessions(self, sessions, expression):
+            return [], set(sessions)  # attached, but its guard did not answer
+
+    s = owners(fake_session(Missed({"T1": "S1"}), [("T1", "")]), {"T1": VIDEO})
+    assert s.frames_drained()["frames_not_observed"] == [VIDEO]
+
+
+def test_the_reports_call_a_frame_with_no_address_that(tmp_path):
+    import html
+    import time
+    from types import SimpleNamespace
+
+    from qajev import report
+
+    results = [{"name": "load", "outcome": "harness", "reason": "", "seconds": 1.0, "checks": [], "findings": [],
+                "screens": [], "end_url": "http://127.0.0.1:8877/", "frames_not_observed": [""]}]
+    ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
+              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": False, "cap_usd": 1.0}
+    data = report.build(SimpleNamespace(name="load"), results, [ledger], browser={"cdp_url": "http://127.0.0.1:9350"},
+                        started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+    report.write(tmp_path, data)
+    for name in ("report.md", "report.html"):
+        assert "Frame not observed: a frame with no address yet." in html.unescape((tmp_path / name).read_text()), name
