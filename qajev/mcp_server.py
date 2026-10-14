@@ -11,7 +11,6 @@ import contextlib
 import io
 import json
 import os
-import sys
 import tempfile
 import time
 from pathlib import Path
@@ -52,8 +51,9 @@ something on a site, and to catch errors a browser can see.
   pass means something. A result lists the tests without one under `about_missing`.
 
 Outcomes: pass; fail (product wrong); stuck (Jev found no way forward: verify by hand, often UX);
-harness (budget/stale/model/browser trouble, Jev said DONE without a single action, a local server not answering,
-or a js check whose own code broke: says nothing about the product); unverified (no checks);
+harness (budget/stale/model/browser trouble, Jev said DONE without a single action, a goal whose checks held before
+Jev moved and Jev took no action, a local server not answering, or a js check whose own code broke: says nothing
+about the product); unverified (no checks);
 skipped. Gate: PASS, FAIL or INCOMPLETE. A planted fault (expect_fail: the says text of the check it must fail on)
 keeps its outcome; the gate counts its `graded`: met only when it failed on that check, else FAIL.
 
@@ -126,7 +126,7 @@ def _browser_args(profile, cdp_url, headless):
 async def _spawn(args, ctx=None):
     """Run `python -m qajev ARGS`; relay JSON-lines events as MCP progress. -> (exit code, stdout, stderr tail)."""
     proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "qajev", *args,
+        *config.qajev_argv(*args),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, stdin=asyncio.subprocess.DEVNULL,
     )
     assert proc.stdout is not None and proc.stderr is not None

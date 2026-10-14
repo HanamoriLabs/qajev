@@ -26,13 +26,13 @@ import json
 import os
 import re
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import yaml
 
+from . import config
 from .config import user_info_refusal
 from .native import NativeError, _step, _step_result
 
@@ -178,8 +178,8 @@ def open_url_step(game, *, name, spec, about=None, run_dir=None, emit=None, run=
     folder = Path(tempfile.mkdtemp(prefix=re.sub(r"[^A-Za-z0-9._-]+", "-", name)[:60] + "-", dir=base))
     suite = folder / "suite.yaml"
     suite.write_text(yaml.safe_dump(_scenario(spec, name, about or name, url), sort_keys=False))
-    code, out = run([sys.executable, "-m", "qajev", "run", str(suite), "--json", "--ephemeral", "--headless",
-                     "--jobs", "1", "--runner", "local", "--out", str(folder)])  # on this machine, beside the app
+    code, out = run(config.qajev_argv("run", suite, "--json", "--ephemeral", "--headless", "--jobs", "1", "--runner",
+                                      "local", "--out", folder))  # on this machine, beside the app
     reports = sorted(folder.glob("*/report.json"))
     report = {}
     with contextlib.suppress(OSError, ValueError, IndexError):

@@ -4,6 +4,7 @@ import functools
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -71,6 +72,13 @@ _EXPLICIT: list = [None]  # the env file the last load_env was given, for reload
 # that set QAJEV_HOME would point every child at another .env, one without the cloud-off line or with
 # QAJEV_TEST_DOMAINS=gmail.com (redteam on #147, 14 Oct). Only the shell sets these.
 NOT_FROM_FILES = frozenset({"QAJEV_HOME", "QAJEV_ENV_FILE", "QAJEV_TEST_DOMAINS"})
+
+
+def qajev_argv(*args):
+    """The command for a QAJev child process: this Python, then -P so the current folder never comes first on the
+    import path, then -m qajev. A session started in an old checkout with its own qajev/ folder ran that folder's 0.1.0
+    instead of the installed QAJev (qajev2's MCP server, 14 Oct)."""
+    return [sys.executable, "-P", "-m", "qajev", *map(str, args)]
 
 
 def env_files(explicit=None):
