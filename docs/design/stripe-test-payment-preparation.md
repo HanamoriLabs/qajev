@@ -1,5 +1,7 @@
 # Stripe test-payment hook: integration preparation
 
+Runner amendment (José, 14 Oct 10:36): QAJev Cloud (`--runner cloud`) replaces the local runner for the next website capture; the Orchestrator must re-approve this plan before any run.
+
 Preparation only. No Stripe source code, test payment, dispatcher restart or cloud run is authorized by this
 document. The canonical design note is `tools/qa/design/2026-10-13-stripe-test-payment.md` in the main
 `qajev-public` checkout. Its redteam verdict requires four design changes before code, and the Orchestrator
