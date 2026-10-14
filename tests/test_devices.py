@@ -73,7 +73,8 @@ def test_a_phone_tab_also_says_it_is_a_phone():
 
     calls = []
     s = Session.__new__(Session)
-    s.device, s.call = None, lambda method, **params: calls.append((method, params))
+    s.device, s.user_agent = None, None  # the browser's own agent not known: test_user_agent.py covers the known one
+    s.call = lambda method, **params: calls.append((method, params))
     s.set_device(suite_mod.DEVICES["phone"])
     ua = next(p for m, p in calls if m == "Emulation.setUserAgentOverride")
     assert "iPhone" in ua["userAgent"] and ua.get("platform") == "iPhone"

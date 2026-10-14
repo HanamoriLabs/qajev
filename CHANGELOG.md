@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Changed
+
+- QAJev's Chrome says it is QAJev. Every page it drives sends the browser's own user agent with `QAJev/<version>`
+  on the end, from its first request, in its dedicated workers and on a phone too. A page that counts a person's visits
+  can now skip QAJev's. The browser's own user-agent client hints stay as they were.
+
 ### Fixed
 
 - A frame on another site that QAJev could not guard, and whose document had not loaded yet, is named by its iframe's
