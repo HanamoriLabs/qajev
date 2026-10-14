@@ -51,3 +51,19 @@ def test_a_drop_that_destroys_stays_hidden():
         "Drag to move. Delete project",  # another destructive word on the same control still counts
         "Drop your account data here",  # a grave word keeps it hidden, drag-and-drop phrasing or not
     ) == [True] * 6
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs node to run the page-side JavaScript")
+@pytest.mark.xfail(strict=True, reason="Known product-drop false positive: HanamoriLabs/qajev#156; guard fix deferred")
+@pytest.mark.parametrize("label", ["Next drop", "New drop", "Release drop"])
+def test_product_drop_navigation_is_not_destructive(label):
+    assert destroys(label) == [False]
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs node to run the page-side JavaScript")
+def test_product_drop_wording_does_not_allow_another_destructive_action():
+    assert destroys(
+        "Next drop: delete account",
+        "New drop: delete product",
+        "Release drop: drop database",
+    ) == [True] * 3
