@@ -416,6 +416,9 @@ def hidden_words(hidden, limit=3):
 FRAME_KEEP = 100  # frame console lines, and frame requests, a test keeps
 
 
+NO_ADDRESS = "a frame with no address yet"  # a frame whose document had not loaded and whose iframe named no web src
+
+
 def unguarded(outcome, reason, frames):
     """A frame on another site runs apart from the page (its own target), out of reach of QAJev's read-only guard and
     of block_urls: it may send writes. A run with one is not proven read-only, so it is harness, naming the frames
@@ -424,7 +427,7 @@ def unguarded(outcome, reason, frames):
         return outcome, reason
     from urllib.parse import urlsplit
 
-    where = ", ".join(f"{urlsplit(f).netloc}{urlsplit(f).path}" for f in frames[:3])
+    where = ", ".join(f"{urlsplit(f).netloc}{urlsplit(f).path}" if f else NO_ADDRESS for f in frames[:3])
     more = f" and {len(frames) - 3} more" if len(frames) > 3 else ""
     note = (f"not proven read-only: QAJev's read-only guard and block_urls do not reach the frame on another site "
             f"({where}{more}), so it may send writes")

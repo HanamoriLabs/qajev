@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from . import plan as plan_mod
-from .verdict import hidden_list
+from .verdict import NO_ADDRESS, hidden_list
 
 # The red banner of a run that showed destructive controls (allow_destructive; refused for a production host).
 DESTRUCTIVE = ("Destructive controls were shown (allow_destructive): Jev could delete, remove, refund or cancel "
@@ -315,7 +315,7 @@ def _scenario(i, r, who="Jev"):
     for w in r.get("allowed_writes") or []:  # every write production let through (allow_requests) is listed
         notes.append(f"Allowed write: {_e(w.get('method'))} {_e(_where(w.get('url')))}")
     for url in r.get("frames_not_observed") or []:  # its writes and requests are in no list: never "none"
-        notes.append(_e(NOT_OBSERVED.format(where=_where(url))))
+        notes.append(_e(NOT_OBSERVED.format(where=_where(url) or NO_ADDRESS)))
     for f in r.get("frames_accepted") or []:
         notes.append(_e(ACCEPTED.format(where=_where(f.get("url")), why=f.get("why", ""))))
     notes += [_e(line) for line in frame_lines(r)]

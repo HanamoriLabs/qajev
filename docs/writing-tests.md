@@ -395,7 +395,9 @@ forever. 0.4.15 lets each worker run at once.
 If QAJev cannot guard such a frame (attaching failed, or the frame started before the guard), it names it in
 `frames_not_observed`. The report says "Frame not observed: <address>. QAJev's read-only guard and block_urls do not
 reach it, so it may send writes", and the test's outcome is harness in every mode, because the run is not proven
-read-only. A suite can accept one such frame by its exact host, with the reason:
+read-only. A frame whose document has not loaded yet (a video still starting) has no address of its own: QAJev names
+it by its iframe's `src`, read from the page's DOM. One with no web `src` either is "a frame with no address yet", and
+stays not observed. A suite can accept one such frame by its exact host, with the reason:
 
 ```yaml
 guard:
