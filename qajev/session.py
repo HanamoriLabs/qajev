@@ -550,6 +550,25 @@ def with_qajev(user_agent):
     return user_agent if "QAJev/" in user_agent else f"{user_agent} QAJev/{__version__}"
 
 
+def as_chrome(user_agent):
+    """Headless Chrome's user agent as a normal Chrome's: "HeadlessChrome/155" says "Chrome/155". Some sites refuse a
+    headless browser, and QAJev tests what a person gets (QAJev Cloud's desktop Chrome, 14 Oct 2026)."""
+    return user_agent.replace("HeadlessChrome/", "Chrome/")
+
+
+def as_chrome_hints(hints):
+    """Headless Chrome's client hints as a normal Chrome's: its "HeadlessChrome" brand is "Google Chrome" again. A copy,
+    so the hints kept for this Chrome do not change."""
+    if not hints:
+        return hints
+    out = dict(hints)
+    for key in ("brands", "fullVersionList"):
+        if isinstance(out.get(key), list):
+            out[key] = [{**b, "brand": "Google Chrome"} if isinstance(b, dict) and b.get("brand") == "HeadlessChrome"
+                        else b for b in out[key]]
+    return out
+
+
 class Tab:
     """What a Session uses of Jev's Browser (its tab, and calls into it), for a tab in a browser context of its own:
     a multiplayer client's own cookies, storage, cache and service workers (clients.py). No Jev on it."""
@@ -794,11 +813,12 @@ class Session:
         """Every page says QAJev drove it: the browser's own user agent with "QAJev/<version>" on the end, so a site,
         or a person's page that counts their visits, can tell QAJev from a person (FlockTab1, 14 Oct 2026). Set before
         the first navigation, so the first request says it. The client hints keep the browser's own values. When they
-        cannot be read, the mark still goes on, and that tab sends no client hints (as a phone tab does)."""
+        cannot be read, the mark still goes on, and that tab sends no client hints (as a phone tab does). Headless
+        Chrome says it is a normal Chrome (as_chrome)."""
         if not user_agent:
             return
-        hints = client_hints(self.jev.cdp, os.environ.get("BU_CDP_URL", ""))
-        self.user_agent = {"user_agent": with_qajev(user_agent), "hints": hints}
+        hints = as_chrome_hints(client_hints(self.jev.cdp, os.environ.get("BU_CDP_URL", "")))
+        self.user_agent = {"user_agent": with_qajev(as_chrome(user_agent)), "hints": hints}
         self._set_user_agent(**self.user_agent)
 
     def _set_user_agent(self, user_agent, hints):

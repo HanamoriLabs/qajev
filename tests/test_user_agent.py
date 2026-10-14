@@ -67,7 +67,7 @@ def test_without_client_hints_or_a_known_agent_nothing_is_invented(monkeypatch):
 
 # ---- a real Session's setup marks its tab, before anything else can load (redteam on #151) ----
 
-def new_session(monkeypatch, version):
+def new_session(monkeypatch, version, hints=None):
     """Session.__init__ itself, on a fake browser: what it sends to its tab and to the browser."""
     tab, sent = [], []
 
@@ -82,7 +82,7 @@ def new_session(monkeypatch, version):
     browser = SimpleNamespace(call=lambda method, **params: tab.append((method, params)) or {})
     jev = SimpleNamespace(cdp=cdp, browser=SimpleNamespace(MARKER="m"),
                           agent=SimpleNamespace(Agent=lambda url, task: SimpleNamespace(browser=browser)))
-    hints = {"brands": [{"brand": "Chromium", "version": "141"}], "mobile": False, "platform": "macOS"}
+    hints = hints or {"brands": [{"brand": "Chromium", "version": "141"}], "mobile": False, "platform": "macOS"}
     monkeypatch.setattr(session_mod, "load", lambda ledger: jev)
     monkeypatch.setattr(session_mod, "client_hints", lambda cdp, cdp_url: hints)
     monkeypatch.setattr(session_mod.netlog, "start", lambda *a: None)
@@ -102,6 +102,45 @@ def test_a_new_session_marks_its_tab_with_the_browsers_own_agent_and_hints(monke
 def test_a_browser_that_does_not_say_its_agent_keeps_it_unmarked(monkeypatch):
     s, tab, _ = new_session(monkeypatch, RuntimeError("no Browser.getVersion"))
     assert not [m for m, _ in tab if m == "Emulation.setUserAgentOverride"] and s.user_agent is None
+
+
+# ---- headless Chrome says it is a normal Chrome: some sites refuse "HeadlessChrome" (QAJev Cloud, 14 Oct) ----
+
+HEADLESS = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 " \
+           "Safari/537.36"
+LINUX_CHROME = HEADLESS.replace("HeadlessChrome/", "Chrome/")
+
+
+def headless_hints():
+    return {"brands": [{"brand": "Chromium", "version": "155"}, {"brand": "HeadlessChrome", "version": "155"},
+                       {"brand": "Not)A;Brand", "version": "24"}],
+            "fullVersionList": [{"brand": "Chromium", "version": "155.0.7000.1"},
+                                {"brand": "HeadlessChrome", "version": "155.0.7000.1"},
+                                {"brand": "Not)A;Brand", "version": "24.0.0.0"}],
+            "mobile": False, "platform": "Linux"}
+
+
+def test_headless_chrome_says_chrome_with_the_mark_and_google_chromes_hints(monkeypatch):
+    read = headless_hints()
+    s, tab, _ = new_session(monkeypatch, {"product": "HeadlessChrome/155.0.7000.1", "userAgent": HEADLESS}, read)
+    mine = [p for m, p in tab if m == "Emulation.setUserAgentOverride"]
+    assert [p["userAgent"] for p in mine] == [f"{LINUX_CHROME} QAJev/{__version__}"]
+    hints = mine[0]["userAgentMetadata"]
+    assert [b["brand"] for b in hints["brands"]] == ["Chromium", "Google Chrome", "Not)A;Brand"]
+    assert [b["brand"] for b in hints["fullVersionList"]] == ["Chromium", "Google Chrome", "Not)A;Brand"]
+    assert hints["fullVersionList"][1]["version"] == "155.0.7000.1" and hints["platform"] == "Linux"
+    assert read == headless_hints()  # the kept copy for this Chrome is not changed
+    assert s.headless  # QAJev still knows it is headless: only what pages are told changes
+
+
+def test_a_desktop_after_a_phone_still_says_chrome(monkeypatch):
+    s = fake_session(monkeypatch, headless_hints())
+    s._own_user_agent(HEADLESS)
+    s.set_device(PHONE)
+    s.set_device(DESKTOP)
+    said = [p["userAgent"] for p in overrides(s)]
+    assert said[0] == said[2] == f"{LINUX_CHROME} QAJev/{__version__}"
+    assert not [a for a in said if "Headless" in a]
 
 
 # ---- client_hints: read once per Chrome, on its own loopback page, in a tab that always closes ----

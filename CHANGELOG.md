@@ -2,6 +2,14 @@
 
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Fixed
+
+- Headless Chrome, as in QAJev Cloud, says it is a normal Chrome. Its user agent said `HeadlessChrome/155`, and some
+  sites refuse a headless browser. Now it says `Chrome/155` with `QAJev/<version>` on the end, and its client hints
+  name "Google Chrome", not "HeadlessChrome". QAJev itself still knows the browser is headless.
+
 ## 0.4.33: 14 Oct 2026
 
 ### Changed
