@@ -65,6 +65,94 @@ def test_without_client_hints_or_a_known_agent_nothing_is_invented(monkeypatch):
     assert overrides(s) == [{"userAgent": ""}]
 
 
+# ---- a real Session's setup marks its tab, before anything else can load (redteam on #151) ----
+
+def new_session(monkeypatch, version):
+    """Session.__init__ itself, on a fake browser: what it sends to its tab and to the browser."""
+    tab, sent = [], []
+
+    def cdp(method, **params):
+        sent.append(method)
+        if method == "Browser.getVersion":
+            if isinstance(version, Exception):
+                raise version
+            return version
+        return {}
+
+    browser = SimpleNamespace(call=lambda method, **params: tab.append((method, params)) or {})
+    jev = SimpleNamespace(cdp=cdp, browser=SimpleNamespace(MARKER="m"),
+                          agent=SimpleNamespace(Agent=lambda url, task: SimpleNamespace(browser=browser)))
+    hints = {"brands": [{"brand": "Chromium", "version": "141"}], "mobile": False, "platform": "macOS"}
+    monkeypatch.setattr(session_mod, "load", lambda ledger: jev)
+    monkeypatch.setattr(session_mod, "client_hints", lambda cdp, cdp_url: hints)
+    monkeypatch.setattr(session_mod.netlog, "start", lambda *a: None)
+    for name in ("_keep_safe", "minimize", "page_socket"):
+        monkeypatch.setattr(session_mod.Session, name, lambda self: None)
+    s = session_mod.Session(None, headless=True)
+    return s, tab, hints
+
+
+def test_a_new_session_marks_its_tab_with_the_browsers_own_agent_and_hints(monkeypatch):
+    s, tab, hints = new_session(monkeypatch, {"product": "Chrome/141.0", "userAgent": CHROME})
+    marked = {"userAgent": f"{CHROME} QAJev/{__version__}", "userAgentMetadata": hints}
+    assert [p for m, p in tab if m == "Emulation.setUserAgentOverride"] == [marked]
+    assert s.user_agent == {"user_agent": marked["userAgent"], "hints": hints}  # what set_device restores
+
+
+def test_a_browser_that_does_not_say_its_agent_keeps_it_unmarked(monkeypatch):
+    s, tab, _ = new_session(monkeypatch, RuntimeError("no Browser.getVersion"))
+    assert not [m for m, _ in tab if m == "Emulation.setUserAgentOverride"] and s.user_agent is None
+
+
+# ---- client_hints: read once per Chrome, on its own loopback page, in a tab that always closes ----
+
+HINTS = {"brands": [{"brand": "Chromium", "version": "141"}], "mobile": False, "platform": "Linux"}
+
+
+def fake_cdp(answer):
+    calls = []
+
+    def cdp(method, session_id=None, **params):
+        calls.append((method, params))
+        if method == "Target.createTarget":
+            return {"targetId": "t1"}
+        if method == "Target.attachToTarget":
+            return {"sessionId": "s1"}
+        if method == "Runtime.evaluate":
+            if isinstance(answer, Exception):
+                raise answer
+            return {"result": {"value": answer}}
+        return {}
+
+    return cdp, calls
+
+
+def test_hints_are_read_on_chromes_own_page_once_and_the_tab_closes(monkeypatch):
+    monkeypatch.setattr(session_mod, "_HINTS", {})
+    cdp, calls = fake_cdp(HINTS)
+    assert session_mod.client_hints(cdp, "http://127.0.0.1:9333") == HINTS
+    assert ("Target.createTarget", {"url": "http://127.0.0.1:9333/json/version", "background": True}) in calls
+    assert ("Target.closeTarget", {"targetId": "t1"}) in calls
+    calls.clear()
+    assert session_mod.client_hints(cdp, "http://127.0.0.1:9333") == HINTS and calls == []  # kept: no second tab
+
+
+def test_a_failed_read_closes_the_tab_and_is_tried_again_next_time(monkeypatch):
+    monkeypatch.setattr(session_mod, "_HINTS", {})
+    cdp, calls = fake_cdp(RuntimeError("page crashed"))
+    assert session_mod.client_hints(cdp, "http://127.0.0.1:9333") is None
+    assert ("Target.closeTarget", {"targetId": "t1"}) in calls
+    calls.clear()
+    session_mod.client_hints(cdp, "http://127.0.0.1:9333")
+    assert calls and calls[0][0] == "Target.createTarget"  # not kept as "none"
+
+
+def test_a_chrome_that_is_not_on_this_machine_opens_no_tab(monkeypatch):
+    monkeypatch.setattr(session_mod, "_HINTS", {})
+    cdp, calls = fake_cdp(HINTS)
+    assert session_mod.client_hints(cdp, "http://box.example:9222") is None and calls == []
+
+
 # ---- live: the page, its requests and its worker all say QAJev ----
 
 PAGE = ("<!doctype html><title>ua</title><p>UA page</p><script>"

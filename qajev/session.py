@@ -510,7 +510,7 @@ UA_HINTS_JS = """(async () => {
 })()"""
 
 
-_HINTS = {}  # each Chrome's client hints (by its CDP address), read once
+_HINTS = {}  # each Chrome's client hints (by its CDP address), read once it has read them
 
 
 def client_hints(cdp, cdp_url):
@@ -539,8 +539,10 @@ def client_hints(cdp, cdp_url):
         if target:
             with contextlib.suppress(RuntimeError, TimeoutError):
                 cdp("Target.closeTarget", targetId=target)
-    _HINTS[cdp_url] = hints if isinstance(hints, dict) else None
-    return _HINTS[cdp_url]
+    if not isinstance(hints, dict):
+        return None  # not kept: the next session tries again, so one failed read does not cost every later page
+    _HINTS[cdp_url] = hints
+    return hints
 
 
 def with_qajev(user_agent):
@@ -791,7 +793,8 @@ class Session:
     def _own_user_agent(self, user_agent):
         """Every page says QAJev drove it: the browser's own user agent with "QAJev/<version>" on the end, so a site,
         or a person's page that counts their visits, can tell QAJev from a person (FlockTab1, 14 Oct 2026). Set before
-        the first navigation, so the first request says it. The client hints keep the browser's own values."""
+        the first navigation, so the first request says it. The client hints keep the browser's own values. When they
+        cannot be read, the mark still goes on, and that tab sends no client hints (as a phone tab does)."""
         if not user_agent:
             return
         hints = client_hints(self.jev.cdp, os.environ.get("BU_CDP_URL", ""))
