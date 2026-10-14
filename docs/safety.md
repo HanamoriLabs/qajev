@@ -81,7 +81,8 @@ the model behaving well: the rules are enforced in the page and in QAJev itself.
   second (or slower if the site asks).
 - QAJev's Chrome says it is QAJev: every page it drives sends the browser's own user agent with
   `QAJev/<version>` on the end (on a phone too). On a desktop it keeps the browser's own client hints when it can
-  read them. When it cannot, the tab sends no client hints. A phone sends none, as before. A site, or a page
+  read them. When it cannot, the tab sends no client hints. A phone sends none, as before. Headless Chrome says it is
+  a normal Chrome (`Chrome/<version>`, brand "Google Chrome"), with the same mark. A site, or a page
   that counts its visitors, can tell a QAJev visit from a person's. The smoke crawl's own requests say `QAJev`.
 - QAJev is not a load-testing tool. Only test sites you own or have permission to test.
 
