@@ -1,4 +1,7 @@
 import json
+import shlex
+import subprocess
+import sys
 
 import pytest
 
@@ -120,5 +123,18 @@ def test_nightly_install_needs_launchd(monkeypatch):
     from qajev import nightly
 
     monkeypatch.setattr(nightly.shutil, "which", lambda name: None)
-    with pytest.raises(RuntimeError, match="cron"):
+    with pytest.raises(RuntimeError, match="cron") as e:
         nightly.install("03:30")
+    # the cron line runs the installed QAJev, never a qajev/ folder in cron's working folder (redteam on #149)
+    assert str(e.value).endswith(f"30 3 * * * {shlex.join([sys.executable, '-P', '-m', 'qajev', 'nightly'])}")
+
+
+def test_nightly_install_runs_the_installed_qajev(monkeypatch, tmp_path):
+    from qajev import nightly
+
+    monkeypatch.setattr(nightly.shutil, "which", lambda name: "/bin/launchctl")
+    monkeypatch.setattr(nightly, "PLIST", tmp_path / "LaunchAgents" / "nightly.plist")
+    monkeypatch.setattr(nightly, "NIGHTLY", tmp_path / "nightly")
+    monkeypatch.setattr(nightly.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+    done = nightly.install("03:30", names=["twinbox"])
+    assert done["command"] == [sys.executable, "-P", "-m", "qajev", "nightly", "--project", "twinbox"]

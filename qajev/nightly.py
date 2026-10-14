@@ -9,9 +9,9 @@ headless in a throwaway profile, read-only on production, and files its report w
 import json
 import os
 import plistlib
+import shlex
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -137,7 +137,7 @@ def install(at="03:30", names=None):
     hour, minute = (int(x) for x in at.split(":"))
     if not shutil.which("launchctl"):
         raise RuntimeError(f"--install uses launchd (macOS). Elsewhere, add a cron line instead: "
-                           f"{minute} {hour} * * * {sys.executable} -P -m qajev nightly")
+                           f"{minute} {hour} * * * {shlex.join(config.qajev_argv('nightly'))}")
     args = config.qajev_argv("nightly") + [a for n in names or [] for a in ("--project", n)]
     NIGHTLY.mkdir(parents=True, exist_ok=True)
     plist = {
