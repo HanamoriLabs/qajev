@@ -80,7 +80,8 @@ the model behaving well: the rules are enforced in the page and in QAJev itself.
 - On public sites the smoke crawl reads `robots.txt`, skips what it disallows, and loads at most one page per
   second (or slower if the site asks).
 - QAJev's Chrome says it is QAJev: every page it drives sends the browser's own user agent with
-  `QAJev/<version>` on the end (on a phone too), and keeps the browser's own client hints. A site, or a page
+  `QAJev/<version>` on the end (on a phone too). On a desktop it keeps the browser's own client hints when it can
+  read them. When it cannot, the tab sends no client hints. A phone sends none, as before. A site, or a page
   that counts its visitors, can tell a QAJev visit from a person's. The smoke crawl's own requests say `QAJev`.
 - QAJev is not a load-testing tool. Only test sites you own or have permission to test.
 

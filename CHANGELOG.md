@@ -2,13 +2,14 @@
 
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.4.33: 14 Oct 2026
 
 ### Changed
 
 - QAJev's Chrome says it is QAJev. Every page it drives sends the browser's own user agent with `QAJev/<version>`
   on the end, from its first request, in its dedicated workers and on a phone too. A page that counts a person's visits
-  can now skip QAJev's. The browser's own user-agent client hints stay as they were.
+  can now skip QAJev's. On a desktop, the browser's own user-agent client hints stay as they were when QAJev can read
+  them. When it cannot, the tab sends no client hints.
 
 ### Fixed
 
