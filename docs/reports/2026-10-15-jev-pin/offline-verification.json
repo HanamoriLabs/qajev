@@ -8,7 +8,17 @@
     "focused_tests": 106,
     "ruff": "pass",
     "basedpyright": "0 errors, 0 warnings",
-    "full_offline_suite": "queued through heavy lane, live flags unset; NOT YET RUN"
+    "full_offline_suite": {
+      "status": "pass",
+      "source_head": "87a47b8681981c7a4bf704685c2310ff6574f5da",
+      "passed": 1100,
+      "skipped": 101,
+      "failures": 0,
+      "errors": 0,
+      "workers": 2,
+      "source_unchanged": true,
+      "proof": "full-local-suite.json"
+    }
   },
   "source_sha256": {
     "qajev/config.py": "f6e00c35229774e27d527a3d28ea680fb230cba67b0859751059945fb82f86d7",
