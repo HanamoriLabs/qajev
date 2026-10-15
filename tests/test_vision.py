@@ -8,6 +8,16 @@ JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 16
 CF = {"CLOUDFLARE_ACCOUNT_ID": "acct123", "CLOUDFLARE_API_TOKEN": "cf-token-value", "QAJEV_JEV_PROVIDER": "cloudflare"}
 
 
+@pytest.mark.parametrize("override, expected", [(None, "jev-1.13.0"), ("jev-preview", "jev-preview")])
+def test_screenshot_judging_uses_the_version_pin_and_override(monkeypatch, override, expected):
+    monkeypatch.delenv("TYPESAFE_MODEL", raising=False)
+    if override:
+        monkeypatch.setenv("TYPESAFE_MODEL", override)
+    bodies = []
+    vision.look(lambda _url, _key, body: bodies.append(body) or {}, "data:image/jpeg;base64,AAAA", ["fixture"], {})
+    assert bodies[0]["model"] == expected
+
+
 def test_a_screenshot_goes_to_clef_as_a_data_url_within_its_limits():
     assert vision.data_url(PNG).startswith("data:image/png;base64,")
     assert vision.data_url(JPEG).startswith("data:image/jpeg;base64,")

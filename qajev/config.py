@@ -41,8 +41,10 @@ def _commit(root):
 
 # Keys QAJev needs. Values are never printed; `doctor` reports presence only.
 # Goals need a Jev route (TYPESAFE_API_KEY, or an OpenRouter key); see providers.py.
+TYPESAFE_JEV_MODEL = "jev-1.13.0"
+
 DEFAULTS = {
-    "TYPESAFE_MODEL": "jev-latest",
+    "TYPESAFE_MODEL": TYPESAFE_JEV_MODEL,
     "TEXT_MODEL_BASE_URL": "https://openrouter.ai/api/v1",
     "TEXT_MODEL": "inception/mercury-2.5",
     "TEXT_MODEL_REASONING": "none",

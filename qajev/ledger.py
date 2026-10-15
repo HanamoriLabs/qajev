@@ -4,6 +4,7 @@ TypeSafe reports tokens, not dollars, so its calls are priced at a flat estimate
 $0.0005 per decision). OpenRouter is asked to include the real cost in each response.
 """
 
+import re
 import threading
 
 
@@ -22,6 +23,7 @@ class Ledger:
         self.tokens = {"typesafe": 0, "text": 0}
         self.usd = {"typesafe": 0.0, "text": 0.0}
         self.text_cost_reported = True
+        self.answered_models: set[str] = set()
 
     @staticmethod
     def provider(url):
@@ -56,6 +58,12 @@ class Ledger:
                 cost = 0.0
                 self.text_cost_reported = False
         with self.lock:
+            if kind == "typesafe":
+                # The Worker keeps its stable route name in model; only upstream_model identifies its answer.
+                answered = (result or {}).get("upstream_model", (result or {}).get("model"))
+                self.answered_models.add(answered if isinstance(answered, str) and
+                                         re.fullmatch(r"[~A-Za-z0-9][A-Za-z0-9~_./:@+-]{0,199}", answered)
+                                         else "unreported")
             self.calls[kind] += 1
             self.tokens[kind] += int(tokens or 0)
             self.usd[kind] += cost
@@ -90,4 +98,5 @@ class Ledger:
             "calls": dict(self.calls),
             "tokens": dict(self.tokens),
             "errors": self.errors,
+            "answered_models": sorted(self.answered_models),
         }

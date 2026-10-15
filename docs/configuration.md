@@ -28,11 +28,15 @@ point every QAJev process it starts at another `.env`, without your settings.
 | `TEXT_MODEL_BASE_URL`, `TEXT_MODEL`, `TEXT_MODEL_REASONING` | the text helper's service, model and reasoning level | OpenRouter, `inception/mercury-2.5`, `none` |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | the decisions by Cloudflare's Clef instead of Jev (Workers AI; a token with Workers AI read access) | none |
 | `QAJEV_JEV_PROVIDER` | `auto`, `typesafe`, `openrouter` or `cloudflare` | `auto`: TypeSafe if its key is set, else OpenRouter; Clef only when set to `cloudflare` |
-| `TYPESAFE_MODEL` | Jev's model on TypeSafe | `jev-latest` |
+| `TYPESAFE_MODEL` | Jev's model on TypeSafe; explicit override for controlled comparisons | `jev-1.13.0` |
 | `QAJEV_OPENROUTER_JEV_MODEL` | Jev's model on OpenRouter | `~typesafe/jev-latest` |
 | `QAJEV_CLEF_MODEL` | Clef's model on Cloudflare: `clef-flash` or `clef` | `clef-flash` |
 | `QAJEV_REQUIRE_PLAN` | `1`: refuse a run without an approved test plan ([Writing tests](writing-tests.md#an-approved-test-plan)) | off: such a run warns |
 | `QAJEV_PLAN_APPROVER` | the name an approval line must carry ("Approved by ...") | `the Orchestrator` |
+
+TypeSafe's default is versioned. OpenRouter has no matching versioned System One ID, so its route keeps the
+current alias and warns that it is not pinned. Reports list the actual answered model IDs; a provider that
+does not return one is marked `unreported`. An environment override does not prove which model answered.
 
 **One OpenRouter key runs everything.** The report says which route each run used.
 

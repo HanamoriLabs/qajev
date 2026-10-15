@@ -23,6 +23,15 @@ def places(tmp_path, monkeypatch):
     return home, repo
 
 
+@pytest.mark.parametrize("override, expected", [(None, "jev-1.13.0"), ("jev-preview", "jev-preview")])
+def test_model_defaults_are_versioned_and_an_env_file_can_override_them(places, override, expected):
+    home, _ = places
+    if override:
+        (home / ".env").write_text(f"TYPESAFE_MODEL={override}\n")
+    config.load_env()
+    assert os.environ["TYPESAFE_MODEL"] == expected
+
+
 def test_a_projects_own_env_file_is_never_read(places):
     home, repo = places
     (repo / ".env").write_text("CLOUDFLARE_API_TOKEN=project-deploy\nPROJECT_ONLY=1\n")

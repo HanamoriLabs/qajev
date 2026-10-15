@@ -37,7 +37,8 @@ class Partial:
 
 def merge_ledgers(ledgers):
     total = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
-             "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": None}
+             "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": None,
+             "answered_models": []}
     for led in ledgers:
         for key in ("usd", "usd_typesafe_estimated", "usd_text"):
             total[key] = round(total[key] + led[key], 5)
@@ -47,6 +48,7 @@ def merge_ledgers(ledgers):
         total["errors"] += led["errors"]
         total["text_cost_reported"] &= led["text_cost_reported"]
         total["cap_usd"] = led["cap_usd"]
+        total["answered_models"] = sorted(set(total["answered_models"]) | set(led.get("answered_models", [])))
     return total
 
 
@@ -378,6 +380,7 @@ def markdown(data):
         f"${cost['usd_text']:.4f}" + ("" if cost["text_cost_reported"] else " (provider did not report cost)"),
         *([f"- Models: {data['models'].get('decider') or 'Jev'} {data['models']['jev']}; text {data['models']['text']}"]
           if data.get("models") else []),
+        *([f"- Answered models: {', '.join(cost['answered_models'])}"] if cost.get("answered_models") else []),
         *([f"- Keys: {'; '.join(data['models']['keys'])}"] if (data.get("models") or {}).get("keys") else []),
         *([f"- Motion: {MOTION[data['motion']]}"] if data.get("motion") in MOTION else []),
         *([f"- CPU: {data['cpu_throttle']}× slower (Chrome's CPU throttling)"]

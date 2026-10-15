@@ -1,7 +1,7 @@
 """Where the decisions and the text helper's values come from, chosen by the keys provided.
 
 The decision model (Jev's role) is served three ways with the same request body:
-  TypeSafe    POST https://api.typesafe.ai/v1/systemone   TYPESAFE_API_KEY, model jev-latest
+  TypeSafe    POST https://api.typesafe.ai/v1/systemone   TYPESAFE_API_KEY, model jev-1.13.0
   OpenRouter  POST https://openrouter.ai/api/v1/systemone  OPENROUTER_API_KEY, model ~typesafe/jev-latest
   Cloudflare  POST .../accounts/ID/ai/run/@cf/cloudflare/MODEL  CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN,
               model clef-flash (default) or clef (QAJEV_CLEF_MODEL): Cloudflare's open decision models,
@@ -12,6 +12,7 @@ The text helper (values Jev types) is any OpenAI-compatible chat endpoint; an Op
 import os
 
 from .config import ROUTING_PLACEHOLDER as PLACEHOLDER  # jev's TYPESAFE_API_KEY on OpenRouter
+from .config import TYPESAFE_JEV_MODEL
 
 TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone"
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
@@ -46,7 +47,7 @@ def resolve(env=None):
     typesafe_key = env.get("TYPESAFE_API_KEY") if env.get("TYPESAFE_API_KEY") != PLACEHOLDER else None
     if wanted in {"auto", "typesafe"} and typesafe_key:
         out.update(jev="typesafe", jev_key_name="TYPESAFE_API_KEY", jev_url=TYPESAFE_URL,
-                   jev_model=env.get("TYPESAFE_MODEL", "jev-latest"))
+                   jev_model=env.get("TYPESAFE_MODEL", TYPESAFE_JEV_MODEL))
     elif wanted in {"auto", "openrouter"} and or_key:
         out.update(jev="openrouter", jev_key_name=or_name, jev_url=OPENROUTER_SYSTEMONE,
                    jev_model=env.get("QAJEV_OPENROUTER_JEV_MODEL", OPENROUTER_JEV_MODEL))
@@ -161,6 +162,8 @@ def check_openrouter_key(key, timeout=10):
 
 def describe(resolved):
     jev = f"{resolved['jev']} ({resolved['jev_model']}, {resolved['jev_key_name']})" if resolved["jev"] else "none"
+    if resolved["jev"] == "openrouter":
+        jev += "; OpenRouter Jev is not pinned; the model can change"
     text = f"{resolved['text_model']} via {resolved['text_base_url']} ({resolved['text_key_name']})" \
         if resolved["text"] else "none"
     from .config import key_sources

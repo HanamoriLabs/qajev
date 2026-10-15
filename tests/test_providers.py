@@ -5,6 +5,11 @@ import pytest
 from qajev import providers as P
 
 
+def test_typesafe_defaults_to_a_version_and_keeps_the_model_override():
+    assert P.resolve({"TYPESAFE_API_KEY": "fixture-key"})["jev_model"] == "jev-1.13.0"
+    assert P.resolve({"TYPESAFE_API_KEY": "fixture-key", "TYPESAFE_MODEL": "jev-preview"})["jev_model"] == "jev-preview"
+
+
 @pytest.mark.parametrize("env, jev, key_name", [
     ({"TYPESAFE_API_KEY": "ts-secret"}, "typesafe", "TYPESAFE_API_KEY"),
     ({"OPENROUTER_API_KEY": "or"}, "openrouter", "OPENROUTER_API_KEY"),
