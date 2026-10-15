@@ -259,6 +259,27 @@ def test_a_served_folder_that_holds_a_secret_is_refused(dash, local, capsys, tmp
     assert dash.calls == [] and local == []
 
 
+@pytest.mark.parametrize("transport", ["serve", "tunnel"])
+def test_cloud_planning_warns_when_one_suite_mixes_local_and_public_cases(dash, local, tmp_path, capsys, transport):
+    path = suite_file(tmp_path, base="http://127.0.0.1:8877", extra="hosts: [127.0.0.1:8877, shop.example]\n")
+    path.write_text(path.read_text() + "  - name: public\n    url: https://shop.example/\n"
+                    "    about: A public visitor sees the shop.\n    expect: {text: [Welcome]}\n")
+    argv = ["run", str(path), "--runner", "cloud"]
+    if transport == "serve":
+        argv += ["--serve", str(site(tmp_path))]
+    assert cli.main(argv) == 0
+    assert "mixes local served/tunnel cases with public URLs" in capsys.readouterr().err
+    assert ("serve" if transport == "serve" else "tunnel") in dash.created()
+    assert not local
+
+
+def test_public_hosts_in_the_allowlist_alone_do_not_warn_about_mixed_cases(dash, local, tmp_path, capsys):
+    path = suite_file(tmp_path, base="http://127.0.0.1:8877", extra="hosts: [127.0.0.1:8877, shop.example]\n")
+    assert cli.main(["run", str(path), "--runner", "cloud", "--serve", str(site(tmp_path))]) == 0
+    assert "mixes local served/tunnel cases" not in capsys.readouterr().err
+    assert not local
+
+
 def test_a_public_target_needs_no_tunnel_and_a_shipped_build_never_gets_one(dash, local, tmp_path):
     assert cli.main(["check", "https://shop.example/", "--runner", "cloud"]) == 0
     assert "tunnel" not in dash.created()
