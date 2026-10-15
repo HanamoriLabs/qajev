@@ -84,7 +84,8 @@ def look(post_json, image, statements, context):
                       f"Judge only from the screenshot, as a person looking at the screen would. Is this true: {s}"}
         for i, s in enumerate(statements)
     }
-    body = {"model": "jev-latest", "state": context, "images": [image], "questions": questions}
+    body = {"model": os.environ.get("TYPESAFE_MODEL", providers.TYPESAFE_JEV_MODEL),
+            "state": context, "images": [image], "questions": questions}
     answers = (post_json(providers.TYPESAFE_URL, os.environ.get("TYPESAFE_API_KEY", ""), body) or {}).get(
         "answers") or {}
     checks = []

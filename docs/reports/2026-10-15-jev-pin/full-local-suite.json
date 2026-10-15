@@ -1,0 +1,50 @@
+{
+  "head": "87a47b8681981c7a4bf704685c2310ff6574f5da",
+  "workers": 2,
+  "source_unchanged": true,
+  "results": [
+    {
+      "worker": 1,
+      "exit_code": 0,
+      "seconds": 82.8,
+      "files": 34,
+      "counts": {
+        "tests": 601,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 18
+      },
+      "passed": 583
+    },
+    {
+      "worker": 2,
+      "exit_code": 0,
+      "seconds": 111.19,
+      "files": 34,
+      "counts": {
+        "tests": 600,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 83
+      },
+      "passed": 517
+    }
+  ],
+  "pass": true,
+  "github_actions_used": false,
+  "passed": 1100,
+  "skipped": 101,
+  "collected": 1201,
+  "skipped_by_reason": {
+    "set QAJEV_LIVE=1 (starts a local Chrome)": 90,
+    "set QAJEV_LIVE_JEV=1 (paid TypeSafe calls)": 1,
+    "set QAJEV_LIVE_CLEF=1 with CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN (paid)": 1,
+    "set QAJEV_LIVE=1 and QAJEV_ELECTRON=<an Electron binary> (starts Electron)": 2,
+    "set QAJEV_LIVE=1 (starts Godot)": 5,
+    "set QAJEV_LIVE_JEV=1 (paid Jev calls)": 1,
+    "the tests run at nice 10, so nice 0 cannot be reached without root": 1
+  },
+  "lane": "machine-lane heavy --patient; two local pytest workers; no overrides",
+  "manifest_sha256": "ee51761d859c37bf73ff7e7a89d57f9f4b2aba25126879406a1b61ffeb5e7fc6",
+  "live_flags": "all QAJEV_* and model credential environment variables removed before test collection; separate private homes"
+}

@@ -6,6 +6,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- TypeSafe Jev defaults to `jev-1.13.0`, with `TYPESAFE_MODEL` retained as an explicit override. OpenRouter keeps
+  its existing alias and says it is not pinned. Reports record which model actually answered, or `unreported`.
 - Headless Chrome, as in QAJev Cloud, says it is a normal Chrome. Its user agent said `HeadlessChrome/155`, and some
   sites refuse a headless browser. Now it says `Chrome/155` with `QAJev/<version>` on the end, and its client hints
   name "Google Chrome", not "HeadlessChrome". QAJev itself still knows the browser is headless.
