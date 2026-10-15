@@ -1,0 +1,20 @@
+{
+  "regression": "test_cloud_planning_warns_when_one_suite_mixes_local_and_public_cases",
+  "before": "Both serve and tunnel parameters failed: warning absent",
+  "after": {
+    "cloud_client_tests_passed": 86
+  },
+  "faults_caught": [
+    "warning_removed: both serve and tunnel tests fail by assertion"
+  ],
+  "lint": "Ruff clean; BasedPyright qajev/cloud.py:0 errors,0 warnings,0 notes",
+  "runner": "machine-lane light on this Mac",
+  "github_actions_used": false,
+  "live_provider_requests": 0,
+  "cloud_hosts_started": 0,
+  "source_sha256": {
+    "qajev/cloud.py": "cef205e24ecaec178abc6fee274679e531b321a9d109a02edfff220c4b26c898",
+    "tests/test_cloud.py": "2481f9f1152d76740b7409304b0da824b8b11a5b9a77b9a38f16c61dd9048123",
+    "tools/qa/check-mixed-origin-fault.py": "3a013efda42c09c383678d5e6dd8630c14e384cd5d6b84e1898d775301de91af"
+  }
+}
