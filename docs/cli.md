@@ -258,6 +258,10 @@ rule is on.
 `--runner cloud` sends a `check`, `run` (a suite or a project) or `smoke` to QAJev Cloud (cloud.qajev.com) instead of
 this Mac. A cloud machine runs it with a headless, throwaway Chrome.
 
+Cloud planning warns when one suite has both local served/tunnel cases and public scenario URLs. The browser's
+network lock stays in place for the whole run; split the public cases into a separate run. Hosts in the allowlist
+alone do not trigger this warning. This warning grants no egress exception.
+
 ```bash
 qajev check https://shop.example/pricing -g "Find the Pro price. Stop when it shows." -t '$29' --runner cloud
 qajev run suites/shop.yaml --runner cloud --model clef --json

@@ -487,6 +487,7 @@ def plan(args):
     if getattr(args, "allow_commands", False):
         raise NotAllowed("a suite's shell commands (--allow-commands) run on this Mac only")
     files, targets, account, named_plan, plan_base, project_name, swap = [], [], None, None, Path.cwd(), None, {}
+    case_targets = []
     owner = None  # a suite's project: filed with it on the dashboard, but never held by its name
     seed_base = None
     full, root, source, writes = None, None, None, getattr(args, "mode", None) == "mutate"
@@ -530,6 +531,7 @@ def plan(args):
         except (suite_mod.SuiteError, ValueError, OSError) as e:
             raise CloudError(f"{args.suite}: {e}", EXIT_CONFIG) from None
         targets = [f"http://{h}" for h in suite.hosts]
+        case_targets = [s.url for s in suite.scenarios]
         account = suite.account
         seed_base = Path(args.suite).parent
         full = suite.tunnel
@@ -580,6 +582,10 @@ def plan(args):
         tunnel_port = _tunnel_port(local_targets, writes)
     serve_root, port = _serve_spec(serve, local_targets) if serve else (None, None)
     warnings = []
+    if (serve_root or tunnel or tunnel_port) and any(config.is_loopback(u) for u in case_targets) \
+            and any(not config.is_loopback(u) for u in case_targets):
+        warnings.append("this suite mixes local served/tunnel cases with public URLs; Cloud keeps the network lock. "
+                        "Split public cases into a separate run.")
     plan_path = args.plan.expanduser() if getattr(args, "plan", None) else (
         planfile.resolve(named_plan, plan_base) if named_plan else None)
     status = planfile.check(plan_path)
