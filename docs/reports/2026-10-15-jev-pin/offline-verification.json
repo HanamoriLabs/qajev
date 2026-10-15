@@ -1,0 +1,72 @@
+{
+  "scope": "CLI",
+  "provider_spend": 0,
+  "cloud_runs": 0,
+  "live_or_installed_changes": false,
+  "experimental_images_or_box": "not implemented or enabled; proposal only",
+  "checks": {
+    "focused_tests": 106,
+    "ruff": "pass",
+    "basedpyright": "0 errors, 0 warnings",
+    "full_offline_suite": "queued through heavy lane, live flags unset; NOT YET RUN"
+  },
+  "source_sha256": {
+    "qajev/config.py": "f6e00c35229774e27d527a3d28ea680fb230cba67b0859751059945fb82f86d7",
+    "qajev/providers.py": "b01e1cc90b5094dcd5c9366b10b82a9e68a1a09a2c1d08fcac1a7ac9b879ef54",
+    "qajev/vision.py": "4b814e9f172f3b3386a1c84dc7ea0205cfff5ce911b9b4443d5bcbf59a121aca",
+    "qajev/ledger.py": "4fd7065c1509cc96a322e04ffb857be881ec885324113a563c819bde56a5835c",
+    "qajev/report.py": "8478e559f95086ccc8b8727b28c9199587a9aae49d69cc0b0a329a5b80c712fd",
+    "qajev/report_html.py": "e98bfd482f876811fcab06d3142fd11fd0a2f984413e597593403a660802fa53"
+  },
+  "faults": [
+    {
+      "fault": "moving_default",
+      "caught": true,
+      "exit_code": 1,
+      "named_failures": [
+        "FAILED tests/test_env.py::test_model_defaults_are_versioned_and_an_env_file_can_override_them[None-jev-1.13.0]"
+      ]
+    },
+    {
+      "fault": "ignored_provider_override",
+      "caught": true,
+      "exit_code": 1,
+      "named_failures": [
+        "FAILED tests/test_providers.py::test_typesafe_defaults_to_a_version_and_keeps_the_model_override"
+      ]
+    },
+    {
+      "fault": "moving_vision_default",
+      "caught": true,
+      "exit_code": 1,
+      "named_failures": [
+        "FAILED tests/test_vision.py::test_screenshot_judging_uses_the_version_pin_and_override[None-jev-1.13.0]"
+      ]
+    },
+    {
+      "fault": "missing_unpinned_warning",
+      "caught": true,
+      "exit_code": 1,
+      "named_failures": [
+        "FAILED tests/test_model_versions.py::test_openrouter_shows_the_unpinned_warning_without_warning_about_typesafe"
+      ]
+    },
+    {
+      "fault": "route_name_instead_of_upstream",
+      "caught": true,
+      "exit_code": 1,
+      "named_failures": [
+        "FAILED tests/test_model_versions.py::test_the_report_records_the_answered_model_and_never_substitutes_the_requested_alias[reply1-jev-1.14.0]",
+        "FAILED tests/test_model_versions.py::test_the_report_records_the_answered_model_and_never_substitutes_the_requested_alias[reply2-unreported]"
+      ]
+    },
+    {
+      "fault": "lost_model_drift",
+      "caught": true,
+      "exit_code": 1,
+      "named_failures": [
+        "FAILED tests/test_model_versions.py::test_the_report_keeps_all_answered_versions_when_an_alias_changes"
+      ]
+    }
+  ]
+}
