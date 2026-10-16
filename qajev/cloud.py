@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -280,6 +281,9 @@ class Plan:
     model: str | None = None
     sees_screen: bool | None = None
     warnings: list = field(default_factory=list)
+    model_budget_usd: float = 1.0  # effective suite/project/CLI model cap; sent only to an enforcing Worker
+    require_model_budget: bool = False  # an explicit --cost-cap must never silently degrade on older Workers
+    model_budget_enforced: bool = False  # capability discovery sets this; absent support stays explicitly false
 
 
 def _subparser(command):
@@ -487,6 +491,8 @@ def plan(args):
     if getattr(args, "allow_commands", False):
         raise NotAllowed("a suite's shell commands (--allow-commands) run on this Mac only")
     files, targets, account, named_plan, plan_base, project_name, swap = [], [], None, None, Path.cwd(), None, {}
+    model_budget = getattr(args, "cost_cap", None)
+    require_model_budget = model_budget is not None
     owner = None  # a suite's project: filed with it on the dashboard, but never held by its name
     seed_base = None
     full, root, source, writes = None, None, None, getattr(args, "mode", None) == "mutate"
@@ -520,6 +526,9 @@ def plan(args):
         files.append((remote, proj.config_path.resolve()))
         swap["project"] = remote
         project_name, plan_base = proj.name, proj.config_path.parent
+        if model_budget is None:
+            model_budget = proj.budget.get("cost_cap_usd", 0.5)
+        require_model_budget = require_model_budget or "cost_cap_usd" in proj.budget
     elif cmd == "run":
         from . import suite as suite_mod
 
@@ -543,6 +552,9 @@ def plan(args):
         from . import project as project_mod
 
         owner = project_mod.owner_of(args.suite)  # the dashboard files the run under it (José, 13 Oct)
+        if model_budget is None:
+            model_budget = suite.cost_cap_usd
+        require_model_budget = require_model_budget or suite.cost_cap_explicit
     else:
         targets = [args.url]
         if not args.url:
@@ -608,7 +620,8 @@ def plan(args):
     return Plan(kind=cmd, args=forwarded, name=describe_argv(args.argv)[:160], files=files, serve_root=serve_root,
                 port=port, tunnel_port=tunnel_port, tunnel=tunnel, inline=inline, project=project_name or owner,
                 model=getattr(args, "model", None), sees_screen=True if getattr(args, "vision", None) else None,
-                warnings=warnings)
+                warnings=warnings, model_budget_usd=1.0 if model_budget is None else model_budget,
+                require_model_budget=require_model_budget)
 
 
 def site_files(root, scratch):
@@ -659,6 +672,20 @@ def submit(client, plan):
     ever) and raises CloudError with the run's id and address."""
     import tempfile  # noqa: PLC0415
 
+    if type(plan.model_budget_usd) not in (int, float) or not math.isfinite(plan.model_budget_usd) \
+            or plan.model_budget_usd < 0:
+        raise CloudError("model cost cap must be finite, non-negative dollars", EXIT_CONFIG)
+    try:
+        capabilities = client.get("/api/v1/config")
+    except CloudError:
+        if plan.require_model_budget:
+            raise CloudError("cannot confirm Cloud model-budget enforcement; no run submitted", EXIT_CONFIG) from None
+        capabilities = {}
+    enforced = isinstance(capabilities, dict) and capabilities.get("model_budget_enforced") is True
+    plan.model_budget_enforced = enforced
+    if plan.require_model_budget and not enforced:
+        raise CloudError("this Cloud server does not enforce the explicit model cost cap; no run submitted",
+                         EXIT_CONFIG)
     with tempfile.TemporaryDirectory(prefix="qajev-cloud-") as scratch:
         files = list(plan.files) + (site_files(plan.serve_root, Path(scratch)) if plan.serve_root else [])
         for i, (remote, data) in enumerate(plan.inline):  # written only into this scratch folder, removed after
@@ -677,6 +704,8 @@ def submit(client, plan):
         declared = [{"path": remote, "sha256": _sha256(local), "size": local.stat().st_size} for remote, local in files]
         body = {"kind": plan.kind, "args": plan.args, "runner": "cloud", "surface": "web", "files": declared,
                 "name": plan.name}
+        if enforced:
+            body["model_budget_usd"] = plan.model_budget_usd
         project = _known_project(client, plan.project) if plan.project else None
         for key, value in (("model", plan.model), ("sees_screen", plan.sees_screen), ("project", project),
                            ("serve", {"path": "site", "port": plan.port} if plan.serve_root else None),

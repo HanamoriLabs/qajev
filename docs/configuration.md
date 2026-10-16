@@ -31,10 +31,13 @@ point every QAJev process it starts at another `.env`, without your settings.
 | `TYPESAFE_MODEL` | Jev's model on TypeSafe | `jev-latest` |
 | `QAJEV_OPENROUTER_JEV_MODEL` | Jev's model on OpenRouter | `~typesafe/jev-latest` |
 | `QAJEV_CLEF_MODEL` | Clef's model on Cloudflare: `clef-flash` or `clef` | `clef-flash` |
+| `QAJEV_MODEL_MAX_USD` | explicit conservative per-attempt upper bound for otherwise unqualified model routes; cannot lower a known bound | none; unqualified paid routes refuse |
 | `QAJEV_REQUIRE_PLAN` | `1`: refuse a run without an approved test plan ([Writing tests](writing-tests.md#an-approved-test-plan)) | off: such a run warns |
 | `QAJEV_PLAN_APPROVER` | the name an approval line must carry ("Approved by ...") | `the Orchestrator` |
 
-**One OpenRouter key runs everything.** The report says which route each run used.
+**One OpenRouter key authenticates both routes.** Unqualified routes also need an
+explicit conservative cost bound. The report says which route each run used.
+See [Model budgets](model-budgets.md) for prices, reservations and uncertainty.
 
 **Jev or Clef.** The decision model can be TypeSafe's Jev or Cloudflare's open Clef models, which answer the same
 questions in the same form. To use Clef, set the two Cloudflare variables and `QAJEV_JEV_PROVIDER=cloudflare` (or pass

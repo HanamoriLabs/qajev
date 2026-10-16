@@ -28,6 +28,7 @@ class FakeDashboard:
         self.runs = [{"id": RUN, "gate": "pass", "counts": {"pass": 1}, "tests": []}]  # GET answers, the last repeats
         self.refuse_put = False
         self.default_runner = "cloud"  # the Settings page's "Where runs go by default"
+        self.model_budget_enforced = None
         self.projects = set()  # the projects the dashboard knows (synced from project.toml)
         outer = self
 
@@ -57,7 +58,8 @@ class FakeDashboard:
             def do_GET(self):
                 if self.path == "/api/v1/config":
                     outer.calls.append(("GET", self.path, self.headers.get("Authorization")))
-                    return self._reply(200, {"firebase": {"projectId": "x"}})
+                    return self._reply(200, {"firebase": {"projectId": "x"},
+                                             "model_budget_enforced": outer.model_budget_enforced})
                 if not self._authed():
                     return
                 outer.calls.append(("GET", self.path, None))
@@ -146,6 +148,58 @@ def dash(monkeypatch):
     monkeypatch.setenv("QAJEV_CLOUD_KEY", KEY)
     yield d
     d.server.shutdown()
+
+
+def test_explicit_cloud_budget_refuses_before_post_on_legacy_server(dash):
+    plan = cloud.Plan("check", ["check", "https://example.test"], "budget test", model_budget_usd=0.1,
+                      require_model_budget=True)
+    with pytest.raises(cloud.CloudError, match="does not enforce"):
+        cloud.submit(cloud.Client(dash.url, KEY), plan)
+    assert not dash.sent("POST")
+
+
+def test_cloud_budget_is_negotiated_and_sent_to_enforcing_server(dash):
+    dash.model_budget_enforced = True
+    plan = cloud.Plan("check", ["check", "https://example.test"], "budget test", model_budget_usd=0.1,
+                      require_model_budget=True)
+    assert cloud.submit(cloud.Client(dash.url, KEY), plan) == RUN
+    assert dash.created()["model_budget_usd"] == 0.1
+
+
+def test_default_cloud_submission_stays_compatible_without_claiming_enforcement(dash):
+    plan = cloud.Plan("check", ["check", "https://example.test"], "budget test")
+    assert cloud.submit(cloud.Client(dash.url, KEY), plan) == RUN
+    assert "model_budget_usd" not in dash.created()
+
+
+def test_authored_suite_cap_requires_cloud_enforcement_without_cli_flag(dash, tmp_path, local, capsys):
+    path = suite_file(tmp_path, extra="cost_cap_usd: 0.1\n")
+    assert cli.main(["run", str(path), "--runner", "cloud", "--background", "--json"]) == 3
+    assert "does not enforce" in capsys.readouterr().out
+    assert not dash.sent("POST") and not local
+
+
+def test_authored_project_cap_requires_cloud_enforcement_without_cli_flag(dash, registry, local, capsys):
+    path = registry["projects"] / "shop.toml"
+    path.write_text(path.read_text() + "\n[budget]\ncost_cap_usd = 0.1\n")
+    assert cli.main(["run", "--project", "shop", "--runner", "cloud", "--background", "--json"]) == 3
+    assert "does not enforce" in capsys.readouterr().out
+    assert not dash.sent("POST") and not local
+
+
+def test_authored_suite_budget_reaches_enforcing_cloud_server(dash, tmp_path, local):
+    dash.model_budget_enforced = True
+    path = suite_file(tmp_path, extra="cost_cap_usd: 0.125\n")
+    assert cli.main(["run", str(path), "--runner", "cloud", "--background", "--json"]) == 0
+    assert dash.created()["model_budget_usd"] == 0.125 and not local
+
+
+@pytest.mark.parametrize("value", ["null", "true", "-1", ".nan", ".inf", "not-a-number"])
+def test_invalid_authored_suite_budget_fails_plainly_before_submission(dash, tmp_path, capsys, value):
+    path = suite_file(tmp_path, extra=f"cost_cap_usd: {value}\n")
+    assert cli.main(["run", str(path), "--runner", "cloud", "--json"]) == 3
+    assert "finite, non-negative" in capsys.readouterr().out
+    assert not dash.sent("POST")
 
 
 @pytest.fixture
@@ -615,7 +669,7 @@ def test_background_returns_the_cloud_run_at_once_and_jobs_and_stop_take_its_id(
     assert cli.main(["check", "https://shop.example/", "--runner", "cloud", "--background", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out == {"runner": "cloud", "run_id": RUN, "url": f"{dash.url}/run.html?id={RUN}", "gate": "QUEUED"}
-    assert not dash.sent("GET") and local == []
+    assert all(path == "/api/v1/config" for _, path, _ in dash.sent("GET")) and local == []
     dash.runs = [{"gate": "running", "progress": "1 of 2 tests"}]
     assert cli.main(["jobs", RUN, "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["gate"] == "RUNNING"

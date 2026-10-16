@@ -10,6 +10,7 @@ The text helper (values Jev types) is any OpenAI-compatible chat endpoint; an Op
 """
 
 import os
+import time
 
 from .config import ROUTING_PLACEHOLDER as PLACEHOLDER  # jev's TYPESAFE_API_KEY on OpenRouter
 
@@ -18,13 +19,60 @@ OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 OPENROUTER_SYSTEMONE = OPENROUTER_BASE + "/systemone"
 OPENROUTER_JEV_MODEL = "~typesafe/jev-latest"
 CLOUDFLARE_RUN = "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/cloudflare/{model}"
-CLEF_MODELS = {"clef-flash": 0.09, "clef": 0.24}  # USD per million input tokens (Workers AI, 2026-10); output free
+CLEF_MODELS = {"clef-flash": 0.038, "clef": 0.24}  # USD per million input tokens (Workers AI, 2026-10); output free
 PROVIDERS = ("auto", "typesafe", "openrouter", "cloudflare")
 SEE = None  # vision.seeing(): a callable giving the current screenshot (a data URL) for each Clef decision
 
 
 class ProviderError(RuntimeError):
     pass
+
+
+class ModelAttemptUncertain(RuntimeError):
+    """The provider may have billed this attempt; retain its reservation and do not replay."""
+
+    cost_uncertain = True
+
+
+class _ModelHTTPError(ModelAttemptUncertain):
+    def __init__(self, status):
+        super().__init__(f"Model provider returned HTTP {status}; no action executed.")
+        self.status_code = status
+
+
+def metered(client, ledger, sleep=time.sleep, verified_bounds=None):
+    """QAJev owns retries so every actual HTTP request has its own reservation.
+
+    The dependency's post_json retries internally. Wrapping that function cannot
+    enforce an attempt budget. Reuse its client, timeout and plain error strings,
+    but meter the single transport call beneath each retry and route wrapper.
+    """
+    import httpx
+
+    def once(url, key, body):
+        try:
+            response = client.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
+        except httpx.HTTPError:
+            raise ModelAttemptUncertain("Model connection failed; no action executed.") from None
+        if response.is_error:
+            raise _ModelHTTPError(response.status_code)
+        try:
+            return response.json()
+        except ValueError:
+            raise ModelAttemptUncertain("Model provider returned invalid JSON; no action executed.") from None
+
+    attempt = ledger.wrap(once, verified_bounds=verified_bounds)
+
+    def post_json(url, key, body):
+        for retry in range(3):
+            try:
+                return attempt(url, key, body)
+            except RuntimeError as error:
+                if getattr(error, "status_code", None) not in (429, 529, 503) or retry == 2:
+                    raise
+                sleep(0.5 * 2**retry)
+
+    return post_json
 
 
 def _openrouter_key(env):
@@ -127,17 +175,16 @@ def _clef(post_json, resolved, env):
                 image = SEE()
                 if image:
                     send["images"] = [image]
-            try:
-                got = post_json(resolved["jev_url"], env[resolved["jev_key_name"]], send)
-            except RuntimeError as e:  # a dropped connection or a 5xx: nothing ran, so ask once more
-                # (a 4xx is the request's own fault and would only fail again)
-                if "HTTP 4" in str(e):
-                    raise
-                got = post_json(resolved["jev_url"], env[resolved["jev_key_name"]], send)
+            # A lost/502/bad-JSON answer may already be billed. Only metered()
+            # owns the dependency's explicit retry statuses, each fully reserved.
+            got = post_json(resolved["jev_url"], env[resolved["jev_key_name"]], send)
             out = (got or {}).get("result", got) or out
         out.setdefault("answers", {}).update(sure)
         usage = out.setdefault("usage", {}) or {}
-        usage["cost_usd"] = round((usage.get("input_tokens") or 0) * CLEF_MODELS[model] / 1e6, 8)
+        # A one-option decision is genuinely local/free. Paid usage is priced by
+        # the ledger at the transport; absent usage must never become cost_usd=0.
+        if not asked:
+            usage["cost_usd"] = 0.0
         out["usage"] = usage
         return out
 

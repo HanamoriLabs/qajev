@@ -40,13 +40,22 @@ def merge_ledgers(ledgers):
              "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": None}
     for led in ledgers:
         for key in ("usd", "usd_typesafe_estimated", "usd_text"):
-            total[key] = round(total[key] + led[key], 5)
+            total[key] = round(total[key] + led[key], 6)
         for key in ("calls", "tokens"):
             for kind in total[key]:
                 total[key][kind] += led[key][kind]
         total["errors"] += led["errors"]
         total["text_cost_reported"] &= led["text_cost_reported"]
         total["cap_usd"] = led["cap_usd"]
+    # Preserve legacy keys; new summaries explicitly separate known spend from
+    # held liabilities. Missing fields in historical reports remain absent.
+    if any("cost_basis" in led for led in ledgers):
+        for key in ("actual_usd", "estimated_usd", "unknown_usd", "reserved_usd", "unattributed_worker_usd"):
+            total[key] = round(sum(led.get(key, 0) for led in ledgers), 6)
+        for key, names in (("cost_basis", ("reported", "token_priced", "unknown", "local_free")),
+                           ("reservation_basis", ("documented", "operator_estimate", "cloud_enforced"))):
+            total[key] = {name: sum(led.get(key, {}).get(name, 0) for led in ledgers) for name in names}
+        total["bound_violated"] = any(led.get("bound_violated", False) for led in ledgers)
     return total
 
 
@@ -376,6 +385,7 @@ def markdown(data):
         *([f"- Game profile: {report_html.game_profile(browser)}"] if report_html.game_profile(browser) else []),
         f"- Cost: {report_html.decisions_cost(data)}, text model "
         f"${cost['usd_text']:.4f}" + ("" if cost["text_cost_reported"] else " (provider did not report cost)"),
+        *([f"- Cost basis: {report_html.cost_basis_note(data)}"] if report_html.cost_basis_note(data) else []),
         *([f"- Models: {data['models'].get('decider') or 'Jev'} {data['models']['jev']}; text {data['models']['text']}"]
           if data.get("models") else []),
         *([f"- Keys: {'; '.join(data['models']['keys'])}"] if (data.get("models") or {}).get("keys") else []),

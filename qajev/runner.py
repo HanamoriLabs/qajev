@@ -777,6 +777,15 @@ def run(suite, opts):
                     for r in out["results"]:
                         results_by_name[r["name"]] = r
                         emit({"event": "scenario", "result": r})
+            # A process can die after reserving and before returning its local
+            # summary. The shared cap keeps that liability; the report must too.
+            with shared.get_lock():
+                unreported = round(shared.value - sum(led["usd"] for led in ledgers), 6)
+            if unreported > 0:
+                retained = Ledger(cap).summary()
+                retained.update(usd=unreported, unknown_usd=unreported, unattributed_worker_usd=unreported)
+                retained["cost_basis"]["unknown"] = 1
+                ledgers.append(retained)
         else:
             ledger = Ledger(cap, opts.typesafe_usd_per_call)
             out = run_group(scenarios, opts=opts, cdp_url=cdp_url, suite_meta=suite_meta, run_dir=run_dir,

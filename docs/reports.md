@@ -186,9 +186,10 @@ unclear") often points to a confusing page.
 
 ## Cost
 
-The report shows what the run cost: Jev's decisions, the text helper's calls, and the cap. Typical numbers: a
-decision costs about $0.0005 with TypeSafe (less through OpenRouter), so a scenario of ten steps costs well
-under a cent.
+The report shows decision and text-model accounting, the cap, and the basis of each amount.
+New reports separate supplier-reported spend, token-priced estimates, unknown liability and in-flight
+reservations. Unknown usage is not free. These amounts count against the model cap; only the supplier's
+invoice establishes actual billed spend. See [Model budgets](model-budgets.md).
 
 ## Games
 

@@ -65,7 +65,7 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | `--cost-cap USD` | a hard cap for the whole run (default: the suite's, else $1) |
 | `--env-file FILE` | where your keys are (default `$QAJEV_ENV_FILE`, then `~/.qajev/.env`; never the current folder's `.env`) |
 | `--jev-provider auto\|typesafe\|openrouter\|cloudflare` | who makes the decisions: Jev (TypeSafe, OpenRouter) or Clef (Cloudflare; see [Configuration](configuration.md)) |
-| `--usd-per-call USD` | the estimated TypeSafe cost per decision, for the ledger |
+| `--usd-per-call USD` | TypeSafe per-attempt reservation floor; cannot lower the documented upper bound ([model budgets](model-budgets.md)) |
 | `--strict` | count `stuck` scenarios as failures |
 
 **Where it runs** (also on `play`: `--runner` only; see [QAJev Cloud](#qajev-cloud-where-a-run-goes))
