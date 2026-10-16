@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import chrome, live, plan, providers, ux, verdict, vision
 from .config import redact, redact_tree, secret_values
-from .ledger import CostCapReached, Ledger
+from .ledger import CostCapReached, Ledger, SharedBudget
 from .suite import has_checks
 from .suite import page_checks as has_page_checks
 
@@ -757,7 +757,7 @@ def run(suite, opts):
             from concurrent.futures import ProcessPoolExecutor, as_completed
 
             ctx = multiprocessing.get_context("spawn")
-            shared = ctx.Value("d", 0.0)
+            shared = SharedBudget.create(ctx)
             opts_dict = {k: v for k, v in opts.__dict__.items() if k != "emit"}
             payloads = [(chain, opts_dict, cdp_url, suite_meta, run_dir, cap, opts.typesafe_usd_per_call)
                         for chain in chains]
@@ -777,6 +777,18 @@ def run(suite, opts):
                     for r in out["results"]:
                         results_by_name[r["name"]] = r
                         emit({"event": "scenario", "result": r})
+            # A process can die after reserving and before returning its local
+            # summary. The shared cap keeps that liability; the report must too.
+            with shared.get_lock():
+                unreported = round(shared.value - sum(led["usd"] for led in ledgers), 6)
+                frozen = bool(shared.frozen.value)
+            if unreported > 0 or frozen and not any(led.get("bound_violated") for led in ledgers):
+                retained = Ledger(cap).summary()
+                retained.update(usd=max(0, unreported), unknown_usd=max(0, unreported),
+                                unattributed_worker_usd=max(0, unreported), bound_violated=frozen)
+                if unreported > 0:
+                    retained["cost_basis"]["unknown"] = 1
+                ledgers.append(retained)
         else:
             ledger = Ledger(cap, opts.typesafe_usd_per_call)
             out = run_group(scenarios, opts=opts, cdp_url=cdp_url, suite_meta=suite_meta, run_dir=run_dir,

@@ -1,6 +1,7 @@
 """Suite and scenario model. A suite is YAML or JSON; `qajev check` builds a one-scenario suite from flags."""
 
 import json
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -150,6 +151,7 @@ class Suite:
     plan: str | None = None  # the approved test plan this run follows (planfile.py), as the suite names it
     test_plan: dict | None = None  # that plan's check (planfile.check), set before the run
     tunnel: dict | None = None  # the full tunnel: this machine's dev servers a cloud run reaches (tunnel_spec)
+    cost_cap_explicit: bool = False  # an authored limit cannot degrade silently on a legacy Cloud server
 
     @property
     def mutates(self):
@@ -495,6 +497,9 @@ def parse(data, path=None, devices=None):
     if not isinstance(data, dict):
         raise SuiteError("a suite must be a mapping with a scenarios list")
     _unknown("suite", data, SUITE_KEYS)
+    model_budget = data.get("cost_cap_usd", 1.0)
+    if type(model_budget) not in (int, float) or not math.isfinite(model_budget) or model_budget < 0:
+        raise SuiteError("cost_cap_usd must be finite, non-negative dollars")
     base = data.get("base_url")
     if base and (refused := user_info_refusal(base)):  # first: no later error may quote the URL
         raise SuiteError(f"base_url: {refused}")
@@ -633,7 +638,8 @@ def parse(data, path=None, devices=None):
         base_url=base,
         hosts=sorted(hosts),
         guard=guard,
-        cost_cap_usd=float(data.get("cost_cap_usd", 1.0)),
+        cost_cap_usd=float(model_budget),
+        cost_cap_explicit="cost_cap_usd" in data,
         scenarios=scenarios,
         path=path,
         motion=motion,

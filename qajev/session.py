@@ -71,7 +71,8 @@ def load(ledger):
     """Import jev once per process and apply QAJev's patches. Returns a namespace of the modules."""
     global _jev
     if _jev is not None:
-        _jev.model.post_json = ledger.wrap(providers.route(_jev.raw_post_json, _jev.providers))
+        _jev.model.post_json = providers.route(providers.metered(
+            _jev.model.CLIENT, ledger, verified_bounds=_jev.providers.get("verified_model_bounds")), _jev.providers)
         return _jev
     if "BU_NAME" not in os.environ:
         raise RuntimeError("configure_env() must run before load()")
@@ -128,7 +129,8 @@ def load(ledger):
 
     resolved = providers.apply()
     raw_post_json = jev_model.post_json
-    jev_model.post_json = ledger.wrap(providers.route(raw_post_json, resolved))
+    jev_model.post_json = providers.route(providers.metered(
+        jev_model.CLIENT, ledger, verified_bounds=resolved.get("verified_model_bounds")), resolved)
     _jev = SimpleNamespace(admin=admin, agent=jev_agent, browser=jev_browser, model=jev_model,
                            raw_post_json=raw_post_json, cdp=patient_cdp, providers=resolved)
     return _jev

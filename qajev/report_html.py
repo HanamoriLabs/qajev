@@ -486,11 +486,23 @@ def browser_owner(browser):
 
 
 def decisions_cost(data):
-    """What the decisions cost: Jev on TypeSafe is a flat estimate per call; Clef's is its own token count."""
+    """Keep historical reports readable; current ledgers expose their accounting basis."""
     usd = data["cost"]["usd_typesafe_estimated"]
+    if "cost_basis" in data["cost"]:
+        return f"{decider(data)} decisions ${usd:.6f} (accounted liability)"
     if decider(data) == "Jev":
         return f"TypeSafe ${usd:.4f} (estimated per call)"
     return f"{decider(data)} ${usd:.4f}"
+
+
+def cost_basis_note(data):
+    cost = data["cost"]
+    if "cost_basis" not in cost:
+        return ""
+    return (f"${cost['actual_usd']:.6f} provider-reported; ${cost['estimated_usd']:.6f} token-priced estimate; "
+            f"${cost['unknown_usd']:.6f} unknown liability; "
+            f"${cost['reserved_usd']:.6f} reserved (requests or safety hold). "
+            "Unknown and reserved amounts count against the cap; they are not confirmed spend.")
 
 
 def signed_in(s):
@@ -616,6 +628,8 @@ def render(data):
                                  f"text {data['models']['text']}")))
         if data["models"].get("keys"):  # where QAJev's own keys came from: names only
             run.append(("Keys", _e("; ".join(data["models"]["keys"]))))
+    if cost_basis_note(data):
+        run.append(("Cost basis", _e(cost_basis_note(data))))
     if data.get("motion") in ("reduce", "full"):
         run.append(("Motion", "reduced (pages were told the visitor prefers reduced motion)"
                     if data["motion"] == "reduce" else "full (as-is)"))

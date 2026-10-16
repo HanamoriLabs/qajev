@@ -103,7 +103,8 @@ def _common(p):
                    help="who makes the decisions (default auto: TypeSafe key if set, else OpenRouter key; "
                         "cloudflare: Clef or Clef-flash, only when chosen, see QAJEV_CLEF_MODEL)")
     g.add_argument("--cost-cap", type=float, help="hard cap in USD for the whole run (default: suite, else 1.00)")
-    g.add_argument("--usd-per-call", type=float, default=0.0005, help="estimated TypeSafe cost per decision")
+    g.add_argument("--usd-per-call", type=float, default=0.0005,
+                   help="TypeSafe per-attempt reservation floor; cannot lower the documented upper bound")
     g.add_argument("--strict", action="store_true", help="count stuck scenarios as failures")
     g.add_argument("--no-shots", action="store_true", help="skip end-of-scenario screenshots")
     g.add_argument("--motion", choices=["reduce", "full"],
@@ -1896,6 +1897,9 @@ def cmd_cloud(args, plan):
         run_id = cloud.submit(client, plan)
     except cloud.CloudError as e:
         return _cloud_fail(args, str(e), e.code, e.run_id, e.url)
+    if not plan.model_budget_enforced:
+        print("qajev: warning: Cloud did not confirm server-enforced model budgeting; "
+              "the default cap is not a confirmed Cloud spend limit", file=sys.stderr)
     url = cloud.run_url(client.base, run_id)
     if args.background:
         if args.json:
@@ -1991,8 +1995,16 @@ def _cloud_job(args, stopping=False):
 
 
 def main(argv=None):
+    import math
+
+    from .ledger import CostCapReached
+
     args = build_parser().parse_args(argv)
     args.argv = list(sys.argv[1:] if argv is None else argv)
+    for name in ("cost_cap", "usd_per_call"):
+        value = getattr(args, name, None)
+        if value is not None and (not math.isfinite(value) or value < 0):
+            return _fail(args, f"--{name.replace('_', '-')}: use finite, non-negative dollars", EXIT_CONFIG)
     if args.command in {"check", "run", "smoke", "play"}:
         # Before anything is recorded or sent: a job record and a cloud run keep the arguments as typed
         if refused := url_refusal(args):
@@ -2028,6 +2040,9 @@ def main(argv=None):
     except BrokenPipeError:
         code = 0
         return 0
+    except CostCapReached as error:
+        code = EXIT_CONFIG
+        return _fail(args, str(error), code)
     except KeyboardInterrupt:
         code = EXIT_INTERRUPTED
         if args.command in {"check", "run", "smoke", "play"}:  # stopped before its handler could (still importing)

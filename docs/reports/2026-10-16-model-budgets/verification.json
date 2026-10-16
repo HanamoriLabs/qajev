@@ -1,0 +1,174 @@
+{
+  "created_at": "2026-10-16T05:24:57.198400+00:00",
+  "runtime_commit": "4ca3132611e55d3d2075367591b8d59cb530be5d",
+  "full_suite": {
+    "passed": 1167,
+    "skipped": 101,
+    "failures": 0,
+    "errors": 0,
+    "seconds": 176.786,
+    "lane": "heavy --patient, stock rules",
+    "pytest_workers": 1,
+    "log": "/Users/joseairosa/.local/state/qajev2/cli-economics-2026-10-16/url-full.log",
+    "junit": "/Users/joseairosa/.local/state/qajev2/cli-economics-2026-10-16/url-full.xml"
+  },
+  "focused": {
+    "reservations_providers_self_command": 145,
+    "cloud_suite_project": 154
+  },
+  "faults": {
+    "caught": 17,
+    "total": 17,
+    "cases": [
+      {
+        "fault": "missing_usage_is_free",
+        "check": "test_missing_text_cost_is_unknown_and_retains_conservative_liability",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "ignore_thread_reservations",
+        "check": "test_atomic_thread_reserve_rejects_second_inflight_attempt",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "ignore_shared_reservations",
+        "check": "test_atomic_shared_budget_counts_another_ledgers_inflight_reservation",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "release_uncertain_attempt",
+        "check": "test_possibly_billed_exception_never_releases_the_reservation",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "settle_twice",
+        "check": "test_settlement_is_idempotent_and_does_not_release_other_attempts",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "unmetered_http_retry",
+        "check": "test_transport_retries_have_separate_reservations_and_stop_before_unaffordable_retry",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "trust_url_prefix",
+        "check": "test_cloud_adapter_bounds_apply_only_to_exact_authenticated_final_url",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "lower_documented_bound",
+        "check": "test_legacy_per_call_override_cannot_lower_documented_upper_bound",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "cloud_uncertainty_becomes_actual",
+        "check": "test_cloud_normalized_cost_basis_preserves_uncertainty",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "lost_worker_liability_disappears",
+        "check": "test_runner_report_keeps_liability_when_worker_dies_before_summary",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "replay_uncertain_clef_response",
+        "check": "test_clef_502_never_replays_an_uncertain_response",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "ignore_malformed_usage",
+        "check": "test_budget_integrity.py::test_malformed_supplied_usage_cannot_turn_a_reported_zero_into_free_spend",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "ignore_shared_quote_freeze",
+        "check": "test_budget_integrity.py::test_another_process_cannot_spend_after_a_quote_breach_even_after_an_inflight_refund[paired_flag]",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "drop_bare_value_safety_hold",
+        "check": "test_budget_integrity.py::test_another_process_cannot_spend_after_a_quote_breach_even_after_an_inflight_refund[bare_value]",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "choose_smallest_usd_alias",
+        "check": "test_budget_integrity.py::test_clean_zero_remains_zero_and_valid_dollar_aliases_use_conservative_maximum",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "hide_context_breach",
+        "check": "test_budget_integrity.py::test_context_breach_cannot_be_hidden_by_an_invalid_companion_field_or_zero_dollars",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "trust_http_or_url_credentials",
+        "check": "test_budget_integrity.py::test_http_or_credential_urls_are_refused_before_transport_even_with_operator_bound",
+        "caught": true,
+        "exit_code": 1
+      }
+    ],
+    "raw_evidence": "/Users/joseairosa/.local/state/qajev2/cli-economics-2026-10-16/url-faults.json"
+  },
+  "static": {
+    "ruff_changed_python": "pass",
+    "basedpyright_qajev": "0 errors, 0 warnings",
+    "diff_check": "pass"
+  },
+  "source_sha256": {
+    "qajev/cli.py": "857e6ec9c3089723fa14d71aa9f495929edc8a005bc09e6c90f1b53b33e9ed38",
+    "qajev/cloud.py": "20fb6d503543cad216600077f6b720d3f55ec0fcf51bc8b36faa185175ccbe09",
+    "qajev/ledger.py": "95b3345ce8ba28aa7e4c59be757b7c4d5a8817486968030bc4260124f34ea1ee",
+    "qajev/providers.py": "7e972c53e45eeefd98b3497fee251ca8ad603ace744971e9b1061ba97279c66a",
+    "qajev/report.py": "1442cd72efe89de77be4b1da0399943bb13f8916a3b0aca0e1031e213e77f26f",
+    "qajev/report_html.py": "b499f44904d235b13bbe4c7a597fb5f0d6301988dcf22e027090a6fd5da2965a",
+    "qajev/runner.py": "cce28a2c5d30a98b3a0c8d51573b64fe547898b9160b3a9c71e2b88e035f5cef",
+    "qajev/session.py": "fc37152054f5c331e640a19e8d295b022e599de43013334f2f4011ab59bdebe4",
+    "qajev/suite.py": "6a8a5eee55b6c5b71b7deae60d9dd414699f19eb21c2b2b8fe2c8e7094384894",
+    "scripts/economics_faults.py": "eb7fc5b5e81011dc5c3cfbe3ddf88beb0c5eec02df04e0dab72ed7539e82adfb",
+    "tests/test_budget_integrity.py": "96ac980b7b0f02ce17364926240919757180695fd39be7b62b66a31f83b8022c",
+    "tests/test_cloud.py": "5053f1346202e73feb03bbfa3a5d9d58b651226c3dea4f327a493272c0098679",
+    "tests/test_economics_reservations.py": "719cdb8217fd6589de69220540654eb4dad8a026f48b7d8adfef9f3df2a62f23",
+    "tests/test_ledger_guard.py": "dfa48ff1393d66bc36fe42240c7b77b95fdf9fc1fa536a6ad706fc26ff82621f",
+    "tests/test_providers.py": "548d21cf7674900261345f51a5c5e9624883a2e8476e95fcacc0b32e2fa86303"
+  },
+  "red_before": {
+    "initial_reservation_cases": 14,
+    "authored_cloud_cap_cases": 2,
+    "uncertain_replay_cases": 2,
+    "supplier_integrity_and_shared_freeze_cases": 11,
+    "unsafe_or_modified_url_cases": 6
+  },
+  "paid_model_calls": 0,
+  "paid_browser_runs": 0,
+  "actions_runs": 0,
+  "production_changes": [],
+  "installed_runner_changed": false,
+  "release_dependencies": [
+    "Cloud guard + additive schema + authenticated job-bound adapter must be reviewed and enabled separately",
+    "Normal CLI/live release and sync gates; current installed runtime remains frozen"
+  ],
+  "preserved_base_head": "222c80f13794b27efe23638510353f181cf89f20",
+  "shared_budget": {
+    "normal_runner": "paired dollars + frozen flag under one shared RLock",
+    "bare_value_compatibility": "additional full-cap guard hold reported only as reserved, never actual",
+    "real_process_proof": "another process refuses after breach and after in-flight zero-cost settlement"
+  },
+  "safety_patch_commit": "85d1c59ef00eee37681916817e40a65206c4ec83",
+  "url_boundary": "HTTPS and no URL userinfo before all paid attempts; exact known endpoint excludes nondefault port/query/fragment"
+}

@@ -55,7 +55,10 @@ the model behaving well: the rules are enforced in the page and in QAJev itself.
   (or the text you give it).
 - **Use your own browser.** QAJev starts its own Chrome with its own profile, never your everyday one, and
   closes it after the run.
-- **Spend past the cap.** Every run has a hard cost cap (default $1), checked before every paid call.
+- **Spend past the cap.** Each model HTTP attempt reserves its maximum liability before it starts, including
+  retries and concurrent workers. Missing usage or a failed response keeps its allowance. Unknown routes refuse
+  unless an explicit operator bound is supplied; that estimate is not verified pricing. Explicit Cloud caps require
+  a server that confirms enforcement. See [Model budgets](model-budgets.md) for assumptions and compatibility.
 
 ## How it is enforced
 

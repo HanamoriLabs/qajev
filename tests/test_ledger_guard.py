@@ -13,14 +13,15 @@ OR = "https://openrouter.ai/api/v1/chat/completions"
 
 def test_cap_is_checked_before_the_call_is_made():
     calls = []
-    ledger = Ledger(cap_usd=0.001, typesafe_usd_per_call=0.0005)
+    ledger = Ledger(cap_usd=0.005506, typesafe_usd_per_call=0.0005)
     post = ledger.wrap(lambda url, key, body: calls.append(url) or {"usage": {"total_tokens": 10}})
     post(TS, "k", {})
     post(TS, "k", {})
     with pytest.raises(CostCapReached):
         post(TS, "k", {})
     assert len(calls) == 2
-    assert ledger.summary()["calls"]["typesafe"] == 2 and ledger.summary()["usd"] == 0.001
+    assert ledger.summary()["calls"]["typesafe"] == 2 and ledger.summary()["usd"] == 0.005506
+    assert ledger.summary()["unknown_usd"] == 0.005506  # total-only usage cannot price input/output separately
 
 
 def test_openrouter_is_asked_for_real_cost_and_it_is_used():
@@ -30,7 +31,7 @@ def test_openrouter_is_asked_for_real_cost_and_it_is_used():
         seen.update(body)
         return {"usage": {"prompt_tokens": 5, "completion_tokens": 3, "cost": 0.0002}}
 
-    ledger = Ledger(cap_usd=1)
+    ledger = Ledger(cap_usd=1, unknown_usd_per_attempt=0.001)
     ledger.wrap(post)(OR, "k", {"model": "m"})
     assert seen["usage"] == {"include": True}
     s = ledger.summary()
@@ -50,7 +51,7 @@ def test_failed_calls_are_counted_and_re_raised():
 
 def test_workers_share_one_cap():
     shared = multiprocessing.get_context("spawn").Value("d", 0.0)
-    a, b = Ledger(0.001, 0.0005, shared=shared), Ledger(0.001, 0.0005, shared=shared)
+    a, b = Ledger(0.005506, 0.0005, shared=shared), Ledger(0.005506, 0.0005, shared=shared)
     a.wrap(lambda *_: {})(TS, "k", {})
     b.wrap(lambda *_: {})(TS, "k", {})
     with pytest.raises(CostCapReached):

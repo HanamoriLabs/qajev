@@ -85,7 +85,7 @@ def test_clef_on_cloudflare_is_a_choice_and_auto_still_prefers_jev():
         P.resolve({**CF_CHOSEN, "QAJEV_CLEF_MODEL": "clef-mega"})
 
 
-def test_clef_route_bridges_one_option_questions_the_envelope_and_the_cost():
+def test_clef_route_bridges_one_option_questions_and_preserves_usage_for_transport_metering():
     # Clef rejects a choice with a single option ("Dictionary should have at least 2 items"); Jev accepts it.
     env = {**CF, "QAJEV_JEV_PROVIDER": "cloudflare"}
     resolved = P.apply(env)
@@ -93,7 +93,7 @@ def test_clef_route_bridges_one_option_questions_the_envelope_and_the_cost():
 
     def workers_ai(url, key, body):
         sent.append((url, key, body))
-        return {"success": True, "result": {"model": "clef-flash", "usage": {"input_tokens": 1_000_000},
+        return {"success": True, "result": {"model": "clef-flash", "usage": {"input_tokens": 10_000},
                                             "answers": {"operation": {"type": "choice", "choice": "CLICK",
                                                                       "probabilities": {"CLICK": 0.9, "DONE": 0.1},
                                                                       "confidence": 0.8}}}}
@@ -108,13 +108,13 @@ def test_clef_route_bridges_one_option_questions_the_envelope_and_the_cost():
     assert out["answers"]["type_text_target"] == {"type": "choice", "choice": "1", "probabilities": {"1": 1.0},
                                                   "confidence": 1.0}
     assert out["answers"]["operation"]["choice"] == "CLICK"
-    assert out["usage"]["cost_usd"] == 0.09  # a million input tokens at Clef-flash's $0.09
+    assert out["usage"] == {"input_tokens": 10_000}  # priced once at the final HTTP route, without fake dollar usage
     post("https://openrouter.ai/api/v1/chat/completions", "or", {"model": "text"})
     assert sent[-1][0].endswith("/chat/completions")  # the text helper is untouched
 
 
-def test_clef_route_tries_once_more_after_a_dropped_connection_but_not_after_a_bad_request():
-    # Seen live: one Clef call in 36 lost its connection mid-run. Nothing was done in the page, so asking again is safe.
+def test_clef_route_never_replays_a_lost_or_ambiguous_response():
+    # No UI action executed does not prove a model request was unbilled or safe to replay.
     env = {**CF, "QAJEV_JEV_PROVIDER": "cloudflare"}
     resolved = P.apply(env)
     failures, calls = [], []
@@ -128,11 +128,14 @@ def test_clef_route_tries_once_more_after_a_dropped_connection_but_not_after_a_b
     post = P.route(workers_ai, resolved, env)
     decision = {"model": "jev-latest", "state": {}, "questions": {
         "operation": {"type": "choice", "criteria": {"CLICK": "click", "DONE": "done"}}}}
-    for transient in ("Model connection failed; no action executed.",
-                      "Model provider returned HTTP 502; no action executed."):
-        failures[:] = [transient]
+    for uncertain in ("Model connection failed; no action executed.",
+                      "Model provider returned HTTP 502; no action executed.",
+                      "Model provider returned invalid JSON; no action executed."):
+        failures[:] = [uncertain]
         calls.clear()
-        assert post(P.TYPESAFE_URL, "k", decision)["answers"]["operation"]["choice"] == "DONE" and len(calls) == 2
+        with pytest.raises(RuntimeError):
+            post(P.TYPESAFE_URL, "k", decision)
+        assert len(calls) == 1
     failures[:] = ["Model connection failed; no action executed."] * 2
     with pytest.raises(RuntimeError, match="connection failed"):
         post(P.TYPESAFE_URL, "k", decision)
