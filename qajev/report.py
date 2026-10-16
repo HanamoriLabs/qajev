@@ -6,6 +6,7 @@ import time
 from urllib.parse import urlsplit
 
 from . import __version__, config, plan, planfile, report_html, verdict
+from .artifacts import manifest_path
 
 OBVIOUS = 0.8
 MOTION = {
@@ -306,6 +307,9 @@ def markdown(data):
         if r.get("goal"):
             lines.append(f"Goal: {_cell(r['goal'], 400)}")
             lines.append("")
+        for entry in r.get("artifacts") or []:
+            if path := manifest_path(entry):
+                lines.append(f"- Attachment: [{entry['name']}]({path}) ({entry['kind'].upper()})")
         for check in r.get("checks", []):
             mark = "✅" if check["ok"] else "❌"
             lines.append(f"- {mark} {_cell(check['check'], 200)}" + (f" — {_cell(check['detail'])}"

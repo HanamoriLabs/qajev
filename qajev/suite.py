@@ -59,6 +59,7 @@ SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
     "persona", "speech", "vision", "about", "clients", "steps", "state", "seed", "color_scheme", "expect_fail",
+    "capture",
 }
 # A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
 MAX_CLIENTS = 12
@@ -120,6 +121,7 @@ class Scenario:
     seed: int | None = None  # for `jitter`: the same seed gives the same offsets
     color_scheme: str | None = None  # light | dark: the page's prefers-color-scheme answers so; None: the browser's
     expect_fail: dict | None = None  # a planted fault: {check, words}, the one check it must fail on (_expect_fail)
+    capture: dict = field(default_factory=dict)  # opt-in named PNG and full JSON attachments, separate from checks
 
     @property
     def task(self):
@@ -170,6 +172,28 @@ def _list(value, where):
     if not isinstance(value, list):
         raise SuiteError(f"{where} must be a string or a list")
     return value
+
+
+def _capture(value, where):
+    if not isinstance(value, dict) or not value:
+        raise SuiteError(f"{where}: capture must name a png or json export")
+    _unknown(where, value, {"png", "json"})
+    out = {}
+    for kind, spec in value.items():
+        if kind == "json":
+            if not isinstance(spec, dict):
+                raise SuiteError(f"{where}.json needs name and js")
+            _unknown(f"{where}.json", spec, {"name", "js"})
+            expression = spec.get("js")
+            if not isinstance(expression, str) or not expression.strip() or len(expression.encode()) > 8192:
+                raise SuiteError(f"{where}.json.js must be a non-empty expression of at most 8192 UTF-8 bytes")
+            name = spec.get("name")
+        else:
+            name = spec
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", name):
+            raise SuiteError(f"{where}.{kind}: use a name of 1–64 letters, digits, _ or -; no extension or path")
+        out[kind] = {"name": name, "js": expression} if kind == "json" else name
+    return out
 
 
 def _device(value, where):
@@ -551,6 +575,9 @@ def parse(data, path=None, devices=None):
         if mode not in MODES:
             raise SuiteError(f"{where}: mode must be one of {MODES}")
         expect = _expect(item.get("expect"), f"{where}.expect")
+        capture = _capture(item["capture"], f"{where}.capture") if "capture" in item else {}
+        if capture and ("clients" in item or data.get("real_devices") or os.environ.get("QAJEV_REAL_DEVICES")):
+            raise SuiteError(f"{where}.capture supports standard browser cases, not clients or real_devices")
         goal = item.get("goal")
         clients = None
         if "clients" in item:
@@ -606,6 +633,7 @@ def parse(data, path=None, devices=None):
             seed=item.get("seed"),
             color_scheme=color_scheme(item.get("color_scheme", data.get("color_scheme")), f"{where}.color_scheme"),
             expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where),
+            capture=capture,
         ))
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")

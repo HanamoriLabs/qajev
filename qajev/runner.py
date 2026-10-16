@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import chrome, live, plan, providers, ux, verdict, vision
+from . import artifacts, chrome, live, plan, providers, ux, verdict, vision
 from .config import redact, redact_tree, secret_values
 from .ledger import CostCapReached, Ledger
 from .suite import has_checks
@@ -304,7 +304,14 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         except (RuntimeError, ValueError, TimeoutError, OSError) as e:
             if stop in {"done", "reached", "checked", "blocked"}:
                 stop, detail = "browser_error", f"while checking: {type(e).__name__}: {e}"
-        if opts.shots and run_dir:
+        if getattr(scenario, "capture", None):
+            files, errors = artifacts.capture(session, scenario, run_dir, shots=opts.shots)
+            result["artifacts"] = files
+            result["shot"] = next((entry["path"] for entry in files if entry["kind"] == "png"), None)
+            if errors:
+                result["capture_error"] = "; ".join(errors)
+                stop, detail = "browser_error", "artifact capture failed: " + result["capture_error"]
+        if opts.shots and run_dir and not result.get("shot"):
             shot = session.screenshot(run_dir / "shots" / f"{slug(scenario.name)}.jpg")
             result["shot"] = str(shot.relative_to(run_dir)) if shot else None
 
@@ -335,6 +342,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail,
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),
                                        url=scenario.url, before=before)
+    if result.get("capture_error"):
+        outcome, reason = "harness", "artifact capture failed: " + result["capture_error"]
     result.update({k: v for k, v in (("stop_detail", detail), ("not_run", not_run)) if v})
     idle = verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
                                  session.agent.state["history"]) if scenario.goal else None
