@@ -1026,15 +1026,18 @@ class Session:
         if parts.netloc not in self.hosts:
             raise LeftSite(f"now on {parts.netloc}, allowed: {sorted(self.hosts)}")
 
-    def screenshot(self, path, marked=True):
-        """The viewport as a JPEG at path. marked: where the read-only guard hid a control, the picture shows a dashed
+    def screenshot(self, path, marked=True, format="jpeg"):
+        """The viewport at path, JPEG by default or an explicit lossless PNG. marked: the guard shows a dashed
         box labelled "hidden by guard" (guard.js mark), so a missing button never reads as the page's bug (13 Oct)."""
+        if format not in {"jpeg", "png"}:
+            raise ValueError("screenshot format must be jpeg or png")
         mark = "window.__qajev && window.__qajev.mark ? window.__qajev.mark(%s) : 0"
         try:
             if marked:
                 with contextlib.suppress(RuntimeError, KeyError, TimeoutError):
                     self.evaluate(mark % "true", timeout_ms=2000)
-            data = self.call("Page.captureScreenshot", format="jpeg", quality=70)["data"]
+            params = {"format": format, **({"quality": 70} if format == "jpeg" else {})}
+            data = self.call("Page.captureScreenshot", **params)["data"]
         except (RuntimeError, KeyError, TimeoutError):
             return None
         finally:

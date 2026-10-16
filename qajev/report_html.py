@@ -270,6 +270,8 @@ def planted_count(n):
 
 
 def _scenario(i, r, who="Jev"):
+    from .artifacts import manifest_path
+
     jev = r.get("jev") or {}
     it = plan_mod.item(i + 1, r.get("name"), r.get("about"), r.get("checks") or [], r.get("outcome"))
     title = {"pass": "What it proved", "fail": "What went wrong"}.get(r["outcome"], "What happened")
@@ -305,6 +307,11 @@ def _scenario(i, r, who="Jev"):
         facts.append(("Took", _e(" · ".join(t for t in timing if t))))
     if facts:
         parts.append("<dl>" + "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts) + "</dl>")
+    exports = [entry for entry in r.get("artifacts") or [] if manifest_path(entry)]
+    if exports:
+        parts.append('<p>Attachments: ' + " · ".join(
+            f'<a href="{_e(entry["path"])}">{_e(entry["name"])}</a> '
+            f'({_e(entry["kind"].upper())})' for entry in exports) + '</p>')
 
     checks = r.get("checks") or []
     notes = []

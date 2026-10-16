@@ -735,25 +735,52 @@ def fetch_report(client, run_id, folder):
         except ApiError as e:
             if e.status != 404:
                 raise
-    named = set()
+    from .artifacts import PNG_MAGIC, manifest_path
+
+    named, attachments = set(), {}
     for s in data.get("scenarios") or []:
         for path in [s.get("shot"), *[(r or {}).get("path") for r in s.get("react") or [] if isinstance(r, dict)]]:
             if _plain_relative(path):
                 named.add(path)
+        for entry in s.get("artifacts") or []:
+            path = manifest_path(entry)
+            if path is None:
+                raise CloudError("the report contains an invalid artifact manifest; download is incomplete")
+            if path in attachments and attachments[path] != entry:
+                raise CloudError("the report contains conflicting artifact manifests; download is incomplete")
+            attachments[path] = entry
+            named.add(path)
     kept, root = 0, folder.resolve()
     for path in sorted(named):
+        if path in attachments:
+            target = root
+            for part in path.split("/"):
+                target /= part
+                if target.is_symlink():
+                    raise CloudError("artifact download refuses symbolic links")
         dest = (folder / path).resolve()
         if root not in dest.parents:
             continue
         try:
             body = get_file(client, run_id, path)
         except ApiError as e:
-            if e.status == 404:
+            if e.status == 404 and path not in attachments:
                 continue
             raise
+        if path in attachments:
+            entry = attachments[path]
+            if len(body) != entry["bytes"] or hashlib.sha256(body).hexdigest() != entry["sha256"]:
+                raise CloudError("artifact bytes do not match the report manifest; download is incomplete")
+            if entry["kind"] == "png" and not body.startswith(PNG_MAGIC):
+                raise CloudError("the PNG artifact has a different image kind; download is incomplete")
+            if entry["kind"] == "json":
+                try:
+                    json.loads(body)
+                except (ValueError, UnicodeError):
+                    raise CloudError("the JSON artifact is not valid JSON; download is incomplete") from None
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(body)
-        kept += 1
+        kept += path not in attachments or attachments[path]["kind"] == "png"
     return data, kept
 
 
