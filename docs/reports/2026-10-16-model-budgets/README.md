@@ -1,22 +1,23 @@
 # CLI/MCP model-budget proof
 
-Runtime source: `85d1c59ef00eee37681916817e40a65206c4ec83`.
+Runtime source: `4ca3132611e55d3d2075367591b8d59cb530be5d`.
 The earlier clean head `222c80f13794b27efe23638510353f181cf89f20` remains in history;
 the integrity/shared-freeze fix is a separate commit above it.
 Local build only. No push, installed-runner sync, paid provider/browser call,
 Stripe operation, GitHub Actions, deployment or restart.
 
-- **1,160 pass, 101 skip**, zero errors/failures: full Python suite through the
+- **1,167 pass, 101 skip**, zero errors/failures: full Python suite through the
   stock heavy lane, `--patient`, one pytest worker. The budget race explicitly
   starts two worker processes. The opt-in live checks remain skipped.
-- **138 focused checks pass** for reservations, integrity, providers and child-process
+- **145 focused checks pass** for reservations, integrity, providers and child-process
   binding; **154 pass** for Cloud submission, suites and projects.
-- **16/16 planted faults caught by their named behavioral checks**, including
+- **17/17 planted faults caught by their named behavioral checks**, including
   hidden HTTP retries, missing usage becoming free, thread/process liabilities,
   repeated settlement, discarded worker liability, uncertain Cloud dollars being
   reported as actual, automatic replay of an uncertain Clef response, malformed
   usage becoming free, ignoring a shared quote hold, releasing a bare-Value
-  safety hold, choosing a smaller dollar alias and hiding a context breach.
+  safety hold, choosing a smaller dollar alias, hiding a context breach and
+  trusting HTTP or embedded URL credentials.
 - Changed Python passes Ruff; the full `qajev` package passes basedpyright;
   `git diff --check` passes.
 
@@ -33,6 +34,13 @@ from requesting a model, including after an already in-flight request settles at
 zero. Dollar accounting remains $0.10 in that fixture; the frozen bit is not a
 fictional charge. Bare-Value compatibility uses an explicitly labelled reserved
 guard hold that cannot be released by other workers' later settlements.
+
+The URL follow-up established six more failures before its guard (the existing
+lookalike-host refusal already passed). HTTP or credential URLs now refuse before
+transport even with an operator bound. Native supplier pricing additionally
+requires its exact endpoint, default TLS port and no query/fragment. Plain
+refusals include no URL credentials. All seven URL cases pass in the frozen full
+gate above.
 
 The first broad check exposed an unrelated test-environment mismatch: the reused
 development environment imported installed 0.4.31 in child processes while the
