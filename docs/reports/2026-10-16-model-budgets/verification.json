@@ -1,0 +1,127 @@
+{
+  "created_at": "2026-10-16T05:05:44.885878+00:00",
+  "runtime_commit": "4c78a16b5b056d1e1d9408e9fb8cdfb626e28bf9",
+  "full_suite": {
+    "passed": 1149,
+    "skipped": 101,
+    "failures": 0,
+    "errors": 0,
+    "seconds": 179.684,
+    "lane": "heavy --patient, stock rules",
+    "pytest_workers": 1,
+    "log": "/Users/joseairosa/.local/state/qajev2/cli-economics-2026-10-16/final-full.log",
+    "junit": "/Users/joseairosa/.local/state/qajev2/cli-economics-2026-10-16/final-full.xml"
+  },
+  "focused": {
+    "reservations_providers_self_command": 127,
+    "cloud_suite_project": 154
+  },
+  "faults": {
+    "caught": 11,
+    "total": 11,
+    "cases": [
+      {
+        "fault": "missing_usage_is_free",
+        "check": "test_missing_text_cost_is_unknown_and_retains_conservative_liability",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "ignore_thread_reservations",
+        "check": "test_atomic_thread_reserve_rejects_second_inflight_attempt",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "ignore_shared_reservations",
+        "check": "test_atomic_shared_budget_counts_another_ledgers_inflight_reservation",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "release_uncertain_attempt",
+        "check": "test_possibly_billed_exception_never_releases_the_reservation",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "settle_twice",
+        "check": "test_settlement_is_idempotent_and_does_not_release_other_attempts",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "unmetered_http_retry",
+        "check": "test_transport_retries_have_separate_reservations_and_stop_before_unaffordable_retry",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "trust_url_prefix",
+        "check": "test_cloud_adapter_bounds_apply_only_to_exact_authenticated_final_url",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "lower_documented_bound",
+        "check": "test_legacy_per_call_override_cannot_lower_documented_upper_bound",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "cloud_uncertainty_becomes_actual",
+        "check": "test_cloud_normalized_cost_basis_preserves_uncertainty",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "lost_worker_liability_disappears",
+        "check": "test_runner_report_keeps_liability_when_worker_dies_before_summary",
+        "caught": true,
+        "exit_code": 1
+      },
+      {
+        "fault": "replay_uncertain_clef_response",
+        "check": "test_clef_502_never_replays_an_uncertain_response",
+        "caught": true,
+        "exit_code": 1
+      }
+    ],
+    "raw_evidence": "/Users/joseairosa/.local/state/qajev2/cli-economics-2026-10-16/faults.json"
+  },
+  "static": {
+    "ruff_changed_python": "pass",
+    "basedpyright_qajev": "0 errors, 0 warnings",
+    "diff_check": "pass"
+  },
+  "source_sha256": {
+    "qajev/cli.py": "857e6ec9c3089723fa14d71aa9f495929edc8a005bc09e6c90f1b53b33e9ed38",
+    "qajev/cloud.py": "20fb6d503543cad216600077f6b720d3f55ec0fcf51bc8b36faa185175ccbe09",
+    "qajev/ledger.py": "f875d14056bc335fa304660a4eb0d144aa57bae01c19e5f8052a9bc03b68ff90",
+    "qajev/providers.py": "7e972c53e45eeefd98b3497fee251ca8ad603ace744971e9b1061ba97279c66a",
+    "qajev/report.py": "bffdfa56b17cc92b16b7455f888040eeeda33b9e0aeaf277602b3206a0472c83",
+    "qajev/report_html.py": "4260e8809b912e0bfccb9d5bea64a9e4b51276d6cfd7623b78478e35441658e3",
+    "qajev/runner.py": "50583b929610e00a0ab7516c7aeb1452edf83e9601ddd1ebf55279df81a82c08",
+    "qajev/session.py": "fc37152054f5c331e640a19e8d295b022e599de43013334f2f4011ab59bdebe4",
+    "qajev/suite.py": "6a8a5eee55b6c5b71b7deae60d9dd414699f19eb21c2b2b8fe2c8e7094384894",
+    "scripts/economics_faults.py": "ad407b69c0ff694e73208dcb8e9ec5c9ecdd9c272b90397de795d63550f43676",
+    "tests/test_cloud.py": "5053f1346202e73feb03bbfa3a5d9d58b651226c3dea4f327a493272c0098679",
+    "tests/test_economics_reservations.py": "719cdb8217fd6589de69220540654eb4dad8a026f48b7d8adfef9f3df2a62f23",
+    "tests/test_ledger_guard.py": "dfa48ff1393d66bc36fe42240c7b77b95fdf9fc1fa536a6ad706fc26ff82621f",
+    "tests/test_providers.py": "548d21cf7674900261345f51a5c5e9624883a2e8476e95fcacc0b32e2fa86303"
+  },
+  "red_before": {
+    "initial_reservation_cases": 14,
+    "authored_cloud_cap_cases": 2,
+    "uncertain_replay_cases": 2
+  },
+  "paid_model_calls": 0,
+  "paid_browser_runs": 0,
+  "actions_runs": 0,
+  "production_changes": [],
+  "installed_runner_changed": false,
+  "release_dependencies": [
+    "Cloud guard + additive schema + authenticated job-bound adapter must be reviewed and enabled separately",
+    "Normal CLI/live release and sync gates; current installed runtime remains frozen"
+  ]
+}

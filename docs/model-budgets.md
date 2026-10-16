@@ -16,6 +16,12 @@ HTTP 502 and bad JSON never auto-replay an uncertain request. The transport reta
 only the dependency's explicit 429/529/503 retry statuses (at most three attempts),
 with a fresh full reservation for each. All failed-attempt liability stays held.
 
+A received, valid HTTP 200/JSON text-helper response can contain an invalid field
+value. The existing helper may ask again up to three semantic attempts. This is
+different from an uncertain or lost HTTP response: every fresh semantic attempt
+still reserves separately and keeps any prior billing liability. It does not retry
+timeouts, HTTP 502 or invalid HTTP JSON.
+
 The existing run/report fields stay available. New reports additionally give
 `actual_usd` (supplier-reported), `estimated_usd` (token-priced), `unknown_usd`,
 `reserved_usd`, `cost_basis` and `reservation_basis`. `usd` is their total accounted
