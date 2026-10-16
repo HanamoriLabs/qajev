@@ -59,6 +59,9 @@ Sources: [TypeSafe models](https://docs.typesafe.ai/models.md),
 ## Other models and overrides
 
 An unknown model, host, price or context bound fails before the paid request.
+Every model URL must use HTTPS and contain no embedded credentials, even with an
+operator upper bound. A lookalike host, nondefault TLS port, query or fragment
+never inherits a supplier's known price/context qualification.
 OpenRouter IDs do not inherit TypeSafe's price or context limits. No automatic
 paid qualification occurs. To use an unqualified route, an operator must explicitly
 supply a conservative per-attempt USD upper bound with `QAJEV_MODEL_MAX_USD`.

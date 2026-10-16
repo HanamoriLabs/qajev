@@ -82,3 +82,30 @@ def test_context_breach_cannot_be_hidden_by_an_invalid_companion_field_or_zero_d
     assert ledger.summary()["unknown_usd"] == BOUND
     with pytest.raises(CostCapReached):
         ledger.wrap(lambda *_: pytest.fail("broken context bound must stop later requests"))(TS, "fake", {})
+
+
+@pytest.mark.parametrize("url", [
+    "http://api.typesafe.ai/v1/systemone",
+    "https://embedded-user:embedded-secret@api.typesafe.ai/v1/systemone",
+    "https://@api.typesafe.ai/v1/systemone",
+])
+def test_http_or_credential_urls_are_refused_before_transport_even_with_operator_bound(url):
+    calls = []
+    with pytest.raises(CostCapReached) as error:
+        Ledger(1, unknown_usd_per_attempt=0.1).wrap(lambda *_: calls.append(True))(url, "fake", {})
+    assert not calls
+    assert "embedded-secret" not in str(error.value)
+    assert "embedded-user" not in str(error.value)
+
+
+@pytest.mark.parametrize("url", [
+    "https://api.typesafe.ai.evil.example/v1/systemone",
+    "https://api.typesafe.ai:8443/v1/systemone",
+    "https://api.typesafe.ai/v1/systemone?long_context=true",
+    "https://api.typesafe.ai/v1/systemone#different-endpoint",
+])
+def test_lookalike_or_modified_endpoint_does_not_inherit_supplier_price_bound(url):
+    calls = []
+    with pytest.raises(CostCapReached):
+        Ledger(1).wrap(lambda *_: calls.append(True))(url, "fake", {})
+    assert not calls

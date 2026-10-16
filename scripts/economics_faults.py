@@ -71,6 +71,10 @@ FAULTS = [
      'breach |= any(value > context for value in valid_inputs) or bool(\n'
      '                output_price and any(value > maximum_output for value in valid_outputs))', 'breach |= False',
      "test_budget_integrity.py::test_context_breach_cannot_be_hidden_by_an_invalid_companion_field_or_zero_dollars"),
+    ("trust_http_or_url_credentials", "qajev/ledger.py",
+     'if (parsed.scheme != "https" or not parsed.hostname\n'
+     '                or parsed.username is not None or parsed.password is not None):', 'if False:',
+     "test_budget_integrity.py::test_http_or_credential_urls_are_refused_before_transport_even_with_operator_bound"),
 ]
 
 

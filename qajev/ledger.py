@@ -110,7 +110,16 @@ class Ledger:
         (input context tokens, USD/M input, USD/M output, maximum output).
         Bounds depend on suppliers enforcing documented context/output limits.
         """
-        parsed, model = urlsplit(url), body.get("model")
+        try:
+            parsed, model = urlsplit(url), body.get("model")
+            port = parsed.port
+        except (TypeError, ValueError):
+            raise CostCapReached("model requests need a valid HTTPS URL without embedded credentials") from None
+        if (parsed.scheme != "https" or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None):
+            raise CostCapReached("model requests need HTTPS and no embedded URL credentials")
+        if port not in (None, 443) or parsed.query or parsed.fragment:
+            return None  # modified endpoints never inherit a supplier's price/context qualification
         if parsed.hostname == "api.typesafe.ai" and parsed.path == "/v1/systemone" and model in (
             None, "jev-latest", "jev-1.13.0", "jev-preview"
         ):
