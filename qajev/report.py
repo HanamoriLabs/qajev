@@ -50,7 +50,8 @@ def merge_ledgers(ledgers):
     # Preserve legacy keys; new summaries explicitly separate known spend from
     # held liabilities. Missing fields in historical reports remain absent.
     if any("cost_basis" in led for led in ledgers):
-        for key in ("actual_usd", "estimated_usd", "unknown_usd", "reserved_usd", "unattributed_worker_usd"):
+        for key in ("actual_usd", "estimated_usd", "unknown_usd", "reserved_usd", "unattributed_worker_usd",
+                    "guard_hold_usd"):
             total[key] = round(sum(led.get(key, 0) for led in ledgers), 6)
         for key, names in (("cost_basis", ("reported", "token_priced", "unknown", "local_free")),
                            ("reservation_basis", ("documented", "operator_estimate", "cloud_enforced"))):

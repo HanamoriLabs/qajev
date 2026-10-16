@@ -99,3 +99,25 @@ settlement. A token-priced estimate never becomes supplier-reported dollars.
 `conservative_unknown` or uncertain usage keeps the client's whole reservation,
 even if the Worker also returns a numeric `cost_usd`. A validated `local_free`
 response is zero. A missing or invalid Cloud basis stays unknown.
+
+## Usage integrity and shared quote holds
+
+Every supplied token and dollar field must be valid, including alternate aliases.
+A clean reported zero stays zero; a zero alongside malformed supplied usage is
+unknown. If several valid dollar aliases differ, accounting uses their maximum.
+A valid observed input/output context breach still closes paid calls when another
+supplied field is malformed. A larger operator reservation cannot conceal a
+violation of the supplier's smaller documented quote.
+
+Run workers share `SharedBudget`: a dollar amount and a frozen bit protected by one
+interprocess lock. Any observed quote breach sets the bit for every worker. Later
+settlement of an already in-flight request can release its allowance but cannot
+clear that bit or reopen paid admission. Actual supplier dollars remain actual;
+freezing a run does not invent a supplier charge.
+
+Programmatic callers using only the older bare `multiprocessing.Value('d')`
+cannot carry a shared bit. On a quote breach they conservatively retain an extra
+full-cap safety reservation, beyond existing liability. Even releasing every
+other in-flight reservation cannot reopen the allowance. `guard_hold_usd` labels
+this extra amount within `reserved_usd`; it is never billed/actual spend. The
+normal CLI worker payload uses the paired flag instead of this fallback.

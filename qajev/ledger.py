@@ -10,7 +10,7 @@ import threading
 from contextlib import nullcontext
 from dataclasses import dataclass
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
-from typing import TypeGuard
+from typing import Any, TypeGuard
 from urllib.parse import urlsplit
 
 
@@ -23,7 +23,7 @@ def _number(value: object) -> TypeGuard[int | float]:
 
 
 def _token(value: object) -> TypeGuard[int]:
-    return type(value) is int and value >= 0
+    return type(value) is int and 0 <= value <= 100_000_000
 
 
 def _micros(value, rounding=ROUND_CEILING):
@@ -38,6 +38,31 @@ class _Attempt:
     pricing: tuple | None
     bound_basis: str
     cloud_normalized: bool
+    quote: int
+
+
+@dataclass
+class SharedBudget:
+    """Run-wide dollars and quote-integrity bit, always read/written under one lock."""
+
+    dollars: Any  # multiprocessing synchronized ctypes wrappers, shared with spawned workers
+    frozen: Any
+
+    @classmethod
+    def create(cls, context):
+        lock = context.RLock()
+        return cls(context.Value("d", 0.0, lock=lock), context.Value("b", False, lock=lock))
+
+    def get_lock(self):
+        return self.dollars.get_lock()
+
+    @property
+    def value(self):
+        return self.dollars.value
+
+    @value.setter
+    def value(self, value):
+        self.dollars.value = value
 
 
 class Ledger:
@@ -70,6 +95,7 @@ class Ledger:
         self.active = {}
         self.serial = 0
         self.bound_violated = False
+        self.guard_hold = 0  # conservative shared quarantine only for legacy bare-Value callers
 
     @staticmethod
     def provider(url):
@@ -106,7 +132,7 @@ class Ledger:
         return None
 
     def _liability(self):
-        return sum(self.usd.values()) + sum(a.reserve for a in self.active.values())
+        return sum(self.usd.values()) + sum(a.reserve for a in self.active.values()) + self.guard_hold
 
     def spent(self):
         with self.lock, self.shared.get_lock() if self.shared is not None else nullcontext():
@@ -121,6 +147,7 @@ class Ledger:
         if pricing:
             context, input_price, output_price, output = pricing
             reserve = int((context * input_price + output * output_price).to_integral_value(rounding=ROUND_CEILING))
+            quote = reserve
             operator_floor = self.explicit_bound or 0
             if urlsplit(url).hostname == "api.typesafe.ai":
                 operator_floor = max(operator_floor, _micros(self.typesafe_usd_per_call))
@@ -128,9 +155,11 @@ class Ledger:
             reserve = max(reserve, operator_floor, verified_bound or 0)
         elif verified_bound is not None:
             reserve = max(verified_bound, self.explicit_bound or 0)
+            quote = verified_bound
             bound_basis = "operator_estimate" if (self.explicit_bound or 0) > verified_bound else "cloud_enforced"
         elif self.explicit_bound is not None:
             reserve, bound_basis = self.explicit_bound, "operator_estimate"
+            quote = reserve
         else:
             raise CostCapReached("no documented model price/context bound; set an explicit conservative "
                                  "QAJEV_MODEL_MAX_USD upper bound before a paid request")
@@ -140,12 +169,13 @@ class Ledger:
             body["usage"] = {**(usage if isinstance(usage, dict) else {}), "include": True}
         with self.lock, self.shared.get_lock() if self.shared is not None else nullcontext():
             liability = _micros(self.shared.value) if self.shared is not None else self._liability()
-            if self.bound_violated or liability + reserve > self.cap:
+            frozen = isinstance(self.shared, SharedBudget) and self.shared.frozen.value
+            if self.bound_violated or frozen or liability + reserve > self.cap:
                 raise CostCapReached(f"cost cap ${self.cap_usd:.6g}: next attempt needs "
                                      f"${reserve / 1e6:.6f}; no call made")
             self.serial += 1
             attempt = _Attempt(self.serial, self.provider(url), reserve, pricing, bound_basis,
-                               verified_bound is not None)
+                               verified_bound is not None, quote)
             self.active[attempt.serial] = attempt
             self.bounds[bound_basis] += 1
             if self.shared is not None:
@@ -153,42 +183,55 @@ class Ledger:
             return attempt
 
     @staticmethod
-    def _usage(result, pricing, cloud_normalized=False):
+    def _usage(result, pricing, cloud_normalized=False, quote=None):
         if isinstance(result, dict) and isinstance(result.get("result"), dict):
             result = result["result"]
         usage = result.get("usage") if isinstance(result, dict) else None
         usage = usage if isinstance(usage, dict) else {}
-        input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
-        output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
+        input_values = [usage[key] for key in ("prompt_tokens", "input_tokens") if key in usage]
+        output_values = [usage[key] for key in ("completion_tokens", "output_tokens") if key in usage]
+        valid_inputs = [value for value in input_values if _token(value)]
+        valid_outputs = [value for value in output_values if _token(value)]
+        input_tokens = max(valid_inputs, default=None)
+        output_tokens = max(valid_outputs, default=None)
         total = usage.get("total_tokens")
-        tokens = total if _token(total) else sum(t for t in (input_tokens, output_tokens) if _token(t))
+        tokens = total if _token(total) else (input_tokens or 0) + (output_tokens or 0)
+        supplied_tokens = [*input_values, *output_values, *([total] if "total_tokens" in usage else [])]
+        supplied_money = [usage[key] for key in ("cost", "cost_usd", "total_cost", "usd") if key in usage]
+        valid_money = [_micros(value) for value in supplied_money if _number(value)]
+        breach = bool(quote is not None and any(value > quote for value in valid_money))
+        if pricing:
+            context, _, output_price, maximum_output = pricing
+            breach |= any(value > context for value in valid_inputs) or bool(
+                output_price and any(value > maximum_output for value in valid_outputs))
+        if any(not _token(value) for value in supplied_tokens) or any(not _number(value) for value in supplied_money):
+            return None, "unknown", tokens, breach
         if cloud_normalized:
             basis = usage.get("cost_basis")
             cost = usage.get("cost_usd")
             if usage.get("cost_uncertain") is not False or basis not in ("reported", "token_priced", "local_free"):
-                return None, "unknown", tokens
+                return None, "unknown", tokens, breach
             if not _number(cost) or basis == "local_free" and cost != 0:
-                return None, "unknown", tokens
-            return _micros(cost), basis, tokens
-        for key in ("cost", "cost_usd", "total_cost", "usd"):
-            if _number(usage.get(key)):
-                return _micros(usage[key]), "reported", tokens
+                return None, "unknown", tokens, breach
+            return _micros(cost), basis, tokens, breach
+        if valid_money:
+            return max(valid_money), "reported", tokens, breach
         if pricing and _token(input_tokens):
             context, input_price, output_price, maximum_output = pricing
             if input_tokens <= context and (not output_price and
                                             (output_tokens is None or _token(output_tokens)) or
                                             _token(output_tokens) and output_tokens <= maximum_output):
                 cost = Decimal(str(input_tokens)) * input_price + Decimal(str(output_tokens or 0)) * output_price
-                return int(cost.to_integral_value(rounding=ROUND_CEILING)), "token_priced", tokens
-        return None, "unknown", tokens
+                return int(cost.to_integral_value(rounding=ROUND_CEILING)), "token_priced", tokens, breach
+        return None, "unknown", tokens, breach
 
     def _settle(self, attempt, result, failed=False):
         with self.lock, self.shared.get_lock() if self.shared is not None else nullcontext():
             if self.active.get(getattr(attempt, "serial", None)) is not attempt:
                 return  # idempotent settlement only on the ledger owning this attempt
             del self.active[attempt.serial]
-            cost, basis, tokens = (None, "unknown", 0) if failed else self._usage(
-                result, attempt.pricing, attempt.cloud_normalized)
+            cost, basis, tokens, breach = (None, "unknown", 0, False) if failed else self._usage(
+                result, attempt.pricing, attempt.cloud_normalized, attempt.quote)
             cost = attempt.reserve if cost is None else cost
             self.usd[attempt.kind] += cost
             self.tokens[attempt.kind] += tokens
@@ -205,9 +248,18 @@ class Ledger:
                 self.errors += 1
             else:
                 self.calls[attempt.kind] += 1
-            self.bound_violated |= cost > attempt.reserve
+            self.bound_violated |= breach or cost > attempt.reserve
             if self.shared is not None:
                 self.shared.value = round(self.shared.value + (cost - attempt.reserve) / 1e6, 6)
+                if self.bound_violated:
+                    if isinstance(self.shared, SharedBudget):
+                        self.shared.frozen.value = True
+                    elif not self.guard_hold:
+                        # A bare Value has no shared bit. Add a full-cap safety hold,
+                        # beyond all existing liabilities, so even refunding every
+                        # other in-flight reservation cannot reopen admission.
+                        self.guard_hold += self.cap
+                        self.shared.value = round(self.shared.value + self.cap / 1e6, 6)
 
     def after(self, url, result, attempt):
         self._settle(attempt, result)
@@ -234,8 +286,8 @@ class Ledger:
         return ledgered
 
     def summary(self):
-        with self.lock:
-            reserved = sum(a.reserve for a in self.active.values())
+        with self.lock, self.shared.get_lock() if self.shared is not None else nullcontext():
+            reserved = sum(a.reserve for a in self.active.values()) + self.guard_hold
             return {
                 "cap_usd": self.cap_usd, "usd": self._liability() / 1e6,
                 "usd_typesafe_estimated": self.usd["typesafe"] / 1e6,
@@ -243,6 +295,8 @@ class Ledger:
                 "calls": dict(self.calls), "tokens": dict(self.tokens), "errors": self.errors,
                 "actual_usd": self.actual / 1e6, "estimated_usd": self.estimated / 1e6,
                 "unknown_usd": self.unknown / 1e6, "reserved_usd": reserved / 1e6,
+                "guard_hold_usd": self.guard_hold / 1e6,
                 "cost_basis": dict(self.basis), "reservation_basis": dict(self.bounds),
-                "bound_violated": self.bound_violated,
+                "bound_violated": bool(self.bound_violated or
+                                       isinstance(self.shared, SharedBudget) and self.shared.frozen.value),
             }

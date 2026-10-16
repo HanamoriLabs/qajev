@@ -500,7 +500,8 @@ def cost_basis_note(data):
     if "cost_basis" not in cost:
         return ""
     return (f"${cost['actual_usd']:.6f} provider-reported; ${cost['estimated_usd']:.6f} token-priced estimate; "
-            f"${cost['unknown_usd']:.6f} unknown liability; ${cost['reserved_usd']:.6f} in-flight reserved. "
+            f"${cost['unknown_usd']:.6f} unknown liability; "
+            f"${cost['reserved_usd']:.6f} reserved (requests or safety hold). "
             "Unknown and reserved amounts count against the cap; they are not confirmed spend.")
 
 
