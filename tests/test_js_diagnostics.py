@@ -45,6 +45,17 @@ def test_diagnostic_cannot_turn_false_into_a_pass_and_large_data_stays_a_preview
     assert len(json.dumps(check)) < 1500
 
 
+@pytest.mark.parametrize("key,value", [
+    ("auth", "synthetic-auth-value"), ("session", "synthetic-session-value"),
+    ("actual", "Basic c3ludGhldGljOnNhbXBsZQ=="),
+])
+def test_auth_session_and_basic_diagnostic_canaries_are_redacted(key, value):
+    [check] = verdict.page_checks({"js": "false", "explain": "state"},
+                                 {"js": {"value": False, "diagnostic": {key: value}}})
+    assert check["ok"] is False and value not in json.dumps(check)
+    assert "redacted" in check["detail"]
+
+
 def test_suite_accepts_an_explicit_failure_explanation():
     scenario = parse({"scenarios": [{
         "name": "total", "url": "http://127.0.0.1:8765/", "about": "The cart adds its prices.",

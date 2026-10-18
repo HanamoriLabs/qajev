@@ -154,7 +154,8 @@ def awaited(expression, timeout_ms=JS_WAIT_MS):
 DIAGNOSTIC_JS = r"""(value, depth = 0) => {
   if (value === null || ['boolean', 'number'].includes(typeof value)) return value;
   if (typeof value === 'string') {
-    if (/(?:Bearer\s|qjk_|qjj_|qwk_|sk_(?:live|test)_|gh[pousr]_|github_pat_|xox[baprs]-|PRIVATE KEY)/i.test(value)
+    if (/(?:Bearer\s|Basic\s|Authorization\s*:|qjk_|qjj_|qwk_|sk_(?:live|test)_)/i.test(value)
+        || /(?:gh[pousr]_|github_pat_|xox[baprs]-|PRIVATE KEY)/i.test(value)
         || /^[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}$/.test(value)) return '[redacted]';
     return value.length > 128 ? '[string too long]' : value;
   }
@@ -162,7 +163,7 @@ DIAGNOSTIC_JS = r"""(value, depth = 0) => {
   if (depth >= 3) return '[depth limit]';
   const descriptors = Object.getOwnPropertyDescriptors(value);
   const read = (key) => {
-    if (/(password|passwd|secret|token|authorization|cookie|credential|api.?key|email)/i.test(key)) return '[redacted]';
+    if (/(password|passwd|secret|token|auth|session|cookie|credential|api.?key|email)/i.test(key)) return '[redacted]';
     const descriptor = descriptors[key];
     return descriptor && 'value' in descriptor ? bounded(descriptor.value, depth + 1) : '[accessor not read]';
   };

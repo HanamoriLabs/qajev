@@ -109,11 +109,13 @@ def diagnostic_preview(value):
     """Redact before a check is emitted, including remembered seeds and sensitive field names."""
     from .config import redact
 
-    sensitive = re.compile(r"password|passwd|secret|token|authorization|cookie|credential|api.?key|email", re.I)
+    sensitive = re.compile(r"password|passwd|secret|token|auth|session|cookie|credential|api.?key|email", re.I)
 
     def safe(v, depth=0):
         if isinstance(v, str):
             text = redact(v)
+            if re.search(r"(?:\b(?:Bearer|Basic)\s+\S|Authorization\s*:)", text, re.I):
+                return "[redacted]"
             return text if len(text) <= 128 else "[string too long]"
         if isinstance(v, dict):
             if depth >= 3:
