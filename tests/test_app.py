@@ -31,6 +31,11 @@ if home:
 for line in os.environ.get("FAKE_LOG", "").split("|"):
     if line:
         print(line, flush=True)
+if home and os.environ.get("FAKE_LEAK"):
+    # The privacy canary is emitted before bridge readiness. Stdout and the RPC socket have no shared order;
+    # emitting on an observe reply made the redaction test depend on the parent's reader-thread scheduling.
+    paths = [os.path.join(d, n) for d, _, names in os.walk(home) for n in names if n != "launches"]
+    print("ERROR leaked " + " ".join(open(p).read() for p in paths).strip(), flush=True)
 srv = socket.socket()
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", int(os.environ["QAJEV_BRIDGE_PORT"])))
@@ -52,8 +57,6 @@ for line in f:
         paths = [os.path.join(d, n) for d, _, names in os.walk(home) for n in names if n != "launches"]
         state["home_files"] = {os.path.relpath(p, home): [oct(stat.S_IMODE(os.stat(p).st_mode)), open(p).read()]
                                for p in paths}
-    if req["op"] == "observe" and os.environ.get("FAKE_LEAK"):  # an app that logs what it holds
-        print("ERROR leaked " + " ".join(c for _, c in state.get("home_files", {}).values()).strip(), flush=True)
     if req["op"] == "observe":
         out = {"ok": True, "screen": state["screen"], "texts": ["Not signed in"],
                "actions": [{"id": "new", "label": "New box", "kind": "click", "x": 40, "y": 20}], "state": state}

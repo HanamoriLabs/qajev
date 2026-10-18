@@ -4,6 +4,8 @@ import asyncio
 import json
 import shutil
 import subprocess
+import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -126,3 +128,27 @@ def test_mcp_passes_failure_diagnostics_without_changing_the_check(monkeypatch):
 def test_an_assertion_error_does_not_run_failure_diagnostics():
     result = settle("(() => { throw new Error('assertion failed to run') })()", "({unexpected: true})")
     assert result == {"error": "assertion failed to run"}
+
+
+def test_failure_values_reach_json_markdown_and_html_reports_without_secrets(tmp_path, monkeypatch):
+    from qajev import report
+    from qajev.ledger import Ledger
+
+    monkeypatch.setattr(config, "_REMEMBERED", {"synthetic-report-secret"})
+    checks = verdict.page_checks(
+        {"js": "total === 20", "explain": "state", "says": {"js": "The cart total is 20."}},
+        {"js": {"value": False, "diagnostic": {
+            "actual": 17, "expected": 20, "token": "not-a-real-token", "probe": "synthetic-report-secret",
+        }}},
+    )
+    result = {"name": "total", "about": "The cart adds its prices.", "url": "http://127.0.0.1/",
+              "mode": "readonly", "goal": None, "outcome": "fail", "reason": checks[0]["detail"],
+              "checks": checks, "seconds": 0.1, "findings": [], "shot": None}
+    data = report.build(SimpleNamespace(name="failure values"), [result], [Ledger(0.0).summary()], browser={},
+                        started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+    report.write(tmp_path, data)
+    assert data["gate"] == "FAIL" and data["counts"]["fail"] == 1
+    for name in ("report.json", "report.md", "report.html"):
+        text = (tmp_path / name).read_text()
+        assert all(word in text for word in ("actual", "expected", "17", "20")), name
+        assert "synthetic-report-secret" not in text and "not-a-real-token" not in text, name
