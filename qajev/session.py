@@ -151,6 +151,48 @@ def awaited(expression, timeout_ms=JS_WAIT_MS):
             "catch (e) { return { error: String(e && e.message || e) }; } })()")
 
 
+DIAGNOSTIC_JS = r"""(value, depth = 0) => {
+  if (value === null || ['boolean', 'number'].includes(typeof value)) return value;
+  if (typeof value === 'string') {
+    if (/(?:Bearer\s|qjk_|qjj_|qwk_|sk_(?:live|test)_|gh[pousr]_|github_pat_|xox[baprs]-|PRIVATE KEY)/i.test(value)
+        || /^[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}$/.test(value)) return '[redacted]';
+    return value.length > 128 ? '[string too long]' : value;
+  }
+  if (typeof value !== 'object') return '[' + typeof value + ']';
+  if (depth >= 3) return '[depth limit]';
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const read = (key) => {
+    if (/(password|passwd|secret|token|authorization|cookie|credential|api.?key|email)/i.test(key)) return '[redacted]';
+    const descriptor = descriptors[key];
+    return descriptor && 'value' in descriptor ? bounded(descriptor.value, depth + 1) : '[accessor not read]';
+  };
+  if (Array.isArray(value)) return Array.from({length: Math.min(value.length, 8)}, (_, i) => read(String(i)));
+  const out = Object.create(null);
+  for (const key of Object.keys(descriptors).slice(0, 8)) {
+    if (key.length > 48) out['[field name too long]'] = '[omitted]';
+    else out[key] = read(key);
+  }
+  return out;
+}"""
+
+
+def checked(expression, explain=None, timeout_ms=JS_WAIT_MS):
+    """Run the actual assertion once. Explicit failure observations are not assertions or artifacts."""
+    result = awaited(expression, timeout_ms)
+    if not explain:
+        return result
+    return ("(async () => { const __qajevCheckResult = await " + result + "; "
+            "if ('error' in __qajevCheckResult || __qajevCheckResult.value === true) return __qajevCheckResult; "
+            "const __qajevExplainValue = await " + awaited(explain, timeout_ms) + "; "
+            "try { const bounded = " + DIAGNOSTIC_JS + "; "
+            "__qajevCheckResult.diagnostic = 'error' in __qajevExplainValue ? {error: 'explanation failed'} "
+            ": bounded(__qajevExplainValue.value); "
+            "if (JSON.stringify(__qajevCheckResult.diagnostic).length > 1200) "
+            "__qajevCheckResult.diagnostic = '[explanation too large]'; "
+            "} catch (_) { __qajevCheckResult.diagnostic = {error: 'explanation failed'}; } "
+            "return __qajevCheckResult; })()")
+
+
 # One tick of a react hook: done when `until` holds, else the policy's key actions. A throw is the policy's error.
 REACT_JS = Template("""(async () => {
   try {
@@ -285,6 +327,7 @@ PROBE_JS = Template("""(async () => {
     }
     const kind = v instanceof Element ? 'element' : v instanceof Node ? 'node' : typeof v;
     js = 'error' in r ? { error: r.error } : data ? { value: v } : { type: kind, shown: String(v).slice(0, 200) };
+    if ('diagnostic' in r) js.diagnostic = r.diagnostic;
   }
   let status = null;
   try { status = performance.getEntriesByType('navigation')[0].responseStatus || null; } catch (e) {}
@@ -1001,7 +1044,8 @@ class Session:
     def probe(self, expect):
         spec = {"text": expect.get("text", []), "absent": expect.get("absent", []), "js": bool(expect.get("js")),
                 "ci": bool(expect.get("ignore_case")), "visible": expect.get("visible", [])}
-        expression = PROBE_JS.substitute(spec=json.dumps(spec), js=awaited(expect.get("js") or "null"))
+        expression = PROBE_JS.substitute(spec=json.dumps(spec),
+                                         js=checked(expect.get("js") or "null", expect.get("explain")))
         out = self.evaluate(expression) or {}
         if isinstance(out.get("probe"), dict):
             for key, items in self.frames_drained().items():  # the frames' own records, after the page's

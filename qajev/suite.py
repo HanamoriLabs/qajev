@@ -53,7 +53,7 @@ def wanted_devices(explicit=None):
 HOOK_KINDS = {"js", "fill", "click", "click_at", "navigate", "wait_for", "key", "react", "sleep", "command", "reload",
               "pad"}
 EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
-               "looks", "across", "says"}
+               "looks", "across", "says", "explain"}
 # The checks only their author can describe, by what `says` gives them in plain words (the test plan, 6 Oct)
 SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
@@ -62,7 +62,8 @@ SCENARIO_KEYS = {
 }
 # A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
 MAX_CLIENTS = 12
-CLIENT_EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "ignore_case", "across"}
+CLIENT_EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "ignore_case", "across",
+                      "explain"}
 CLIENT_HOOK_KINDS = HOOK_KINDS - {"command"}  # a shell command is not a player's move
 STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout", "settle", "expect"}
 SUITE_KEYS = {
@@ -283,6 +284,10 @@ def _expect(value, where):
     out["looks"] = [str(s) for s in _list(value.get("looks"), f"{where}.looks")]  # judged from the screenshot
     out["across"] = _across(value.get("across"), f"{where}.across")  # a multiplayer scenario's (clients.py)
     out["says"] = _says(value.get("says"), f"{where}.says")
+    if "explain" in out:
+        if (not isinstance(out.get("js"), str) or not out["js"].strip()
+                or not isinstance(out["explain"], str) or not out["explain"].strip()):
+            raise SuiteError(f"{where}.explain needs a js check and a nonempty JavaScript expression")
     if "url_regex" in out:
         try:
             re.compile(out["url_regex"])

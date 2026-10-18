@@ -418,6 +418,7 @@ async def qa_check(
     runner: str | None = None,
     serve: str | None = None,
     model: str | None = None,
+    explain_js: str | None = None,
 ) -> dict:
     """Run one QA scenario: open `url`, optionally let Jev pursue `goal`, then judge the page.
 
@@ -426,6 +427,8 @@ async def qa_check(
     expect_url: substring of the final URL. expect_js: JS expression that must return exactly true (a string it
     returns fails, and is the reason). says: what expect_js proves, in plain words (the report's test plan;
     without it the check is NOT DESCRIBED and the gate INCOMPLETE).
+    explain_js: optional diagnostic values, read once after a non-true JS answer. Bounded and redacted; never
+    another assertion or an artifact. A diagnostic error does not change the original verdict.
     expect_looks: statements judged from the final screenshot ("the Sign up button is not cut off"); vision: the
     screenshot goes with every decision. Both need Clef as the decision model (Jev reads text only).
     fetch: in-page GET checks, "URL" or "URL=STATUS". mode: readonly (default) or mutate (a local dev host only;
@@ -462,6 +465,8 @@ async def qa_check(
         args += ["--expect-url", expect_url]
     if expect_js:
         args += ["--expect-js", expect_js, *(["--says", says] if says else [])]
+    if explain_js is not None:
+        args += ["--explain-js", explain_js]
     for statement in expect_looks or []:
         args += ["--expect-looks", statement]
     if vision:

@@ -149,6 +149,8 @@ def build_parser():
     check.add_argument("--expect-url-regex", help="final URL must match this regex")
     check.add_argument("--expect-js", "-j", help="JS expression that must return exactly true (may use await); a "
                                                   "string it returns fails, as the reason")
+    check.add_argument("--explain-js", help="optional JS values to show only when --expect-js fails; a bounded, "
+                                          "redacted preview, not another assertion")
     check.add_argument("--says", help="what the --expect-js check proves, in plain words (the report's test plan); "
                                       "without it the check is NOT DESCRIBED and the gate cannot be PASS")
     check.add_argument("--expect-looks", action="append", default=[], metavar="STATEMENT",
@@ -193,6 +195,7 @@ def build_parser():
     proj.add_argument("--absent", "-a", action="append", default=[], help="for --objective: page must not show")
     proj.add_argument("--expect-url", "-u", help="for --objective: final URL must contain")
     proj.add_argument("--expect-js", "-j", help="for --objective: JS expression that must return exactly true")
+    proj.add_argument("--explain-js", help="for --objective: bounded diagnostic values if --expect-js fails")
     proj.add_argument("--says", help="for --objective: what the --expect-js check proves, in plain words")
     run.add_argument("--jobs", type=int, default=1, help="parallel workers for independent chains (default 1)")
     run.add_argument("--allow-commands", action="store_true", help="let the suite run shell commands (hooks/checks)")
@@ -576,6 +579,8 @@ def check_suite(args):
         expect["js"] = args.expect_js
         if args.says:
             expect["says"] = {"js": args.says}
+    if getattr(args, "explain_js", None) is not None:
+        expect["explain"] = args.explain_js
     if args.expect_looks:
         expect["looks"] = args.expect_looks
     if args.fetch:
@@ -785,7 +790,7 @@ def _project_suite(args):
     proj = project_mod.load(args.project)
     expect = {}
     for key, value in (("text", args.expect_text), ("absent", args.absent), ("url", args.expect_url),
-                       ("js", args.expect_js)):
+                       ("js", args.expect_js), ("explain", getattr(args, "explain_js", None))):
         if value:
             expect[key] = value
     if args.says and args.expect_js:

@@ -103,7 +103,7 @@ def test_every_expect_key_is_decided_for_the_absent_only_lint():
     from qajev import plan
     from qajev import suite as suite_mod
 
-    meta = {"absent", "ignore_case", "says"}
+    meta = {"absent", "ignore_case", "says", "explain"}
     assert set(plan.POSITIVE) | set(plan.WHERE_ONLY) | meta == suite_mod.EXPECT_KEYS
     assert not set(plan.POSITIVE) & set(plan.WHERE_ONLY)
 
@@ -114,6 +114,7 @@ def test_every_expect_key_is_decided_for_the_absent_only_lint():
         assert not flagged(kind, ["something"]), kind
     for kind, value in (("url", "/accept"), ("url_regex", ".*"), ("status", 200)):
         assert flagged(kind, value), kind
+    assert flagged("explain", "({actual: 7})")  # observations are metadata, never a positive assertion
 
 
 def test_the_plan_before_a_run_names_the_checks_as_the_run_will(tmp_path):

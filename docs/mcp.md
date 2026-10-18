@@ -68,7 +68,7 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 
 ### Main parameters
 
-- `qa_check`: `url` (required), `goal`, `expect_text`, `absent_text`, `expect_url`, `expect_js`, `fetch`, `mode`
+- `qa_check`: `url` (required), `goal`, `expect_text`, `absent_text`, `expect_url`, `expect_js`, `explain_js`, `fetch`, `mode`
   (`readonly` or `mutate`: a local dev host only), `allow_destructive`, `device`, `persona`, `about`, `max_actions`, `max_seconds`, `cost_cap`, `profile`, `headless`,
   `background`, and with Clef `expect_looks` (statements judged from the final screenshot) and `vision` (Clef sees
   the screen with every decision).
@@ -117,6 +117,9 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   without words, under `about_missing`. The report and `qajev dashboard` show it under each test's name.
 - `says` (`qa_check`): what `expect_js` proves, in plain words, for the test plan. Without it the check is NOT
   DESCRIBED and the gate INCOMPLETE ([Reports](reports.md#the-test-plan)).
+- `explain_js` (`qa_check`): explicit diagnostic values to read once after a non-true JavaScript answer. The original
+  assertion runs once and still passes only on exactly true. The explanation is a bounded, redacted preview;
+  an explanation error cannot change the original verdict. Suites call this `expect.explain`.
 - `expect_fail` (`qa_check`; `expect_fail:` on a suite's scenario): a planted fault, the says text of the one check
   it must fail on (`true`: the test's only check). It counts as met only when it fails there; a pass, or a failure on
   another check, turns the gate FAIL. A result shows `expected`, `expected_check`, `graded` and `graded_reason`

@@ -121,6 +121,7 @@ qajev check https://shop.example \
 | `--visible` | this must be on screen, whole and on top: not covered or cut short (a failure says which); repeatable |
 | `--expect-url`, `-u` / `--expect-url-regex` | the final address contains this / matches this |
 | `--expect-js`, `-j` | a JavaScript expression that must be true |
+| `--explain-js` | optional values evaluated once after a non-true JS answer; a bounded, redacted preview that cannot change the verdict |
 | `--fetch URL[=STATUS]` | a request from the page that must answer STATUS (default 200) |
 | `--expect-looks STATEMENT` | Clef, looking at the final screenshot, must judge this true (repeatable; needs Clef) |
 | `--vision` | Clef sees the screenshot with every decision (needs Clef) |

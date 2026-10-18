@@ -61,6 +61,10 @@ def page_checks(expect, observed):
         checks.append(_check(f"on screen: {needle!r}{case}", bool(seen), None if seen else why))
     if expect.get("js"):
         ok, detail, value = js_result(observed.get("js"))
+        result = observed.get("js")
+        if not ok and expect.get("explain") and isinstance(result, dict) and "diagnostic" in result:
+            preview = diagnostic_preview(result["diagnostic"])
+            detail = f"{detail}; observed {preview}"
         checks.append({**_check(f"js {expect['js']!r}", ok, detail), "value": value,
                        **({"broke": True} if check_broke(observed.get("js")) else {})})
     says = expect.get("says") or {}  # the checks only their author can describe, in the author's words
@@ -99,6 +103,30 @@ def planned(expect):
 
 
 VALUE_KEEP = 200
+
+
+def diagnostic_preview(value):
+    """Redact before a check is emitted, including remembered seeds and sensitive field names."""
+    from .config import redact
+
+    sensitive = re.compile(r"password|passwd|secret|token|authorization|cookie|credential|api.?key|email", re.I)
+
+    def safe(v, depth=0):
+        if isinstance(v, str):
+            text = redact(v)
+            return text if len(text) <= 128 else "[string too long]"
+        if isinstance(v, dict):
+            if depth >= 3:
+                return "[depth limit]"
+            return {redact(str(k)) if len(str(k)) <= 48 else "[field name too long]":
+                    "[redacted]" if sensitive.search(str(k)) else safe(item, depth + 1)
+                    for k, item in list(v.items())[:8]}
+        if isinstance(v, list):
+            return "[depth limit]" if depth >= 3 else [safe(item, depth + 1) for item in v[:8]]
+        return v if v is None or isinstance(v, (bool, int, float)) else "[unsupported value]"
+
+    shown = json.dumps(safe(value), ensure_ascii=False)
+    return shown if len(shown) <= 512 else "[explanation too large]"
 
 
 def js_result(r):

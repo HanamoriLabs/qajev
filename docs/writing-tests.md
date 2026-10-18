@@ -36,6 +36,28 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 Text is compared the way a person reads it: line breaks and runs of spaces count as one space. Use
 `ignore_case: true` for labels styled in capitals.
 
+### Values when a JavaScript check fails
+
+A Boolean result contains no operands. To see useful values without rewriting or rerunning the assertion,
+declare an optional failure explanation:
+
+```yaml
+expect:
+  js: "window.cart.total === 20"
+  explain: "({actual: window.cart.total, expected: 20})"
+  says: the cart total is 20
+```
+
+Only exactly `true` still passes. After a non-true answer, `explain` runs once and adds a bounded preview such as
+`returned false; observed {"actual": 17, "expected": 20}`. It never changes the verdict. It is skipped on a pass
+or when the assertion itself throws. An explanation that throws or times out does not replace the original failure.
+Read only the values you need; keep credentials out of the expression. Sensitive fields and remembered secrets are
+redacted before the check is emitted. Long strings, deep objects and large results are replaced with an explicit
+limit marker; object accessors are not invoked. This is a short report preview, not a JSON attachment or artifact.
+
+CLI: add `--explain-js '({actual: window.cart.total, expected: 20})'` to `qajev check --expect-js ...`.
+MCP `qa_check` takes the same expression as `explain_js`. Suites use `expect.explain`.
+
 ## What only a look at the screen tells (Clef)
 
 Every check above reads the page. Some bugs only show in the picture: a button cut off by a box too small for it,
