@@ -804,9 +804,15 @@ dependencies = [
     { name = "pyyaml" },
 ]
 
+[package.optional-dependencies]
+test-sessions = [
+    { name = "cryptography" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
+    { name = "cryptography" },
     { name = "pytest" },
     { name = "pytest-timeout" },
     { name = "ruff" },
@@ -814,14 +820,17 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", marker = "extra == 'test-sessions'", specifier = ">=46,<51" },
     { name = "jev-ultrafast", git = "https://github.com/browser-use/jev-ultrafast?rev=1231850a0bf1a0c0341fe408ef1668dbbfdfac46" },
     { name = "mcp", specifier = ">=2.2,<3" },
     { name = "pyyaml", specifier = ">=6,<7" },
 ]
+provides-extras = ["test-sessions"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright", specifier = ">=1.30" },
+    { name = "cryptography", specifier = ">=46,<51" },
     { name = "pytest", specifier = ">=8.4,<9" },
     { name = "pytest-timeout", specifier = ">=2.3,<3" },
     { name = "ruff", specifier = ">=0.14,<1" },

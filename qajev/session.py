@@ -573,11 +573,15 @@ class Tab:
     """What a Session uses of Jev's Browser (its tab, and calls into it), for a tab in a browser context of its own:
     a multiplayer client's own cookies, storage, cache and service workers (clients.py). No Jev on it."""
 
-    def __init__(self, cdp, ensure_daemon):
+    def __init__(self, cdp, ensure_daemon, adopted=None):
         self.cdp = cdp
         # Jev's Browser starts the browser daemon itself; a Tab must too, or a run whose only scenarios have clients
         # has no daemon to talk to (FileNotFoundError on its socket: the first live run of clients.py)
         ensure_daemon()
+        if adopted is not None:
+            self.context, self.target = adopted.context, adopted.target
+            self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
+            return
         self.context = cdp("Target.createBrowserContext")["browserContextId"]
         self.target = self.session = None
         try:
@@ -610,7 +614,7 @@ class Tab:
 
 class Session:
     def __init__(self, ledger, *, headless=False, hosts=(), guard_opts=None, allow_commands=False, cwd=None,
-                 motion="reduce", isolated=False, cpu_throttle=1):
+                 motion="reduce", isolated=False, cpu_throttle=1, seeded=None):
         """isolated: a multiplayer client (clients.py): its own browser context and tab, and no Jev agent."""
         self.ledger = ledger
         self.motion = motion
@@ -621,6 +625,7 @@ class Session:
         self.guard_opts = guard_opts or {}
         self.allow_commands = allow_commands
         self.cwd = cwd
+        self.test_lease = seeded[1] if seeded is not None else None
         self.script_id = None
         self.guard_cfg = None
         self.device = None
@@ -636,7 +641,7 @@ class Session:
         self.browser: Any
         if isolated:
             self.agent = None
-            self.browser = Tab(self.jev.cdp, self.jev.admin.ensure_daemon)
+            self.browser = Tab(self.jev.cdp, self.jev.admin.ensure_daemon, adopted=seeded[0] if seeded else None)
         else:
             Agent = self.jev.agent.Agent
             self.agent = Agent("about:blank", "Wait for instructions.")
@@ -676,6 +681,8 @@ class Session:
 
     # ---- plumbing ----
     def call(self, method, **params):
+        if self.test_lease is not None:
+            self.test_lease.check()
         return self.browser.call(method, **params)
 
     def evaluate(self, expression, timeout_ms=15000):

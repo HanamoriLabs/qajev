@@ -89,6 +89,7 @@ def _common(p):
     g.add_argument("--headless", action="store_true", help="run QAJev's Chrome headless")
     g.add_argument("--ephemeral", action="store_true", help="throwaway profile, deleted after the run")
     g.add_argument("--plan", type=Path, help=PLAN_HELP)
+    g.add_argument("--test-session", metavar="APP", help="opt-in seeded session from this cloud runner's approved broker; no provider sign-in")
     g.add_argument("--real-devices", help="also run each website scenario in a real device browser: android (Chrome "
                                           "on a read-only emulator), ios (Safari on a throwaway simulator clone; "
                                           "page content not readable yet, comes out harness); comma-separated, off "
@@ -513,6 +514,7 @@ def _options(args):
         load_wait=args.load_wait, only=getattr(args, "only", []), shots=not args.no_shots, emit=_printer(args),
         ux=not getattr(args, "no_ux", False),
         motion=args.motion, cpu_throttle=args.cpu_throttle, color_scheme=getattr(args, "color_scheme", None),
+        test_session=getattr(args, "test_session", None),
     )
 
 
@@ -1839,6 +1841,9 @@ def _route(args):
     """--runner: where this run goes (cloud.py). -> an exit code when the cloud took or refused it, None to run here.
     cloud never falls back to this Mac; auto runs here, saying why, only a run the cloud may not take."""
     from . import cloud
+
+    if getattr(args, "test_session", None) and args.command != "run":
+        return _fail(args, "test sessions currently support fixed read-only suites (`run`) only", EXIT_CONFIG)
 
     try:
         runner, source = cloud.runner_for(args)

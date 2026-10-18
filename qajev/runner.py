@@ -50,6 +50,7 @@ class Options:
     emit: object = None
     load_waited: float = 0.0  # seconds already spent waiting; load_wait is a budget for the whole run
     account: str | None = None  # the stored test account this run signed in with
+    test_session: str | None = None  # public app id; the broker and lease stay in process memory
 
 
 def _emit(opts, event, **data):
@@ -534,6 +535,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
     outcomes = dict(prior or {})
     name = session_mod.configure_env(cdp_url)
     session = None
+    seeded = None
     try:
         for scenario in scenarios:
             blocked_by = [d for d in scenario.depends_on if outcomes.get(d) != "pass"]
@@ -547,10 +549,15 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                 result = run_clients(scenario, opts=opts, suite_meta=suite_meta, run_dir=run_dir, ledger=ledger)
             else:
                 if session is None:
+                    seeded = None
+                    if getattr(opts, "test_session", None):
+                        from . import test_session
+                        seeded = test_session.prepare(opts.test_session, cdp_url, urls=[s.url for s in scenarios])
                     session = session_mod.Session(
                         ledger, headless=suite_meta["headless"], hosts=suite_meta["hosts"],
                         guard_opts=suite_meta["guard"], allow_commands=opts.allow_commands, cwd=suite_meta["cwd"],
                         motion=suite_meta.get("motion", "reduce"), cpu_throttle=suite_meta.get("cpu_throttle", 1),
+                        **({"isolated": True, "seeded": seeded} if seeded else {}),
                     )
                     if getattr(opts, "sign_in_here", None):  # login.tab: same, before the first scenario arms the guard
                         opts.signed_here = sign_in_here(session, opts.sign_in_here, opts)
@@ -584,8 +591,14 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
             if result.get("interrupted"):
                 break
     finally:
+        if seeded is not None:
+            if session is not None and session.net:
+                session.net.stop()
+            seeded[0].revoke()
         if session is not None:
             session.close()
+        if seeded is not None:
+            seeded[0].close()
         session_mod.stop_daemon()
     return {"results": results, "ledger": ledger.summary(), "bu_name": name}
 
@@ -678,6 +691,15 @@ def run(suite, opts):
     from . import report
 
     scenarios = select(suite, opts.only)
+    if opts.test_session:
+        from . import test_session
+        if test_session._provider is None:
+            raise ConfigError("test_session_broker_not_available")
+        if (opts.cdp_url or opts.profile != "default" or opts.jobs != 1 or suite.account
+                or any(s.goal or s.vision or s.expect.get("looks") or s.mode != "readonly" or s.uses_commands or s.clients
+                       for s in scenarios)):
+            raise ConfigError("test sessions require one fresh cloud browser, fixed read-only checks and no account or commands")
+        opts.ephemeral = True
     try:
         models = providers.describe(providers.resolve())
         if any(s.goal for s in scenarios) and models["jev"] == "none":

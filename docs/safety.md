@@ -96,3 +96,20 @@ read-only: a play suite that asks for `mode: mutate` is refused (exit 5). See [G
 ## Reporting a security problem
 
 See [SECURITY.md](../SECURITY.md).
+# Seeded cloud sessions (release candidate, off by default)
+
+`qajev run ... --runner cloud --test-session APP` is a separate, opt-in bootstrap for a fixed synthetic account.
+The runner needs the `test-sessions` optional dependency and an approved runner-side broker. Stable 0.4.33 does
+not contain this feature. No credential is taken from the suite, a personal profile, an environment password or
+an existing browser. Only one fresh cloud browser and fixed read-only checks are supported; model decisions,
+visual model checks, attached browsers, parallel workers and shell commands are refused before browser startup.
+
+The broker resolves its dedicated Keychain reference without UI, waits for the actual cloud browser to be ready,
+and mints a 60-second single-use app link. The link travels through the live encrypted run/machine-bound channel.
+Bootstrap uses an incognito context before the harness daemon or recorders attach. The same browser must reach
+the clean app URL and prove its fixed test identity and test-key marker. No cookie is read or copied. Every action
+checks the 15-minute session deadline. Cleanup revokes the app session and disposes the context; expiry is the
+fallback. Errors are fixed safe codes, with no provider-login fallback.
+
+This candidate does not enable production, create a secret or provision a resource. Its first app is the QAJev
+dashboard over a separate synthetic database. Other apps need their own reviewed contract and allowlist entry.

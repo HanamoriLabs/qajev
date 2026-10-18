@@ -33,7 +33,11 @@ Homepage = "https://qajev.com"
 Source = "https://github.com/hanamorilabs/qajev"
 Documentation = "https://github.com/hanamorilabs/qajev/tree/HEAD/docs"
 Issues = "https://github.com/hanamorilabs/qajev/issues"
+
 Changelog = "https://github.com/hanamorilabs/qajev/blob/HEAD/CHANGELOG.md"
+
+[project.optional-dependencies]
+test-sessions = ["cryptography>=46,<51"]
 
 [project.scripts]
 qajev = "qajev.cli:main"
@@ -47,6 +51,7 @@ allow-direct-references = true
 
 [dependency-groups]
 dev = [
+    "cryptography>=46,<51",
     "pytest>=8.4,<9",
     "ruff>=0.14,<1",
     "basedpyright>=1.30",

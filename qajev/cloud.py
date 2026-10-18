@@ -677,6 +677,8 @@ def submit(client, plan):
         declared = [{"path": remote, "sha256": _sha256(local), "size": local.stat().st_size} for remote, local in files]
         body = {"kind": plan.kind, "args": plan.args, "runner": "cloud", "surface": "web", "files": declared,
                 "name": plan.name}
+        if any(a == "--test-session" or a.startswith("--test-session=") for a in plan.args):
+            body["time_limit_min"] = 15
         project = _known_project(client, plan.project) if plan.project else None
         for key, value in (("model", plan.model), ("sees_screen", plan.sees_screen), ("project", project),
                            ("serve", {"path": "site", "port": plan.port} if plan.serve_root else None),
