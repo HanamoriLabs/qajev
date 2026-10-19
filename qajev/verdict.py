@@ -103,13 +103,12 @@ def planned(expect):
 
 
 VALUE_KEEP = 200
+DIAGNOSTIC_SENSITIVE = re.compile(r"password|passwd|secret|token|auth|session|cookie|credential|api.?key|email", re.I)
 
 
 def diagnostic_preview(value):
     """Redact before a check is emitted, including remembered seeds and sensitive field names."""
     from .config import redact
-
-    sensitive = re.compile(r"password|passwd|secret|token|auth|session|cookie|credential|api.?key|email", re.I)
 
     def safe(v, depth=0):
         if isinstance(v, str):
@@ -121,7 +120,7 @@ def diagnostic_preview(value):
             if depth >= 3:
                 return "[depth limit]"
             return {redact(str(k)) if len(str(k)) <= 48 else "[field name too long]":
-                    "[redacted]" if sensitive.search(str(k)) else safe(item, depth + 1)
+                    "[redacted]" if DIAGNOSTIC_SENSITIVE.search(str(k)) else safe(item, depth + 1)
                     for k, item in list(v.items())[:8]}
         if isinstance(v, list):
             return "[depth limit]" if depth >= 3 else [safe(item, depth + 1) for item in v[:8]]
@@ -132,11 +131,12 @@ def diagnostic_preview(value):
 
 
 def js_result(r):
-    """A check's JavaScript passes only when it returns exactly true (SideGame1 and the Orchestrator, 5 Oct: `cond ||
-    'why'` returned its 'why', which was graded truthy, so a failed check read as passed). A string fails with that
-    string as the reason; false and null say so; any other value fails as the wrong type, so nothing leans on
-    truthiness again. `r` is the page's {value} | {error} | {type, shown}, or a bare value. Waits (wait_for, until)
-    are not checks: they stay truthy. -> (ok, detail, value): value is what came back, cut to VALUE_KEEP characters."""
+    """True passes; a nonempty object passes when every named value is exactly true. Strings fail with their
+    reason, and failed object parts each keep their name and a safe value preview. Never use truthiness.
+    `r` is {value} | {error} | {type, shown}, or a bare primitive. Waits stay truthy, independent of checks.
+    -> (ok, detail, value): value is a preview, cut to VALUE_KEEP characters."""
+    from .config import redact
+
     if not isinstance(r, dict):
         r = {"error": r[len("error: "):]} if isinstance(r, str) and r.startswith("error: ") else {"value": r}
     if "error" in r:
@@ -147,7 +147,20 @@ def js_result(r):
     if value is True:
         return True, None, "true"
     if isinstance(value, str):
-        return False, value[:300] or "returned an empty string", value[:VALUE_KEEP]
+        text = redact(value)
+        return False, text[:300] or "returned an empty string", text[:VALUE_KEEP]
+    if isinstance(value, dict):
+        shown = diagnostic_preview(value)[:VALUE_KEEP]
+        if not value:
+            return False, "returned an empty object: no named checks", shown
+        failures = []
+        for name, part in value.items():
+            if part is True:
+                continue
+            hidden = DIAGNOSTIC_SENSITIVE.search(str(name)) and part is not None and not isinstance(part, bool)
+            preview = diagnostic_preview("[redacted]" if hidden else part)
+            failures.append(f"{json.dumps(redact(str(name)), ensure_ascii=False)}={preview}")
+        return not failures, "parts not true: " + "; ".join(failures) if failures else None, shown
     if value is False or value is None:
         said = json.dumps(value)
         return False, f"returned {said}", said
@@ -171,8 +184,11 @@ def fetch_check(probe, result):
 
 
 def command_check(spec, result):
+    from .config import redact
+
     ok = result.get("exit") == int(spec.get("exit", 0))
-    detail = None if ok else f"exit {result.get('exit')}: {(result.get('stderr') or '').strip()[:200]}"
+    output = (result.get("stderr") or "").strip() or (result.get("stdout") or "").strip()
+    detail = None if ok else f"exit {result.get('exit')}: {redact(output)[-400:]}"
     if ok and "stdout" in spec:
         ok = str(spec["stdout"]) in (result.get("stdout") or "")
         detail = None if ok else f"stdout {(result.get('stdout') or '').strip()[:200]!r} lacks {spec['stdout']!r}"

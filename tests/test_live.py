@@ -542,9 +542,9 @@ def test_a_react_hook_answers_a_cue_at_human_speed_and_saves_the_frame(session, 
     assert Path(shot["path"]).name == "cue-001-flash.jpg" and Path(shot["path"]).stat().st_size > 1000
 
 
-def test_a_js_check_passes_only_on_true_and_a_string_is_its_reason(session, site):
+def test_a_js_check_accepts_true_parts_and_a_string_is_its_reason(session, site):
     # SideGame1 and the Orchestrator, 5 Oct: the six-game suite's checks return `cond || 'why'`, and the page probe
-    # turned the 'why' into true, so a failed check was reported as passed. Only exactly true passes.
+    # turned the 'why' into true, so a failed check was reported as passed. Named parts require literal true.
     from qajev import verdict
 
     session.navigate(site + "/index.html")
@@ -556,7 +556,8 @@ def test_a_js_check_passes_only_on_true_and_a_string_is_its_reason(session, site
         "null": (False, "returned null"),
         "42": (False, "check must return true, got number"),
         "document.querySelector('h1')": (False, "check must return true, got element"),
-        "({ ok: true })": (False, "check must return true, got object"),
+        "({ ok: true })": (True, None),
+        "({ total: 35, photo: false })": (False, 'parts not true: "total"=35; "photo"=false'),
     }
     got = {}
     for expr in cases:

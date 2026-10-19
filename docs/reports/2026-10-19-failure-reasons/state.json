@@ -1,0 +1,54 @@
+{
+  "stage": "passed",
+  "updated_myt": "2026-10-19 17:55 MYT",
+  "worktree": "/Volumes/Acer SSD/Development/qajev/qajev2/worktrees/cli-js-runtime",
+  "branch": "fix/js-runtime-evidence-qajev2",
+  "base": "94a16cfd43466bd9bf789f7f83786ab5fe883b6a",
+  "red": {
+    "failed": 21,
+    "passed": 6,
+    "job": "qajev2-20261019-174303-47053"
+  },
+  "focused": {
+    "passed": 139,
+    "job": "qajev2-20261019-174653-73548"
+  },
+  "full_job": "qajev2-20261019-174858-85592",
+  "source_hashes": {
+    "docs/mcp.md": "4b1496fe6eda614826b8264c3ce2665cf8fcaf0393a96e5eaaebec13bd02d6fb",
+    "docs/writing-tests.md": "4b60ff6a37ef017bbd9cd2882196a1ab8c561b35eccf0729d4926069d1692962",
+    "qajev/cli.py": "a8f957bb40f8d6a1c85656b8aa1c1165077f2f7853c97c6c9a7625722628ef10",
+    "qajev/clients.py": "a5a6d80a81fb43e07c933045ac5df1c5d86c6a7e3ca03fdcc55ee12afb24defd",
+    "qajev/mcp_server.py": "9e70d4f1cca1210b2039f392194f46cc8ad29f1b8bfc508f5178f443661e28a9",
+    "qajev/session.py": "78a4ccdb7d62a19f8c33bd468afa8abac45b55764c63b0242765d95f75496e54",
+    "qajev/verdict.py": "b204ac4aebe21eb206af849ea56bda72789758482e6fbb07728d29ef4e3ffcf2",
+    "scripts/check_failure_reason_faults.py": "ffe90860850e7a92b536993c4e6f7ca81d5a4d26e6b4f8f7b025a0e69d8494a0",
+    "scripts/check_js_diagnostic_faults.py": "63188786416adf41bc61237e26fcda97b84abfc2691940b0b44180c14aee158a",
+    "tests/test_failure_reasons.py": "5dd5ca7a313f44e4eaa4254df51f8689152cae5fa57f08f2ba38d94697e0a150",
+    "tests/test_live.py": "f9954e13b94a4dfbfd19d377102c932ba9e10316a3050037c428b6510846c760",
+    "tests/test_verdict.py": "10384453c24d1f5a9ba8296fe61905b5790b7c477ba068b142dd22e40be55634"
+  },
+  "empty_object": "Fails because it contains no named checks; arrays remain unsupported.",
+  "release": "No PR, release, image refresh, deployment, migration or restart. Await redteam review and normal release gates.",
+  "full": {
+    "passed": 1139,
+    "skipped": 105,
+    "failed": 0,
+    "seconds": 236.75,
+    "completed_myt": "2026-10-19 17:54:31 MYT"
+  },
+  "faults": {
+    "new_caught": 10,
+    "new_total": 10,
+    "existing_diagnostic_caught": 8,
+    "existing_diagnostic_total": 8
+  },
+  "ruff": "passed",
+  "diff_check": "passed",
+  "workflow_state": "tests disabled_manually; no Actions run",
+  "log_hashes": {
+    "red.log": "ada386b96cfcaaeaa8805ab87d422eae1971bb4742971d886a4577ac6376c1bf",
+    "full-and-faults.log": "ee6a44bcda604b8c2a0dd007658a9b170ca7a2f3373eccaac64f7a06a0b5121f",
+    "focused.log": "5bd76f780dad8f748a2db1c6a6d8bbd389704910278f031674e66438b2e64b67"
+  }
+}

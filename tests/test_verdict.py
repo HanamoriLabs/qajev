@@ -50,14 +50,14 @@ def test_js_must_be_exactly_true():
 
 
 def test_a_check_that_returns_its_reason_fails_with_that_reason():
-    # SideGame1, 5 Oct: `cond || 'why'` returned 'why' and was graded as passed. Only exactly true passes.
+    # A string remains a failure reason; named parts each require literal true.
     assert V.js_result({"value": True}) == (True, None, "true")
     assert V.js_result({"value": "a flash did not become a steal"}) == (False, "a flash did not become a steal",
                                                                           "a flash did not become a steal")
     assert V.js_result({"value": False}) == (False, "returned false", "false")
     assert V.js_result({"value": None}) == (False, "returned null", "null")
     assert V.js_result({"value": 3}) == (False, "check must return true, got number", "3")
-    assert V.js_result({"value": {"ok": True}}) == (False, "check must return true, got object", '{"ok": true}')
+    assert V.js_result({"value": {"ok": True}}) == (True, None, '{"ok": true}')
     assert V.js_result({"type": "element", "shown": "[object HTMLHeadingElement]"})[:2] == (
         False, "check must return true, got element")
     assert V.js_result({"error": "boom"}) == (False, "error: boom", None)

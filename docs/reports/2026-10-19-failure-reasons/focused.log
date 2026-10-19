@@ -1,0 +1,8 @@
+boxtest: job qajev2-20261019-174653-73548 on workload-gpu (ok queued=0 running=0)
+[boxtest] 09:46:53 on tankard: slot 1, time limit 600s, network for the command: no
+[boxtest] 09:46:53 running the command
+All checks passed!
+........................................................................ [ 51%]
+...................................................................      [100%]
+139 passed in 44.41s
+[boxtest] 09:47:45 exit 0

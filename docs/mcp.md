@@ -117,8 +117,8 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   without words, under `about_missing`. The report and `qajev dashboard` show it under each test's name.
 - `says` (`qa_check`): what `expect_js` proves, in plain words, for the test plan. Without it the check is NOT
   DESCRIBED and the gate INCOMPLETE ([Reports](reports.md#the-test-plan)).
-- `explain_js` (`qa_check`): explicit diagnostic values to read once after a non-true JavaScript answer. The original
-  assertion runs once and still passes only on exactly true. The explanation is a bounded, redacted preview;
+- `explain_js` (`qa_check`): explicit diagnostic values to read once after a failed JavaScript answer. The original
+  assertion runs once; true or a nonempty object of true named parts passes. The explanation is a bounded, redacted preview;
   an explanation error cannot change the original verdict. Suites call this `expect.explain`.
 - `expect_fail` (`qa_check`; `expect_fail:` on a suite's scenario): a planted fault, the says text of the one check
   it must fail on (`true`: the test's only check). It counts as met only when it fails there; a pass, or a failure on

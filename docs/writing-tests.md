@@ -28,15 +28,28 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | `url` | `--expect-url`, `-u` | the final address contains this |
 | `url_regex` | `--expect-url-regex` | the final address matches this pattern |
 | `status` | suite only | the page answered with this HTTP status, such as 404 for a removed page (that status is then not also filed as a finding) |
-| `js` | `--expect-js`, `-j` | this JavaScript expression returns exactly `true` in the page (a Promise counts by what it resolves to, within 5 s). Anything else fails: a string fails with that string as the reason, so `cond || 'why it failed'` reads well in the report; `false` and `null` fail as such; any other value (a number, an object, an element) fails as the wrong type; a throw, a rejection or no answer fails with the error. What came back is kept in the report, pass or fail |
+| `js` | `--expect-js`, `-j` | returns exactly `true`, or a nonempty object whose named values are all exactly `true` (Promises are awaited, within 5 s). A string fails with that string as the reason, so `cond || 'why it failed'` reads well in the report. A failed object lists every non-true part with its value. Empty objects, `false`, `null`, numbers, arrays and elements fail; a throw, rejection or no answer fails with the error. A value preview is kept in the report |
 | `fetch` | `--fetch URL[=STATUS]` | a request made from the page answers with that status (default 200) |
-| `command` | suite only | a shell command prints the expected output (needs `--allow-commands`) |
+| `command` | suite only | a shell command exits as expected and optionally prints expected output (needs `--allow-commands`). On an unexpected exit, the reason shows the last 400 characters of stderr, or stdout when stderr is empty |
 | `looks` | `--expect-looks` | Clef, looking at the final screenshot, judges this statement true (needs Clef: see below) |
 
 Text is compared the way a person reads it: line breaks and runs of spaces count as one space. Use
 `ignore_case: true` for labels styled in capitals.
 
 ### Values when a JavaScript check fails
+
+Return named parts to show exactly what failed, without a separate explanation:
+
+```yaml
+expect:
+  js: "({basket: total === 30 || `Expected 30, got ${total}`, photo: image.complete && image.naturalWidth > 0})"
+  says: the basket total and product photo are correct
+```
+
+If the basket returns a reason and the photo is false, the failure names both parts and their values. Passing
+parts are omitted from the failure reason. A truthy value such as `1` or `"true"` does not pass. Sensitive values
+are redacted, and large individual values use explicit preview markers; failed part names are not silently dropped.
+Nonserializable parts remain failures, and object accessors are not read.
 
 A Boolean result contains no operands. To see useful values without rewriting or rerunning the assertion,
 declare an optional failure explanation:
@@ -48,7 +61,7 @@ expect:
   says: the cart total is 20
 ```
 
-Only exactly `true` still passes. After a non-true answer, `explain` runs once and adds a bounded preview such as
+After a failed answer, `explain` runs once and adds a bounded preview such as
 `returned false; observed {"actual": 17, "expected": 20}`. It never changes the verdict. It is skipped on a pass
 or when the assertion itself throws. An explanation that throws or times out does not replace the original failure.
 Read only the values you need; keep credentials out of the expression. Sensitive fields and remembered secrets are

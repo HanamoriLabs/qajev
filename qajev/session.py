@@ -177,13 +177,38 @@ DIAGNOSTIC_JS = r"""(value, depth = 0) => {
 }"""
 
 
+CHECK_VALUE_JS = r"""(result) => {
+  const value = result.value;
+  if (value && typeof value === 'object' && !Array.isArray(value)
+      && [Object.prototype, null].includes(Object.getPrototypeOf(value))) {
+    const parts = Object.create(null);
+    for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+      if (!descriptor.enumerable) continue;
+      if (!('value' in descriptor)) { parts[name] = '[accessor not read]'; continue; }
+      const part = descriptor.value;
+      if (part === true) { parts[name] = true; continue; }
+      try {
+        const shown = JSON.parse(JSON.stringify(part));
+        // Serialization must never turn a non-true object into a passing part.
+        parts[name] = shown === true ? '[non-true value serialized as true]' : shown;
+      } catch (_) { parts[name] = '[' + typeof part + ' is not JSON serializable]'; }
+    }
+    result.value = parts;
+  }
+  return result;
+}"""
+
+
 def checked(expression, explain=None, timeout_ms=JS_WAIT_MS):
     """Run the actual assertion once. Explicit failure observations are not assertions or artifacts."""
-    result = awaited(expression, timeout_ms)
+    result = "(async () => (" + CHECK_VALUE_JS + ")(await " + awaited(expression, timeout_ms) + "))()"
     if not explain:
         return result
     return ("(async () => { const __qajevCheckResult = await " + result + "; "
-            "if ('error' in __qajevCheckResult || __qajevCheckResult.value === true) return __qajevCheckResult; "
+            "if ('error' in __qajevCheckResult || __qajevCheckResult.value === true || "
+            "(__qajevCheckResult.value && typeof __qajevCheckResult.value === 'object' && "
+            "!Array.isArray(__qajevCheckResult.value) && Object.keys(__qajevCheckResult.value).length > 0 && "
+            "Object.values(__qajevCheckResult.value).every(v => v === true))) return __qajevCheckResult; "
             "const __qajevExplainValue = await " + awaited(explain, timeout_ms) + "; "
             "try { const bounded = " + DIAGNOSTIC_JS + "; "
             "__qajevCheckResult.diagnostic = 'error' in __qajevExplainValue ? {error: 'explanation failed'} "
@@ -319,7 +344,7 @@ PROBE_JS = Template("""(async () => {
   let js = null;
   if (spec.js) {
     const r = await $js;
-    // What came back, as is: verdict.js_result passes only exactly true. A value that is not plain data (an element,
+    // Keep the checked value: true or a nonempty object of true parts passes. Non-data values (an element,
     // a function) is sent as its type, since it cannot cross to Python.
     const v = r.value, plain = v === null || ['boolean', 'string', 'number'].includes(typeof v);
     let data = plain;

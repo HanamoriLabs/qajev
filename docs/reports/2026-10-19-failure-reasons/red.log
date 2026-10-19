@@ -1,0 +1,662 @@
+boxtest: job qajev2-20261019-174303-47053 on workload-gpu (ok queued=0 running=0)
+[boxtest] 09:43:03 on tankard: slot 1, time limit 600s, network for the command: no
+[boxtest] fetching dependencies (network on)
+[fetch] uv sync in .
+[fetch] done
+[boxtest] 09:43:17 running the command
+Using CPython 3.15.0 interpreter at: /opt/boxtest/python/bin/python3
+Creating virtual environment at: ../runtime-venv
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 51 packages in 4.27s
+FFFFFFFFFFF....FFFFFF.FF.FF                                              [100%]
+=================================== FAILURES ===================================
+________ test_named_js_parts_pass_only_when_every_value_is_literal_true ________
+
+    def test_named_js_parts_pass_only_when_every_value_is_literal_true():
+>       assert verdict.js_result({"value": {"total": True, "photo": True}})[:2] == (True, None)
+E       AssertionError: assert (False, 'chec..., got object') == (True, None)
+E         
+E         At index 0 diff: False != True
+E         
+E         Full diff:
+E           (
+E         -     True,
+E         -     None,
+E         +     False,
+E         +     'check must return true, got object',
+E           )
+
+tests/test_failure_reasons.py:17: AssertionError
+_____ test_js_object_failure_names_the_non_true_part_and_its_value[False] ______
+
+value = False
+
+    @pytest.mark.parametrize("value", [False, None, 0, 1, "", "wrong total", [True], {"nested": True}])
+    def test_js_object_failure_names_the_non_true_part_and_its_value(value):
+        ok, detail, _ = verdict.js_result({"value": {"passing": True, "broken": value}})
+        assert ok is False
+>       assert '"broken"=' + json.dumps(value, ensure_ascii=False) in detail
+E       assert ('"broken"=' + 'false') in 'check must return true, got object'
+E        +  where 'false' = <function dumps at 0x7fdf79c0b3d0>(False, ensure_ascii=False)
+E        +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+
+tests/test_failure_reasons.py:24: AssertionError
+______ test_js_object_failure_names_the_non_true_part_and_its_value[None] ______
+
+value = None
+
+    @pytest.mark.parametrize("value", [False, None, 0, 1, "", "wrong total", [True], {"nested": True}])
+    def test_js_object_failure_names_the_non_true_part_and_its_value(value):
+        ok, detail, _ = verdict.js_result({"value": {"passing": True, "broken": value}})
+        assert ok is False
+>       assert '"broken"=' + json.dumps(value, ensure_ascii=False) in detail
+E       assert ('"broken"=' + 'null') in 'check must return true, got object'
+E        +  where 'null' = <function dumps at 0x7fdf79c0b3d0>(None, ensure_ascii=False)
+E        +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+
+tests/test_failure_reasons.py:24: AssertionError
+_______ test_js_object_failure_names_the_non_true_part_and_its_value[0] ________
+
+value = 0
+
+    @pytest.mark.parametrize("value", [False, None, 0, 1, "", "wrong total", [True], {"nested": True}])
+    def test_js_object_failure_names_the_non_true_part_and_its_value(value):
+        ok, detail, _ = verdict.js_result({"value": {"passing": True, "broken": value}})
+        assert ok is False
+>       assert '"broken"=' + json.dumps(value, ensure_ascii=False) in detail
+E       assert ('"broken"=' + '0') in 'check must return true, got object'
+E        +  where '0' = <function dumps at 0x7fdf79c0b3d0>(0, ensure_ascii=False)
+E        +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+
+tests/test_failure_reasons.py:24: AssertionError
+_______ test_js_object_failure_names_the_non_true_part_and_its_value[1] ________
+
+value = 1
+
+    @pytest.mark.parametrize("value", [False, None, 0, 1, "", "wrong total", [True], {"nested": True}])
+    def test_js_object_failure_names_the_non_true_part_and_its_value(value):
+        ok, detail, _ = verdict.js_result({"value": {"passing": True, "broken": value}})
+        assert ok is False
+>       assert '"broken"=' + json.dumps(value, ensure_ascii=False) in detail
+E       assert ('"broken"=' + '1') in 'check must return true, got object'
+E        +  where '1' = <function dumps at 0x7fdf79c0b3d0>(1, ensure_ascii=False)
+E        +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+
+tests/test_failure_reasons.py:24: AssertionError
+________ test_js_object_failure_names_the_non_true_part_and_its_value[] ________
+
+value = ''
+
+    @pytest.mark.parametrize("value", [False, None, 0, 1, "", "wrong total", [True], {"nested": True}])
+    def test_js_object_failure_names_the_non_true_part_and_its_value(value):
+        ok, detail, _ = verdict.js_result({"value": {"passing": True, "broken": value}})
+        assert ok is False
+>       assert '"broken"=' + json.dumps(value, ensure_ascii=False) in detail
+E       assert ('"broken"=' + '""') in 'check must return true, got object'
+E        +  where '""' = <function dumps at 0x7fdf79c0b3d0>('', ensure_ascii=False)
+E        +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+
+tests/test_failure_reasons.py:24: AssertionError
+__ test_js_object_failure_names_the_non_true_part_and_its_value[wrong total] ___
+
+value = 'wrong total'
+
+    @pytest.mark.parametrize("value", [False, None, 0, 1, "", "wrong total", [True], {"nested": True}])
+    def test_js_object_failure_names_the_non_true_part_and_its_value(value):
+        ok, detail, _ = verdict.js_result({"value": {"passing": True, "broken": value}})
+        assert ok is False
+>       assert '"broken"=' + json.dumps(value, ensure_ascii=False) in detail
+E       assert ('"broken"=' + '"wrong total"') in 'check must return true, got object'
+E        +  where '"wrong total"' = <function dumps at 0x7fdf79c0b3d0>('wrong total', ensure_ascii=False)
+E        +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+
+tests/test_failure_reasons.py:24: AssertionError
+_____ test_js_object_failure_names_the_non_true_part_and_its_value[value6] _____
+
+value = [True]
+
+    @pytest.mark.parametrize("value", [False, None, 0, 1, "", "wrong total", [True], {"nested": True}])
+    def test_js_object_failure_names_the_non_true_part_and_its_value(value):
+        ok, detail, _ = verdict.js_result({"value": {"passing": True, "broken": value}})
+        assert ok is False
+>       assert '"broken"=' + json.dumps(value, ensure_ascii=False) in detail
+E       assert ('"broken"=' + '[true]') in 'check must return true, got object'
+E        +  where '[true]' = <function dumps at 0x7fdf79c0b3d0>([True], ensure_ascii=False)
+E        +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+
+tests/test_failure_reasons.py:24: AssertionError
+_____ test_js_object_failure_names_the_non_true_part_and_its_value[value7] _____
+
+value = {'nested': True}
+
+    @pytest.mark.parametrize("value", [False, None, 0, 1, "", "wrong total", [True], {"nested": True}])
+    def test_js_object_failure_names_the_non_true_part_and_its_value(value):
+        ok, detail, _ = verdict.js_result({"value": {"passing": True, "broken": value}})
+        assert ok is False
+>       assert '"broken"=' + json.dumps(value, ensure_ascii=False) in detail
+E       assert ('"broken"=' + '{"nested": true}') in 'check must return true, got object'
+E        +  where '{"nested": true}' = <function dumps at 0x7fdf79c0b3d0>({'nested': True}, ensure_ascii=False)
+E        +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+
+tests/test_failure_reasons.py:24: AssertionError
+____ test_every_failed_js_part_is_named_even_beyond_the_value_preview_limit ____
+
+    def test_every_failed_js_part_is_named_even_beyond_the_value_preview_limit():
+        parts = {f"part_{i:03}": False for i in range(30)}
+        parts["quantity"] = 3
+        ok, detail, _ = verdict.js_result({"value": parts})
+        assert ok is False
+>       assert all('"' + key + '"=' in detail for key in parts)
+E       assert False
+E        +  where False = all(<generator object test_every_failed_js_part_is_named_even_beyond_the_value_preview_limit.<locals>.<genexpr> at 0x7fdf7a49a960>)
+
+tests/test_failure_reasons.py:33: AssertionError
+___________ test_empty_js_object_fails_because_it_contains_no_checks ___________
+
+    def test_empty_js_object_fails_because_it_contains_no_checks():
+        ok, detail, _ = verdict.js_result({"value": {}})
+>       assert ok is False and "no named checks" in detail
+E       AssertionError: assert (False is False and 'no named checks' in 'check must return true, got object')
+
+tests/test_failure_reasons.py:39: AssertionError
+___ test_named_js_values_and_registered_secrets_are_redacted_before_emission ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fdf79018ec0>
+
+    def test_named_js_values_and_registered_secrets_are_redacted_before_emission(monkeypatch):
+        secret = "synthetic-private-seed-for-failure-reason"
+        monkeypatch.setattr(config, "_REMEMBERED", {secret})
+        [check] = verdict.page_checks({"js": "parts"}, {"js": {"value": {
+            "amount": 35, "password": "synthetic-password", "session": "synthetic-session", "note": secret,
+        }}})
+        text = json.dumps(check)
+>       assert check["ok"] is False and '"amount"=35' in check["detail"]
+E       assert (False is False and '"amount"=35' in 'check must return true, got object')
+
+tests/test_failure_reasons.py:58: AssertionError
+___ test_command_failure_uses_the_last_400_stderr_characters_not_the_prefix ____
+
+    def test_command_failure_uses_the_last_400_stderr_characters_not_the_prefix():
+        stderr = "startup noise\n" * 80 + "missing paid orders\n"
+        result = verdict.command_check({"run": "gate"}, {"exit": 1, "stderr": stderr, "stdout": "unused"})
+        assert result["ok"] is False
+>       assert result["detail"] == "exit 1: " + stderr.strip()[-400:]
+E       AssertionError: assert 'exit 1: star...p noise\nstar' == 'exit 1: se\n...g paid orders'
+E         
+E         - exit 1: se
+E         + exit 1: startup noise
+E           startup noise
+E           startup noise
+E           startup noise
+E           startup noise
+E           startup noise
+E           startup noise
+E           startup noise
+E           startup noise
+E           startup noise
+E           startup noise
+E           startup noise
+E           startup noise
+E           startup noise
+E         + star
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - startup noise
+E         - missing paid orders
+
+tests/test_failure_reasons.py:67: AssertionError
+___ test_command_failure_falls_back_to_the_last_400_stdout_characters[None] ____
+
+stderr = None
+
+    @pytest.mark.parametrize("stderr", [None, "", " \n\t"])
+    def test_command_failure_falls_back_to_the_last_400_stdout_characters(stderr):
+        stdout = "setup noise\n" * 80 + "FAIL: paid orders did not become completed\n"
+        result = verdict.command_check({"run": "gate"}, {"exit": 1, "stderr": stderr, "stdout": stdout})
+        assert result["ok"] is False
+>       assert result["detail"] == "exit 1: " + stdout.strip()[-400:]
+E       AssertionError: assert 'exit 1: ' == 'exit 1: tup ...ome completed'
+E         
+E         + exit 1: 
+E         - exit 1: tup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - FAIL: paid orders did not become completed
+
+tests/test_failure_reasons.py:75: AssertionError
+_____ test_command_failure_falls_back_to_the_last_400_stdout_characters[] ______
+
+stderr = ''
+
+    @pytest.mark.parametrize("stderr", [None, "", " \n\t"])
+    def test_command_failure_falls_back_to_the_last_400_stdout_characters(stderr):
+        stdout = "setup noise\n" * 80 + "FAIL: paid orders did not become completed\n"
+        result = verdict.command_check({"run": "gate"}, {"exit": 1, "stderr": stderr, "stdout": stdout})
+        assert result["ok"] is False
+>       assert result["detail"] == "exit 1: " + stdout.strip()[-400:]
+E       AssertionError: assert 'exit 1: ' == 'exit 1: tup ...ome completed'
+E         
+E         + exit 1: 
+E         - exit 1: tup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - FAIL: paid orders did not become completed
+
+tests/test_failure_reasons.py:75: AssertionError
+___ test_command_failure_falls_back_to_the_last_400_stdout_characters[ \n\t] ___
+
+stderr = ' \n\t'
+
+    @pytest.mark.parametrize("stderr", [None, "", " \n\t"])
+    def test_command_failure_falls_back_to_the_last_400_stdout_characters(stderr):
+        stdout = "setup noise\n" * 80 + "FAIL: paid orders did not become completed\n"
+        result = verdict.command_check({"run": "gate"}, {"exit": 1, "stderr": stderr, "stdout": stdout})
+        assert result["ok"] is False
+>       assert result["detail"] == "exit 1: " + stdout.strip()[-400:]
+E       AssertionError: assert 'exit 1: ' == 'exit 1: tup ...ome completed'
+E         
+E         + exit 1: 
+E         - exit 1: tup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - setup noise
+E         - FAIL: paid orders did not become completed
+
+tests/test_failure_reasons.py:75: AssertionError
+____________ test_command_failure_redacts_before_selecting_the_tail ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fdf7900af50>
+
+    def test_command_failure_redacts_before_selecting_the_tail(monkeypatch):
+        secret = "synthetic-private-seed-for-command-failure"
+        monkeypatch.setattr(config, "_REMEMBERED", {secret})
+        stdout = secret + "x" * 390
+        result = verdict.command_check({"run": "gate"}, {"exit": 1, "stderr": "", "stdout": stdout})
+>       assert result["detail"] == "exit 1: " + stdout.replace(secret, "[redacted]")[-400:]
+E       AssertionError: assert 'exit 1: ' == 'exit 1: [red...xxxxxxxxxxxxx'
+E         
+E         - exit 1: [redacted]xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+E         + exit 1:
+
+tests/test_failure_reasons.py:83: AssertionError
+_ test_across_clients_judge_uses_the_same_named_failure_reasons[value0-True-None] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fdf792d3d90>
+value = {'photo': True, 'total': True}, ok = True, fragment = None
+
+    @pytest.mark.parametrize("value,ok,fragment", [
+        ({"total": True, "photo": True}, True, None),
+        ({"total": 35, "photo": False}, False, '"total"=35'),
+        ("player 2 did not receive the update", False, "player 2 did not receive the update"),
+    ])
+    def test_across_clients_judge_uses_the_same_named_failure_reasons(monkeypatch, value, ok, fragment):
+        monkeypatch.setattr(clients, "_evaluate", lambda *_: {"result": {"value": {"value": value}}})
+        [check] = clients.judge(None, [{"check": "room state", "js": "state", "says": "Every player updated."}], [], {})
+>       assert check["ok"] is ok and check["says"] == "Every player updated."
+E       assert (False is True)
+
+tests/test_failure_reasons.py:99: AssertionError
+_ test_across_clients_judge_uses_the_same_named_failure_reasons[value1-False-"total"=35] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fdf791e5e80>
+value = {'photo': False, 'total': 35}, ok = False, fragment = '"total"=35'
+
+    @pytest.mark.parametrize("value,ok,fragment", [
+        ({"total": True, "photo": True}, True, None),
+        ({"total": 35, "photo": False}, False, '"total"=35'),
+        ("player 2 did not receive the update", False, "player 2 did not receive the update"),
+    ])
+    def test_across_clients_judge_uses_the_same_named_failure_reasons(monkeypatch, value, ok, fragment):
+        monkeypatch.setattr(clients, "_evaluate", lambda *_: {"result": {"value": {"value": value}}})
+        [check] = clients.judge(None, [{"check": "room state", "js": "state", "says": "Every player updated."}], [], {})
+        assert check["ok"] is ok and check["says"] == "Every player updated."
+>       assert check["detail"] is None if fragment is None else fragment in check["detail"]
+E       assert False
+
+tests/test_failure_reasons.py:100: AssertionError
+_______ test_failed_js_parts_and_command_stdout_reach_all_report_formats _______
+
+tmp_path = PosixPath('/tmp/pytest-of-boxtest/pytest-0/test_failed_js_parts_and_comma0')
+
+    def test_failed_js_parts_and_command_stdout_reach_all_report_formats(tmp_path):
+        checks = verdict.page_checks({"js": "parts", "says": {"js": "The basket is ready."}},
+                                     {"js": {"value": {"total": 35, "photo": False}}})
+        checks.append(verdict.command_check({"run": "gate"}, {"exit": 1, "stdout": "paid orders missing", "stderr": ""}))
+        outcome, reason = verdict.classify("checked", checks, has_checks=True)
+        result = {"name": "basket", "about": "The basket is ready.", "url": "http://127.0.0.1/", "mode": "readonly",
+                  "goal": None, "outcome": outcome, "reason": reason, "checks": checks, "seconds": 0.1,
+                  "findings": [], "shot": None}
+        data = report.build(SimpleNamespace(name="failure reasons"), [result], [Ledger(0.0).summary()], browser={},
+                            started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+        report.write(tmp_path, data)
+        assert data["gate"] == "FAIL"
+        for name in ["report.json", "report.md", "report.html"]:
+            text = (tmp_path / name).read_text()
+>           assert all(value in text for value in ["total", "35", "photo", "false", "paid orders missing"]), name
+E           AssertionError: report.json
+E           assert False
+E            +  where False = all(<generator object test_failed_js_parts_and_command_stdout_reach_all_report_formats.<locals>.<genexpr> at 0x7fdf79181e00>)
+
+tests/test_failure_reasons.py:117: AssertionError
+______ test_accepted_object_does_not_run_the_optional_failure_explanation ______
+
+    @pytest.mark.skipif(not shutil.which("node"), reason="needs Node for the page-side evaluator")
+    def test_accepted_object_does_not_run_the_optional_failure_explanation():
+        explanation = '(() => { throw new Error("must not run") })()'
+        source = "(" + checked("({total: true, photo: true})", explanation) + ")"
+        completed = subprocess.run(["node", "-e", source + ".then(r => console.log(JSON.stringify(r)))"],
+                                   capture_output=True, text=True, timeout=10, check=True)
+>       assert json.loads(completed.stdout) == {"value": {"total": True, "photo": True}}
+E       AssertionError: assert {'diagnostic'...total': True}} == {'value': {'p...total': True}}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Left contains 1 more item:
+E         {'diagnostic': {'error': 'explanation failed'}}
+E         
+E         Full diff:
+E           {
+E         +     'diagnostic': {
+E         +         'error': 'explanation failed',
+E         +     },
+E               'value': {
+E                   'photo': True,
+E                   'total': True,
+E               },
+E           }
+
+tests/test_failure_reasons.py:126: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_failure_reasons.py::test_named_js_parts_pass_only_when_every_value_is_literal_true - AssertionError: assert (False, 'chec..., got object') == (True, None)
+  
+  At index 0 diff: False != True
+  
+  Full diff:
+    (
+  -     True,
+  -     None,
+  +     False,
+  +     'check must return true, got object',
+    )
+FAILED tests/test_failure_reasons.py::test_js_object_failure_names_the_non_true_part_and_its_value[False] - assert ('"broken"=' + 'false') in 'check must return true, got object'
+ +  where 'false' = <function dumps at 0x7fdf79c0b3d0>(False, ensure_ascii=False)
+ +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+FAILED tests/test_failure_reasons.py::test_js_object_failure_names_the_non_true_part_and_its_value[None] - assert ('"broken"=' + 'null') in 'check must return true, got object'
+ +  where 'null' = <function dumps at 0x7fdf79c0b3d0>(None, ensure_ascii=False)
+ +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+FAILED tests/test_failure_reasons.py::test_js_object_failure_names_the_non_true_part_and_its_value[0] - assert ('"broken"=' + '0') in 'check must return true, got object'
+ +  where '0' = <function dumps at 0x7fdf79c0b3d0>(0, ensure_ascii=False)
+ +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+FAILED tests/test_failure_reasons.py::test_js_object_failure_names_the_non_true_part_and_its_value[1] - assert ('"broken"=' + '1') in 'check must return true, got object'
+ +  where '1' = <function dumps at 0x7fdf79c0b3d0>(1, ensure_ascii=False)
+ +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+FAILED tests/test_failure_reasons.py::test_js_object_failure_names_the_non_true_part_and_its_value[] - assert ('"broken"=' + '""') in 'check must return true, got object'
+ +  where '""' = <function dumps at 0x7fdf79c0b3d0>('', ensure_ascii=False)
+ +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+FAILED tests/test_failure_reasons.py::test_js_object_failure_names_the_non_true_part_and_its_value[wrong total] - assert ('"broken"=' + '"wrong total"') in 'check must return true, got object'
+ +  where '"wrong total"' = <function dumps at 0x7fdf79c0b3d0>('wrong total', ensure_ascii=False)
+ +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+FAILED tests/test_failure_reasons.py::test_js_object_failure_names_the_non_true_part_and_its_value[value6] - assert ('"broken"=' + '[true]') in 'check must return true, got object'
+ +  where '[true]' = <function dumps at 0x7fdf79c0b3d0>([True], ensure_ascii=False)
+ +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+FAILED tests/test_failure_reasons.py::test_js_object_failure_names_the_non_true_part_and_its_value[value7] - assert ('"broken"=' + '{"nested": true}') in 'check must return true, got object'
+ +  where '{"nested": true}' = <function dumps at 0x7fdf79c0b3d0>({'nested': True}, ensure_ascii=False)
+ +    where <function dumps at 0x7fdf79c0b3d0> = json.dumps
+FAILED tests/test_failure_reasons.py::test_every_failed_js_part_is_named_even_beyond_the_value_preview_limit - assert False
+ +  where False = all(<generator object test_every_failed_js_part_is_named_even_beyond_the_value_preview_limit.<locals>.<genexpr> at 0x7fdf7a49a960>)
+FAILED tests/test_failure_reasons.py::test_empty_js_object_fails_because_it_contains_no_checks - AssertionError: assert (False is False and 'no named checks' in 'check must return true, got object')
+FAILED tests/test_failure_reasons.py::test_named_js_values_and_registered_secrets_are_redacted_before_emission - assert (False is False and '"amount"=35' in 'check must return true, got object')
+FAILED tests/test_failure_reasons.py::test_command_failure_uses_the_last_400_stderr_characters_not_the_prefix - AssertionError: assert 'exit 1: star...p noise\nstar' == 'exit 1: se\n...g paid orders'
+  
+  - exit 1: se
+  + exit 1: startup noise
+    startup noise
+    startup noise
+    startup noise
+    startup noise
+    startup noise
+    startup noise
+    startup noise
+    startup noise
+    startup noise
+    startup noise
+    startup noise
+    startup noise
+    startup noise
+  + star
+  - startup noise
+  - startup noise
+  - startup noise
+  - startup noise
+  - startup noise
+  - startup noise
+  - startup noise
+  - startup noise
+  - startup noise
+  - startup noise
+  - startup noise
+  - startup noise
+  - startup noise
+  - startup noise
+  - missing paid orders
+FAILED tests/test_failure_reasons.py::test_command_failure_falls_back_to_the_last_400_stdout_characters[None] - AssertionError: assert 'exit 1: ' == 'exit 1: tup ...ome completed'
+  
+  + exit 1: 
+  - exit 1: tup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - FAIL: paid orders did not become completed
+FAILED tests/test_failure_reasons.py::test_command_failure_falls_back_to_the_last_400_stdout_characters[] - AssertionError: assert 'exit 1: ' == 'exit 1: tup ...ome completed'
+  
+  + exit 1: 
+  - exit 1: tup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - FAIL: paid orders did not become completed
+FAILED tests/test_failure_reasons.py::test_command_failure_falls_back_to_the_last_400_stdout_characters[ \n\t] - AssertionError: assert 'exit 1: ' == 'exit 1: tup ...ome completed'
+  
+  + exit 1: 
+  - exit 1: tup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - setup noise
+  - FAIL: paid orders did not become completed
+FAILED tests/test_failure_reasons.py::test_command_failure_redacts_before_selecting_the_tail - AssertionError: assert 'exit 1: ' == 'exit 1: [red...xxxxxxxxxxxxx'
+  
+  - exit 1: [redacted]xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  + exit 1:
+FAILED tests/test_failure_reasons.py::test_across_clients_judge_uses_the_same_named_failure_reasons[value0-True-None] - assert (False is True)
+FAILED tests/test_failure_reasons.py::test_across_clients_judge_uses_the_same_named_failure_reasons[value1-False-"total"=35] - assert False
+FAILED tests/test_failure_reasons.py::test_failed_js_parts_and_command_stdout_reach_all_report_formats - AssertionError: report.json
+assert False
+ +  where False = all(<generator object test_failed_js_parts_and_command_stdout_reach_all_report_formats.<locals>.<genexpr> at 0x7fdf79181e00>)
+FAILED tests/test_failure_reasons.py::test_accepted_object_does_not_run_the_optional_failure_explanation - AssertionError: assert {'diagnostic'...total': True}} == {'value': {'p...total': True}}
+  
+  Omitting 1 identical items, use -vv to show
+  Left contains 1 more item:
+  {'diagnostic': {'error': 'explanation failed'}}
+  
+  Full diff:
+    {
+  +     'diagnostic': {
+  +         'error': 'explanation failed',
+  +     },
+        'value': {
+            'photo': True,
+            'total': True,
+        },
+    }
+21 failed, 6 passed in 6.26s
+[boxtest] 09:43:32 exit 1

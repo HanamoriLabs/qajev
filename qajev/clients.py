@@ -111,7 +111,7 @@ def judge(tab, checks, clients_state, snapshots):
     """Across checks, judged over every client's state in QAJev's own blank tab. The states go there first, in
     pieces under the daemon's line limit; each check then parses its own copy (a check that sorts or edits them
     cannot change what the next one sees). -> the checks."""
-    from .session import awaited
+    from .session import checked
 
     if not checks:
         return []
@@ -123,7 +123,7 @@ def judge(tab, checks, clients_state, snapshots):
                    " (c) => c.charCodeAt(0))); delete window.__qajevIn; true")
     out = []
     for check in checks:
-        r = _evaluate(tab, awaited(f"(({{clients, snapshots}}) => ({check['js']}))"
+        r = _evaluate(tab, checked(f"(({{clients, snapshots}}) => ({check['js']}))"
                                    "(JSON.parse(window.__qajevStates))"))
         page = (r.get("result") or {}).get("value") or {"value": None}
         ok, detail, value = verdict.js_result(page)

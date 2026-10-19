@@ -1,0 +1,44 @@
+boxtest: job qajev2-20261019-174858-85592 on workload-gpu (ok queued=0 running=0)
+[boxtest] 09:48:58 on tankard: slot 1, time limit 900s, network for the command: no
+[boxtest] 09:48:58 running the command
+All checks passed!
+{"fault": "reject all-true named parts", "caught": true, "test": "test_named_js_parts_pass_only_when_every_value_is_literal_true"}
+{"fault": "accept truthy named values", "caught": true, "test": "test_js_object_failure_names_the_non_true_part_and_its_value[1]"}
+{"fault": "report only the first failed part", "caught": true, "test": "test_every_failed_js_part_is_named_even_beyond_the_value_preview_limit"}
+{"fault": "discard stdout failure reasons", "caught": true, "test": "test_command_failure_falls_back_to_the_last_400_stdout_characters[None]"}
+{"fault": "restore the stderr prefix", "caught": true, "test": "test_command_failure_uses_the_last_400_stderr_characters_not_the_prefix"}
+{"fault": "redact after clipping secrets", "caught": true, "test": "test_command_failure_redacts_before_selecting_the_tail"}
+{"fault": "use client truthiness", "caught": true, "test": "test_across_clients_judge_uses_the_same_named_failure_reasons"}
+{"fault": "drop nonserializable named parts", "caught": true, "test": "test_page_transport_cannot_drop_or_pass_a_non_true_named_part"}
+{"fault": "pass reason strings", "caught": true, "test": "test_boolean_and_string_js_contract_is_preserved"}
+{"fault": "expose sensitive part values", "caught": true, "test": "test_named_js_values_and_registered_secrets_are_redacted_before_emission"}
+{"caught": 10, "total": 10}
+{"fault": "omit failure values", "caught": true, "test": "test_failed_js_shows_declared_actual_and_expected_values"}
+{"fault": "let diagnostic truthiness pass", "caught": true, "test": "test_diagnostic_cannot_turn_false_into_a_pass_and_large_data_stays_a_preview"}
+{"fault": "keep sensitive fields", "caught": true, "test": "test_diagnostic_values_are_redacted_before_they_enter_a_check"}
+{"fault": "keep remembered secret values", "caught": true, "test": "test_diagnostic_values_are_redacted_before_they_enter_a_check"}
+{"fault": "explain a passing check", "caught": true, "test": "test_the_assertion_runs_once_and_its_explanation_runs_only_after_failure"}
+{"fault": "read accessors", "caught": true, "test": "test_page_side_diagnostics_bound_data_and_never_invoke_accessors"}
+{"fault": "drop page-side string bound", "caught": true, "test": "test_page_side_diagnostics_bound_data_and_never_invoke_accessors"}
+{"fault": "explain an assertion error", "caught": true, "test": "test_an_assertion_error_does_not_run_failure_diagnostics"}
+{"caught": 8, "total": 8}
+........................................................................ [  5%]
+..............sss..s.................................................... [ 11%]
+....................................sssss............................... [ 17%]
+........................................................................ [ 23%]
+............s...............................................ss.......... [ 28%]
+........................................................................ [ 34%]
+.....ss................................................................. [ 40%]
+.....s............................................sss................... [ 46%]
+........................................................................ [ 52%]
+........ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss.... [ 57%]
+.......s................................................................ [ 63%]
+...........................................................s.s..ssss.... [ 69%]
+.................sssssssssssssss........................................ [ 75%]
+........................................................................ [ 81%]
+........................................................................ [ 86%]
+.....................................................................s.. [ 92%]
+........................................................................ [ 98%]
+................ssss                                                     [100%]
+1139 passed, 105 skipped in 236.75s (0:03:56)
+[boxtest] 09:54:31 exit 0

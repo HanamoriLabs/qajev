@@ -424,10 +424,11 @@ async def qa_check(
 
     goal: plain words, e.g. "Open the pricing page. Stop when plan prices are visible."
     expect_text / absent_text: case-sensitive substrings the page must / must not show.
-    expect_url: substring of the final URL. expect_js: JS expression that must return exactly true (a string it
-    returns fails, and is the reason). says: what expect_js proves, in plain words (the report's test plan;
+    expect_url: substring of the final URL. expect_js: true passes; a nonempty object passes only when each named
+    value is exactly true. Strings fail as their reason; objects list every failed part with its value.
+    says: what expect_js proves, in plain words (the report's test plan;
     without it the check is NOT DESCRIBED and the gate INCOMPLETE).
-    explain_js: optional diagnostic values, read once after a non-true JS answer. Bounded and redacted; never
+    explain_js: optional diagnostic values, read once after a failed JS answer. Bounded and redacted; never
     another assertion or an artifact. A diagnostic error does not change the original verdict.
     expect_looks: statements judged from the final screenshot ("the Sign up button is not cut off"); vision: the
     screenshot goes with every decision. Both need Clef as the decision model (Jev reads text only).
