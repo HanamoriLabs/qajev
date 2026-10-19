@@ -140,6 +140,16 @@ def test_fetch_and_command_checks():
     assert not V.command_check({"run": "x"}, {"exit": 2, "stderr": "boom"})["ok"]
 
 
+def test_a_failed_command_shows_where_it_said_why():
+    # Twilight, 19 Oct: a gate wrote its failed step to stdout, and the report said only "exit 1:"
+    detail = V.command_check({"run": "x"}, {"exit": 1, "stderr": "", "stdout": '{"step": "beat 2", "status": "fail"}'})
+    assert detail["detail"] == 'exit 1: stdout: {"step": "beat 2", "status": "fail"}'
+    long_err = "warning\n" * 100 + "Error: camera 0.036 m from the chest"
+    detail = V.command_check({"run": "x"}, {"exit": 1, "stderr": long_err, "stdout": "ignored"})["detail"]
+    assert detail.endswith("Error: camera 0.036 m from the chest") and len(detail) < V.COMMAND_KEEP + 20
+    assert V.command_check({"run": "x"}, {"exit": 1})["detail"] == "exit 1: "
+
+
 def test_findings_skip_third_party_noise_and_our_own_write_blocks():
     probe = {"errors": [
         {"kind": "exception", "detail": "TypeError: x is undefined"},
