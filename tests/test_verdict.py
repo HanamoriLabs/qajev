@@ -163,6 +163,26 @@ def test_a_secret_that_crosses_the_cut_leaves_no_tail(monkeypatch):
     assert "a1b2c3" not in detail and "[redacted]" in detail
 
 
+@pytest.mark.parametrize("channel", ["stderr", "stdout", "stdout_expectation"])
+def test_no_eight_character_secret_fragment_survives_a_command_cut(monkeypatch, channel):
+    # Keep the whole env secret out of a report even when the cut runs through it.
+    token = "fixture-pass-0123456789abcdefghijklmnopq"
+    monkeypatch.setenv("QAJEV_FAKE_TOKEN", token)
+    if channel == "stdout_expectation":
+        spec = {"run": "gate", "stdout": "wanted"}
+        result = {"exit": 0, "stdout": "x" * 180 + token + "y" * 380}
+    else:
+        spec = {"run": "gate"}
+        result = {"exit": 1, channel: "x" * 50 + token + "y" * 380}
+    check = V.command_check(spec, result)
+    assert check["ok"] is False
+    detail = check["detail"]
+    fragments = {token[i:i + 8] for i in range(len(token) - 7)}
+    leaked = sorted(fragment for fragment in fragments if fragment in detail)
+    assert not leaked, f"secret fragments in command detail: {leaked}"
+    assert "[redacted]" in detail
+
+
 def test_a_command_hook_redacts_before_it_keeps_the_last_4000_characters(monkeypatch, tmp_path):
     from qajev.session import Session
 
