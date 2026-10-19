@@ -150,15 +150,20 @@ def _tail(text):
 
 
 def command_check(spec, result):
+    from .config import redact
+
     ok = result.get("exit") == int(spec.get("exit", 0))
+    # Redact before any cut (redteam, 19 Oct): redaction replaces whole secret values, so a token cut in two by the
+    # report's limit kept its tail. The report's own redaction runs only after the cut.
+    stdout, stderr = redact(result.get("stdout") or ""), redact(result.get("stderr") or "")
     # Twilight, 19 Oct: a gate wrote its failed step to stdout and the report said only "exit 1:". A failed command
     # shows the end of stderr, or of stdout when stderr is empty.
-    out = _tail(result.get("stdout"))
-    said = _tail(result.get("stderr")) or (f"stdout: {out}" if out else "")
+    out = _tail(stdout)
+    said = _tail(stderr) or (f"stdout: {out}" if out else "")
     detail = None if ok else f"exit {result.get('exit')}: {said}"
     if ok and "stdout" in spec:
         ok = str(spec["stdout"]) in (result.get("stdout") or "")
-        detail = None if ok else f"stdout {(result.get('stdout') or '').strip()[:200]!r} lacks {spec['stdout']!r}"
+        detail = None if ok else f"stdout {stdout.strip()[:200]!r} lacks {spec['stdout']!r}"
     return _check(f"command {spec['run']!r}", ok, detail)
 
 

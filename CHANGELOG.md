@@ -8,7 +8,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 - A failed `command` check shows the end of its output: the last 400 characters of stderr, or of stdout when stderr
   is empty. It showed the first 200 characters of stderr only, so a gate that writes its failed step to stdout (a
-  JSON report) failed as "exit 1:" with no reason.
+  JSON report) failed as "exit 1:" with no reason. A command's output is redacted before any cut, so a secret
+  that crosses the cut no longer leaves its tail in the report.
 - Headless Chrome, as in QAJev Cloud, says it is a normal Chrome. Its user agent said `HeadlessChrome/155`, and some
   sites refuse a headless browser. Now it says `Chrome/155` with `QAJev/<version>` on the end, and its client hints
   name "Google Chrome", not "HeadlessChrome". QAJev itself still knows the browser is headless.
