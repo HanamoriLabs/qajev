@@ -11,6 +11,7 @@ import contextlib
 import copy
 import fcntl
 import functools
+import io
 import json
 import os
 import re
@@ -376,6 +377,7 @@ def register(argv, title=None, *, rerun=None):
     meta = {"id": folder.name, "title": title or describe_argv(argv), "auto_title": title is None, "argv": argv,
             "pid": os.getpid(), "identity": chrome.identity(os.getpid()),
             "started_at": time.time(), "cwd": os.getcwd(), "started_by": os.getppid(), "foreground": True,
+            "project": _run_project(argv, os.getcwd()),
             **({"rerun": rerun} if rerun else {})}
     (folder / "job.json").write_text(json.dumps(meta, indent=2))
     return folder
@@ -395,9 +397,38 @@ def start(argv, title=None, *, command=None, cwd=None, rerun=None):
     meta = {"id": job_id, "title": title or describe_argv(argv), "auto_title": title is None, "argv": argv,
             "pid": proc.pid, "identity": chrome.identity(proc.pid),  # a stop signals only this very process
             "started_at": time.time(), "cwd": cwd or os.getcwd(), "started_by": os.getpid(),
+            "project": _run_project(argv, cwd or os.getcwd()),
             **({"rerun": rerun} if rerun else {})}
     (folder / "job.json").write_text(json.dumps(meta, indent=2))
     return status(job_id)
+
+
+def _run_project(argv, cwd):
+    """Resolve on the run's own computer, while the original suite and working paths are available."""
+    from . import project
+    from .cli import build_parser
+
+    try:
+        # Use the real CLI grammar: options may precede a positional suite, and --suite on play is different.
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            args = build_parser().parse_args(argv)
+    except SystemExit:
+        return None  # malformed historical/custom argv must not break job recording
+    root = Path(cwd).expanduser().resolve()
+    if ref := getattr(args, "project", None):
+        candidate = Path(ref).expanduser()
+        candidate = candidate if candidate.is_absolute() else root / candidate
+        try:
+            return project.load(candidate if candidate.exists() else ref).name
+        except (project.ProjectError, OSError):
+            return None  # the actual run reports an invalid explicit project
+    suite = getattr(args, "suite", None)
+    suite = root / suite if suite else None
+    metadata = _suite(suite) if suite else {}
+    urls = [getattr(args, "url", None) or metadata.get("base_url")]
+    if not any(urls):
+        urls = [s.get("url") for s in metadata.get("scenarios") or [] if isinstance(s, dict)]
+    return project.run_owner(suite=suite, cwd=root, urls=urls)
 
 
 def _reap_children():

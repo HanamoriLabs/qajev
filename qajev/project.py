@@ -425,6 +425,29 @@ def owner_of_url(url):
     return names.pop() if len(names) == 1 else None
 
 
+def run_owner(*, suite=None, cwd=None, urls=()):
+    """File a run under its nearest suite repo, then its working repo, then its site's project or host.
+    Only a name leaves this computer; URL paths, credentials, query strings and fragments are never labels."""
+    owner = (owner_of(suite) if suite else None) or owner_of(cwd or Path.cwd())
+    if owner:
+        return owner
+    for url in urls:
+        if not url:
+            continue
+        if owner := owner_of_url(url):
+            return owner
+        if site := _site(url):
+            host, port = site
+            host = host.encode("idna").decode("ascii")
+            # A v6 literal starts with a colon; labels start with a letter or number on the dashboard.
+            label = f"host {host}" if ":" in host else host
+            from urllib.parse import urlsplit  # noqa: PLC0415
+
+            default = {"http": 80, "https": 443}.get(urlsplit(str(url)).scheme)
+            return f"{label}:{port}" if port and port != default else label
+    return None
+
+
 def set_runner(ref, value):
     """Where a project's runs go: `runner = "<value>"` at the top of its project.toml, or no line ("default": this
     Mac's mode decides). Every other line stays as it is. -> the project (as loaded again)."""

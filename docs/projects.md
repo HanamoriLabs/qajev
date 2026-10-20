@@ -22,6 +22,15 @@ Set `QAJEV_PROJECTS` to add more folders to look in.
 Refer to a project by its `name`, or by a path (the repository, its `.qajev` folder or the `.toml` file). Inside
 the repository, its name is enough.
 
+Runs also find their project without `--project`. QAJev uses the nearest `.qajev/project.toml` above the suite,
+then the working folder's project. Only when neither exists does it use a project registered for the site's host
+and port, or the host itself. Paths, URL queries and fragments never become host labels. An explicit `--project`
+still takes precedence.
+
+Cloud submissions keep that name even before the project's settings have been synced. The name labels the run;
+it creates no project settings or schedule and grants no extra key rights. Local jobs record the same name when
+they start, so a later sync does not have to guess from another computer's paths. Old synced runs are unchanged.
+
 ## A project file
 
 ```toml

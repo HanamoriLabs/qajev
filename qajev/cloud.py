@@ -487,7 +487,7 @@ def plan(args):
     if getattr(args, "allow_commands", False):
         raise NotAllowed("a suite's shell commands (--allow-commands) run on this Mac only")
     files, targets, account, named_plan, plan_base, project_name, swap = [], [], None, None, Path.cwd(), None, {}
-    owner = None  # a suite's project: filed with it on the dashboard, but never held by its name
+    owner, suite_path, owner_urls = None, None, None
     seed_base = None
     full, root, source, writes = None, None, None, getattr(args, "mode", None) == "mutate"
     if getattr(args, "project", None):
@@ -530,6 +530,7 @@ def plan(args):
         except (suite_mod.SuiteError, ValueError, OSError) as e:
             raise CloudError(f"{args.suite}: {e}", EXIT_CONFIG) from None
         targets = [f"http://{h}" for h in suite.hosts]
+        owner_urls = [suite.base_url] if suite.base_url else [s.url for s in suite.scenarios]
         account = suite.account
         seed_base = Path(args.suite).parent
         full = suite.tunnel
@@ -540,9 +541,7 @@ def plan(args):
         files.append((remote, args.suite.resolve()))
         swap["suite"] = remote
         named_plan, plan_base = suite.plan, args.suite.resolve().parent
-        from . import project as project_mod
-
-        owner = project_mod.owner_of(args.suite)  # the dashboard files the run under it (José, 13 Oct)
+        suite_path = args.suite
     else:
         targets = [args.url]
         if not args.url:
@@ -550,9 +549,7 @@ def plan(args):
     if not project_name and not owner:  # every cloud run names its project when one is known (the Orchestrator, 13 Oct)
         from . import project as project_mod
 
-        # after --project and the suite's own: the folder the run starts from, then the one project on the URL's site
-        owner = project_mod.owner_of(Path.cwd()) or next(
-            (name for name in map(project_mod.owner_of_url, [t for t in targets if t]) if name), None)
+        owner = project_mod.run_owner(suite=suite_path, cwd=Path.cwd(), urls=owner_urls or targets)
     if account and not full:
         raise NotAllowed("signed-in runs stay on this Mac (the run signs in with an account; a seeded test account "
                          "goes to the cloud through tunnel: with data: local)")
@@ -646,14 +643,6 @@ def _sha256(path):
     return h.hexdigest()
 
 
-def _known_project(client, name):
-    """The project's name when the dashboard has it (synced from project.toml), so the run is filed with it."""
-    try:
-        return name if client.get(f"/api/v1/projects/{urllib.parse.quote(name)}") else None
-    except CloudError:
-        return None
-
-
 def submit(client, plan):
     """Queue the run and upload its files. -> the run id. An upload that fails stops the run (it would sit queued for
     ever) and raises CloudError with the run's id and address."""
@@ -677,8 +666,8 @@ def submit(client, plan):
         declared = [{"path": remote, "sha256": _sha256(local), "size": local.stat().st_size} for remote, local in files]
         body = {"kind": plan.kind, "args": plan.args, "runner": "cloud", "surface": "web", "files": declared,
                 "name": plan.name}
-        project = _known_project(client, plan.project) if plan.project else None
-        for key, value in (("model", plan.model), ("sees_screen", plan.sees_screen), ("project", project),
+        # A run label is independent of registered project settings and their sync permission.
+        for key, value in (("model", plan.model), ("sees_screen", plan.sees_screen), ("project", plan.project),
                            ("serve", {"path": "site", "port": plan.port} if plan.serve_root else None),
                            ("tunnel", plan.tunnel or ({"port": plan.tunnel_port} if plan.tunnel_port else None))):
             if value is not None:

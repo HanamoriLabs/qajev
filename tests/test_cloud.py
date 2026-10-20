@@ -333,8 +333,9 @@ def test_a_suite_run_is_filed_under_the_project_that_holds_it(dash, local, monke
 
     assert filed(repo / "qa") == "shop"
     assert filed(worktree / "qa") == "shop"
-    assert filed(tmp_path / "loose") is None  # no project holds it: the dashboard says "No project"
-    assert filed(repo / "qa", known=()) is None  # a project the dashboard does not know is not sent
+    assert filed(tmp_path / "loose") == "shop"  # no repo owner: the registered site is the fallback
+    assert filed(repo / "qa", known=()) == "shop"  # a run label does not need project settings to exist
+    assert not any(path.startswith("/api/v1/projects/") for method, path, _ in dash.calls)
     (repo / ".qajev").mkdir()
     (repo / ".qajev" / "project.toml").write_text('name = "rooms"\n[env.local]\nbase_url = "http://127.0.0.1:8871"\n')
     assert filed(repo / "qa") == "rooms"  # the repo's own project file names it first
@@ -393,19 +394,44 @@ def test_step_3_a_check_names_the_project_of_the_folder_it_runs_from(dash, local
 def test_step_4_a_check_names_the_one_project_registered_for_its_host(dash, local, registry):
     assert _filed(dash, ["check", "https://shop.example/cart", "--expect-text", "Cart"]) == "shop"
     assert _filed(dash, ["smoke", "https://www.shop.example/"]) == "shop"  # www. is the same site
-    assert _filed(dash, ["check", "https://other.example/", "--expect-text", "x"]) is None  # no project has it
-    assert _filed(dash, ["check", "http://127.0.0.1:8871/", "--expect-text", "x"]) is None  # 2 projects: no guess
+    assert _filed(dash, ["check", "https://other.example/", "--expect-text", "x"]) == "other.example"
+    assert _filed(dash, ["check", "http://127.0.0.1:8871/", "--expect-text", "x"]) == "127.0.0.1:8871"
     assert local == []
 
 
 def test_a_repo_that_only_starts_with_a_projects_repo_name_is_not_that_project(dash, local, registry, tmp_path):
     # redteam on #130: /x/shop holds /x/shop/qa, never /x/shop-old/qa; a repo inside another names the inner one
-    assert _filed(dash, ["run", str(suite_file(checkout(tmp_path / "shop-old") / "qa"))]) is None
+    assert _filed(dash, ["run", str(suite_file(checkout(tmp_path / "shop-old") / "qa"))]) == "shop"  # site only
     inner = checkout(registry["shop"] / "vendor" / "rooms")
     (registry["projects"] / "rooms.toml").write_text(
         f'name = "rooms"\nrepo = "{inner}"\n[env.local]\nbase_url = "http://127.0.0.1:8871"\n')
     assert _filed(dash, ["run", str(suite_file(inner / "qa"))]) == "rooms"
     assert _filed(dash, ["run", str(suite_file(registry["shop"] / "qa"))]) == "shop"
+
+
+def test_nearest_repo_project_wins_over_cwd_site_and_unknown_dashboard(dash, local, registry):
+    nested = registry["shop"] / "packages" / "widget"
+    (nested / ".qajev").mkdir(parents=True)
+    (nested / "qa").mkdir()
+    (nested / ".qajev/project.toml").write_text('name = "widget"\n[env.prod]\nbase_url = "https://widget.example"\n')
+    suite = suite_file(nested / "qa", base="https://shop.example")
+    dash.projects = set()  # no sync/settings permission is needed just to label a run
+    assert _filed(dash, ["run", str(suite)]) == "widget"
+    assert not any(path.startswith("/api/v1/projects/") for _, path, _ in dash.calls)
+    assert local == []
+
+
+def test_host_fallback_drops_url_path_query_and_fragment(dash, local, registry):
+    assert _filed(dash, ["check", "https://www.other.example:443/private?ticket=private-value#fragment",
+                         "--expect-text", "x"]) == "other.example"
+    assert _filed(dash, ["smoke", "https://other.example:8443/path"]) == "other.example:8443"
+
+
+def test_host_fallback_uses_the_page_origin_instead_of_an_allowed_cdn(dash, local, registry):
+    path = registry["loose"] / "standalone.yaml"
+    path.write_text('name: Standalone\nmode: readonly\nhosts: [cdn.other.example]\nscenarios:\n'
+                    '  - name: Page\n    url: https://page.other.example/cart\n    expect: {text: [Cart]}\n')
+    assert _filed(dash, ["run", str(path)]) == "page.other.example"
 
 
 def test_qajev_tunnel_prints_what_the_file_declares_for_the_dispatcher_to_check(capsys, tmp_path):
@@ -734,7 +760,7 @@ def test_a_project_run_ships_its_project_file(dash, local, tmp_path):
                     '[[objective]]\nname = "home"\nurl = "/"\nabout = "it loads"\nexpect = { text = ["Hi"] }\n')
     assert cli.main(["run", "--project", str(path), "--suite", "core"]) == 0  # runner = "cloud" in the file
     body = dash.created()
-    assert body["args"] == ["run", "--project", "in/shop.toml", "--suite", "core"] and "project" not in body
+    assert body["args"] == ["run", "--project", "in/shop.toml", "--suite", "core"] and body["project"] == "shop"
     assert dash.files["in/shop.toml"] == path.read_bytes() and local == []
 
 
