@@ -1025,6 +1025,19 @@ def test_report_of_an_unknown_cloud_run_says_so(dash, local, capsys):
     assert "r_nosuchrun" in capsys.readouterr().err
 
 
+def test_effect_report_download_keeps_each_png_and_refuses_outside_paths(dash, local, tmp_path):
+    effect = {"off": "shots/off.png", "on": "shots/on.png", "difference": "shots/difference.png"}
+    data = {"scenarios": [{"effect": effect}, {"effect": {"off": "../../outside.png"}}]}
+    dash.files.update({"report.json": json.dumps(data).encode(), "report.md": b"effect", "report.html": b"effect"})
+    for key, path in effect.items():
+        dash.files[path] = key.encode()
+    saved, count = cloud.fetch_report(cloud.connect(), RUN, tmp_path / "download")
+    assert saved == data and count == 3
+    for key, path in effect.items():
+        assert (tmp_path / "download" / path).read_bytes() == key.encode()
+    assert not (tmp_path / "outside.png").exists()
+
+
 def test_mcp_qa_report_reads_a_cloud_run_too(dash):
     dash.files.update({"report.json": json.dumps({"scenarios": [{"name": "a", "shot": "shots/a.jpg"}]}).encode(),
                        "report.md": b"# Run a\n", "shots/a.jpg": b"jpg"})

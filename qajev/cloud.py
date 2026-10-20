@@ -737,7 +737,9 @@ def fetch_report(client, run_id, folder):
                 raise
     named = set()
     for s in data.get("scenarios") or []:
-        for path in [s.get("shot"), *[(r or {}).get("path") for r in s.get("react") or [] if isinstance(r, dict)]]:
+        effect = s.get("effect") if isinstance(s.get("effect"), dict) else {}
+        for path in [s.get("shot"), *[(r or {}).get("path") for r in s.get("react") or [] if isinstance(r, dict)],
+                     *[effect.get(key) for key in ("off", "on", "difference")]]:
             if _plain_relative(path):
                 named.add(path)
     kept, root = 0, folder.resolve()

@@ -31,10 +31,55 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | `js` | `--expect-js`, `-j` | this JavaScript expression returns exactly `true` in the page (a Promise counts by what it resolves to, within 5 s). Anything else fails: a string fails with that string as the reason, so `cond || 'why it failed'` reads well in the report; `false` and `null` fail as such; any other value (a number, an object, an element) fails as the wrong type; a throw, a rejection or no answer fails with the error. What came back is kept in the report, pass or fail |
 | `fetch` | `--fetch URL[=STATUS]` | a request made from the page answers with that status (default 200) |
 | `command` | suite only | a shell command prints the expected output (needs `--allow-commands`) |
+| `effect` | suite only | off/on PNG captures of a named region have at least the required fraction of changed pixels |
 | `looks` | `--expect-looks` | Clef, looking at the final screenshot, judges this statement true (needs Clef: see below) |
 
 Text is compared the way a person reads it: line breaks and runs of spaces count as one space. Use
 `ignore_case: true` for labels styled in capitals.
+
+## Check that an effect draws
+
+`expect.effect` compares rendered pixels without a model call. Give it explicit off and on actions, a named rectangle
+in viewport CSS pixels, and `min_changed`, a fraction greater than 0 and at most 1. A pixel counts as changed when
+the largest red, green or blue difference is greater than `tolerance` (an integer from 0 to 255, default 8).
+The measured fraction must meet or exceed the minimum. Identical captures fail with zero changed pixels.
+
+```yaml
+devices: [desktop]
+scenarios:
+  - name: the shadow draws
+    about: Enabling the shadow changes the ground next to the subject.
+    url: http://127.0.0.1:3000/
+    expect:
+      effect:
+        name: subject shadow
+        region: {name: ground next to subject, x: 40, y: 40, width: 400, height: 200}
+        off:
+          - js: document.querySelector('#subject').style.boxShadow = 'none'
+        on:
+          - js: document.querySelector('#subject').style.boxShadow = '20px 20px 8px #222'
+        tolerance: 8
+        min_changed: 0.01
+```
+
+Use your application's state actions and `wait_for` hooks for a game or shader. Keep the camera, time and other
+features fixed between captures; an off/off control helps select a useful tolerance and minimum. Place the region
+over the visible effect, away from labels and controls that also change. The check measures the changed region;
+the two state actions isolate the feature being tested. A true feature flag alone cannot satisfy it.
+
+The state actions support the same hooks as `before` and `after`. Nested commands require `--allow-commands`;
+existing host and read-only guards still apply. The final state is on. Ordinary page checks and `looks` then read
+that final state. A scenario with multiple clients cannot use this check.
+
+The report and MCP result keep full counts, fraction, thresholds and region bounds, with off, on and difference
+PNGs. Magenta marks changed pixels in the difference image. These three required evidence images are retained
+even with `--no-shots`, which disables optional end screenshots. Invalid or missing PNGs, unequal dimensions,
+out-of-viewport regions and oversized evidence are harness errors, so they cannot pass. Each capture must fit the
+comparison's 16,384-per-axis/16,777,216-total-pixel limit and the 32 MiB evidence-file limit.
+
+Use `qajev run` or `qa_run_suite` with the same suite. `qajev plan` describes the comparison before it runs. A planted
+fault can name the comparison's exact plan words with `expect_fail`, as for other checks. Report downloads keep all
+three PNGs; Cloud publication needs the matching CLI and evidence-uploader versions on its runner.
 
 ## What only a look at the screen tells (Clef)
 

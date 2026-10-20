@@ -327,6 +327,12 @@ def markdown(data):
         lines.append("")
         if r.get("about"):
             lines += [f"About: {r['about']}", ""]
+        effect = r.get("effect")
+        if effect:
+            lines += ["Visible effect: " + _cell(effect["name"], 200), "",
+                      "Region: " + json.dumps(effect["region"], ensure_ascii=False), "",
+                      "Pixels: " + json.dumps(effect["metrics"], ensure_ascii=False, sort_keys=True), "",
+                      " · ".join(f"[{key}]({effect[key]})" for key in ("off", "on", "difference")), ""]
         if r.get("expected"):
             tag = report_html.planted_tag(r)
             lines += [f"{tag[:1].upper()}{tag[1:]}. Gate: {r['graded_reason']}", ""]

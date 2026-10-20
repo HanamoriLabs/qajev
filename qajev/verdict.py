@@ -93,9 +93,18 @@ def planned(expect):
     if expect.get("command"):
         out.append({"check": f"command {expect['command']['run']!r}",
                     **({"says": says["command"]} if says.get("command") else {})})
+    if expect.get("effect"):
+        out.append(effect_planned(expect["effect"]))
     for c in expect.get("across") or []:
         out.append({"check": f"across: {c['check']}", **({"says": c["says"]} if c.get("says") else {})})
     return out
+
+
+def effect_planned(spec):
+    name, region = spec["name"], spec["region"]["name"]
+    return {"check": f"effect {name!r} in region {region!r}",
+            "says": f"{name}: at least {spec['min_changed']:.6g} of pixels in region {region} change "
+                    f"between off and on, with RGB difference greater than {spec['tolerance']}"}
 
 
 VALUE_KEEP = 200
