@@ -31,12 +31,110 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | `js` | `--expect-js`, `-j` | this JavaScript expression returns exactly `true` in the page (a Promise counts by what it resolves to, within 5 s). Anything else fails: a string fails with that string as the reason, so `cond || 'why it failed'` reads well in the report; `false` and `null` fail as such; any other value (a number, an object, an element) fails as the wrong type; a throw, a rejection or no answer fails with the error. What came back is kept in the report, pass or fail |
 | `fetch` | `--fetch URL[=STATUS]` | a request made from the page answers with that status (default 200) |
 | `command` | suite only | a shell command prints the expected output (needs `--allow-commands`) |
+| `effect` | suite only | off/on PNG captures of a named region have at least the required fraction of changed pixels |
 | `looks` | `--expect-looks` | Clef, looking at the final screenshot, judges this statement true (needs Clef: see below) |
 
 Text is compared the way a person reads it: line breaks and runs of spaces count as one space. Use
 `ignore_case: true` for labels styled in capitals.
 
+## Check that an effect draws
+
+`expect.effect` compares rendered pixels without a model call. Give it explicit off and on actions, a named rectangle
+in viewport CSS pixels, and `min_changed`, a fraction greater than 0 and at most 1. A pixel counts as changed when
+the largest red, green or blue difference is greater than `tolerance` (an integer from 0 to 255, default 8).
+The measured fraction must meet or exceed the minimum. Identical captures fail with zero changed pixels.
+
+```yaml
+devices: [desktop]
+scenarios:
+  - name: the shadow draws
+    about: Enabling the shadow changes the ground next to the subject.
+    url: http://127.0.0.1:3000/
+    expect:
+      effect:
+        name: subject shadow
+        region: {name: ground next to subject, x: 40, y: 40, width: 400, height: 200}
+        off:
+          - js: document.querySelector('#subject').style.boxShadow = 'none'
+        on:
+          - js: document.querySelector('#subject').style.boxShadow = '20px 20px 8px #222'
+        tolerance: 8
+        min_changed: 0.01
+```
+
+Use your application's state actions and `wait_for` hooks for a game or shader. Keep the camera, time and other
+features fixed between captures; an off/off control helps select a useful tolerance and minimum. Place the region
+over the visible effect, away from labels and controls that also change. The check measures the changed region;
+the two state actions isolate the feature being tested. A true feature flag alone cannot satisfy it.
+
+The state actions support the same hooks as `before` and `after`. Nested commands require `--allow-commands`;
+existing host and read-only guards still apply. The final state is on. Ordinary page checks and `looks` then read
+that final state. A scenario with multiple clients cannot use this check.
+
+The report and MCP result keep full counts, fraction, thresholds and region bounds, with off, on and difference
+PNGs. Magenta marks changed pixels in the difference image. These three required evidence images are retained
+even with `--no-shots`, which disables optional end screenshots. Invalid or missing PNGs, unequal dimensions,
+out-of-viewport regions and oversized evidence are harness errors, so they cannot pass. Each capture must fit the
+comparison's 16,384-per-axis/16,777,216-total-pixel limit and the 32 MiB evidence-file limit.
+
+Use `qajev run` or `qa_run_suite` with the same suite. `qajev plan` describes the comparison before it runs. A planted
+fault can name the comparison's exact plan words with `expect_fail`, as for other checks. Report downloads keep all
+three PNGs; Cloud publication needs the matching CLI and evidence-uploader versions on its runner.
+
 ## What only a look at the screen tells (Clef)
+
+Write one visible claim per `looks` entry. Each entry gets its own model question and probability; claims are not
+averaged together. Existing strings still use the full screenshot. For small features and relative claims, give an
+explicit crop and a labelled reference instead:
+
+```yaml
+expect:
+  looks:
+    - claim: The left hand closes around the grip.
+      crop: {name: left hand, x: 100, y: 240, width: 160, height: 160}
+    - claim: The right hand closes around the grip.
+      crop: {name: right hand, x: 300, y: 240, width: 160, height: 160}
+    - claim: The scene has finished materials rather than placeholder blocks.
+      crop: {name: scene, x: 0, y: 0, width: 640, height: 360}
+      reference: {path: references/blockout.png, role: blockout}
+    - claim: The enabled panel has a visibly stronger glow.
+      crop: {name: enabled panel, x: 320, y: 0, width: 320, height: 240}
+      different_from:
+        crop: {name: disabled panel, x: 0, y: 0, width: 320, height: 240}
+        tolerance: 8
+        min_changed: 0.05
+```
+
+Crops use integer **source-frame pixels**, not viewport CSS pixels. Choose them from the full-size screenshot for
+that device. A crop must fit the frame. A structured claim uses a lossless, unmarked PNG capture on the web;
+read-only guards remain active. The model receives only that claim's crop and its explicitly labelled reference or
+comparison panel. Split a sentence such as “both hands hold the grip” into two claims and two crops; QAJev does
+not guess where to split prose or where the hands are.
+
+`different_from` compares both crops from the same captured frame. Their pixel dimensions must match. It uses the
+same RGB tolerance and changed-fraction rule as `effect`. An identical or too-similar panel fails before a model
+call, even if a model would pass it. Select a threshold with an unchanged control and a visible passing example.
+
+A reference's `role` is `expected` (a known target for the relative/quality claim) or `blockout` (an unfinished
+negative example). The model is told which it is. An exact pixel match to a block-out fails without a model call;
+other quality judgments still depend on the model. References must be explicit relative PNG/JPEG/WebP files below
+the suite or project-config folder, outside hidden folders, with no symlinks or traversal. Cloud inputs include
+only references of selected checks. Inline suites have their temporary suite folder as their base; use a suite
+file when it needs reference files.
+
+Reports retain the exact crop/reference/panel PNGs, difference image, bounds, comparison metrics and probability.
+These required images survive `--no-shots`, MCP output and Cloud uploads/downloads. Missing/invalid image evidence
+cannot pass. Existing image limits apply; crops decode at most 32 MiB and 16,777,216 pixels, then each model image
+must fit Clef's 4 MiB limit and the images together must fit its 8 MiB combined limit. Each claim costs its own
+model request, within the run's existing cost cap.
+
+The same structured entries work in a native `steps:` suite's ordinary check/goal/play, pad, keys or relaunch
+steps. `qajev plan` validates and names them before the run. Put a visual claim on a separate check step after a
+`js`, handoff, renderer-crash or `open_url` action; those actions cannot judge it. Real-device browser conversion
+does not yet carry `looks` and marks that leg skipped with a reason.
+
+These checks do not establish a measured model false-pass rate. Calibrate claims and references against known
+passing and failing frames before relying on them as a release gate.
 
 Every check above reads the page. Some bugs only show in the picture: a button cut off by a box too small for it,
 text the same colour as its background, a price drawn on a canvas, a label that is an image. With Clef as the decision
@@ -54,7 +152,7 @@ scenarios:
     url: /join
     expect:
       visible: ["Sign up now"]          # the words are on screen...
-      looks: ["The 'Sign up now' button is fully visible and its words are readable, not cut off"]  # ...and legible
+      looks: ["The 'Sign up now' button is fully visible", "The button's words are readable"]  # ...and legible
   - name: pricing from a drawn menu
     url: /plans
     vision: true                        # the menu buttons are pictures
@@ -63,8 +161,8 @@ scenarios:
 ```
 
 Write a `looks` statement the way you would brief a person looking at a screenshot: one plain fact, and specific
-(`The Pro plan costs $29 per month`, not `the prices look right`). A looks check is one Clef call per run of the
-scenario (all its statements together), on top of its decisions. `vision` goes on a scenario or on the whole suite,
+(`The Pro plan costs $29 per month`, not `the prices look right`). Each looks claim is one Clef call, on top of the
+scenario's decisions. `vision` goes on a scenario or on the whole suite,
 and makes every decision larger: a screenshot is about 1,000 extra input tokens, about $0.0001 with Clef-flash and
 $0.00024 with Clef. Both need Clef: with Jev, which reads text only, QAJev refuses the run and says what to set.
 

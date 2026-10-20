@@ -237,7 +237,7 @@ def _unknown(out):
 
 
 def keys_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shots=True, emit=None, helper=None,
-              run=None):
+              run=None, looks_folder=None):
     """A suite's `keys:` step: the app to the front, the clipboard set, the keys pressed (all through qajev-keys),
     then the step's `expect` checks, if it has any. Each part is a check; the first that fails ends the step."""
     p = plan(value)
@@ -282,4 +282,4 @@ def keys_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shot
     if code != 0 or not expect:
         return _step_result(name, "reached", checks)
     return play(game, name=name, goal=None, expect=expect, budget={"actions": 0, "seconds": 0}, ledger=ledger,
-                run_dir=run_dir, shots=shots, emit=emit, prior=checks)
+                run_dir=run_dir, shots=shots, emit=emit, prior=checks, looks_folder=looks_folder)

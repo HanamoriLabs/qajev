@@ -2,6 +2,7 @@
 relative to the run folder). URLs lose their query strings, as in report.md: they carry tokens and codes."""
 
 import base64
+import json
 import re
 import time
 from html import escape
@@ -280,6 +281,20 @@ def _scenario(i, r, who="Jev"):
     if r.get("expected"):
         parts.append(f'<p class="planted"><span class="tag">{_e(planted_tag(r))}</span> Gate: '
                      f'{_e(r.get("graded_reason"))}</p>')
+    effect = r.get("effect")
+    if effect:
+        parts += [f'<h4>Visible effect: {_e(effect["name"])}</h4>',
+                  f'<pre>Region: {_e(json.dumps(effect["region"], ensure_ascii=False))}\n'
+                  f'Pixels: {_e(json.dumps(effect["metrics"], ensure_ascii=False, sort_keys=True))}</pre>']
+        parts += [_shot(effect[key], f"{effect['name']} — {key}", f"{effect['region']['name']} — {key}")
+                  for key in ("off", "on", "difference")]
+    for check in r.get("checks") or []:
+        evidence = check.get("evidence")
+        if isinstance(evidence, dict):
+            parts += [f'<h4>{_e(check.get("check"))}</h4>',
+                      f'<pre>{_e(json.dumps(evidence, ensure_ascii=False, sort_keys=True))}</pre>']
+            parts += [_shot(evidence[key], f"{check.get('check')} — {key}", f"{check.get('check')} — {key}")
+                      for key in ("crop", "reference", "panel", "difference") if evidence.get(key)]
     r = {**r, "_lines": [{**line, "detail": c.get("detail")} for line, c in zip(it["checks"], r.get("checks") or [])]}
     facts = []
     if r.get("url"):

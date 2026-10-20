@@ -327,6 +327,12 @@ def markdown(data):
         lines.append("")
         if r.get("about"):
             lines += [f"About: {r['about']}", ""]
+        effect = r.get("effect")
+        if effect:
+            lines += ["Visible effect: " + _cell(effect["name"], 200), "",
+                      "Region: " + json.dumps(effect["region"], ensure_ascii=False), "",
+                      "Pixels: " + json.dumps(effect["metrics"], ensure_ascii=False, sort_keys=True), "",
+                      " · ".join(f"[{key}]({effect[key]})" for key in ("off", "on", "difference")), ""]
         if r.get("expected"):
             tag = report_html.planted_tag(r)
             lines += [f"{tag[:1].upper()}{tag[1:]}. Gate: {r['graded_reason']}", ""]
@@ -337,6 +343,11 @@ def markdown(data):
             mark = "✅" if check["ok"] else "❌"
             lines.append(f"- {mark} {_cell(check['check'], 200)}" + (f" — {_cell(check['detail'])}"
                                                                        if check.get("detail") else ""))
+            evidence = check.get("evidence")
+            if isinstance(evidence, dict):
+                lines += ["", "Claim evidence: " + json.dumps(evidence, ensure_ascii=False, sort_keys=True), "",
+                          " · ".join(f"[{key}]({evidence[key]})" for key in
+                                     ("crop", "reference", "panel", "difference") if evidence.get(key)), ""]
         if r.get("blocked_writes"):
             first = r["blocked_writes"][0]
             lines.append(f"- Read-only guard blocked {len(r['blocked_writes'])} write request(s), e.g. "

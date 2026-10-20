@@ -1,6 +1,7 @@
 """Suite and scenario model. A suite is YAML or JSON; `qajev check` builds a one-scenario suite from flags."""
 
 import json
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -53,7 +54,7 @@ def wanted_devices(explicit=None):
 HOOK_KINDS = {"js", "fill", "click", "click_at", "navigate", "wait_for", "key", "react", "sleep", "command", "reload",
               "pad"}
 EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
-               "looks", "across", "says"}
+               "looks", "across", "says", "effect"}
 # The checks only their author can describe, by what `says` gives them in plain words (the test plan, 6 Oct)
 SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
@@ -130,6 +131,8 @@ class Scenario:
     @property
     def uses_commands(self):
         hooks = [*self.before, *self.after]
+        effect = self.expect.get("effect") or {}
+        hooks += [*effect.get("off", []), *effect.get("on", [])]
         return any("command" in h for h in hooks) or "command" in self.expect
 
 
@@ -280,7 +283,12 @@ def _expect(value, where):
     out["text"] = _list(value.get("text"), f"{where}.text")
     out["absent"] = _list(value.get("absent"), f"{where}.absent")
     out["visible"] = _list(value.get("visible"), f"{where}.visible")
-    out["looks"] = [str(s) for s in _list(value.get("looks"), f"{where}.looks")]  # judged from the screenshot
+    from . import vision
+
+    try:
+        out["looks"] = vision.normalize(value.get("looks"))
+    except vision.VisionError as e:
+        raise SuiteError(f"{where}.looks: {e}") from None
     out["across"] = _across(value.get("across"), f"{where}.across")  # a multiplayer scenario's (clients.py)
     out["says"] = _says(value.get("says"), f"{where}.says")
     if "url_regex" in out:
@@ -300,6 +308,47 @@ def _expect(value, where):
         out["command"] = {"run": cmd} if isinstance(cmd, str) else cmd
         if not isinstance(out["command"], dict) or "run" not in out["command"]:
             raise SuiteError(f"{where}.command needs run")
+    if "effect" in out:
+        out["effect"] = _effect(out["effect"], f"{where}.effect")
+    return out
+
+
+def _effect(value, where):
+    if not isinstance(value, dict):
+        raise SuiteError(f"{where} must name an effect, region, off/on hooks and min_changed")
+    # YAML 1.1 reads unquoted on/off keys as booleans. Normalize only those literal boolean keys here.
+    normalized = {"on" if key is True else "off" if key is False else key: val for key, val in value.items()}
+    if len(normalized) != len(value) or any(not isinstance(key, str) for key in normalized):
+        raise SuiteError(f"{where} has ambiguous or non-text keys")
+    value = normalized
+    _unknown(where, value, {"name", "region", "off", "on", "min_changed", "tolerance"})
+    region = value.get("region")
+    if not isinstance(region, dict) or set(region) != {"name", "x", "y", "width", "height"}:
+        raise SuiteError(f"{where}.region needs name, x, y, width and height in viewport CSS pixels")
+    for label in (value.get("name"), region.get("name")):
+        if not isinstance(label, str) or not label.strip() or len(label) > 200:
+            raise SuiteError(f"{where} and its region each need a name of 1–200 characters")
+    for key in ("x", "y", "width", "height"):
+        number = region[key]
+        if (isinstance(number, bool) or not isinstance(number, (int, float))
+                or (isinstance(number, float) and not math.isfinite(number))
+                or number < 0 or (key in {"width", "height"} and number == 0)):
+            bound = "positive" if key in {"width", "height"} else "nonnegative"
+            raise SuiteError(f"{where}.region.{key} must be finite and {bound}")
+    minimum = value.get("min_changed")
+    if (isinstance(minimum, bool) or not isinstance(minimum, (int, float))
+            or (isinstance(minimum, float) and not math.isfinite(minimum))
+            or not 0 < minimum <= 1):
+        raise SuiteError(f"{where}.min_changed must be a fraction greater than 0 and at most 1")
+    tolerance = value.get("tolerance", 8)
+    if isinstance(tolerance, bool) or not isinstance(tolerance, int) or not 0 <= tolerance <= 255:
+        raise SuiteError(f"{where}.tolerance must be an integer from 0 to 255")
+    out = {"name": value["name"], "region": dict(region),
+           "min_changed": minimum, "tolerance": tolerance}
+    for state in ("off", "on"):
+        out[state] = _hooks(value.get(state), f"{where}.{state}")
+        if not out[state]:
+            raise SuiteError(f"{where}.{state} needs at least one explicit state action")
     return out
 
 
@@ -410,7 +459,7 @@ def page_checks(expect):
 def has_checks(expect):
     # looks is not a page check: it costs a model call, so it is judged once, at the end, not while Jev moves.
     return page_checks(expect) or bool(expect.get("fetch") or expect.get("command") or expect.get("looks")
-                                       or expect.get("across"))
+                                       or expect.get("across") or expect.get("effect"))
 
 
 def _account(raw, base, folder=None):
@@ -645,6 +694,14 @@ def parse(data, path=None, devices=None):
         tunnel=tunnel_spec(data.get("tunnel")),
     )
     check_safety(suite)
+    if path:
+        from . import vision
+
+        for scenario in suite.scenarios:
+            try:
+                vision.reference_files(scenario.expect.get("looks"), Path(path).parent)
+            except vision.VisionError as e:
+                raise SuiteError(f"{scenario.name}.expect.looks: {e}") from None
     return suite
 
 
@@ -736,7 +793,7 @@ def _expect_fail(value, expect, clients, about_text, where):
         raise SuiteError(f"{where}.expect_fail: a scenario with clients cannot be expected to fail")
     if not about(about_text, f"{where}.about"):
         raise SuiteError(f"{where}: a test expected to fail must say in about: what fault it plants")
-    checks = verdict.planned(expect) + [{"check": f"looks: {s}"} for s in expect.get("looks") or []]
+    checks = verdict.planned(expect)
     if value is True:
         if len(checks) != 1:
             raise SuiteError(f"{where}.expect_fail: true needs a test with exactly one check (this one has "

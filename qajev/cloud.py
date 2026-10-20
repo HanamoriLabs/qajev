@@ -533,6 +533,22 @@ def seeded_account(account, tunnel, targets, source, folder):
     return [(source[0], SEED_REF.sub(absolute, Path(source[1]).read_text(encoding="utf-8")).encode()), *out]
 
 
+def _looks_inputs(entries, folder):
+    from . import vision
+    from .crops import crop
+
+    try:
+        files = vision.reference_files(entries, folder)
+        for _, path in files:
+            with path.open("rb") as stream:
+                vision.data_url(crop(stream.read(32 * 1024 * 1024 + 1)))
+    except (vision.VisionError, ValueError) as e:
+        raise CloudError(f"looks reference refused: {e}", EXIT_CONFIG) from None
+    except OSError:
+        raise CloudError("looks reference image could not be read", EXIT_CONFIG) from None
+    return [("in/" + relative, path) for relative, path in files]
+
+
 def plan(args):
     """What goes to the cloud for this parsed run (args.argv: its arguments, with the command first). Nothing is sent.
     Raises NotAllowed when the run must stay on this Mac, CloudError when a setting is wrong."""
@@ -583,6 +599,17 @@ def plan(args):
         writes = writes or target.get("mode") == "mutate"
         remote = f"in/{proj.config_path.name}"
         files.append((remote, proj.config_path.resolve()))
+        has_looks = any(isinstance(obj.get("expect"), dict) and obj["expect"].get("looks")
+                        for obj in proj.objectives)
+        if cmd == "run" and not getattr(args, "objective", None) and has_looks:
+            try:
+                chosen = project_mod.suite_data(proj, env=env, tags=args.tags, names=args.names)
+            except project_mod.ProjectError as e:
+                raise CloudError(str(e), EXIT_CONFIG) from None
+            for scenario in chosen["scenarios"]:
+                expect = scenario.get("expect") if isinstance(scenario.get("expect"), dict) else {}
+                files.extend(item for item in _looks_inputs(expect.get("looks"),
+                                                            proj.config_path.parent) if item not in files)
         swap["project"] = remote
         project_name, plan_base = proj.name, proj.config_path.parent
     elif cmd == "run":
@@ -603,6 +630,9 @@ def plan(args):
         writes = writes or suite.mutates
         remote = f"in/{args.suite.name}"
         files.append((remote, args.suite.resolve()))
+        for scenario in suite.scenarios:
+            files.extend(item for item in _looks_inputs(scenario.expect.get("looks"), args.suite.resolve().parent)
+                         if item not in files)
         swap["suite"] = remote
         named_plan, plan_base = suite.plan, args.suite.resolve().parent
         from . import project as project_mod
@@ -840,8 +870,14 @@ def fetch_report(client, run_id, folder):
     named = set()
     try:
         for s in data.get("scenarios") or []:
-            react = s.get("react") or []
-            for path in [s.get("shot"), *[(r or {}).get("path") for r in react if isinstance(r, dict)]]:
+            effect = s.get("effect") if isinstance(s.get("effect"), dict) else {}
+            paths = [s.get("shot"), *[(r or {}).get("path") for r in s.get("react") or [] if isinstance(r, dict)],
+                     *[effect.get(key) for key in ("off", "on", "difference")]]
+            for check in s.get("checks") or []:
+                evidence = check.get("evidence") if isinstance(check, dict) else None
+                if isinstance(evidence, dict):
+                    paths.extend(evidence.get(key) for key in ("crop", "reference", "panel", "difference"))
+            for path in paths:
                 if _plain_relative(path):
                     named.add(path)
     except (AttributeError, TypeError):

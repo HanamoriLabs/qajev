@@ -48,7 +48,7 @@ def test_looks_are_judged_one_check_each_with_clefs_probability():
     checks = vision.look(clef, "data:image/jpeg;base64,AAAA", ["the Pro plan costs $29", "three plans are shown"],
                          {"page": {"url": "http://x/pricing", "title": "Pricing"}})
     assert seen["images"] == ["data:image/jpeg;base64,AAAA"] and seen["state"]["page"]["title"] == "Pricing"
-    assert [q["type"] for q in seen["questions"].values()] == ["noul", "noul"]
+    assert [q["type"] for q in seen["questions"].values()] == ["noul"]
     assert checks == [{"check": "looks: the Pro plan costs $29", "ok": True, "detail": "p 0.93"},
                       {"check": "looks: three plans are shown", "ok": False, "detail": "p 0.08"}]
 

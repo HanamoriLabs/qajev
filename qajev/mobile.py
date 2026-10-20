@@ -766,6 +766,8 @@ def web_steps(suite, platform):
             step["open"] = s.url
         if s.mode == "mutate":
             step["skip"] = "changes data: a device browser has no in-page write guard, so it runs on desktop only"
+        if s.expect.get("looks"):
+            step["skip"] = "looks checks are not carried into real-device browser conversion; use the desktop run"
         steps.append(step)
     return steps
 

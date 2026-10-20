@@ -448,7 +448,7 @@ def compare(have, want):
     return have == want
 
 
-def game_image(game):
+def game_image(game, *, max_bytes=None):
     """The game's screen as a data URL, for Clef (vision.py). A headless Godot game draws nothing to show."""
     from . import vision
 
@@ -458,23 +458,44 @@ def game_image(game):
         shot = game.shot(Path(name))
         if not shot:
             raise vision.VisionError("no picture of the game: it runs headless (vision and looks need its window)")
-        raw = Path(shot).read_bytes()
+        with Path(shot).open("rb") as stream:
+            raw = stream.read((max_bytes or vision.MAX_BYTES) + 1)
     except NativeError as e:
         raise vision.VisionError(f"no picture of the game: {e}") from None
     finally:
         for leftover in {Path(name), Path(name).with_suffix(".png")}:
             leftover.unlink(missing_ok=True)
-    return vision.data_url(raw)
+    return vision.data_url(raw, max_bytes=max_bytes or vision.MAX_BYTES)
 
 
-def looks_checks(game, statements, ledger, obs):
+def looks_checks(game, statements, ledger, obs, *, folder=None, evidence_dir=None):
     """`expect: {looks: [...]}` on a game or app screen: each statement judged by Clef from its screenshot."""
     from . import session as session_mod
     from . import vision
 
     jev = session_mod.load(ledger)
-    return vision.look(jev.model.post_json, game_image(game), statements,
-                       {"game": game_name(game), "screen": obs.get("screen")})
+    structured = any(isinstance(entry, dict) for entry in statements)
+    image = game_image(game, max_bytes=32 * 1024 * 1024 if structured else vision.MAX_BYTES)
+    return vision.look(jev.model.post_json, image, statements,
+                       {"game": game_name(game), "screen": obs.get("screen")},
+                       folder=folder, evidence_dir=evidence_dir)
+
+
+def check_looks(steps, folder=None):
+    from . import vision
+
+    for i, step in enumerate(steps):
+        expect = step.get("expect") if isinstance(step, dict) else None
+        if not isinstance(expect, dict) or "looks" not in expect:
+            continue
+        try:
+            expect["looks"] = vision.normalize(expect["looks"])
+            if expect["looks"] and (any(step.get(key) is not None for key in ("js", "handoff", "open_url"))
+                                    or step.get("crash_renderer")):
+                raise vision.VisionError("looks needs a separate check/goal/play step; this step cannot judge it")
+            vision.reference_files(expect["looks"], folder)
+        except vision.VisionError as e:
+            raise NativeError(f"steps[{i}].expect.looks: {e}") from None
 
 
 def _fingerprint(obs):
@@ -523,7 +544,7 @@ def stop_at_end(step):
 
 
 def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, settle=0.4, emit=None, wait=10.0,
-         poll=0.5, vision=False, about=None, stop_at_end=False, prior=()):
+         poll=0.5, vision=False, about=None, stop_at_end=False, prior=(), looks_folder=None):
     """One scenario on a running game: Jev pursues `goal` (if any), then the checks judge the game's state.
     vision: Clef sees the game's screenshot with every decision. about: what the test proves, for its result.
     prior: checks made before this ran (a step's `before:` and `lasted:`), judged with its own.
@@ -638,7 +659,7 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
         checks = native_checks(expect or {}, obs, game.errors) if stop != "browser_error" else []
         if (expect or {}).get("looks") and stop not in verdict.HARNESS_STOPS:
             try:
-                checks += looks_checks(game, expect["looks"], ledger, obs)
+                checks += looks_checks(game, expect["looks"], ledger, obs, folder=looks_folder, evidence_dir=run_dir)
             except (RuntimeError, ValueError) as e:  # no picture, or Clef unreachable: QAJev's side, no verdict
                 stop, detail = "model_error", f"could not judge looks: {e}"
     checks = [*prior, *checks]
@@ -682,7 +703,7 @@ def _decider_name():
 
 def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledger=None, run_dir=None, shots=True,
              sample=0.5, stall_after=6.0, emit=None, every=2.0, overlay_limit=90.0, pilot_wait=30.0,
-             pilot_poll=0.5, strict_decisions=False, vision=False, seen=None, until_optional=False):
+             pilot_poll=0.5, strict_decisions=False, vision=False, seen=None, until_optional=False, looks_folder=None):
     """Play in real time for up to `seconds` (or `until` the game state matches): the adapter's pilot steers each
     frame; Jev makes every decision the game stops for (`decide` is its goal there); every `sample` seconds QAJev
     records fps, frame time, memory and the game state, and flags a soft-lock (the game stops advancing while
@@ -873,7 +894,7 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
     looks = (expect or {}).get("looks")
     if looks and stop not in {"browser_error", "model_error"} and not held:
         try:
-            checks += looks_checks(game, looks, ledger, obs)
+            checks += looks_checks(game, looks, ledger, obs, folder=looks_folder, evidence_dir=run_dir)
         except (RuntimeError, ValueError) as e:  # no picture, or Clef unreachable: QAJev's side, no verdict
             stop, detail = "model_error", f"could not judge looks: {e}"
     run_stop = "checked" if locked else {"played": "checked", "game_over": "checked", "strict": "checked",
@@ -995,7 +1016,7 @@ def js_step(game, *, name, expression, emit=None):
                         page_errors=list(getattr(game, "errors", errors)[before:])[:10])
 
 
-def pad_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shots=True, emit=None):
+def pad_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shots=True, emit=None, looks_folder=None):
     """A suite's `pad:` step (Electron): buttons, a stick or a trigger on the virtual pad (pad.py), then the step's
     `expect` checks, if it has any (with the usual grace for the game to answer the input)."""
     from . import pad as pad_mod
@@ -1020,7 +1041,7 @@ def pad_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shots
     if not expect:
         return _step_result(name, "reached", [sent])
     return play(game, name=name, goal=None, expect=expect, budget={"actions": 0, "seconds": 0}, ledger=ledger,
-                run_dir=run_dir, shots=shots, emit=emit, prior=[sent])
+                run_dir=run_dir, shots=shots, emit=emit, prior=[sent], looks_folder=looks_folder)
 
 
 def check_pad(steps):
@@ -1169,7 +1190,7 @@ def _answers(game):
         return False
 
 
-def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit, vision=False):
+def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit, vision=False, looks_folder=None):
     """A `relaunch:` step: quit the game and start it again on the same save folder (save, relaunch, Continue);
     then the step's goal and checks, if it has any."""
     if callable(emit):
@@ -1189,7 +1210,8 @@ def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit, vision=Fals
             game.call(op="pilot", on=False)
         r = play(game, name=name, goal=step.get("goal"), expect=step.get("expect") or {}, stop_at_end=stop_at_end(step),
                  budget={"actions": 20, "seconds": 90, **(step.get("budget") or {})}, ledger=ledger,
-                 run_dir=run_dir, shots=shots, emit=emit, vision=bool(step.get("vision", vision)))
+                 run_dir=run_dir, shots=shots, emit=emit, vision=bool(step.get("vision", vision)),
+                 looks_folder=looks_folder)
         r["checks"] = [started, *r.get("checks", [])]
     else:
         r = _step_result(name, "reached", [started])
@@ -1309,9 +1331,10 @@ def _before(game, step, name):
     return [], r
 
 
-def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=False):
+def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=False, looks_folder=None):
     """Several steps in one game session, in order: `goal` steps (Jev on the UI) and `play` steps (real-time
     play). A step that loses the game ends the session; the rest are skipped."""
+    check_looks(steps, looks_folder)
     results = []
     unopened = None  # an app or page that would not open: the steps that use it are skipped until the next open
     fresh = 0  # where the current launch's steps begin: a relaunch revives a game an earlier step closed or lost
@@ -1327,7 +1350,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
             continue
         if step.get("relaunch"):
             r = relaunch_step(game, step, name=name, ledger=ledger, run_dir=run_dir, shots=shots, emit=emit,
-                              vision=vision)
+                              vision=vision, looks_folder=looks_folder)
             if r.get("stop") != "browser_error":
                 fresh = len(results)
                 problems = set()  # a new process: its watchdog starts again, and so do its problems
@@ -1384,26 +1407,29 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
             from .mackeys import keys_step
 
             r = keys_step(game, name=name, value=step["keys"], expect=step.get("expect"), ledger=ledger,
-                          run_dir=run_dir, shots=shots, emit=emit)
+                          run_dir=run_dir, shots=shots, emit=emit, looks_folder=looks_folder)
         elif step.get("js") is not None:
             r = js_step(game, name=name, expression=str(step["js"]), emit=emit)
         elif step.get("pad") is not None:
             r = pad_step(game, name=name, value=step["pad"], expect=step.get("expect"), ledger=ledger,
-                         run_dir=run_dir, shots=shots, emit=emit)
+                         run_dir=run_dir, shots=shots, emit=emit, looks_folder=looks_folder)
         elif step.get("crash_renderer"):
             r = crash_step(game, name=name, emit=emit)
         elif step.get("idle") and getattr(game, "renderer_gone", False):
-            idled = idle_for(game, name=name, seconds=float(step["idle"]), emit=emit)
-            r = idled if "outcome" in idled else _step_result(
-                name, "reached", [{"check": "the app kept running", "ok": True, "detail": None}],
-                idled_s=idled["idled_s"])
+            if (step.get("expect") or {}).get("looks"):
+                r = _step_result(name, "browser_error", [], "looks cannot judge a renderer that is gone")
+            else:
+                idled = idle_for(game, name=name, seconds=float(step["idle"]), emit=emit)
+                r = idled if "outcome" in idled else _step_result(
+                    name, "reached", [{"check": "the app kept running", "ok": True, "detail": None}],
+                    idled_s=idled["idled_s"])
         elif step.get("play"):
             p = step["play"]
             r = play_for(game, name=name, seconds=float(p.get("seconds", 60)), until=p.get("until"),
                          until_optional=bool(p.get("until_optional")), decide=p.get("decide"),
                          expect=step.get("expect"), ledger=ledger, run_dir=run_dir, shots=shots, emit=emit,
                          strict_decisions=bool(p.get("strict_decisions")), vision=bool(step.get("vision", vision)),
-                         seen=problems)
+                         seen=problems, looks_folder=looks_folder)
         else:
             with contextlib.suppress(NativeError):  # Jev has the controls: a game's bot would undo its moves
                 game.call(op="pilot", on=False)
@@ -1419,7 +1445,8 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
                 # a measured window is judged now: no grace for the checks after it to come true later
                 r = play(game, name=name, goal=step.get("goal"), expect=step.get("expect") or {}, budget=budget,
                          ledger=ledger, run_dir=run_dir, shots=shots, emit=emit, wait=0.0 if window else 10.0,
-                         vision=bool(step.get("vision", vision)), stop_at_end=stop_at_end(step), prior=prior)
+                         vision=bool(step.get("vision", vision)), stop_at_end=stop_at_end(step), prior=prior,
+                         looks_folder=looks_folder)
                 start = []  # judged inside play
                 if idled:
                     r.update(idled_s=idled["idled_s"], **({"look_gap_s": idled["look_gap_s"]} if window else {}))
