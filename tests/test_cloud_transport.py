@@ -281,3 +281,19 @@ def test_report_json_get_recovers_or_returns_nonzero_with_its_reason(monkeypatch
         assert code == 4 and captured.out == ""
         assert "report read operation timed out" in captured.err and "3 attempts" in captured.err
         assert waits == [2, 5]
+
+
+@pytest.mark.parametrize("value", [None, [], "not a report", 42])
+def test_cloud_report_rejects_non_object_json_before_writing_or_traversing_it(monkeypatch, tmp_path, value):
+    client, _ = client_and_waits(monkeypatch)
+    reads = []
+
+    def get_file(client, run_id, path):
+        reads.append(path)
+        return json.dumps(value).encode()
+
+    monkeypatch.setattr(cloud, "get_file", get_file)
+    with pytest.raises(cloud.CloudError, match="report.*JSON object"):
+        cloud.fetch_report(client, RUN, tmp_path)
+    assert reads == ["report.json"]
+    assert not (tmp_path / "report.json").exists()

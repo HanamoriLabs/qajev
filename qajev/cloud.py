@@ -204,17 +204,30 @@ class Client:
         """The dashboard's answer without the key in it, whatever it says: QAJev prints what it gets."""
         return config.redact_tree(obj, [self._key]) if self._key else obj
 
-    def _call(self, method, path, body=None, raw=None, headers=None, timeout=None, as_bytes=False):
+    def _call(self, method, path, body=None, raw=None, headers=None, timeout=None, as_bytes=False,
+              confirm_upload=None):
         import urllib.error  # noqa: PLC0415
 
         waits = RETRY_WAITS if method in ("GET", "PUT") else ()
+        uncertain = False
         for attempt, wait in enumerate((*waits, None), 1):
             try:
                 return self._once(method, path, body, raw, headers, timeout, as_bytes)
+            except ApiError as e:
+                if uncertain and e.status == 403 and confirm_upload is not None:
+                    receipt = confirm_upload()
+                    if receipt is not None:
+                        return receipt
+                raise
             except (urllib.error.URLError, OSError) as e:
+                uncertain = True
                 if wait is not None:
                     time.sleep(wait)
                     continue
+                if confirm_upload is not None:
+                    receipt = confirm_upload()
+                    if receipt is not None:
+                        return receipt
                 reason = getattr(e, "reason", None) or e
                 tries = str(attempt) + (" attempts" if attempt != 1 else " attempt")
                 raise CloudError(f"the dashboard at {self.base} does not answer after {tries} "
@@ -261,11 +274,24 @@ class Client:
         if remote_path.startswith("/") or ".." in remote_path.split("/"):
             raise CloudError(f"unsafe file path: {remote_path}", EXIT_CONFIG)
         quoted = urllib.parse.quote(remote_path)
-        return self._call("PUT", f"/api/v1/runs/{urllib.parse.quote(run_id)}/files/{quoted}", raw=data,
-                          headers={"x-content-sha256": hashlib.sha256(data).hexdigest(),
-                                   "x-content-size": str(len(data)),
+        path = f"/api/v1/runs/{urllib.parse.quote(run_id)}/files/{quoted}"
+        sha, timeout = hashlib.sha256(data).hexdigest(), self.timeout_for(len(data))
+
+        def confirm():
+            # A final reply can be lost after dispatch starts; the Worker then refuses another input PUT.
+            # Read only this file once, with the same permission checks. A refusal or mismatch is no receipt.
+            try:
+                stored = self._once("GET", path, None, None, None, timeout, True)
+            except (CloudError, OSError):
+                return None
+            if stored != data:
+                return None
+            return {"path": remote_path, "size": len(data), "sha256": sha, "url": path}
+
+        return self._call("PUT", path, raw=data,
+                          headers={"x-content-sha256": sha, "x-content-size": str(len(data)),
                                    "Content-Type": "application/octet-stream"},
-                          timeout=self.timeout_for(len(data)))
+                          timeout=timeout, confirm_upload=confirm)
 
 
 def connect(env_file=None):
@@ -747,6 +773,8 @@ def fetch_report(client, run_id, folder):
     folder.mkdir(parents=True, exist_ok=True)
     raw = get_file(client, run_id, "report.json")
     data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise CloudError("the cloud report must be a JSON object")
     (folder / "report.json").write_bytes(raw)
     for name in ("report.md", "report.html"):
         try:
