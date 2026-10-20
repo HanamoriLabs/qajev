@@ -362,17 +362,18 @@ def finalize_output(game, results=None, *, steps=None):
     if not captures:
         return
     linked = {}
-    for capture in captures:
+    for launch, capture in enumerate(captures, 1):
         if capture["proc"].poll() is None and capture["failure"] is None:
             continue
         if not capture["results"] and results is not None:
-            target = next((r for r in reversed(results) if r.get("outcome") != "skipped"), None)
-            if target is None and (capture["errors"] or capture["failure"]):
-                target = _step_result("Native shutdown diagnostics", "browser_error", [],
-                                      capture["failure"] or "errors arrived during shutdown")
-                results.append(target)
-            if target is not None:
-                _track_output(game, target, check_errors=True, capture=capture)
+            incomplete = capture["failure"] or not capture["eof"] or capture["reader"].is_alive()
+            if not capture["errors"] and not incomplete:
+                continue
+            target = _step_result(f"Native launch {launch} shutdown diagnostics", "checked", [
+                {"check": "no engine or script errors", "ok": not capture["errors"],
+                 "detail": capture["errors"][0] if capture["errors"] else None}])
+            results.append(target)
+            _track_output(game, target, check_errors=True, capture=capture)
         for result, check_errors, eligible in capture["results"]:
             entry = linked.setdefault(id(result), [result, check_errors, eligible, []])
             entry[3].append(capture)

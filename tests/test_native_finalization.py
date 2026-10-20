@@ -351,3 +351,39 @@ def test_long_known_secret_is_redacted_before_any_error_line_limit(isolated, tmp
     check = next(item for item in result["checks"] if item["check"] == "no engine or script errors")
     assert check["detail"] == "ERROR [redacted]"
     assert secret[:128] not in json.dumps(data)
+
+
+@pytest.mark.parametrize("kind", ["app", "godot"])
+@pytest.mark.parametrize("allow_errors", [False, True])
+def test_untracked_launch_diagnostics_get_their_own_record_without_contaminating_relaunch(isolated, kind, allow_errors):
+    game = make_game(isolated, kind, FINAL_ERROR="untracked first launch")
+    game.start()
+    try:
+        # No result belongs to this initial launch; the next launch's checks must keep their own meaning.
+        game.env["FINAL_ERROR"] = ""
+        game.relaunch()
+        second = native.play(
+            game,
+            name="second launch",
+            goal=None,
+            expect={"text": ["Ready"], "no_errors": not allow_errors},
+            budget={"actions": 1, "seconds": 1},
+            ledger=None,
+            shots=False,
+            wait=0,
+        )
+        game.close()
+        results = [second]
+        native.finalize_output(game, results)
+        native.finalize_output(game, results)
+        assert second["outcome"] == "pass" and second["diagnostics"]["errors"] == []
+        checks = [check for check in second["checks"] if check["check"] == "no engine or script errors"]
+        assert not checks if allow_errors else len(checks) == 1 and checks[0]["ok"] is True
+        assert second["findings"] == []
+        assert len(results) == 2
+        orphan = next(result for result in results if result is not second)
+        assert orphan["name"] == "Native launch 1 shutdown diagnostics" and orphan["outcome"] == "fail"
+        assert orphan["diagnostics"] == {"complete": True, "errors": ["ERROR untracked first launch"], "reason": None}
+        assert any(finding["kind"] == "engine error" for finding in orphan["findings"])
+    finally:
+        game.close()
