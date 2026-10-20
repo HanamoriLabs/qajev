@@ -96,7 +96,9 @@ def test_invalid_host_never_crashes_job_recording(url, entry, tmp_path, monkeypa
         monkeypatch.delenv("QAJEV_REQUIRE_PLAN", raising=False)
         args = build_parser().parse_args([*argv, "--runner", "cloud"])
         args.argv, args.runner_named = [*argv, "--runner", "cloud"], True
-        result = cloud.plan(args).project
+        with pytest.raises(cloud.CloudError, match="invalid URL host"):
+            cloud.plan(args)
+        return
     assert result is None
 
 

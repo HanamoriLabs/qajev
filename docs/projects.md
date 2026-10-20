@@ -30,7 +30,7 @@ still takes precedence.
 Cloud submissions keep that name even before the project's settings have been synced. The name labels the run;
 it creates no project settings or schedule and grants no extra key rights. Local jobs record the same name when
 they start, so a later sync does not have to guess from another computer's paths. Old synced runs are unchanged.
-Malformed host labels do not supply a fallback project name; they do not prevent a job record from being written.
+Malformed host labels are refused with a plain configuration error before a CLI run is routed or started.
 
 ## A project file
 

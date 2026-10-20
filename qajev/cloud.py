@@ -546,6 +546,9 @@ def plan(args):
         targets = [args.url]
         if not args.url:
             raise CloudError("give a URL or --project", EXIT_CONFIG)
+    for target in owner_urls or targets:
+        if refused := config.host_refusal(target):
+            raise CloudError(refused, EXIT_CONFIG)
     if not project_name and not owner:  # every cloud run names its project when one is known (the Orchestrator, 13 Oct)
         from . import project as project_mod
 

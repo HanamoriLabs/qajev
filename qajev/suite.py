@@ -10,7 +10,7 @@ from urllib.parse import urljoin, urlsplit
 
 from . import keys, pad, verdict
 from . import plan as plan_mod
-from .config import host_of, is_local_dev, is_loopback, is_test_email, plain_host, user_info_refusal
+from .config import host_of, host_refusal, is_local_dev, is_loopback, is_test_email, plain_host, user_info_refusal
 from .guard import MODES
 
 DEVICES = {
@@ -498,6 +498,8 @@ def parse(data, path=None, devices=None):
     base = data.get("base_url")
     if base and (refused := user_info_refusal(base)):  # first: no later error may quote the URL
         raise SuiteError(f"base_url: {refused}")
+    if base and (refused := host_refusal(base)):
+        raise SuiteError(f"base_url: {refused}")
     if base and urlsplit(base).scheme not in {"http", "https"}:
         raise SuiteError("base_url must be http(s)")
     if refused := _user_info_anywhere(data):  # a client's URL, a fetch probe's...: every URL in the suite
@@ -539,6 +541,8 @@ def parse(data, path=None, devices=None):
             if refused := user_info_refusal(url):  # with or without a scheme, before the error below quotes it
                 raise SuiteError(f"{where}: {refused}")
             url = urljoin(base, url) if base else url
+            if refused := host_refusal(url):
+                raise SuiteError(f"{where}: {refused}")
             if urlsplit(url).scheme not in {"http", "https"}:
                 raise SuiteError(f"{where}: url must be http(s) or relative to base_url (got {item.get('url')!r})")
         elif i == 0:

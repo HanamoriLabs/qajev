@@ -239,6 +239,20 @@ def is_loopback(url):
     return bool(LOOPBACK.match(plain_host(url)))
 
 
+def host_refusal(url):
+    """A plain configuration error for a host the IDNA codec cannot encode; never echo URL credentials."""
+    text = str(url or "")
+    if not text:
+        return None
+    try:
+        host = urlsplit(text if "://" in text else "http://" + text).hostname
+        if host:
+            host.encode("idna")
+    except (UnicodeError, ValueError):
+        return "invalid URL host: use valid DNS labels, each non-empty and at most 63 characters"
+    return None
+
+
 def user_info_refusal(url):
     """Why a URL that holds a user name or password is refused, or None. QAJev never writes down a password, and the
     URL would reach the report files, which a cloud run uploads (redteam, 13 Oct; the Orchestrator: refuse it). The
