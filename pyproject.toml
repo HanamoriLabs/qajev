@@ -68,3 +68,9 @@ typeCheckingMode = "basic"
 
 [tool.hatch.build.targets.sdist]
 exclude = ["site", "docs/images", "qajev-runs", "reports"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"qajev_upload_privacy.py" = "qajev_upload_privacy.py"
+
+[tool.hatch.build.targets.sdist.force-include]
+"qajev_upload_privacy.py" = "qajev_upload_privacy.py"

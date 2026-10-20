@@ -342,6 +342,15 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
 - The suite file, a project's `.toml` and the `--plan` file go with the run. A folder of more than 150 files, or
   with a file over 45 MB, ships as tar parts (at most 500 MB in all).
 
+Before creating a cloud run, the CLI makes public scratch copies of uploaded files and metadata with the same path
+privacy policy as the dispatcher. Local filesystem paths become stable relative references; safe web URLs and
+relative links stay intact. Upload hashes and sizes describe those public copies. Originals stay unchanged. A binary
+artifact with identifiable local path metadata is refused before upload. Served archives contain the public member
+copies, with tar owner names and IDs cleared, before they are split into parts. Direct file uploads use the same
+privacy check. Seeded test-account references and their fixture names use the same stable public reference.
+For a full tunnel, a private local registry lets the dispatcher restore those references on this machine before its
+existing process and permission checks. The registry is never part of the uploaded files.
+
 ## `qajev report`
 
 ```bash

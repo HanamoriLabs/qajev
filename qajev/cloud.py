@@ -24,6 +24,9 @@ import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from qajev_upload_privacy import remember_paths, sanitize_upload
+from qajev_upload_privacy import seed_remote as _seed_remote
+
 from . import config
 
 RUNNERS, MODELS = config.RUNNERS, config.CLOUD_MODELS
@@ -70,6 +73,20 @@ class ApiError(CloudError):
 
 class NotAllowed(Exception):
     """This run cannot go to the cloud (yet): --runner cloud refuses it, --runner auto runs it on this Mac."""
+
+
+def _public_upload(data, paths=None):
+    try:
+        return sanitize_upload(data, paths=paths)
+    except ValueError as e:
+        raise CloudError(str(e), EXIT_CONFIG) from None
+
+
+def _public_name(remote):
+    remote = json.loads(_public_upload(json.dumps(remote).encode()))
+    if not _plain_relative(remote):
+        raise CloudError("an upload file needs a safe relative name", EXIT_CONFIG)
+    return remote
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -206,7 +223,7 @@ class Client:
         import urllib.error  # noqa: PLC0415 (deferred: `qajev --help` imports this module for its choices)
         import urllib.request  # noqa: PLC0415
 
-        data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+        data = raw if raw is not None else (_public_upload(json.dumps(body).encode()) if body is not None else None)
         h = {"User-Agent": "qajev-cloud/1"}
         if self._key:  # None only for the doctor's GET /api/v1/config
             h["Authorization"] = f"Bearer {self._key}"
@@ -239,8 +256,12 @@ class Client:
         return self._call("POST", path, body=body if body is not None else {})
 
     def put_file(self, run_id, remote_path, data):
-        if remote_path.startswith("/") or ".." in remote_path.split("/"):
-            raise CloudError(f"unsafe file path: {remote_path}", EXIT_CONFIG)
+        return self._put_prepared_file(run_id, _public_name(remote_path), _public_upload(data))
+
+    def _put_prepared_file(self, run_id, remote_path, data):
+        """Transmit submit's public scratch bytes, including tar parts that must remain byte-exact."""
+        if not _plain_relative(remote_path):
+            raise CloudError("an upload file needs a safe relative name", EXIT_CONFIG)
         quoted = urllib.parse.quote(remote_path)
         return self._call("PUT", f"/api/v1/runs/{urllib.parse.quote(run_id)}/files/{quoted}", raw=data,
                           headers={"x-content-sha256": hashlib.sha256(data).hexdigest(),
@@ -410,9 +431,8 @@ SEED_REF = re.compile(r"seed:([^\s\"'#,\]\}]+)#([A-Za-z0-9_.-]+)")
 
 
 def seed_remote(file):
-    """Where a seed fixture goes in a cloud run: in/seed/<hash of its absolute path on this Mac>.json. The cloud
-    runner reads it there for that path (qcloud.runner), so the suite needs no other change."""
-    return f"in/seed/{hashlib.sha256(os.path.abspath(file).encode()).hexdigest()[:16]}.json"
+    """A seed fixture's name, from its public reference; the runner uses the same idempotent reference."""
+    return _seed_remote(file)
 
 
 def seeded_account(account, tunnel, targets, source, folder):
@@ -612,9 +632,19 @@ def plan(args):
 
 
 def site_files(root, scratch):
-    """A served folder's files as [(remote, local)]: as they are, or packed into tar parts when there are many."""
+    """Public scratch copies as [(remote, local)], packed only after every member passes privacy preflight."""
     site = [f for f in sorted(root.rglob("*")) if f.is_file() and not f.is_symlink()
             and not any(part.startswith(".") for part in f.relative_to(root).parts)]
+    public_root, public = scratch / "site-public", []
+    for f in site:
+        dest = public_root / _public_name(f.relative_to(root).as_posix())
+        if dest.exists():
+            raise CloudError("two served files would have the same public name", EXIT_CONFIG)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(_public_upload(f.read_bytes()))
+        dest.chmod(0o600)
+        public.append(dest)
+    root, site = public_root, public
     if len(site) > PACK_OVER_FILES or any(f.stat().st_size > PART_BYTES for f in site):
         return [(f"site/{p.name}", p) for p in pack_parts(root, site, scratch)]
     return [(f"site/{f.relative_to(root).as_posix()}", f) for f in site]
@@ -624,10 +654,16 @@ def pack_parts(root, site, scratch):
     """The served files as one uncompressed tar, cut into PART_BYTES parts. -> the part Paths, in order."""
     import tarfile  # noqa: PLC0415
 
+    def public_owner(info):
+        info.uid = info.gid = 0
+        info.uname = info.gname = ""
+        info.pax_headers = {}
+        return info
+
     whole = scratch / "qcloud-archive.tar"
     with tarfile.open(whole, "w", format=tarfile.PAX_FORMAT) as tar:
         for f in site:
-            tar.add(f, arcname=f.relative_to(root).as_posix(), recursive=False)
+            tar.add(f, arcname=f.relative_to(root).as_posix(), recursive=False, filter=public_owner)
     parts = []
     with whole.open("rb") as fh:
         while chunk := fh.read(PART_BYTES):
@@ -659,13 +695,20 @@ def submit(client, plan):
     ever) and raises CloudError with the run's id and address."""
     import tempfile  # noqa: PLC0415
 
-    with tempfile.TemporaryDirectory(prefix="qajev-cloud-") as scratch:
-        files = list(plan.files) + (site_files(plan.serve_root, Path(scratch)) if plan.serve_root else [])
-        for i, (remote, data) in enumerate(plan.inline):  # written only into this scratch folder, removed after
-            local = Path(scratch) / f"inline-{i}"
-            local.write_bytes(data)
+    with tempfile.TemporaryDirectory(prefix="qajev-cloud-") as temporary:
+        scratch = Path(temporary)
+        files = []
+        for i, (remote, original) in enumerate(plan.files):
+            local = scratch / f"input-{i}"
+            local.write_bytes(_public_upload(original.read_bytes()))
             local.chmod(0o600)
-            files.insert(i, (remote, local))
+            files.append((_public_name(remote), local))
+        files += site_files(plan.serve_root, scratch) if plan.serve_root else []
+        for i, (remote, data) in enumerate(plan.inline):  # written only into this scratch folder, removed after
+            local = scratch / f"inline-{i}"
+            local.write_bytes(_public_upload(data))
+            local.chmod(0o600)
+            files.insert(i, (_public_name(remote), local))
         names = [r for r, _ in files]
         if len(set(names)) != len(names):
             raise CloudError("two files would have the same name on the cloud machine; rename one", EXIT_CONFIG)
@@ -673,16 +716,25 @@ def submit(client, plan):
         if total > MAX_RUN_BYTES:
             raise CloudError(f"the files are {total // 2**20} MB; a cloud run takes at most "
                              f"{MAX_RUN_BYTES // 2**20} MB", EXIT_CONFIG)
-        # Each file is read again at upload time, one at a time: a big build never sits in memory whole.
+        # Public copies are hashed and sent one at a time; a whole build never sits in memory.
         declared = [{"path": remote, "sha256": _sha256(local), "size": local.stat().st_size} for remote, local in files]
         body = {"kind": plan.kind, "args": plan.args, "runner": "cloud", "surface": "web", "files": declared,
                 "name": plan.name}
-        project = _known_project(client, plan.project) if plan.project else None
+        project = json.loads(_public_upload(json.dumps(plan.project).encode())) if plan.project else None
+        project = _known_project(client, project) if project else None
         for key, value in (("model", plan.model), ("sees_screen", plan.sees_screen), ("project", project),
                            ("serve", {"path": "site", "port": plan.port} if plan.serve_root else None),
                            ("tunnel", plan.tunnel or ({"port": plan.tunnel_port} if plan.tunnel_port else None))):
             if value is not None:
                 body[key] = value
+        paths = {} if plan.tunnel else None
+        body = json.loads(_public_upload(json.dumps(body).encode(), paths=paths))
+        if paths:
+            try:
+                remember_paths(paths, directory=config.HOME)
+            except (OSError, ValueError):
+                raise CloudError("could not keep private local tunnel references; no run was created",
+                                 EXIT_CONFIG) from None
         created = client.post("/api/v1/runs", body) or {}
         run = created.get("run") if isinstance(created, dict) else None
         run_id = run.get("id") if isinstance(run, dict) else run
@@ -690,8 +742,11 @@ def submit(client, plan):
             raise CloudError("the dashboard did not return a run id")
         remote = None
         try:
-            for remote, local in files:
-                client.put_file(run_id, remote, local.read_bytes())
+            for (remote, local), declaration in zip(files, declared):
+                data = local.read_bytes()
+                if len(data) != declaration["size"] or hashlib.sha256(data).hexdigest() != declaration["sha256"]:
+                    raise CloudError("a public upload copy changed after preflight", EXIT_CONFIG)
+                client._put_prepared_file(run_id, remote, data)
         except BaseException as e:
             with contextlib.suppress(CloudError):
                 client.post(f"/api/v1/runs/{urllib.parse.quote(run_id)}/stop")
