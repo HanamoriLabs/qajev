@@ -356,6 +356,12 @@ machine's cloud key (no dashboard sign-in), keeps them in `~/.qajev/cloud-report
 local one. A run with no report (unknown, or not finished) exits `4`. MCP: `qa_report("r_...")` does the same and adds
 `kept_in` and `screenshots`.
 
+`--json` writes exactly one complete JSON document to stdout. It validates a local `report.json` before printing it;
+malformed or concatenated JSON is an error, never trimmed or repaired. Errors write one JSON object with `error` and
+`exit_code` to stdout, a safe diagnostic to stderr, and exit nonzero (`3` for a local report, `4` for a cloud report
+fetch failure). A successful cloud JSON fetch still keeps all companion files and screenshots, but omits the
+"kept in" confirmation. `--html` and `--json` cannot be used together (exit `3`, with a JSON error).
+
 ## `qajev projects`
 
 Lists the projects QAJev knows, their environments, and where their reports go. `--json` for data: each project's
