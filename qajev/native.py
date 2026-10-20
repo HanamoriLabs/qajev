@@ -20,7 +20,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import chrome, verdict
+from . import chrome, config, verdict
 from .config import HOME
 from .ledger import CostCapReached
 from .lowprio import niced
@@ -32,6 +32,7 @@ PORTS = range(9400, 9450)
 GODOT = os.environ.get("QAJEV_GODOT") or shutil.which("godot") or "/Applications/Godot.app/Contents/MacOS/Godot"
 ERROR_LINE = re.compile(r"^(SCRIPT ERROR|ERROR|USER ERROR|Parse Error)\b")
 HARMLESS = re.compile(r"resources still in use at exit|ObjectDB instances leaked at exit")
+OUTPUT_DRAIN_S = 2.0
 # Hidden from Jev in a game, on top of the web guard's list (sign out, delete account, buy, billing...): quitting
 # ends the test, and wiping saves or progress is not something a QA run should ever do.
 # Native apps and games are not web pages: QAJev cannot block their network writes, so more is hidden by name.
@@ -158,6 +159,7 @@ class GodotGame:
         self.env = dict(env or {})  # extra settings for the game, e.g. SUHO_FORCE_MOBILE=1
         self.proc = self.sock = self.file = None
         self.errors, self.log = [], []
+        self._output_captures: list[dict] = []
         self.user_dir = None
 
     def __enter__(self):
@@ -187,7 +189,7 @@ class GodotGame:
         args += ["--headless"] if self.headless else ["--resolution", f"{self.size[0]}x{self.size[1]}"]
         self.proc = subprocess.Popen(niced(args), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                      stdin=subprocess.DEVNULL, start_new_session=True)
-        threading.Thread(target=self._read_output, daemon=True).start()
+        self._start_output()
         self.record = {"pid": self.proc.pid, "owner_pid": os.getpid(), "engine": "godot", "project": str(self.project),
                        "adapter": self.adapter.stem if self.adapter else None, "port": self.port,
                        "headless": self.headless, "started_at": time.time(), "user_dir": self.user_dir,
@@ -230,15 +232,54 @@ class GodotGame:
 
     error_line, harmless = ERROR_LINE, HARMLESS
 
+    def _start_output(self):
+        assert self.proc is not None
+        capture: dict = {"proc": self.proc, "stream": self.proc.stdout, "errors": self.errors, "log": self.log,
+                   "eof": False, "failure": None, "results": []}
+        reader = threading.Thread(target=self._read_output, daemon=True)
+        capture["reader"] = reader
+        self._output_captures.append(capture)
+        reader.start()
+
     def _read_output(self):
-        if self.proc is None or self.proc.stdout is None:
+        capture = next((item for item in self._output_captures
+                        if item["reader"] is threading.current_thread()), None)
+        if capture is None:
             return
-        for line in self.proc.stdout:
-            line = line.rstrip()
-            self.log.append(line)
-            del self.log[:-200]
-            if self.error_line.search(line) and not self.harmless.search(line):
-                self.errors.append(line[:300])
+        stream, errors, log = capture["stream"], capture["errors"], capture["log"]
+        if stream is None:
+            capture["failure"] = "native output capture has no stream"
+            return
+        try:
+            for line in stream:
+                line = line.rstrip()
+                log.append(line)
+                del log[:-200]
+                if self.error_line.search(line) and not self.harmless.search(line):
+                    errors.append(config.redact(line))
+            capture["eof"] = True
+        except UnicodeError:
+            capture["failure"] = "native output capture could not be decoded"
+        except (OSError, ValueError):
+            capture["failure"] = "native output capture could not be read"
+        finally:
+            with contextlib.suppress(OSError, ValueError):
+                stream.close()
+
+    def _drain_output(self):
+        deadline = time.monotonic() + OUTPUT_DRAIN_S
+        for capture in reversed(self._output_captures):
+            reader = capture["reader"]
+            if reader is not threading.current_thread():
+                reader.join(max(0.0, deadline - time.monotonic()))
+            if reader.is_alive():
+                capture["failure"] = (capture["failure"] or
+                                      f"native output capture did not finish within {OUTPUT_DRAIN_S:g} s")
+            elif not capture["eof"]:
+                capture["failure"] = capture["failure"] or "native output capture ended before EOF"
+            if capture["proc"].poll() is None:
+                capture["failure"] = (capture["failure"] or
+                                      "native output capture is incomplete: owned process did not stop")
 
     def call(self, **request):
         if self.file is None:
@@ -294,10 +335,84 @@ class GodotGame:
                 except subprocess.TimeoutExpired:
                     with contextlib.suppress(ProcessLookupError, PermissionError):
                         os.killpg(self.proc.pid, signal.SIGKILL)
+                    with contextlib.suppress(subprocess.TimeoutExpired):
+                        self.proc.wait(1)
+        self._drain_output()
+        finalize_output(self)
         if self.proc is not None:
             (STATE / f"{self.proc.pid}.json").unlink(missing_ok=True)
         if self.user_dir and not keep_saves:
             shutil.rmtree(self.user_dir, ignore_errors=True)
+
+
+def _track_output(game, result, *, check_errors=None, capture=None):
+    captures = getattr(game, "_output_captures", [])
+    if not captures:
+        return
+    capture = captures[-1] if capture is None else capture
+    if all(item[0] is not result for item in capture["results"]):
+        if check_errors is None:
+            check_errors = any(c.get("check") == "no engine or script errors" for c in result.get("checks", []))
+        capture["results"].append((result, check_errors, result.get("outcome") in {"pass", "unverified"}))
+
+
+def finalize_output(game, results=None, *, steps=None):
+    """Refresh closed launches' results before publication; never close a live interactive session here."""
+    captures = getattr(game, "_output_captures", [])
+    if not captures:
+        return
+    linked = {}
+    for capture in captures:
+        if capture["proc"].poll() is None and capture["failure"] is None:
+            continue
+        if not capture["results"] and results is not None:
+            target = next((r for r in reversed(results) if r.get("outcome") != "skipped"), None)
+            if target is None and (capture["errors"] or capture["failure"]):
+                target = _step_result("Native shutdown diagnostics", "browser_error", [],
+                                      capture["failure"] or "errors arrived during shutdown")
+                results.append(target)
+            if target is not None:
+                _track_output(game, target, check_errors=True, capture=capture)
+        for result, check_errors, eligible in capture["results"]:
+            entry = linked.setdefault(id(result), [result, check_errors, eligible, []])
+            entry[3].append(capture)
+    for result, check_errors, eligible, sources in linked.values():
+        errors = [error for source in sources for error in list(source["errors"])]
+        reasons = list(dict.fromkeys(source["failure"] for source in sources if source["failure"]))
+        complete = all(source["eof"] and not source["reader"].is_alive() for source in sources) and not reasons
+        reason = "; ".join(reasons) or (None if complete else "native output capture has not finished")
+        result["diagnostics"] = {"complete": complete, "errors": list(errors), "reason": reason}
+        checks = result.setdefault("checks", [])
+        if check_errors:
+            engine: dict | None = next((c for c in checks if c.get("check") == "no engine or script errors"), None)
+            if engine is None:
+                engine = {"check": "no engine or script errors"}
+                checks.append(engine)
+            engine.update(ok=not errors and complete, detail=errors[0] if errors else reason)
+            if not errors and not complete:
+                engine["broke"] = True
+            else:
+                engine.pop("broke", None)
+        findings = result.setdefault("findings", [])
+        known = {f.get("detail") for f in findings if f.get("kind") == "engine error"}
+        for error in errors[:10]:
+            if error not in known:
+                findings.append({"severity": "S2", "kind": "engine error", "detail": error,
+                                 "scenario": result["name"], "url": None})
+                known.add(error)
+        if errors and check_errors and (eligible or result.get("outcome") == "pass"):
+            result.update(outcome="fail", reason=f"no engine or script errors ({errors[0]})")
+        if not complete:
+            assert reason is not None
+            if not any(c.get("check") == "native output capture completed" for c in checks):
+                checks.append({"check": "native output capture completed", "ok": False, "broke": True,
+                               "detail": reason})
+            if result.get("outcome") in {"pass", "unverified"}:
+                result.update(outcome="harness", reason=reason)
+            elif reason not in (result.get("reason") or ""):
+                result["reason"] = f"{result.get('reason') or ''}; {reason}".lstrip("; ")
+    if steps:
+        _judge(results or [], steps)
 
 
 def running():
@@ -680,6 +795,7 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
     if goal:
         result["jev"] = {"status": stop, "actions": len(history), "decisions": len(decisions), "text_calls": 0,
                          "elapsed_ms": round((time.monotonic() - started) * 1000)}
+    _track_output(game, result)
     return result
 
 
@@ -919,6 +1035,7 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
                   seconds=round(time.monotonic() - started, 2))
     result["jev"] = {"status": stop, "actions": len(history), "decisions": len(decisions), "text_calls": 0,
                      "elapsed_ms": round((time.monotonic() - started) * 1000)}
+    _track_output(game, result)
     return result
 
 
@@ -1288,7 +1405,8 @@ def _judge(results, steps):
         said = judged_words(judges)
         r["judged_by"] = judges
         if r.get("outcome") not in ("pass", "unverified"):
-            r["reason"] = f"{r.get('reason')}; {said}"
+            if said not in (r.get("reason") or ""):
+                r["reason"] = f"{r.get('reason')}; {said}"
             continue
         verdicts = [(j, (by_name.get(j) or {}).get("outcome", "not run")) for j in judges]
         if not ((r.get("jev") or {}).get("actions") or 0):
@@ -1300,7 +1418,8 @@ def _judge(results, steps):
             ok, reason = False, f"{said}; not proven: {missed} (their own results say what went wrong)"
         r.update(outcome="pass" if ok else "unverified", reason=reason)
         proves = f"Jev acted, and the later steps {', '.join(judges)} passed"
-        r["checks"] = [*(r.get("checks") or []), {"check": said, "ok": ok, "detail": None if ok else reason,
+        r["checks"] = [*(c for c in r.get("checks") or [] if c.get("check") != said),
+                       {"check": said, "ok": ok, "detail": None if ok else reason,
                                                    "says": proves}]
 
 
@@ -1354,6 +1473,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
             if r.get("stop") != "browser_error":
                 fresh = len(results)
                 problems = set()  # a new process: its watchdog starts again, and so do its problems
+            _track_output(game, r, check_errors=(step.get("expect") or {}).get("no_errors", True))
             results.append(r)
             if callable(emit):
                 emit({"event": "scenario", "result": r})
@@ -1455,6 +1575,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
         if r.get("idled_s") is not None:  # the step's time includes its idle (it was 0 s after a 45 s idle)
             r["seconds"] = round(time.monotonic() - began, 2)
         r["cost_usd"] = round(ledger.spent() - spent, 5)
+        _track_output(game, r, check_errors=(step.get("expect") or {}).get("no_errors", True))
         results.append(r)
         if callable(emit):
             emit({"event": "scenario", "result": r})

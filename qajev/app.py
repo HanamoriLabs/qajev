@@ -29,7 +29,6 @@ import secrets
 import shutil
 import subprocess
 import tempfile
-import threading
 import time
 from pathlib import Path
 
@@ -251,6 +250,7 @@ class AppProcess(GodotGame):
         self.env = {**self.spec["env"], **(env or {})}
         self.proc = self.sock = self.file = None
         self.errors, self.log = [], []
+        self._output_captures: list[dict] = []
         self.user_dir = self._key = None
         self.file_notes = [f"{path}: test token from {Path(str(vault.parse(ref)[1])).name}"
                            for path, ref in self.spec["files"].items()]
@@ -286,7 +286,7 @@ class AppProcess(GodotGame):
         self.proc = subprocess.Popen(niced(self.command), cwd=self.project, env=env, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, text=True, stdin=subprocess.DEVNULL,
                                      start_new_session=True)
-        threading.Thread(target=self._read_output, daemon=True).start()
+        self._start_output()
         self.record = {"pid": self.proc.pid, "owner_pid": os.getpid(), "engine": "app", "project": str(self.project),
                        "command": Path(self.command[0]).name, "adapter": None, "port": self.port, "headless": False,
                        "started_at": time.time(), "user_dir": self.user_dir,
