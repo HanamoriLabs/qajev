@@ -36,6 +36,8 @@ KEYCHAIN_SERVICE = "qajev-cloud-agent"
 KINDS = ("check", "run", "smoke")  # websites; play (games, native and mobile apps) stays on this Mac for now
 EXIT_CONFIG, EXIT_TROUBLE = 3, 4  # as cli.py: a setting to fix; the dashboard could not take or finish the run
 POLL_S = 10  # seconds between two looks at a cloud run
+# Only reads and same-file PUTs can be replayed after an uncertain transport reply. Never replay a run POST.
+RETRY_WAITS = (2, 5)
 WAIT_S = 2 * 3600  # how long a run is waited for (QAJEV_CLOUD_WAIT, seconds); the run itself goes on
 # How long a run that waits for credits is followed before QAJev says so and returns (QAJEV_CLOUD_CREDIT_WAIT,
 # seconds). The run stays queued: a top-up starts it, and QAJev Cloud ends it after 2 hours with no charge (the
@@ -203,6 +205,23 @@ class Client:
         return config.redact_tree(obj, [self._key]) if self._key else obj
 
     def _call(self, method, path, body=None, raw=None, headers=None, timeout=None, as_bytes=False):
+        import urllib.error  # noqa: PLC0415
+
+        waits = RETRY_WAITS if method in ("GET", "PUT") else ()
+        for attempt, wait in enumerate((*waits, None), 1):
+            try:
+                return self._once(method, path, body, raw, headers, timeout, as_bytes)
+            except (urllib.error.URLError, OSError) as e:
+                if wait is not None:
+                    time.sleep(wait)
+                    continue
+                reason = getattr(e, "reason", None) or e
+                tries = str(attempt) + (" attempts" if attempt != 1 else " attempt")
+                raise CloudError(f"the dashboard at {self.base} does not answer after {tries} "
+                                 f"({method} {path}, {timeout or self.timeout} s per attempt): "
+                                 f"{self._hide(str(reason))}") from None
+
+    def _once(self, method, path, body, raw, headers, timeout, as_bytes):
         import urllib.error  # noqa: PLC0415 (deferred: `qajev --help` imports this module for its choices)
         import urllib.request  # noqa: PLC0415
 
@@ -225,10 +244,10 @@ class Client:
         except urllib.error.HTTPError as e:
             try:
                 msg = json.loads(e.read()).get("error") or e.reason
-            except (ValueError, AttributeError):
+            except (ValueError, AttributeError, OSError):
                 msg = e.reason
             raise ApiError(e.code, self._hide(str(msg))) from None
-        except (urllib.error.URLError, OSError, ValueError) as e:
+        except ValueError as e:
             reason = getattr(e, "reason", None) or e
             raise CloudError(f"the dashboard at {self.base} does not answer: {self._hide(str(reason))}") from None
 
