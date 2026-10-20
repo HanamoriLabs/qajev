@@ -5,7 +5,8 @@ import sys
 
 import pytest
 
-from qajev import jobs, project
+from qajev import cloud, jobs, project
+from qajev.cli import build_parser
 
 
 @pytest.fixture
@@ -73,3 +74,33 @@ def test_local_suite_without_a_base_url_uses_its_page_host(repos, monkeypatch):
     monkeypatch.chdir(outside)
     folder = jobs.register(["run", str(path)])
     assert json.loads((folder / "job.json").read_text())["project"] == "page.other.example"
+
+
+@pytest.mark.parametrize("url", ["http://a..b/", "http://" + "a" * 64 + ".example/"],
+                         ids=["empty-host-label", "host-label-over-63"])
+@pytest.mark.parametrize("entry", ["foreground", "background", "cloud-plan"])
+def test_invalid_host_never_crashes_job_recording(url, entry, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(project, "listing", lambda: [])
+    argv = ["check", url, "--expect-text", "ready"]
+    if entry == "foreground":
+        folder = jobs.register(argv)
+        result = json.loads((folder / "job.json").read_text())["project"]
+    elif entry == "background":
+        job = jobs.start(argv, cwd=str(tmp_path), command=[sys.executable, "-c", "pass"])
+        result = json.loads((jobs.JOBS / job["id"] / "job.json").read_text())["project"]
+        if child := jobs._children.get(job["id"]):
+            child.wait(timeout=10)
+    else:
+        monkeypatch.delenv("QAJEV_PROFILE", raising=False)
+        monkeypatch.delenv("QAJEV_REQUIRE_PLAN", raising=False)
+        args = build_parser().parse_args([*argv, "--runner", "cloud"])
+        args.argv, args.runner_named = [*argv, "--runner", "cloud"], True
+        result = cloud.plan(args).project
+    assert result is None
+
+
+def test_valid_unicode_host_keeps_its_ascii_label(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(project, "listing", lambda: [])
+    assert project.run_owner(urls=["https://bücher.example/"]) == "xn--bcher-kva.example"

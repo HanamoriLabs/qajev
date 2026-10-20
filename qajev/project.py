@@ -438,7 +438,10 @@ def run_owner(*, suite=None, cwd=None, urls=()):
             return owner
         if site := _site(url):
             host, port = site
-            host = host.encode("idna").decode("ascii")
+            try:
+                host = host.encode("idna").decode("ascii")
+            except UnicodeError:
+                return None  # malformed DNS labels must not break job recording or cloud planning
             # A v6 literal starts with a colon; labels start with a letter or number on the dashboard.
             label = f"host {host}" if ":" in host else host
             from urllib.parse import urlsplit  # noqa: PLC0415
