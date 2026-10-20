@@ -39,6 +39,8 @@ KEYCHAIN_SERVICE = "qajev-cloud-agent"
 KINDS = ("check", "run", "smoke")  # websites; play (games, native and mobile apps) stays on this Mac for now
 EXIT_CONFIG, EXIT_TROUBLE = 3, 4  # as cli.py: a setting to fix; the dashboard could not take or finish the run
 POLL_S = 10  # seconds between two looks at a cloud run
+# Only reads and same-file PUTs may replay an uncertain reply; never a run POST.
+RETRY_WAITS = (2, 5)
 WAIT_S = 2 * 3600  # how long a run is waited for (QAJEV_CLOUD_WAIT, seconds); the run itself goes on
 # How long a run that waits for credits is followed before QAJev says so and returns (QAJEV_CLOUD_CREDIT_WAIT,
 # seconds). The run stays queued: a top-up starts it, and QAJev Cloud ends it after 2 hours with no charge (the
@@ -219,7 +221,37 @@ class Client:
         """The dashboard's answer without the key in it, whatever it says: QAJev prints what it gets."""
         return config.redact_tree(obj, [self._key]) if self._key else obj
 
-    def _call(self, method, path, body=None, raw=None, headers=None, timeout=None, as_bytes=False):
+    def _call(self, method, path, body=None, raw=None, headers=None, timeout=None, as_bytes=False,
+              confirm_upload=None):
+        import urllib.error  # noqa: PLC0415
+
+        waits = RETRY_WAITS if method in ("GET", "PUT") else ()
+        uncertain = False
+        for attempt, wait in enumerate((*waits, None), 1):
+            try:
+                return self._once(method, path, body, raw, headers, timeout, as_bytes)
+            except ApiError as e:
+                if uncertain and e.status == 403 and confirm_upload is not None:
+                    receipt = confirm_upload()
+                    if receipt is not None:
+                        return receipt
+                raise
+            except (urllib.error.URLError, OSError) as e:
+                uncertain = True
+                if wait is not None:
+                    time.sleep(wait)
+                    continue
+                if confirm_upload is not None:
+                    receipt = confirm_upload()
+                    if receipt is not None:
+                        return receipt
+                reason = getattr(e, "reason", None) or e
+                tries = str(attempt) + (" attempts" if attempt != 1 else " attempt")
+                raise CloudError(f"the dashboard at {self.base} does not answer after {tries} "
+                                 f"({method} {path}, {timeout or self.timeout} s per attempt): "
+                                 f"{self._hide(str(reason))}") from None
+
+    def _once(self, method, path, body, raw, headers, timeout, as_bytes):
         import urllib.error  # noqa: PLC0415 (deferred: `qajev --help` imports this module for its choices)
         import urllib.request  # noqa: PLC0415
 
@@ -242,10 +274,10 @@ class Client:
         except urllib.error.HTTPError as e:
             try:
                 msg = json.loads(e.read()).get("error") or e.reason
-            except (ValueError, AttributeError):
+            except (ValueError, AttributeError, OSError):
                 msg = e.reason
             raise ApiError(e.code, self._hide(str(msg))) from None
-        except (urllib.error.URLError, OSError, ValueError) as e:
+        except ValueError as e:
             reason = getattr(e, "reason", None) or e
             raise CloudError(f"the dashboard at {self.base} does not answer: {self._hide(str(reason))}") from None
 
@@ -263,11 +295,24 @@ class Client:
         if not _plain_relative(remote_path):
             raise CloudError("an upload file needs a safe relative name", EXIT_CONFIG)
         quoted = urllib.parse.quote(remote_path)
-        return self._call("PUT", f"/api/v1/runs/{urllib.parse.quote(run_id)}/files/{quoted}", raw=data,
-                          headers={"x-content-sha256": hashlib.sha256(data).hexdigest(),
-                                   "x-content-size": str(len(data)),
+        path = f"/api/v1/runs/{urllib.parse.quote(run_id)}/files/{quoted}"
+        sha, timeout = hashlib.sha256(data).hexdigest(), self.timeout_for(len(data))
+
+        def confirm():
+            # A final reply can be lost after dispatch starts; the Worker then refuses another input PUT.
+            # Read only this file once, with the same permission checks. A refusal or mismatch is no receipt.
+            try:
+                stored = self._once("GET", path, None, None, None, timeout, True)
+            except (CloudError, OSError):
+                return None
+            if stored != data:
+                return None
+            return {"path": remote_path, "size": len(data), "sha256": sha, "url": path}
+
+        return self._call("PUT", path, raw=data,
+                          headers={"x-content-sha256": sha, "x-content-size": str(len(data)),
                                    "Content-Type": "application/octet-stream"},
-                          timeout=self.timeout_for(len(data)))
+                          timeout=timeout, confirm_upload=confirm)
 
 
 def connect(env_file=None):
@@ -783,6 +828,8 @@ def fetch_report(client, run_id, folder):
     folder.mkdir(parents=True, exist_ok=True)
     raw = get_file(client, run_id, "report.json")
     data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise CloudError("the cloud report must be a JSON object")
     (folder / "report.json").write_bytes(raw)
     for name in ("report.md", "report.html"):
         try:
@@ -791,10 +838,14 @@ def fetch_report(client, run_id, folder):
             if e.status != 404:
                 raise
     named = set()
-    for s in data.get("scenarios") or []:
-        for path in [s.get("shot"), *[(r or {}).get("path") for r in s.get("react") or [] if isinstance(r, dict)]]:
-            if _plain_relative(path):
-                named.add(path)
+    try:
+        for s in data.get("scenarios") or []:
+            react = s.get("react") or []
+            for path in [s.get("shot"), *[(r or {}).get("path") for r in react if isinstance(r, dict)]]:
+                if _plain_relative(path):
+                    named.add(path)
+    except (AttributeError, TypeError):
+        raise CloudError("the cloud report has invalid scenario or screenshot metadata") from None
     kept, root = 0, folder.resolve()
     for path in sorted(named):
         dest = (folder / path).resolve()

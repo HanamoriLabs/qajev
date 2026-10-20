@@ -1405,23 +1405,30 @@ def _cloud_report(args):
     folder = HOME / "cloud-reports" / run_id
     try:
         data, shots = cloud.fetch_report(cloud.connect(getattr(args, "env_file", None)), run_id, folder)
+    except json.JSONDecodeError as e:
+        return _failure(args, f"invalid JSON in cloud report.json: {e.msg} (line {e.lineno}, column {e.colno})",
+                        cloud.EXIT_TROUBLE, report=False)
+    except UnicodeError:
+        return _failure(args, "invalid JSON in cloud report.json: text is not valid UTF-8", cloud.EXIT_TROUBLE,
+                        report=False)
     except cloud.ApiError as e:
         if e.status == 404:
-            print(f"qajev: cloud run {run_id} has no report: no such run, or it has not finished", file=sys.stderr)
-            return cloud.EXIT_TROUBLE
-        print(f"qajev: {e}", file=sys.stderr)
-        return e.code
-    except (cloud.CloudError, ValueError) as e:
-        print(f"qajev: {e}", file=sys.stderr)
-        return getattr(e, "code", cloud.EXIT_TROUBLE)
+            return _failure(args, f"cloud run {run_id} has no report: no such run, or it has not finished",
+                            cloud.EXIT_TROUBLE, report=False)
+        return _failure(args, str(e), e.code, report=False)
+    except (cloud.CloudError, ValueError, OSError) as e:
+        return _failure(args, str(e), getattr(e, "code", cloud.EXIT_TROUBLE), report=False)
     md = folder / "report.md"
     print(json.dumps(data, indent=2) if args.json else (md.read_text() if md.exists() else json.dumps(data, indent=2)))
-    print(f"qajev: kept in {folder}: report.html, report.md, report.json and {shots} screenshot"
-          f"{'' if shots == 1 else 's'}", file=sys.stderr)
+    if not args.json:
+        print(f"qajev: kept in {folder}: report.html, report.md, report.json and {shots} screenshot"
+              f"{'' if shots == 1 else 's'}", file=sys.stderr)
     return 0
 
 
 def cmd_report(args):
+    if args.html and args.json:
+        return _failure(args, "--html and --json cannot be used together", EXIT_CONFIG, report=False)
     if not args.html and not args.run_dir.exists():
         from .cloud import RUN_ID
 
@@ -1440,8 +1447,19 @@ def cmd_report(args):
         return 0
     path = args.run_dir / ("report.json" if args.json else "report.md")
     if not path.exists():
-        print(f"qajev: no {path.name} in {args.run_dir}", file=sys.stderr)
-        return EXIT_CONFIG
+        return _failure(args, f"no {path.name} in {args.run_dir}", EXIT_CONFIG, report=False)
+    if args.json:
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError as e:
+            return _failure(args, f"invalid JSON in report.json: {e.msg} (line {e.lineno}, column {e.colno})",
+                            EXIT_CONFIG, report=False)
+        except UnicodeError:
+            return _failure(args, "invalid JSON in report.json: text is not valid UTF-8", EXIT_CONFIG, report=False)
+        except OSError as e:
+            return _failure(args, f"could not read report.json: {e}", EXIT_CONFIG, report=False)
+        print(json.dumps(data, indent=2))
+        return 0
     print(path.read_text())
     return 0
 

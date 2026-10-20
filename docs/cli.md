@@ -339,6 +339,14 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
   `4`), a refused upload (QAJev stops that run), a run stopped on the dashboard, or a wait that runs out
   (`QAJEV_CLOUD_WAIT`, default 2 hours; the run goes on in the cloud). Each says why, with the run's address when it
   has one.
+- **Transport recovery.** A file PUT or GET that times out or loses its connection gets up to three attempts,
+  with waits of 2 and 5 seconds. Upload attempts keep the same run, path, bytes and hash. The per-attempt timeout
+  stays 30 seconds for small files and grows with large files. Run-creation and other POSTs are never replayed.
+  An HTTP refusal or malformed JSON is an answer, so it fails at once. If upload attempts are exhausted, QAJev
+  stops that run and reports the operation, timeout and attempt count. A transient report GET can recover too.
+  After an uncertain reply, a final same-file read can confirm the exact input bytes already arrived.
+  This also handles a run that started before its last upload reply reached the CLI. Permission refusals
+  and different or unreadable bytes remain failures; no Worker upload permission is changed.
 - The suite file, a project's `.toml` and the `--plan` file go with the run. A folder of more than 150 files, or
   with a file over 45 MB, ships as tar parts (at most 500 MB in all).
 
@@ -364,6 +372,15 @@ A cloud run's id fetches its `report.json`, `report.md`, `report.html` and the s
 machine's cloud key (no dashboard sign-in), keeps them in `~/.qajev/cloud-reports/<id>/`, and prints the report like a
 local one. A run with no report (unknown, or not finished) exits `4`. MCP: `qa_report("r_...")` does the same and adds
 `kept_in` and `screenshots`.
+
+`--json` writes exactly one complete JSON document to stdout. It validates a local `report.json` before printing it;
+malformed or concatenated JSON is an error, never trimmed or repaired. Errors write one JSON object with `error` and
+`exit_code` to stdout, a safe diagnostic to stderr, and exit nonzero (`3` for a local report, `4` for a cloud report
+fetch failure). A successful cloud JSON fetch still keeps all companion files and screenshots, but omits the
+"kept in" confirmation. `--html` and `--json` cannot be used together (exit `3`, with a JSON error).
+
+Read the complete stdout document and keep stderr separate. A cloud run summary uses `tests`;
+the full report uses `scenarios`.
 
 ## `qajev projects`
 
