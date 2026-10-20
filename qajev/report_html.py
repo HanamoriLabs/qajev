@@ -288,6 +288,13 @@ def _scenario(i, r, who="Jev"):
                   f'Pixels: {_e(json.dumps(effect["metrics"], ensure_ascii=False, sort_keys=True))}</pre>']
         parts += [_shot(effect[key], f"{effect['name']} — {key}", f"{effect['region']['name']} — {key}")
                   for key in ("off", "on", "difference")]
+    for check in r.get("checks") or []:
+        evidence = check.get("evidence")
+        if isinstance(evidence, dict):
+            parts += [f'<h4>{_e(check.get("check"))}</h4>',
+                      f'<pre>{_e(json.dumps(evidence, ensure_ascii=False, sort_keys=True))}</pre>']
+            parts += [_shot(evidence[key], f"{check.get('check')} — {key}", f"{check.get('check')} — {key}")
+                      for key in ("crop", "reference", "panel", "difference") if evidence.get(key)]
     r = {**r, "_lines": [{**line, "detail": c.get("detail")} for line, c in zip(it["checks"], r.get("checks") or [])]}
     facts = []
     if r.get("url"):

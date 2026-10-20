@@ -112,6 +112,10 @@ def from_steps(steps):
         if until:
             checks.insert(0, f"reached {_until_text(until)}")
         planned = [{"check": c} for c in checks]
+        if expect.get("looks"):
+            from . import vision
+
+            planned.extend(vision.planned(entry) for entry in expect["looks"])
         if step.get("pad") is not None:  # the input first, then the checks of what it did
             from .pad import describe
 

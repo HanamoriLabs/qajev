@@ -95,6 +95,10 @@ def planned(expect):
                     **({"says": says["command"]} if says.get("command") else {})})
     if expect.get("effect"):
         out.append(effect_planned(expect["effect"]))
+    if expect.get("looks"):
+        from . import vision
+
+        out.extend(vision.planned(entry) for entry in expect["looks"])
     for c in expect.get("across") or []:
         out.append({"check": f"across: {c['check']}", **({"says": c["says"]} if c.get("says") else {})})
     return out

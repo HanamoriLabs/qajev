@@ -20,6 +20,76 @@ KEY = "qjk_SECRETKEYVALUE0123456789abcdef"
 RUN = "r_test1"
 
 
+def test_cloud_suite_manifest_carries_only_explicit_looks_reference_images(tmp_path):
+    import io
+
+    from PIL import Image
+
+    (tmp_path / "references").mkdir()
+    output = io.BytesIO()
+    Image.new("RGB", (4, 4), "gray").save(output, format="PNG")
+    reference = tmp_path / "references/blockout.png"
+    reference.write_bytes(output.getvalue())
+    (tmp_path / "references/unasked.png").write_bytes(output.getvalue())
+    path = tmp_path / "scene.yaml"
+    path.write_text("""devices: [desktop]
+scenarios:
+  - name: scene
+    about: The scene is finished.
+    url: https://example.com/
+    expect:
+      looks:
+        - claim: The scene has finished materials.
+          crop: {name: scene, x: 0, y: 0, width: 4, height: 4}
+          reference: {path: references/blockout.png, role: blockout}
+""")
+    args = cli.build_parser().parse_args(["run", str(path)])
+    args.argv = ["run", str(path)]
+    prepared = cloud.plan(args)
+    assert ("in/references/blockout.png", reference) in prepared.files
+    assert not any("unasked" in remote for remote, _ in prepared.files)
+
+
+def test_cloud_project_manifest_carries_only_selected_objectives_references(tmp_path):
+    import io
+
+    from PIL import Image
+
+    references = tmp_path / "references"
+    references.mkdir()
+    output = io.BytesIO()
+    Image.new("RGB", (4, 4), "gray").save(output, format="PNG")
+    for name in ("selected", "unselected"):
+        (references / f"{name}.png").write_bytes(output.getvalue())
+    path = tmp_path / "project.toml"
+    text = 'name="visual"\n[env.prod]\nbase_url="https://example.com/"\n'
+    for name, tag in (("selected", "core"), ("unselected", "other")):
+        text += f'''\n[[objective]]
+name="{name}"
+about="The scene is finished."
+url="/"
+tags=["{tag}"]
+[objective.expect]
+[[objective.expect.looks]]
+claim="The scene is finished."
+[objective.expect.looks.crop]
+name="scene"
+x=0
+y=0
+width=4
+height=4
+[objective.expect.looks.reference]
+path="references/{name}.png"
+role="blockout"
+'''
+    path.write_text(text)
+    args = cli.build_parser().parse_args(["run", "--project", str(path), "--suite", "core"])
+    args.argv = ["run", "--project", str(path), "--suite", "core"]
+    prepared = cloud.plan(args)
+    assert ("in/references/selected.png", references / "selected.png") in prepared.files
+    assert not any("unselected" in remote for remote, _ in prepared.files)
+
+
 class FakeDashboard:
     """The worker's API, as qajev-cloud's docs/api-shapes.md says: records calls, checks the key and the sha256."""
 

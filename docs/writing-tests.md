@@ -83,6 +83,59 @@ three PNGs; Cloud publication needs the matching CLI and evidence-uploader versi
 
 ## What only a look at the screen tells (Clef)
 
+Write one visible claim per `looks` entry. Each entry gets its own model question and probability; claims are not
+averaged together. Existing strings still use the full screenshot. For small features and relative claims, give an
+explicit crop and a labelled reference instead:
+
+```yaml
+expect:
+  looks:
+    - claim: The left hand closes around the grip.
+      crop: {name: left hand, x: 100, y: 240, width: 160, height: 160}
+    - claim: The right hand closes around the grip.
+      crop: {name: right hand, x: 300, y: 240, width: 160, height: 160}
+    - claim: The scene has finished materials rather than placeholder blocks.
+      crop: {name: scene, x: 0, y: 0, width: 640, height: 360}
+      reference: {path: references/blockout.png, role: blockout}
+    - claim: The enabled panel has a visibly stronger glow.
+      crop: {name: enabled panel, x: 320, y: 0, width: 320, height: 240}
+      different_from:
+        crop: {name: disabled panel, x: 0, y: 0, width: 320, height: 240}
+        tolerance: 8
+        min_changed: 0.05
+```
+
+Crops use integer **source-frame pixels**, not viewport CSS pixels. Choose them from the full-size screenshot for
+that device. A crop must fit the frame. A structured claim uses a lossless, unmarked PNG capture on the web;
+read-only guards remain active. The model receives only that claim's crop and its explicitly labelled reference or
+comparison panel. Split a sentence such as “both hands hold the grip” into two claims and two crops; QAJev does
+not guess where to split prose or where the hands are.
+
+`different_from` compares both crops from the same captured frame. Their pixel dimensions must match. It uses the
+same RGB tolerance and changed-fraction rule as `effect`. An identical or too-similar panel fails before a model
+call, even if a model would pass it. Select a threshold with an unchanged control and a visible passing example.
+
+A reference's `role` is `expected` (a known target for the relative/quality claim) or `blockout` (an unfinished
+negative example). The model is told which it is. An exact pixel match to a block-out fails without a model call;
+other quality judgments still depend on the model. References must be explicit relative PNG/JPEG/WebP files below
+the suite or project-config folder, outside hidden folders, with no symlinks or traversal. Cloud inputs include
+only references of selected checks. Inline suites have their temporary suite folder as their base; use a suite
+file when it needs reference files.
+
+Reports retain the exact crop/reference/panel PNGs, difference image, bounds, comparison metrics and probability.
+These required images survive `--no-shots`, MCP output and Cloud uploads/downloads. Missing/invalid image evidence
+cannot pass. Existing image limits apply; crops decode at most 32 MiB and 16,777,216 pixels, then each model image
+must fit Clef's 4 MiB limit and the images together must fit its 8 MiB combined limit. Each claim costs its own
+model request, within the run's existing cost cap.
+
+The same structured entries work in a native `steps:` suite's ordinary check/goal/play, pad, keys or relaunch
+steps. `qajev plan` validates and names them before the run. Put a visual claim on a separate check step after a
+`js`, handoff, renderer-crash or `open_url` action; those actions cannot judge it. Real-device browser conversion
+does not yet carry `looks` and marks that leg skipped with a reason.
+
+These checks do not establish a measured model false-pass rate. Calibrate claims and references against known
+passing and failing frames before relying on them as a release gate.
+
 Every check above reads the page. Some bugs only show in the picture: a button cut off by a box too small for it,
 text the same colour as its background, a price drawn on a canvas, a label that is an image. With Clef as the decision
 model (Cloudflare's open models, which read images: see [Configuration](configuration.md#keys)), two things use the
@@ -99,7 +152,7 @@ scenarios:
     url: /join
     expect:
       visible: ["Sign up now"]          # the words are on screen...
-      looks: ["The 'Sign up now' button is fully visible and its words are readable, not cut off"]  # ...and legible
+      looks: ["The 'Sign up now' button is fully visible", "The button's words are readable"]  # ...and legible
   - name: pricing from a drawn menu
     url: /plans
     vision: true                        # the menu buttons are pictures
@@ -108,8 +161,8 @@ scenarios:
 ```
 
 Write a `looks` statement the way you would brief a person looking at a screenshot: one plain fact, and specific
-(`The Pro plan costs $29 per month`, not `the prices look right`). A looks check is one Clef call per run of the
-scenario (all its statements together), on top of its decisions. `vision` goes on a scenario or on the whole suite,
+(`The Pro plan costs $29 per month`, not `the prices look right`). Each looks claim is one Clef call, on top of the
+scenario's decisions. `vision` goes on a scenario or on the whole suite,
 and makes every decision larger: a screenshot is about 1,000 extra input tokens, about $0.0001 with Clef-flash and
 $0.00024 with Clef. Both need Clef: with Jev, which reads text only, QAJev refuses the run and says what to set.
 

@@ -1085,6 +1085,13 @@ class Session:
         data = self.call("Page.captureScreenshot", format="jpeg", quality=70)["data"]
         return f"data:image/jpeg;base64,{data}"
 
+    def screen_image_png(self):
+        """Unmarked lossless input for frame-pixel claim crops; write guards remain active."""
+        self.evaluate("window.__qajev && window.__qajev.mark && window.__qajev.mark(false)", timeout_ms=2000)
+        data = self.call("Page.captureScreenshot", format="png", fromSurface=True,
+                         captureBeyondViewport=False)["data"]
+        return f"data:image/png;base64,{data}"
+
     def fetch(self, probe):
         method = probe.get("method", "GET").upper()
         expression = f"""(async () => {{

@@ -324,10 +324,12 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if measured_effect is not None:
                 checks.append(measured_effect)
             if scenario.expect.get("looks") and stop not in verdict.HARNESS_STOPS:
-                image = session.screen_image()
+                structured = any(isinstance(entry, dict) for entry in scenario.expect["looks"])
+                image = session.screen_image_png() if structured else session.screen_image()
                 try:
                     checks += vision.look(session.jev.model.post_json, image, scenario.expect["looks"],
-                                          {"page": {"url": observed.get("url"), "title": observed.get("title")}})
+                                          {"page": {"url": observed.get("url"), "title": observed.get("title")}},
+                                          folder=getattr(session, "cwd", None), evidence_dir=run_dir)
                     ran.add("looks")
                 except (RuntimeError, ValueError) as e:  # Clef failed, not the browser
                     stop, detail = "model_error", f"while judging looks: {e}"

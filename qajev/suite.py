@@ -283,7 +283,12 @@ def _expect(value, where):
     out["text"] = _list(value.get("text"), f"{where}.text")
     out["absent"] = _list(value.get("absent"), f"{where}.absent")
     out["visible"] = _list(value.get("visible"), f"{where}.visible")
-    out["looks"] = [str(s) for s in _list(value.get("looks"), f"{where}.looks")]  # judged from the screenshot
+    from . import vision
+
+    try:
+        out["looks"] = vision.normalize(value.get("looks"))
+    except vision.VisionError as e:
+        raise SuiteError(f"{where}.looks: {e}") from None
     out["across"] = _across(value.get("across"), f"{where}.across")  # a multiplayer scenario's (clients.py)
     out["says"] = _says(value.get("says"), f"{where}.says")
     if "url_regex" in out:
@@ -689,6 +694,14 @@ def parse(data, path=None, devices=None):
         tunnel=tunnel_spec(data.get("tunnel")),
     )
     check_safety(suite)
+    if path:
+        from . import vision
+
+        for scenario in suite.scenarios:
+            try:
+                vision.reference_files(scenario.expect.get("looks"), Path(path).parent)
+            except vision.VisionError as e:
+                raise SuiteError(f"{scenario.name}.expect.looks: {e}") from None
     return suite
 
 
@@ -780,7 +793,7 @@ def _expect_fail(value, expect, clients, about_text, where):
         raise SuiteError(f"{where}.expect_fail: a scenario with clients cannot be expected to fail")
     if not about(about_text, f"{where}.about"):
         raise SuiteError(f"{where}: a test expected to fail must say in about: what fault it plants")
-    checks = verdict.planned(expect) + [{"check": f"looks: {s}"} for s in expect.get("looks") or []]
+    checks = verdict.planned(expect)
     if value is True:
         if len(checks) != 1:
             raise SuiteError(f"{where}.expect_fail: true needs a test with exactly one check (this one has "

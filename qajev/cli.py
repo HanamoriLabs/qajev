@@ -1007,6 +1007,7 @@ def cmd_play(args):
             native.check_judged_by(session_steps)
             native.check_window(session_steps)
             native.check_pad(session_steps)
+            native.check_looks(session_steps, args.suite.parent)
             from .handoff import check_handoff
             from .mackeys import check_keys
             from .openurl import check_open_url
@@ -1148,7 +1149,8 @@ def cmd_play(args):
                 with live.frames(run_dir, getattr(game, "page_ws", None)):  # its screen, while someone watches it
                     if session_steps:
                         results = native.run_session(game, session_steps, ledger=ledger, run_dir=run_dir,
-                                                     shots=shots, emit=emit, vision=sees)
+                                                     shots=shots, emit=emit, vision=sees,
+                                                     looks_folder=args.suite.parent if args.suite else None)
                     else:
                         emit({"event": "start", "scenario": name})
                         result = native.play(game, name=name, goal=args.goal, expect=expect, about=args.about,
@@ -1769,6 +1771,7 @@ def cmd_plan(args):
             name, run_about = spec.get("name") or args.file.stem, about(spec.get("about"), "about")
             native.check_window(spec["steps"])
             native.check_pad(spec["steps"])
+            native.check_looks(spec["steps"], args.file.parent)
             from .mackeys import check_keys
 
             check_keys(spec["steps"], spec.get("app"))

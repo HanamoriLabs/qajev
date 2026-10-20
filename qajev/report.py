@@ -343,6 +343,11 @@ def markdown(data):
             mark = "✅" if check["ok"] else "❌"
             lines.append(f"- {mark} {_cell(check['check'], 200)}" + (f" — {_cell(check['detail'])}"
                                                                        if check.get("detail") else ""))
+            evidence = check.get("evidence")
+            if isinstance(evidence, dict):
+                lines += ["", "Claim evidence: " + json.dumps(evidence, ensure_ascii=False, sort_keys=True), "",
+                          " · ".join(f"[{key}]({evidence[key]})" for key in
+                                     ("crop", "reference", "panel", "difference") if evidence.get(key)), ""]
         if r.get("blocked_writes"):
             first = r["blocked_writes"][0]
             lines.append(f"- Read-only guard blocked {len(r['blocked_writes'])} write request(s), e.g. "
