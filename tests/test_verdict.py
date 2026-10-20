@@ -140,6 +140,61 @@ def test_fetch_and_command_checks():
     assert not V.command_check({"run": "x"}, {"exit": 2, "stderr": "boom"})["ok"]
 
 
+def test_a_failed_command_shows_where_it_said_why():
+    # Twilight, 19 Oct: a gate wrote its failed step to stdout, and the report said only "exit 1:"
+    detail = V.command_check({"run": "x"}, {"exit": 1, "stderr": "", "stdout": '{"step": "beat 2", "status": "fail"}'})
+    assert detail["detail"] == 'exit 1: stdout: {"step": "beat 2", "status": "fail"}'
+    long_err = "warning\n" * 100 + "Error: camera 0.036 m from the chest"
+    detail = V.command_check({"run": "x"}, {"exit": 1, "stderr": long_err, "stdout": "ignored"})["detail"]
+    assert detail.endswith("Error: camera 0.036 m from the chest") and len(detail) < V.COMMAND_KEEP + 20
+    assert V.command_check({"run": "x"}, {"exit": 1})["detail"] == "exit 1: "
+
+
+def test_a_secret_that_crosses_the_cut_leaves_no_tail(monkeypatch):
+    # redteam, 19 Oct: redaction ran after the 400-character cut and replaces whole values only, so a 40-character
+    # token cut in two kept its last 20 characters in the report
+    token = "tok_" + "a1b2c3d4e5f6g7h8i9j0" + "SECRETTAIL0123456789"
+    monkeypatch.setenv("QAJEV_TEST_TOKEN", token)
+    out = "x" * 50 + token + "y" * (V.COMMAND_KEEP - 20)  # the cut falls inside the token
+    for result in ({"exit": 1, "stderr": out}, {"exit": 1, "stdout": out}):
+        detail = V.command_check({"run": "x"}, result)["detail"]
+        assert "SECRETTAIL" not in detail and "[redacted]" in detail
+    detail = V.command_check({"run": "x", "stdout": "want"}, {"exit": 0, "stdout": token + "z" * 300})["detail"]
+    assert "a1b2c3" not in detail and "[redacted]" in detail
+
+
+@pytest.mark.parametrize("channel", ["stderr", "stdout", "stdout_expectation"])
+def test_no_eight_character_secret_fragment_survives_a_command_cut(monkeypatch, channel):
+    # Keep the whole env secret out of a report even when the cut runs through it.
+    token = "fixture-pass-0123456789abcdefghijklmnopq"
+    monkeypatch.setenv("QAJEV_FAKE_TOKEN", token)
+    if channel == "stdout_expectation":
+        spec = {"run": "gate", "stdout": "wanted"}
+        result = {"exit": 0, "stdout": "x" * 180 + token + "y" * 380}
+    else:
+        spec = {"run": "gate"}
+        result = {"exit": 1, channel: "x" * 50 + token + "y" * 380}
+    check = V.command_check(spec, result)
+    assert check["ok"] is False
+    detail = check["detail"]
+    fragments = {token[i:i + 8] for i in range(len(token) - 7)}
+    leaked = sorted(fragment for fragment in fragments if fragment in detail)
+    assert not leaked, f"secret fragments in command detail: {leaked}"
+    assert "[redacted]" in detail
+
+
+def test_a_command_hook_redacts_before_it_keeps_the_last_4000_characters(monkeypatch, tmp_path):
+    from qajev.session import Session
+
+    token = "tok_" + "k" * 16 + "TAIL" * 5
+    monkeypatch.setenv("QAJEV_TEST_TOKEN", token)
+    s = Session.__new__(Session)
+    s.allow_commands, s.cwd = True, tmp_path
+    printed = f"printf '%s' '{token}'; head -c 3990 /dev/zero | tr '\\0' z"
+    result = s.command(printed, "http://127.0.0.1/")
+    assert "TAIL" not in result["stdout"] and len(result["stdout"]) == 4000
+
+
 def test_findings_skip_third_party_noise_and_our_own_write_blocks():
     probe = {"errors": [
         {"kind": "exception", "detail": "TypeError: x is undefined"},

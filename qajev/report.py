@@ -365,6 +365,14 @@ def markdown(data):
                 lines += ["", "Claim evidence: " + json.dumps(evidence, ensure_ascii=False, sort_keys=True), "",
                           " · ".join(f"[{key}]({evidence[key]})" for key in
                                      ("crop", "reference", "panel", "difference") if evidence.get(key)), ""]
+        diagnostics = r.get("diagnostics")
+        if isinstance(diagnostics, dict):
+            state = "complete" if diagnostics.get("complete") else "incomplete"
+            lines += ["", f"Native output: {state}", ""]
+            if diagnostics.get("reason"):
+                lines += [str(diagnostics["reason"]), ""]
+            for error in diagnostics.get("errors") or []:
+                lines += ["    " + str(error).replace("\n", "\n    "), ""]
         if r.get("blocked_writes"):
             first = r["blocked_writes"][0]
             lines.append(f"- Read-only guard blocked {len(r['blocked_writes'])} write request(s), e.g. "

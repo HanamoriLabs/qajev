@@ -417,6 +417,13 @@ def _scenario(i, r, who="Jev"):
         parts.append(_clients_html(r))
     elif r.get("shot"):
         parts.append(_shot(r["shot"], f"Screenshot at the end of {r['name']}", f"{r['name']} · the last screen"))
+    diagnostics = r.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        state = "complete" if diagnostics.get("complete") else "incomplete"
+        messages = [*([diagnostics["reason"]] if diagnostics.get("reason") else []),
+                    *(diagnostics.get("errors") or [])]
+        detail = "\n".join(str(message) for message in messages) or "No engine or script errors."
+        parts.append(f"<details><summary>Native output: {_e(state)}</summary><pre>{_e(detail)}</pre></details>")
     parts.append("</section>")
     return "".join(parts)
 

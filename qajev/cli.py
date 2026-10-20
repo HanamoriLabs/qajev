@@ -1099,6 +1099,7 @@ def cmd_play(args):
     emit = _printer(args) or (lambda _event: None)
     ledger = Ledger(args.cost_cap, args.usd_per_call)
     results, browser, interrupted = [], {}, False
+    game_cm = None
     started_at = time.time()
     run_dir = args.out / f"{time.strftime('%Y%m%d-%H%M%S')}-play-{slug(name)}"
     try:
@@ -1164,6 +1165,7 @@ def cmd_play(args):
         return _fail(args, str(e), EXIT_BROWSER)
     except KeyboardInterrupt:
         interrupted = True
+    native.finalize_output(game_cm, results, steps=session_steps)
     built = report_mod.build(SimpleNamespace(name=f"play {name}", about=run_about, test_plan=test_plan), results,
                              [ledger.summary()], browser=browser,
                              started_at=started_at, strict=False, interrupted=interrupted, run_dir=run_dir)

@@ -23,7 +23,7 @@ from typing import Any
 from . import __version__, chrome, keys, live, netlog, providers
 from . import guard as guard_mod
 from . import pad as pad_mod
-from .config import is_loopback
+from .config import is_loopback, redact
 
 _jev = None
 
@@ -1457,7 +1457,8 @@ class Session:
             p = subprocess.run(run, shell=True, cwd=self.cwd, env=env, capture_output=True, text=True, timeout=120)
         except subprocess.TimeoutExpired:
             return {"exit": None, "stdout": "", "stderr": "timed out after 120 s"}
-        return {"exit": p.returncode, "stdout": p.stdout[-4000:], "stderr": p.stderr[-4000:]}
+        # Redact before the cut: redaction replaces whole secret values, so a token cut in two keeps its tail
+        return {"exit": p.returncode, "stdout": redact(p.stdout)[-4000:], "stderr": redact(p.stderr)[-4000:]}
 
     # ---- teardown ----
     def close(self):

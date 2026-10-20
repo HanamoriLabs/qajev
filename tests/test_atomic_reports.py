@@ -5,6 +5,7 @@ import os
 import time
 import urllib.parse
 from datetime import datetime, timezone
+from html import escape
 from types import SimpleNamespace
 
 import pytest
@@ -123,6 +124,21 @@ def test_human_reports_show_myt_even_when_the_runner_uses_another_zone(tmp_path,
     assert data["started_at"] == stamp
     for name in ("report.md", "report.html"):
         assert "2026-10-21 08:00 MYT" in (tmp_path / name).read_text()
+
+
+def test_human_reports_keep_every_complete_native_diagnostic(tmp_path):
+    data = document(tmp_path)
+    errors = ["ERROR " + "full text " * 70 + f"final error number {i}" for i in range(12)]
+    errors.append('ERROR <img src=x onerror="alert(1)">')
+    data["scenarios"][0]["diagnostics"] = {"complete": True, "errors": errors, "reason": None}
+    data["gate"], data["exit_code"] = "FAIL", 1
+    report.write(tmp_path, data)
+    for name in ("report.md", "report.html"):
+        text = (tmp_path / name).read_text()
+        assert "Native output" in text
+        assert all((escape(error) if name.endswith("html") else error) in text for error in errors)
+    assert errors[-1] not in (tmp_path / "report.html").read_text()
+    assert "    " + errors[-1] in (tmp_path / "report.md").read_text()
 
 
 class Download:
