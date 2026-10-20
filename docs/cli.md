@@ -38,6 +38,11 @@ outcome is `suite_error` (`refused` for a safety refusal), and no scenario is co
 Exit codes remain 3 for configuration errors, 4 for browser setup errors, and 5 for safety refusals. `--json`
 prints one JSON document, and MCP returns the same error and report paths. A rejected job is `failed`.
 
+The suite loader reports the parser's cause and position, never the YAML source lines: those lines can contain
+private values that no configured-secret list can identify. The CLI failure handler owns redaction of console,
+JSON and job metadata, including failures without a report writer. The report writer independently owns redaction
+before writing Markdown, JSON and HTML files.
+
 A shell wrapper must preserve QAJev's exit status. A later successful `echo`, `tee` or `DONE` line can otherwise
 hide it; a wrapper's own exit 0 does not prove the run passed. If the output folder cannot be written, QAJev
 prints that error and the original cause, and still exits non-zero.

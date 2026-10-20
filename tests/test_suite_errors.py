@@ -2,6 +2,7 @@ import asyncio
 import json
 import subprocess
 import sys
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -83,6 +84,49 @@ def test_malformed_suite_writes_one_line_reason_without_traceback(tmp_path, caps
     assert path.name in md and reason in data["error"]
     assert "\n" not in data["error"]
     assert "Traceback" not in capsys.readouterr().err
+
+
+def test_malformed_yaml_never_quotes_an_unknown_plain_secret_in_any_output(tmp_path, monkeypatch, capsys):
+    import yaml
+
+    secret = "violet marble canoe"
+    path = suite_file(tmp_path, f"scenarios: [{secret}\n")
+    # No configured secret or token pattern can hide a raw parser snippet for this test.
+    monkeypatch.setattr(config, "secret_values", lambda: [])
+    with pytest.raises(yaml.YAMLError) as error:
+        yaml.safe_load(path.read_text())
+    assert secret in str(error.value), "the malformed line must appear in the parser's unsafe diagnostic"
+
+    out = tmp_path / "reports"
+    assert cli.main(["run", str(path), "--runner", "local", "--out", str(out), "--json"]) == 3
+    printed = capsys.readouterr()
+    data, md, html = read_report(out)
+    raw_json = next(out.rglob("report.json")).read_text()
+    assert "expected" in data["error"] and "line" in data["error"] and "column" in data["error"]
+    assert json.loads(printed.out) == data
+    for channel, text in (("stdout", printed.out), ("stderr", printed.err), ("report.md", md),
+                          ("report.json", raw_json), ("report.html", html)):
+        assert secret not in text, f"{channel} quoted the malformed suite's private content"
+
+
+def test_cli_failure_redacts_console_json_and_job_metadata_without_the_report_layer(monkeypatch, capsys):
+    secret = "fixture-cli-private-value-7183"
+    monkeypatch.setenv("QAJEV_FAKE_TOKEN", secret)
+    recorded = []
+    monkeypatch.setattr(cli, "_record", recorded.append)
+
+    def no_report(*args, **kwargs):
+        pytest.fail("the CLI redaction boundary must be tested without the report layer")
+
+    monkeypatch.setattr(report, "suite_error", no_report)
+    args = SimpleNamespace(command="run", json=True)
+    assert cli._failure(args, f"setup refused {secret}", 3,
+                        extra={"diagnostic": {"value": secret}}, report=False) == 3
+    printed = capsys.readouterr()
+    for text in (printed.out, printed.err, json.dumps(recorded)):
+        assert secret not in text
+        assert "[redacted]" in text
+    assert json.loads(printed.out) == recorded[0]
 
 
 def test_missing_suite_writes_report(tmp_path):

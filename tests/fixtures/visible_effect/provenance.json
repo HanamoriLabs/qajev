@@ -1,0 +1,35 @@
+{
+  "repository": "HanamoriLabs/twilight-engine",
+  "commit": "ea90f621313d",
+  "suite": "tests/qajev/demo-b-options.yaml",
+  "scenario": "switch shadows",
+  "line": 58,
+  "suite_sha256": "3d83501566f66056d0280c508c662cee4f2824072fa821e9799a0ed7c72e6601",
+  "run": "demo-1020-0954",
+  "when": "2026-10-20 18:09 MYT",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "region": {
+    "name": "street under the cafe tables",
+    "x": 890,
+    "y": 560,
+    "width": 380,
+    "height": 300
+  },
+  "tolerance": 15,
+  "min_changed": 0.01,
+  "images": {
+    "off": {
+      "file": "off.jpg",
+      "original_file": "switch-shadows.jpg",
+      "sha256": "91967134ca4116fb8a1d537c4e5c0b5e44539efe5f677448485ee248619e886f"
+    },
+    "on": {
+      "file": "on.jpg",
+      "original_file": "baseline-at-Jos-s-view.jpg",
+      "sha256": "b0bdc1e4bd1fd713e597527e554040c1819a7de4c1937f86e75887a56adddb77"
+    }
+  }
+}
