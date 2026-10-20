@@ -28,6 +28,7 @@ from qajev_upload_privacy import remember_paths, sanitize_upload
 from qajev_upload_privacy import seed_remote as _seed_remote
 
 from . import config
+from .report_files import image_paths, publish
 
 RUNNERS, MODELS = config.RUNNERS, config.CLOUD_MODELS
 # QAJEV_RUNNER may also say `dashboard`: follow the Settings page's "Where runs go by default" (`qajev runner`).
@@ -855,47 +856,52 @@ def fetch_report(client, run_id, folder):
     """A cloud run's report.json, report.md, report.html and the screenshots its report names, kept in `folder` (12-13
     Oct: an agent asked for Jev's steps and the last screen, and the report link asked it for a key). A named path that
     would leave the folder is skipped. -> (the report, the number of screenshots kept). Raises CloudError."""
-    folder.mkdir(parents=True, exist_ok=True)
     raw = get_file(client, run_id, "report.json")
     data = json.loads(raw)
     if not isinstance(data, dict):
         raise CloudError("the cloud report must be a JSON object")
-    (folder / "report.json").write_bytes(raw)
-    for name in ("report.md", "report.html"):
-        try:
-            (folder / name).write_bytes(get_file(client, run_id, name))
-        except ApiError as e:
-            if e.status != 404:
-                raise
-    named = set()
     try:
-        for s in data.get("scenarios") or []:
-            effect = s.get("effect") if isinstance(s.get("effect"), dict) else {}
-            paths = [s.get("shot"), *[(r or {}).get("path") for r in s.get("react") or [] if isinstance(r, dict)],
-                     *[effect.get(key) for key in ("off", "on", "difference")]]
-            for check in s.get("checks") or []:
-                evidence = check.get("evidence") if isinstance(check, dict) else None
-                if isinstance(evidence, dict):
-                    paths.extend(evidence.get(key) for key in ("crop", "reference", "panel", "difference"))
-            for path in paths:
-                if _plain_relative(path):
-                    named.add(path)
-    except (AttributeError, TypeError):
+        named = image_paths(data)
+    except (AttributeError, TypeError, ValueError):
         raise CloudError("the cloud report has invalid scenario or screenshot metadata") from None
-    kept, root = 0, folder.resolve()
-    for path in sorted(named):
-        dest = (folder / path).resolve()
-        if root not in dest.parents:
-            continue
-        try:
-            body = get_file(client, run_id, path)
-        except ApiError as e:
-            if e.status == 404:
-                continue
-            raise
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(body)
-        kept += 1
+    kept = 0
+    incomplete = data.get("report_incomplete") or {}
+    missing = (incomplete.get("missing") or []) if isinstance(incomplete, dict) else []
+    if not isinstance(missing, list) or not all(isinstance(path, str) for path in missing):
+        raise CloudError("the cloud report has invalid missing-frame metadata")
+    if missing and (data.get("gate") not in {"FAIL", "INCOMPLETE"} or not data.get("exit_code")):
+        raise CloudError("the cloud report cannot mark missing frames on a passing or ungraded report")
+    unavailable = set(missing)
+
+    def downloads():
+        nonlocal kept
+        yield "report.json", raw
+        for name in ("report.md", "report.html"):
+            try:
+                body = get_file(client, run_id, name)
+            except ApiError as e:
+                if e.status != 404:
+                    raise
+            else:
+                yield name, body
+        for path in named:
+            if path in unavailable:
+                continue  # The final report already says these frames are unavailable and its gate is incomplete.
+            try:
+                body = get_file(client, run_id, path)
+            except ApiError as e:
+                if e.status == 404:
+                    raise CloudError(f"the cloud report is incomplete: required frame {path} is missing") from None
+                raise
+            if not body:
+                raise CloudError(f"the cloud report is incomplete: required frame {path} is empty")
+            yield path, body
+            kept += 1
+
+    try:
+        publish(folder, downloads())
+    except ValueError:
+        raise CloudError("the cloud report has an unsafe or duplicate artifact path") from None
     return data, kept
 
 

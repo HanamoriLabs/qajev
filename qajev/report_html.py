@@ -4,7 +4,7 @@ relative to the run folder). URLs lose their query strings, as in report.md: the
 import base64
 import json
 import re
-import time
+from datetime import datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -17,6 +17,13 @@ DESTRUCTIVE = ("Destructive controls were shown (allow_destructive): Jev could d
                "things in this run. Local dev hosts only; production never shows them.")
 
 OBVIOUS = 0.8
+MYT = timezone(timedelta(hours=8), "MYT")
+
+
+def format_time(timestamp):
+    return datetime.fromtimestamp(timestamp, MYT).strftime("%Y-%m-%d %H:%M %Z")
+
+
 OUTCOME_ORDER = ("pass", "fail", "stuck", "harness", "unverified", "skipped")
 LEGEND = {
     "pass": "every expectation held",
@@ -460,7 +467,7 @@ def _changes(ch):
     if not ch:
         return ""
     since = ch.get("since") or {}
-    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(since["started_at"])) if since.get("started_at") else "?"
+    when = format_time(since["started_at"]) if since.get("started_at") else "?"
     items = []
     for label, key, cls in (("Newly failing", "newly_failing", "fail"), ("Fixed", "fixed", "pass"),
                             ("Changed", "other", "harness")):
@@ -557,7 +564,7 @@ def render(data):
     project = data.get("project") or {}
     sub = [f"{project['name']} · {project['env']}"] if project else []
     if data.get("started_at"):
-        sub.append(time.strftime("%Y-%m-%d %H:%M", time.localtime(data["started_at"])))
+        sub.append(format_time(data["started_at"]))
     approved = (data.get("test_plan") or {}).get("approved_at")
     if approved and (data.get("test_plan") or {}).get("approved"):
         sub.append(f"plan approved {approved}")
@@ -573,6 +580,11 @@ def render(data):
         f'<p class="planted">{_e(planted_count(data["expected_fail"]))}</p>' if data.get("expected_fail") else "",
     ]
     out.append(_test_plan(data.get("test_plan")))
+    incomplete = data.get("report_incomplete")
+    if incomplete:
+        detail = incomplete["reason"] + "\n" + "\n".join(incomplete["missing"])
+        out.append('<div class="box fail" role="alert"><strong>Report incomplete.</strong>'
+                   f'<pre>{_e(detail)}</pre></div>')
     if data.get("error"):
         out.append('<div class="box fail" role="alert"><strong>Run did not start.</strong> '
                    f'No scenarios were judged.<pre>{_e(data["error"])}</pre></div>')

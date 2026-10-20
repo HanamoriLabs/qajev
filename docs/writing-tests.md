@@ -706,3 +706,18 @@ report file and result it sends. The run writes through the tunnel, because sign
 ## Games
 
 Games are tested with `qajev play` instead; see [Games](games.md).
+## Complete reports
+
+QAJev renders the Markdown, HTML and JSON before publishing a finished report. Each file is replaced atomically;
+the final JSON is published after its images and human reports. A render or download failure preserves the last
+complete local copy. Progress reports remain marked `partial`; a late progress update cannot replace a finished
+report.
+
+A report that names a missing or empty image says `Report incomplete` and lists the image. A would-be PASS becomes
+INCOMPLETE. Existing product failures remain failures. Detailed Markdown keeps the complete check reason; compact
+summary tables still use short text. Human report times use MYT on every runner.
+
+Cloud report downloads keep the final shot, every multiplayer client's shot, reaction captures, effect images and
+claim evidence. A required frame that is missing fails the download with its path and leaves the previous report
+intact. A report that already declares missing evidence must have a failing or incomplete gate. Unsafe paths
+outside the report folder are never downloaded.
