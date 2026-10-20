@@ -227,7 +227,7 @@ async def _run_report(args, ctx, background=False, title=None, cwd=None, rerun=N
         with contextlib.suppress(jobs.NotOurs):  # the cancel goes on either way
             await asyncio.to_thread(jobs.stop, job["id"])  # the run closes its own tabs, Chrome and daemon
         raise
-    if data and data.get("outcome") == "refused":  # it would have changed a production site: nothing ran
+    if data and data.get("outcome") in {"refused", "suite_error"}:  # rejected before any scenario ran
         return {**data, "job": job["id"]}
     if not data or "error" in data:
         st = jobs.status(job["id"])
@@ -271,6 +271,13 @@ async def _dispatch(args, where, ctx, background, title=None):
             else:
                 return await _cloud_report(plan, ctx, background)
     except cloud.CloudError as e:
+        if parsed.command == "run" and e.code == cloud.EXIT_CONFIG:
+            from . import report
+
+            try:
+                return report.suite_error(parsed.out, parsed.suite or parsed.project, str(e), e.code, runner="cloud")
+            except OSError as write_error:
+                raise ToolError(config.redact(f"{e}; could not write error report: {write_error}")) from None
         raise ToolError(str(e) + (f" ({e.url})" if e.url and e.url not in str(e) else "")) from None
     if parsed.serve or parsed.model:
         raise ToolError("serve and model go with cloud runs, and this one runs on this machine"

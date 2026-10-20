@@ -558,6 +558,9 @@ def render(data):
         f'<p class="planted">{_e(planted_count(data["expected_fail"]))}</p>' if data.get("expected_fail") else "",
     ]
     out.append(_test_plan(data.get("test_plan")))
+    if data.get("error"):
+        out.append('<div class="box fail" role="alert"><strong>Run did not start.</strong> '
+                   f'No scenarios were judged.<pre>{_e(data["error"])}</pre></div>')
     if data.get("allow_destructive"):
         out.append(f'<div class="box fail" role="alert"><strong>{_e(DESTRUCTIVE)}</strong></div>')
     wall = data.get("needs_sign_in")

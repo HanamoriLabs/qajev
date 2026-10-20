@@ -769,13 +769,27 @@ def load(path, devices=None):
     path = Path(path)
     if not path.is_file():
         raise SuiteError(f"suite not found: {path}")
-    text = path.read_text()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeError:
+        raise SuiteError(f"{path}: suite is not valid UTF-8") from None
+    except OSError as e:
+        raise SuiteError(f"{path}: could not read suite: {e.strerror}") from None
     if path.suffix == ".json":
-        data = json.loads(text)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise SuiteError(f"{path}: {e.msg} at line {e.lineno}, column {e.colno}") from None
     else:
         import yaml  # deferred: keeps `qajev --help` fast
 
-        data = yaml.safe_load(text)
+        try:
+            data = yaml.safe_load(text)
+        except yaml.YAMLError as e:
+            # Parser tracebacks quote the input (which can contain credentials). Keep only cause and location.
+            mark = getattr(e, "problem_mark", None)
+            where = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
+            raise SuiteError(f"{path}: {getattr(e, 'problem', None) or 'invalid YAML'}{where}") from None
     return parse(data, path, devices=devices)
 
 

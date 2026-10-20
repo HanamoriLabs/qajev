@@ -1748,11 +1748,7 @@ def _stop_when_orphaned(every=2.0, stop=None):
 
 def _refused(args, message):
     """Production is read-only, destructive is never: nothing was started (exit 5, outcome "refused")."""
-    _record({"outcome": "refused", "reason": message, "error": message, "exit_code": EXIT_REFUSED})
-    if getattr(args, "json", False):
-        print(json.dumps({"outcome": "refused", "reason": message, "error": message, "exit_code": EXIT_REFUSED}))
-    print(f"qajev: refused: {message}", file=sys.stderr)
-    return EXIT_REFUSED
+    return _failure(args, message, EXIT_REFUSED, {"outcome": "refused", "reason": message}, prefix="refused: ")
 
 
 def cmd_plan(args):
@@ -1828,10 +1824,30 @@ def url_refusal(args):
 
 
 def _fail(args, message, code):
-    _record({"error": message, "exit_code": code})
+    return _failure(args, message, code)
+
+
+def _failure(args, message, code, extra=None, *, prefix="", suffix="", report=True):
+    args._failure_code = code  # a closed output pipe must not turn a rejected run into exit 0
+    message = config.redact(str(message))
+    out = config.redact_tree({"error": message, "exit_code": code, **(extra or {})})
+    if report and getattr(args, "command", None) == "run":
+        from . import report as report_mod
+
+        source = getattr(args, "suite", None) or getattr(args, "project", None)
+        try:
+            data = report_mod.suite_error(args.out, source, message, code,
+                                         outcome=out.get("outcome", "suite_error"), runner=out.get("runner"))
+        except OSError as e:
+            # A full disk or an invalid --out must not turn a rejection into a traceback or a clean exit.
+            print(f"qajev: could not write error report: {config.redact(str(e))}", file=sys.stderr)
+        else:
+            out = data
+            print(f"Report: {Path(data['run_dir']) / 'report.md'} (also report.json, report.html)", file=sys.stderr)
+    _record(out)
     if getattr(args, "json", False):
-        print(json.dumps({"error": message, "exit_code": code}))
-    print(f"qajev: {message}", file=sys.stderr)
+        print(json.dumps(out))
+    print(f"qajev: {prefix}{out['error']}{config.redact(suffix)}", file=sys.stderr)
     return code
 
 
@@ -1879,10 +1895,8 @@ def _cloud_fail(args, message, code, run_id=None, url=None):
     out = {"runner": "cloud", "error": message, "reason": message, "exit_code": code}
     if run_id:
         out.update(run_id=run_id, url=url)
-    if getattr(args, "json", False):
-        print(json.dumps(out))
-    print(f"qajev: {message}" + (f" ({url})" if url and url not in message else ""), file=sys.stderr)
-    return code
+    suffix = f" ({url})" if url and url not in message else ""
+    return _failure(args, message, code, out, suffix=suffix, report=run_id is None)
 
 
 def cmd_cloud(args, plan):
@@ -1991,6 +2005,8 @@ def _cloud_job(args, stopping=False):
 
 
 def main(argv=None):
+    global _job_dir
+    _job_dir = None
     args = build_parser().parse_args(argv)
     args.argv = list(sys.argv[1:] if argv is None else argv)
     if args.command in {"check", "run", "smoke", "play"}:
@@ -2004,8 +2020,6 @@ def main(argv=None):
             return routed
     if getattr(args, "background", False):
         return cmd_background(args)
-    global _job_dir
-    _job_dir = None
     if args.command in {"check", "run", "smoke", "play"}:
         signal.signal(signal.SIGTERM, _interrupt)
         signal.signal(signal.SIGINT, _interrupt)
@@ -2026,8 +2040,8 @@ def main(argv=None):
         code = handlers[args.command](args)
         return code
     except BrokenPipeError:
-        code = 0
-        return 0
+        code = getattr(args, "_failure_code", 0)
+        return code
     except KeyboardInterrupt:
         code = EXIT_INTERRUPTED
         if args.command in {"check", "run", "smoke", "play"}:  # stopped before its handler could (still importing)

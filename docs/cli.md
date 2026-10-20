@@ -31,6 +31,17 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | `5` | refused: the run would change a production site (`mode: mutate` or `--allow-destructive` on a host that is not a local dev host), or a play suite asked for `mode: mutate`. Nothing was started; `--json` prints `{"outcome": "refused", "reason": ...}` |
 | `130` | stopped (Ctrl-C or `qajev stop`) |
 
+If `qajev run` rejects a suite before its first scenario, it still writes `report.md`, `report.json` and
+`report.html` under `--out`, and prints the report path even with `--quiet`. The report keeps the full redacted
+cause and source file, with line and column for malformed YAML/JSON. Its gate is `INCOMPLETE`, its run-level
+outcome is `suite_error` (`refused` for a safety refusal), and no scenario is counted as a product failure.
+Exit codes remain 3 for configuration errors, 4 for browser setup errors, and 5 for safety refusals. `--json`
+prints one JSON document, and MCP returns the same error and report paths. A rejected job is `failed`.
+
+A shell wrapper must preserve QAJev's exit status. A later successful `echo`, `tee` or `DONE` line can otherwise
+hide it; a wrapper's own exit 0 does not prove the run passed. If the output folder cannot be written, QAJev
+prints that error and the original cause, and still exits non-zero.
+
 ## Options shared by `check`, `run` and `smoke`
 
 **Browser**

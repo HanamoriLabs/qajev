@@ -2,7 +2,10 @@
 
 import json
 import os
+import tempfile
 import time
+from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 from . import __version__, config, plan, planfile, report_html, verdict
@@ -114,6 +117,27 @@ def write(run_dir, data):
     _atomic(run_dir / "report.json", json.dumps(data, indent=2, default=str))
     _atomic(run_dir / "report.md", markdown(data))
     write_html(run_dir, data)
+
+
+def suite_error(out_dir, source, message, code, *, outcome="suite_error", runner=None):
+    """A run rejected before any scenario ran. Keep the normal report schema and non-product INCOMPLETE gate."""
+    source = config.redact(str(source)) if source else None
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # Independent attempts never overwrite one another, even in the same second.
+    run_dir = Path(tempfile.mkdtemp(prefix="suite-error-", dir=out_dir))
+    data = build(SimpleNamespace(name=Path(source).stem if source else "suite"), [], [], browser={},
+                 started_at=time.time(), strict=False, interrupted=False, run_dir=run_dir)
+    reason = " ".join(config.redact(str(message)).split())
+    data.update(outcome=outcome, error=reason, reason=reason, gate="INCOMPLETE", exit_code=code)
+    if runner:
+        data["runner"] = runner
+    if source:
+        data["source"] = str(source)
+        data["error"] = data["reason"] = f"{source}: {reason}"
+    data = config.redact_tree(data)
+    write(run_dir, data)
+    return data
 
 
 def write_html(run_dir, data):
@@ -249,6 +273,9 @@ def markdown(data):
           if data.get("test_plan") else []),
         f"**Gate: {data['gate']}**" + (" (interrupted)" if data.get("interrupted") else ""),
         "",
+        *(["## Run did not start", "", "No scenarios were judged. Correct the error before running again.", "",
+           # An error can contain Markdown or backticks from a malformed input. Keep it literal, in full.
+           "    " + data["error"].replace("\n", "\n    "), ""] if data.get("error") else []),
         *([f"> **{report_html.DESTRUCTIVE}**", ""] if data.get("allow_destructive") else []),
         f"{c['pass']} pass · {c['fail']} fail · {c['stuck']} stuck · {c['harness']} harness · "
         f"{c['unverified']} unverified · {c['skipped']} skipped · {data['seconds']:.0f} s · "
