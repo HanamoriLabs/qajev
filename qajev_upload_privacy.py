@@ -161,11 +161,18 @@ def _text(value, paths=None, whole_path=False):
         return match[1] + keep(match[2])
 
     def quoted_file(match):
-        return match[1] + keep(MASK) + match[1] if _WHOLE_FILE.fullmatch(match[2]) else match[0]
+        if _WHOLE_FILE.fullmatch(match[2]):
+            return match[1] + keep(MASK) + match[1]
+        nested = _QUOTED.sub(quoted_file, match[2])
+        return match[1] + nested + match[1]
 
     def quoted(match):
         reference = _whole_reference(match[2], paths)
-        return match[1] + keep(reference) + match[1] if reference is not None else match[0]
+        if reference is not None:
+            return match[1] + keep(reference) + match[1]
+        # Markdown/code quoting may wrap another quoted path; clean its complete inner value first.
+        nested = _QUOTED.sub(quoted, match[2])
+        return match[1] + nested + match[1]
 
     value = _DATA.sub(media, value)
     value = _QUOTED.sub(quoted_file, value)

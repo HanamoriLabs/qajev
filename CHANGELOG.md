@@ -6,6 +6,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Quoted local paths in generated reports and metadata keep their spaces together even inside another pair
+  of quotes or backticks, so a path's trailing file name no longer survives the privacy cleaner.
 - Dispatcher machine status, heartbeat and claim metadata use the shared report-path cleaner. Tunnel-refusal
   reasons hide restored local paths while preserving the explanation; declared run inputs stay unchanged.
 - A lost reply for the last declared cloud input is confirmed with one exact-file read if the retried upload

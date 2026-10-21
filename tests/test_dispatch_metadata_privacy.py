@@ -5,6 +5,7 @@ import urllib.parse
 from unittest import mock
 
 from qajev import cloud
+from qajev_upload_privacy import public_reference, sanitize_upload
 
 PERSON = "dispatch-fixture"
 SOURCE = "/Users/dispatch-fixture/work/app"
@@ -57,6 +58,27 @@ class DispatchMetadataPrivacyTest(unittest.TestCase):
         self.assert_clean_reason(self.calls[-1][2])
         self.assertEqual(self.calls[-1][2]["state"], "stopped")
         self.assertEqual(original["error"], REASON)
+
+    def test_nested_quoted_spaced_path_has_no_tail_in_artifacts_or_machine_reports(self):
+        for path in ("/Users/privacy-fixture/Work Files/qa.yaml",
+                     r"C:\Users\privacy-fixture\Work Files\qa.yaml",
+                     "file:///Users/privacy-fixture/Work Files/qa.yaml"):
+            for outer, inner in (("`", '"'), ("`", "'"), ('"', "'"),
+                                 ("'", '"'), ('"', "`"), ("'", "`")):
+                with self.subTest(path=path, outer=outer, inner=inner):
+                    message = f"source {outer}{inner}{path}{inner}{outer} is not a git root"
+                    expected = (
+                        f"source {outer}{inner}{public_reference(path)}{inner}{outer} is not a git root"
+                    )
+                    paths = {}
+                    artifact = sanitize_upload(message.encode(), paths=paths).decode()
+                    self.assertEqual(artifact, expected)
+                    self.assertEqual(set(paths.values()), set() if path.startswith("file://") else {path})
+                    self.assertEqual(sanitize_upload(artifact.encode()).decode(), expected)
+                    self.client.post("/api/v1/dispatch/r_fixture/machine", {"error": message})
+                    self.assertEqual(self.calls[-1][2]["error"], expected)
+                    self.assertNotIn("privacy-fixture", json.dumps(self.calls[-1][2]))
+                    self.assertNotIn("Work Files", json.dumps(self.calls[-1][2]))
 
     def test_host_heartbeat_and_claim_metadata_use_the_same_cleaner(self):
         for path in ("/api/v1/dispatch/hosts", "/api/v1/dispatch/claim"):
