@@ -182,6 +182,55 @@ class DispatchMetadataPrivacyTest(unittest.TestCase):
         self.client.post("/api/v1/device/token", original)
         self.assertEqual(self.calls[-1][2], original)
 
+    def test_exact_input_fields_apply_only_to_their_own_route(self):
+        cases = (
+            ("/api/v1/runs", {"args": [SOURCE, "/dashboard"], "files": [{"path": "in/qa.yaml"}],
+                              "device_code": SOURCE + "/opaque"}, ("args", "files"), ("device_code",)),
+            ("/api/v1/device/token", {"device_code": "/opaque/code/value", "args": [SOURCE],
+                                      "files": [{"path": SOURCE}], "serve": {"path": SOURCE},
+                                      "seed_files": [{"file": SOURCE}]},
+             ("device_code",), ("args", "files", "serve", "seed_files")),
+        )
+        for route, body, exact, metadata in cases:
+            original = json.loads(json.dumps(body))
+            for buffer in (None, bytes, bytearray, memoryview):
+                with self.subTest(route=route, buffer=buffer):
+                    if buffer is None:
+                        self.client.post(route, body)
+                    else:
+                        self.client._call("POST", route, raw=buffer(json.dumps(body).encode()),
+                                          headers={"Content-Type": "application/json"})
+                    sent = self.calls[-1][2]
+                    for field in exact:
+                        self.assertEqual(sent[field], original[field])
+                    for field in metadata:
+                        self.assertNotIn(PERSON, json.dumps(sent[field]))
+                        self.assertNotEqual(sent[field], original[field])
+                    self.assertEqual(body, original)
+
+    def test_query_and_fragment_do_not_change_exact_input_field_scopes(self):
+        cases = (
+            ("/api/v1/runs", {"args": ["--expect-url", "/dashboard", "--expect-js",
+                                       "location.pathname === '/done'", SOURCE],
+                               "files": [{"path": "in/qa.yaml"}], "source": SOURCE}, ("args", "files")),
+            ("/api/v1/device/token", {"device_code": SOURCE + "/opaque", "source": SOURCE}, ("device_code",)),
+        )
+        for route, body, exact in cases:
+            original = json.loads(json.dumps(body))
+            for suffix in ("?x=1", "#section", "?x=1#section"):
+                for buffer in (None, bytes, bytearray, memoryview):
+                    with self.subTest(route=route, suffix=suffix, buffer=buffer):
+                        if buffer is None:
+                            self.client.post(route + suffix, body)
+                        else:
+                            self.client._call("POST", route + suffix, raw=buffer(json.dumps(body).encode()),
+                                              headers={"Content-Type": "application/json"})
+                        sent = self.calls[-1][2]
+                        for field in exact:
+                            self.assertEqual(sent[field], original[field])
+                        self.assertNotIn(PERSON, sent["source"])
+                        self.assertEqual(body, original)
+
     def test_only_device_code_is_exact_while_token_request_metadata_is_cleaned(self):
         original = {"device_code": "/opaque/code/value", "error": REASON, "source": SOURCE}
         for buffer in (None, bytes, bytearray, memoryview):
