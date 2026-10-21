@@ -1,4 +1,4 @@
-"""Portable path-disclosure policy shared by CLI and dispatcher upload boundaries."""
+"""Shared privacy policy for QAJev-owned results and metadata, never declared run inputs."""
 
 import base64
 import hashlib
@@ -17,11 +17,15 @@ _WEB_ROOT = re.compile(r"((?:\bfetch\s*\(\s*|\burl\s*\(\s*|\b(?:href|src|action)
 _WEB_FIELD = re.compile(
     r"(\b(?:[a-z0-9_]*url|href|src|action|smoke_start)\s*[:=]\s*[\"']?)(/[^\s,{}\[\]\"'<>]+)", re.I)
 _DATA = re.compile(r"(data:[a-z0-9.+/-]+(?:;charset=[a-z0-9_-]+)?;base64,)([a-z0-9+/=]+)", re.I)
-_FILE = re.compile(r"\bfile://[^\r\n<>\"'`]+", re.I)
+_FILE = re.compile(r"\bfile://[^\s<>\"'`]+", re.I)
+_WHOLE_FILE = re.compile(r"file://[^\x00-\x1f<>\"'`]+", re.I)
+_QUOTED = re.compile(r"([\"'`])([^\r\n]*?)\1")
 _CLOSE_TAG = re.compile(r"</[a-z][a-z0-9_.:-]*\s*>", re.I)
-_PATH = re.compile(
+_PATH_START = (
     r"(?<![\w/\\])(?:[a-z]:[\\/]+|\\\\|(?<!\.)/{2,}|(?<!\.)(?:/|\\/|%2f)(?![/\*^])|~[\\/])"
-    r"[\w.~%][^\x00-\x1f<>\"'`|:;#?(){}\[\]]*", re.I)
+    r"[\w.~%]")
+_PATH = re.compile(_PATH_START + r"[^\s\x00-\x1f<>\"'`|:;#?(){}\[\]]*", re.I)
+_WHOLE_PATH = re.compile(_PATH_START + r"[^\x00-\x1f<>\"'`|:;#?(){}\[\]]*", re.I)
 _BINARY_PATH = re.compile(
     rb"(?:[/\\](?:users|home)[/\\][a-z0-9._ -]+|[a-z]:[\\/]+[a-z0-9._ -]+[\\/][a-z0-9._ -]+|file://)", re.I)
 _URL_KEYS = {"url", "base_url", "href", "src", "action"}
@@ -116,7 +120,19 @@ def _relative_path(match, paths=None):
     return public
 
 
-def _text(value, paths=None):
+def _whole_reference(value, paths=None):
+    """Spaces belong to a local path only when its entire value is explicit."""
+    if _WHOLE_FILE.fullmatch(value):
+        return MASK
+    match = _WHOLE_PATH.fullmatch(value)
+    return _relative_path(match, paths) if match else None
+
+
+def _text(value, paths=None, whole_path=False):
+    if whole_path:
+        reference = _whole_reference(value, paths)
+        if reference is not None:
+            return reference
     protected = {}
     prefix = "\x00public-url-"
     while prefix in value:
@@ -144,12 +160,21 @@ def _text(value, paths=None):
     def web_field(match):
         return match[1] + keep(match[2])
 
+    def quoted_file(match):
+        return match[1] + keep(MASK) + match[1] if _WHOLE_FILE.fullmatch(match[2]) else match[0]
+
+    def quoted(match):
+        reference = _whole_reference(match[2], paths)
+        return match[1] + keep(reference) + match[1] if reference is not None else match[0]
+
     value = _DATA.sub(media, value)
+    value = _QUOTED.sub(quoted_file, value)
     value = _FILE.sub(MASK, value)
     value = _WEB.sub(web, value)
     value = _WEB_ROOT.sub(web_root, value)
     value = _WEB_FIELD.sub(web_field, value)
     value = _CLOSE_TAG.sub(web, value)
+    value = _QUOTED.sub(quoted, value)
     value = _PATH.sub(lambda match: _relative_path(match, paths), value)
     for token, text in protected.items():
         value = value.replace(token, text)
@@ -165,7 +190,7 @@ def _tree(value, key=None, paths=None):
         url_key = isinstance(key, str) and (key in _URL_KEYS or key.endswith("_url") or key == "smoke_start")
         if url_key and value.startswith("/"):
             return value
-        return _text(value, paths)
+        return _text(value, paths, whole_path=key in ("source", "run_dir", "root", "file", "path"))
     if isinstance(value, list):
         return [_tree(item, paths=paths) for item in value]
     if isinstance(value, dict):
@@ -210,13 +235,36 @@ def sanitize_upload(data: bytes, paths=None) -> bytes:
 
 def public_reference(value):
     """The same stable public string whether given a local path or an already public reference."""
-    return json.loads(sanitize_upload(json.dumps(str(value)).encode()))
+    return _text(str(value), whole_path=True)
 
 
 def seed_remote(file):
     """A fixture's public identifier, independent of the receiving machine's working folder."""
     reference = public_reference(file)
     return f"in/seed/{hashlib.sha256(reference.encode()).hexdigest()[:16]}.json"
+
+
+
+
+def sanitize_request(method, path, body, *, paths=None):
+    """Clean only QAJev-generated metadata; creation arguments and declared inputs remain exact."""
+    if method == "POST" and path == "/api/v1/runs":
+        if not isinstance(body, dict):
+            return body
+        clean = dict(body)
+        for key in ("name", "project", "tunnel"):
+            if key in clean:
+                clean[key] = _tree(clean[key], key, paths)
+        return clean
+    if (path in {"/api/v1/sync/runs", "/api/v1/projects"}
+            or re.fullmatch(r"/api/v1/jobs/[^/?#]+/(?:events|finish)", path)):
+        return _tree(body, paths=paths)
+    return body
+
+
+def upload_artifact(client, run_id, remote_path, data):
+    """Publish a QAJev-owned result through the same exact-byte transport used for inputs."""
+    return client.put_file(run_id, remote_path, sanitize_upload(data))
 
 
 _REF = re.compile(r"(?<![\w/])local/[0-9a-f]{24}(?![0-9a-f])")
