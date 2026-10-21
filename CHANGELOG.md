@@ -6,6 +6,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Device authorization preserves only its opaque device_code field; other token-request metadata follows
+  the same default privacy rule as every other metadata request.
 - Cloud clients clean metadata on every route by default, including raw JSON. Named file/model/protocol inputs
   and run arguments stay exact. An inventory test requires a privacy classification for every production route.
 - Quoted local paths in generated reports and metadata keep their spaces together even inside another pair

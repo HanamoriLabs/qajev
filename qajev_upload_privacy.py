@@ -260,7 +260,7 @@ REQUEST_ROUTES = (
     ("GET", "/api/v1/me", "metadata"),
     ("GET", "/api/v1/overview", "metadata"),
     ("GET", "/api/v1/runs", "metadata"),
-    ("POST", "/api/v1/runs", "run-input"),
+    ("POST", "/api/v1/runs", "field-input"),
     ("GET", "/api/v1/runs/:id", "metadata"),
     ("POST", "/api/v1/runs/:id/stop", "metadata"),
     ("POST", "/api/v1/runs/:id/rerun", "metadata"),
@@ -298,14 +298,17 @@ REQUEST_ROUTES = (
     ("POST", "/api/v1/sync/runs", "metadata"),
     ("GET", "/api/v1/config", "metadata"),
     ("POST", "/api/v1/device/start", "metadata"),
-    ("POST", "/api/v1/device/token", "byte-exact"),
+    ("POST", "/api/v1/device/token", "field-input"),
     ("POST", "/api/v1/stripe/webhook", "byte-exact"),
     ("GET", "/__/auth/*", "byte-exact"),
     ("POST", "/__/auth/*", "byte-exact"),
 )
 
 
-RUN_INPUT_FIELDS = frozenset(("args", "files", "serve", "seed_files"))
+EXACT_INPUT_FIELDS = {
+    ("POST", "/api/v1/runs"): frozenset(("args", "files", "serve", "seed_files")),
+    ("POST", "/api/v1/device/token"): frozenset(("device_code",)),
+}
 
 
 def request_mode(method: str, path: str) -> str | None:
@@ -333,11 +336,13 @@ def sanitize_request(method: str, path: str, body: Any, *, paths=None) -> Any:
             raise ValueError("metadata request body must be UTF-8 JSON") from None
         clean = sanitize_request(method, path, value, paths=paths)
         return body if clean == value else json.dumps(clean, ensure_ascii=False).encode()
-    if mode == "run-input" and isinstance(body, dict):
+    if mode == "field-input" and isinstance(body, dict):
+        route = path.split("?", 1)[0].split("#", 1)[0]
+        fields = EXACT_INPUT_FIELDS.get((method, route), frozenset())
         clean = cast(dict[str, Any], _tree(
-            {key: value for key, value in body.items() if key not in RUN_INPUT_FIELDS}, paths=paths))
+            {key: value for key, value in body.items() if key not in fields}, paths=paths))
         for field in body:
-            if field in RUN_INPUT_FIELDS:
+            if field in fields:
                 clean[field] = body[field]
         return clean
     return _tree(body, paths=paths)

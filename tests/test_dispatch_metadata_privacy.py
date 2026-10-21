@@ -96,7 +96,11 @@ class DispatchMetadataPrivacyTest(unittest.TestCase):
 
     def test_new_metadata_routes_are_cleaned_by_default(self):
         original = {"source": SOURCE, "args": ["--expect-url", "/dashboard", "/[a-z]+/g"]}
-        for route in ("/api/v1/dispatch/future-status", "/api/v1/future/status"):
+        for route in ("/api/v1/dispatch/future-status", "/api/v1/future/status",
+                      "/api/v1/dispatch/r_fixture/log", "/api/v1/dispatch/r_fixture/progress",
+                      "/api/v1/jobs/r_fixture/progress", "/api/v1/jobs/r_fixture/log",
+                      "/api/v1/hosts/h_fixture/heartbeat", "/api/v1/runs/r_fixture/notes",
+                      "/api/v1/dispatch/r_fixture/machine/"):
             with self.subTest(route=route):
                 self.client.post(route, original)
                 self.assertNotIn(PERSON, json.dumps(self.calls[-1][2]))
@@ -142,3 +146,19 @@ class DispatchMetadataPrivacyTest(unittest.TestCase):
         original = {"device_code": "/opaque/code/value"}
         self.client.post("/api/v1/device/token", original)
         self.assertEqual(self.calls[-1][2], original)
+
+    def test_only_device_code_is_exact_while_token_request_metadata_is_cleaned(self):
+        original = {"device_code": "/opaque/code/value", "error": REASON, "source": SOURCE}
+        for buffer in (None, bytes, bytearray, memoryview):
+            with self.subTest(buffer=buffer):
+                if buffer is None:
+                    self.client.post("/api/v1/device/token", original)
+                else:
+                    self.client._call("POST", "/api/v1/device/token",
+                                      raw=buffer(json.dumps(original).encode()),
+                                      headers={"Content-Type": "application/json"})
+                sent = self.calls[-1][2]
+                self.assert_clean_reason(sent)
+                self.assertEqual(sent["device_code"], original["device_code"])
+                self.assertNotEqual(sent["source"], SOURCE)
+                self.assertEqual(original["error"], REASON)

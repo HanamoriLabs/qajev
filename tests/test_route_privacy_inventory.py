@@ -186,7 +186,7 @@ def require_classifications(found):
     for method, path, file, line in found:
         sample = re.sub(r':[^/]+|\*|\{\}', 'route-fixture', path)
         mode = privacy.request_mode(method, sample)
-        assert mode in ('metadata', 'run-input', 'byte-exact'), f'{file}:{line}: unclassified {method} {path}'
+        assert mode in ('metadata', 'field-input', 'byte-exact'), f'{file}:{line}: unclassified {method} {path}'
         rows.append({'method': method, 'path': path, 'mode': mode, 'source': file, 'line': line})
     return rows
 
@@ -243,6 +243,8 @@ class RoutePrivacyInventoryTest(unittest.TestCase):
                 else:
                     self.assertNotIn('route-fixture', clean['source'])
                     self.assertNotIn(b'/Users/route-fixture', cleaned_raw)
-                    if mode == 'run-input':
-                        self.assertEqual(clean['args'], body['args'])
+                    if mode == 'field-input':
+                        for field in privacy.EXACT_INPUT_FIELDS.get((method, path), ()):
+                            if field in body:
+                                self.assertEqual(clean[field], body[field])
 
