@@ -20,10 +20,14 @@ def output_at_cut(path, position, keep):
     return "earlier output | " + path + suffix
 
 
-def assert_private(text):
+def assert_no_owner_pieces(text):
     assert all(OWNER[i:i + 4] not in text for i in range(len(OWNER) - 3)), text
     assert all(OWNER[-size:] + separator not in text
                for size in range(1, len(OWNER) + 1) for separator in ("/", "\\")), text
+
+
+def assert_private(text):
+    assert_no_owner_pieces(text)
     assert REASON in text
 
 
@@ -47,6 +51,28 @@ def test_command_diagnostics_hide_home_paths_at_every_outer_cut_without_changing
     response.stderr = ""
     result = capture.command("fixture command", "https://example.test")
     assert verdict.command_check({"run": "fixture command", "stdout": PATHS[0]}, result)["ok"]
+
+
+def test_stdout_expectation_mismatch_uses_safe_head_of_long_output_at_every_cut(monkeypatch):
+    capture = session.Session.__new__(session.Session)
+    capture.allow_commands, capture.cwd = True, None
+    response = types.SimpleNamespace(returncode=0, stdout="", stderr="")
+    monkeypatch.setattr(session.subprocess, "run", lambda *args, **kwargs: response)
+    wanted = "fixture expected marker never printed"
+    for path in PATHS:
+        for position in range(len(path) + 1):
+            raw = output_at_cut(path, position, 4000)
+            assert len(raw) > 4000
+            assert wanted not in raw
+            response.stdout = raw
+            result = capture.command("fixture command", "https://example.test")
+            assert result["exit"] == 0, "Exercise stdout mismatch, not a failed command exit"
+            assert result["stdout"] == raw[-4000:], "Keep the original matching copy unchanged"
+            check = verdict.command_check({"run": "fixture command", "stdout": wanted}, result)
+            assert check["ok"] is False
+            assert check["detail"].startswith("stdout ")
+            assert f"lacks {wanted!r}" in check["detail"]
+            assert_no_owner_pieces(str(check))
 
 
 @pytest.mark.parametrize("channel", ["stdout", "stderr"])
