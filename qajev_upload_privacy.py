@@ -241,6 +241,20 @@ def sanitize_upload(data: bytes, paths=None) -> bytes:
     return data if clean == text else bom + clean.encode(encoding)
 
 
+def sanitize_text(text: str, keep: int | None = None, *, tail: bool = False) -> str:
+    """Clean a complete generated diagnostic before any character retention limit.
+
+    Runner inputs and values used by checks must use their exact transport instead.
+    A tail cut can discard a path's identifying prefix, so cleaning cannot follow it.
+    """
+    clean = sanitize_upload(text.encode("utf-8", errors="replace")).decode("utf-8")
+    if keep is None:
+        return clean
+    if keep < 0:
+        raise ValueError("diagnostic retention must not be negative")
+    return clean[-keep:] if tail and keep else clean[:keep]
+
+
 def public_reference(value):
     """The same stable public string whether given a local path or an already public reference."""
     return _text(str(value), whole_path=True)

@@ -1,5 +1,8 @@
 # Changelog
 
+- Clean generated command, page-check and mobile failure diagnostics before retaining a character tail, so a
+  cut through a home path cannot expose its username. Command matching and declared cloud inputs stay exact.
+
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased

@@ -144,7 +144,9 @@ def _run(args, timeout=TIMEOUT_S):
                            env={**os.environ, "QAJEV_DEVICES": "desktop"})
     except (OSError, subprocess.TimeoutExpired) as e:
         return None, str(e)
-    return r.returncode, (r.stdout + r.stderr)[-2000:]
+    from qajev_upload_privacy import sanitize_text
+
+    return r.returncode, sanitize_text(r.stdout + r.stderr, 2000, tail=True)
 
 
 def open_url_step(game, *, name, spec, about=None, run_dir=None, emit=None, run=None):
@@ -186,7 +188,10 @@ def open_url_step(game, *, name, spec, about=None, run_dir=None, emit=None, run=
         report = json.loads(reports[-1].read_text())
     inner = (report.get("scenarios") or [{}])[0]
     if not inner.get("outcome"):
-        tail = out.strip().splitlines()[-1][:300] if out.strip() else f"exit {code}"
+        from qajev_upload_privacy import sanitize_text
+
+        safe = sanitize_text(out).strip()
+        tail = safe.splitlines()[-1][:300] if safe else f"exit {code}"
         return _step_result(name, "browser_error", [first], f"the page check did not run: {tail}")
     checks = [first, *({**c, "check": f"page: {c['check']}"} for c in inner.get("checks") or [])]
     if inner["outcome"] in ("harness", "stuck", "unverified", "skipped"):

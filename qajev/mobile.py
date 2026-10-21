@@ -447,7 +447,10 @@ class MobileApp:
         deadline = time.monotonic() + wait
         while not self._adb("shell", "pidof", self.app, check=False).strip():
             if time.monotonic() > deadline:
-                raise NativeError(f"{self.app} did not start: {said.strip()[-300:] or 'no output'}")
+                from qajev_upload_privacy import sanitize_text
+
+                diagnostic = sanitize_text(said.strip(), 300, tail=True)
+                raise NativeError(f"{self.app} did not start: {diagnostic or 'no output'}")
             time.sleep(0.5)
 
     # A browser's own first-run screens, passed the one safe way: never an account, never sync.

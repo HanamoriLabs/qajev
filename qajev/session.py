@@ -20,6 +20,8 @@ from string import Template
 from types import SimpleNamespace
 from typing import Any
 
+from qajev_upload_privacy import sanitize_text
+
 from . import __version__, chrome, keys, live, netlog, providers
 from . import guard as guard_mod
 from . import pad as pad_mod
@@ -1445,7 +1447,8 @@ class Session:
         elif kind == "command":
             result = self.command(value, current_url)
             if result["exit"] != 0:
-                raise HookFailed(f"command exited {result['exit']}: {result['stderr'][-300:]}")
+                diagnostic = result.get("diagnostic_stderr", result["stderr"])
+                raise HookFailed(f"command exited {result['exit']}: {sanitize_text(diagnostic, 300, tail=True)}")
         self.observe()
 
     def command(self, run, current_url):
@@ -1458,7 +1461,10 @@ class Session:
         except subprocess.TimeoutExpired:
             return {"exit": None, "stdout": "", "stderr": "timed out after 120 s"}
         # Redact before the cut: redaction replaces whole secret values, so a token cut in two keeps its tail
-        return {"exit": p.returncode, "stdout": redact(p.stdout)[-4000:], "stderr": redact(p.stderr)[-4000:]}
+        stdout, stderr = redact(p.stdout), redact(p.stderr)
+        return {"exit": p.returncode, "stdout": stdout[-4000:], "stderr": stderr[-4000:],
+                "diagnostic_stdout": sanitize_text(stdout, 4000, tail=True),
+                "diagnostic_stderr": sanitize_text(stderr, 4000, tail=True)}
 
     # ---- teardown ----
     def close(self):

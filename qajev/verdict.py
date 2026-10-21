@@ -158,7 +158,9 @@ COMMAND_KEEP = 400  # characters of a failed command's output kept as its reason
 
 def _tail(text):
     """The end of a command's output, where its error usually is."""
-    text = (text or "").strip()
+    from qajev_upload_privacy import sanitize_text
+
+    text = sanitize_text(text or "").strip()
     return text if len(text) <= COMMAND_KEEP else "…" + text[-COMMAND_KEEP:]
 
 
@@ -168,7 +170,10 @@ def command_check(spec, result):
     ok = result.get("exit") == int(spec.get("exit", 0))
     # Redact before any cut (redteam, 19 Oct): redaction replaces whole secret values, so a token cut in two by the
     # report's limit kept its tail. The report's own redaction runs only after the cut.
-    stdout, stderr = redact(result.get("stdout") or ""), redact(result.get("stderr") or "")
+    from qajev_upload_privacy import sanitize_text
+
+    stdout = sanitize_text(redact(result.get("diagnostic_stdout", result.get("stdout")) or ""))
+    stderr = sanitize_text(redact(result.get("diagnostic_stderr", result.get("stderr")) or ""))
     # A gate wrote its failed step to stdout and the report said only "exit 1:". A failed command
     # shows the end of stderr, or of stdout when stderr is empty.
     out = _tail(stdout)
