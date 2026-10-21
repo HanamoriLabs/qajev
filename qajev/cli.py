@@ -1660,7 +1660,10 @@ def cmd_dashboard(args):
                 child.terminate()
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     child.wait(5)
-            said = log.read_text(errors="replace")[start:].strip()[-600:] if log.exists() else ""
+            from qajev_upload_privacy import sanitize_text
+
+            said = (sanitize_text(log.read_bytes()[start:].decode("utf-8", errors="replace").strip(), 600, tail=True)
+                    if log.exists() else "")
             return _fail(args, f"the dashboard did not start (exit {child.poll()}): {said or 'it said nothing'}",
                          EXIT_CONFIG)
         tell(there["url"], False)

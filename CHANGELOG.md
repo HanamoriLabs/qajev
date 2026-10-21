@@ -1,5 +1,8 @@
 # Changelog
 
+- Inventory outgoing diagnostic tails and reject unclassified cuts. Dashboard-start and nightly errors clean
+  complete output before shortening it, including JSON that can be captured by a job wrapper.
+
 - Clean generated command, page-check and mobile failure diagnostics before retaining a character tail, so a
   cut through a home path cannot expose its username. Command matching and declared cloud inputs stay exact.
 

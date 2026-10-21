@@ -94,3 +94,46 @@ def test_mobile_launch_failure_hides_home_paths_at_every_cut(monkeypatch):
             with pytest.raises(mobile.NativeError) as error:
                 app._launch_android(wait=0)
             assert_private(str(error.value))
+
+
+@pytest.mark.parametrize('prefix', ['', 'é' * (len('earlier output | ') + len('/Users/') + 2) + '\n'])
+def test_dashboard_start_failure_hides_home_paths_before_json_or_wrapper_record(monkeypatch, tmp_path, capsys, prefix):
+    import json
+    import subprocess
+
+    from qajev import cli, dashboard
+
+    state = tmp_path / 'dashboard.json'
+    monkeypatch.setattr(dashboard, 'STATE', state)
+    monkeypatch.setattr(dashboard, 'running', lambda: None)
+    monkeypatch.setattr(dashboard, 'wait_running', lambda **kwargs: None)
+    monkeypatch.setattr(cli, '_job_dir', None)
+    args = types.SimpleNamespace(command='dashboard', new_key=False, stop=False, dash_background=True,
+                                 json=True, open=False, port=8877)
+    text = ''
+
+    def child(*args, **kwargs):
+        kwargs['stdout'].write(text)
+        kwargs['stdout'].flush()
+        return types.SimpleNamespace(poll=lambda: 1)
+
+    monkeypatch.setattr(subprocess, 'Popen', child)
+    for path in PATHS:
+        for position in range(len(path) + 1):
+            state.with_suffix('.log').write_text(prefix)
+            text = output_at_cut(path, position, 600)
+            assert cli.cmd_dashboard(args) != 0
+            reason = json.loads(capsys.readouterr().out)['error']
+            assert_private(reason)
+
+
+@pytest.mark.parametrize('stdout', ['', 'not-json'])
+def test_nightly_failure_hides_home_paths_before_digest_or_wrapper_record(monkeypatch, stdout):
+    from qajev import nightly
+
+    response = types.SimpleNamespace(returncode=1, stdout=stdout, stderr='')
+    monkeypatch.setattr(nightly.subprocess, 'run', lambda *args, **kwargs: response)
+    for path in PATHS:
+        for position in range(len(path) + 1):
+            response.stderr = output_at_cut(path, position, 300)
+            assert_private(nightly._run(['fixture'])['error'])

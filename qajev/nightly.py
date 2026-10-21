@@ -42,6 +42,8 @@ def plan(names=None, smoke_pages=10):
 
 
 def _run(argv) -> dict:
+    from qajev_upload_privacy import sanitize_text
+
     env = {k: v for k, v in os.environ.items() if k != "QAJEV_JOB"}
     try:
         out = subprocess.run(config.qajev_argv(*argv, "--ephemeral", "--headless", "--json", "--quiet"),
@@ -49,9 +51,10 @@ def _run(argv) -> dict:
     except subprocess.TimeoutExpired:
         return {"error": f"did not finish within {RUN_TIMEOUT} s"}
     try:
-        return json.loads(out.stdout) if out.stdout.strip() else {"error": out.stderr.strip()[-300:] or "no output"}
+        return json.loads(out.stdout) if out.stdout.strip() else {
+            "error": sanitize_text(out.stderr.strip(), 300, tail=True) or "no output"}
     except json.JSONDecodeError:
-        return {"error": out.stderr.strip()[-300:] or "unreadable output"}
+        return {"error": sanitize_text(out.stderr.strip(), 300, tail=True) or "unreadable output"}
 
 
 def run(names=None, smoke_pages=10, notify=True, emit=print):
