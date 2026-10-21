@@ -94,6 +94,41 @@ class DispatchMetadataPrivacyTest(unittest.TestCase):
         self.client.post("/api/v1/runs", {"kind": "check", "name": "checks", "args": args})
         self.assertEqual(self.calls[-1][2]["args"], args)
 
+    def test_run_name_project_and_tunnel_are_cleaned_while_declared_inputs_stay_exact(self):
+        inputs = {
+            "args": ["--expect-text", "Saved to /tmp/out", "--expect-js",
+                     "location.pathname === '/done'", SOURCE],
+            "files": [{"path": "in/suite.yaml", "sha256": "a" * 64, "size": 17}],
+            "serve": {"path": "site", "port": 8877},
+            "seed_files": [{"file": SOURCE + "/fixture.json"}],
+        }
+        metadata = {
+            "name": f"Checks for {SOURCE}/qa.yaml could not start",
+            "project": {"name": SOURCE + "/project", "repo": SOURCE, "note": REASON},
+            "tunnel": {"root": SOURCE, "source": {"file": SOURCE + "/project.toml"},
+                       "ports": {"8877": {"cwd": SOURCE, "command": [SOURCE + "/bin/serve"]}}},
+        }
+        body = {**inputs, **metadata}
+        original = json.loads(json.dumps(body))
+        for buffer in (None, bytes, bytearray, memoryview):
+            with self.subTest(buffer=buffer):
+                if buffer is None:
+                    self.client.post("/api/v1/runs", body)
+                else:
+                    self.client._call("POST", "/api/v1/runs", raw=buffer(json.dumps(body).encode()),
+                                      headers={"Content-Type": "application/json"})
+                sent = self.calls[-1][2]
+                for field in ("name", "project", "tunnel"):
+                    with self.subTest(field=field):
+                        self.assertNotIn(PERSON, json.dumps(sent[field]))
+                        self.assertNotEqual(sent[field], metadata[field])
+                self.assertIn("Checks for", sent["name"])
+                self.assertIn("could not start", sent["name"])
+                self.assertIn("did not match its declaration", sent["project"]["note"])
+                for field, value in inputs.items():
+                    self.assertEqual(sent[field], value)
+                self.assertEqual(body, original, "Cleaning must leave the caller's metadata and inputs intact")
+
     def test_new_metadata_routes_are_cleaned_by_default(self):
         original = {"source": SOURCE, "args": ["--expect-url", "/dashboard", "/[a-z]+/g"]}
         for route in ("/api/v1/dispatch/future-status", "/api/v1/future/status",
