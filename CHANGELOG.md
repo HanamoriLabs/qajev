@@ -6,6 +6,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- A lost reply for the last declared cloud input is confirmed with one exact-file read if the retried upload
+  receives 403 or 409 after dispatch starts. Matching bytes let the run continue. An initial refusal or a missing,
+  unreadable or different file still fails; run creation and stop requests are never retried.
 - Cloud submissions keep declared suites, served assets, archive parts and check arguments byte-for-byte.
   Filesystem-path cleanup applies to QAJev's reports, logs and ownership/tunnel metadata. It does not rewrite
   JavaScript routes, regular expressions, CSS URLs or expected text in the submitted inputs. Unquoted paths in

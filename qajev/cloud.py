@@ -231,7 +231,7 @@ class Client:
             try:
                 return self._once(method, path, body, raw, headers, timeout, as_bytes)
             except ApiError as e:
-                if uncertain and e.status == 403 and confirm_upload is not None:
+                if uncertain and e.status in (403, 409) and confirm_upload is not None:
                     receipt = confirm_upload()
                     if receipt is not None:
                         return receipt

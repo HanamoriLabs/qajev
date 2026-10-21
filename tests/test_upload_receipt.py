@@ -34,7 +34,7 @@ class Reply:
         return self.data
 
 
-def dashboard(monkeypatch, data, *, reply=None, get_error=None, refuse_first=False, exhaust=False):
+def dashboard(monkeypatch, data, *, reply=None, get_error=None, refuse_first=False, exhaust=False, put_status=403):
     calls, waits = [], []
     stored = False
     client = cloud.Client("http://127.0.0.1:8878", KEY)
@@ -59,7 +59,7 @@ def dashboard(monkeypatch, data, *, reply=None, get_error=None, refuse_first=Fal
             raise TimeoutError("the reply is still lost")
         raise urllib.error.HTTPError(
             request.full_url,
-            403,
+            put_status,
             "queued inputs only",
             Message(),
             io.BytesIO(b'{"error": "An agent key may upload only a queued run input."}'),
@@ -77,8 +77,9 @@ def submit(client, tmp_path, data, remote="site/f/frame.jpg"):
 
 
 @pytest.mark.parametrize("data", [b"\xff\xd8" + bytes(40575), b'{"value": "private fixture"}\n'], ids=["jpeg", "json"])
-def test_stored_last_input_is_verified_without_rewriting_a_running_run(monkeypatch, tmp_path, data):
-    client, calls, waits = dashboard(monkeypatch, data)
+@pytest.mark.parametrize("status", [403, 409])
+def test_stored_last_input_is_verified_without_rewriting_a_running_run(monkeypatch, tmp_path, data, status):
+    client, calls, waits = dashboard(monkeypatch, data, put_status=status)
     assert submit(client, tmp_path, data) == RUN
     assert [path for method, path, _, _ in calls if method == "POST"] == ["/api/v1/runs"]
     puts = [request for method, _, request, _ in calls if method == "PUT"]
@@ -133,12 +134,33 @@ def test_confirmation_timeout_is_bounded_and_keeps_the_original_upload_failure(m
     assert waits == [2, 5]
 
 
-def test_an_initial_http_refusal_is_never_accepted_via_a_read(monkeypatch, tmp_path):
-    client, calls, waits = dashboard(monkeypatch, b"input", refuse_first=True)
+@pytest.mark.parametrize("status", [403, 409])
+def test_an_initial_http_refusal_is_never_accepted_via_a_read(monkeypatch, tmp_path, status):
+    client, calls, waits = dashboard(monkeypatch, b"input", refuse_first=True, put_status=status)
     with pytest.raises(cloud.CloudError):
         submit(client, tmp_path, b"input")
     assert [method for method, _, _, _ in calls] == ["POST", "PUT", "POST"]
     assert waits == []
+
+
+@pytest.mark.parametrize("status", [403, 409])
+def test_the_only_declared_suite_is_confirmed_after_dispatch_without_stopping_it(monkeypatch, tmp_path, status):
+    data = b"name: last input\nscenarios: []\n"
+    client, calls, waits = dashboard(monkeypatch, data, put_status=status)
+    assert submit(client, tmp_path, data, remote="in/suite.yaml") == RUN
+    assert [method for method, _, _, _ in calls] == ["POST", "PUT", "PUT", "GET"]
+    assert calls[-1][1] == f"/api/v1/runs/{RUN}/files/in/suite.yaml"
+    assert waits == [2]
+    assert all(not path.endswith("/stop") for _, path, _, _ in calls)
+
+
+@pytest.mark.parametrize("status", [400, 401, 404, 500])
+def test_other_http_failures_after_a_lost_reply_do_not_start_confirmation_reads(monkeypatch, tmp_path, status):
+    client, calls, waits = dashboard(monkeypatch, b"input", put_status=status)
+    with pytest.raises(cloud.CloudError):
+        submit(client, tmp_path, b"input")
+    assert [method for method, _, _, _ in calls] == ["POST", "PUT", "PUT", "POST"]
+    assert calls[-1][1] == f"/api/v1/runs/{RUN}/stop" and waits == [2]
 
 
 def test_no_empty_response_can_confirm_a_zero_byte_upload(monkeypatch, tmp_path):
