@@ -145,7 +145,7 @@ def _flag(argv, *names):
 def _suite_meta(path, _mtime):
     try:
         data = yaml.safe_load(Path(path).read_text()) or {}
-    except (OSError, yaml.YAMLError):
+    except (OSError, UnicodeError, yaml.YAMLError):
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -581,7 +581,9 @@ def _status(job_id, detail):
         elif exit_code == 130:  # stopped (qajev stop, Ctrl-C) before its first report: nothing was judged
             final = {"gate": "INCOMPLETE", "error": "stopped before a report"}
     if exit_code is not None:
-        state = "stopped" if meta.get("stop_requested") else "done" if final and "gate" in final else "failed"
+        state = ("stopped" if meta.get("stop_requested") else
+                 "done" if final and "gate" in final and final.get("outcome") not in {"suite_error", "refused"}
+                 else "failed")
     elif running:
         state = "queued" if not run and last.get("queued") else "running"
     else:

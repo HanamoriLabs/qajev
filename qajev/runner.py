@@ -19,7 +19,9 @@ from .suite import page_checks as has_page_checks
 MODEL_ERROR = re.compile(r"model|typesafe|text helper|text_model|provider", re.I)
 STALE_LIMIT = 8  # decisions without an executed action before we call the page churning
 # The expectations a run that stopped early may never reach, as its reason names them.
-NOT_RUN = {"looks": "expect.looks", "after": "the after hooks", "fetch": "expect.fetch", "command": "expect.command"}
+NOT_RUN = {"looks": "expect.looks", "after": "the after hooks", "fetch": "expect.fetch", "command": "expect.command",
+           "effect": "expect.effect"}
+EFFECT_MAX_BYTES = 32 * 1024 * 1024  # below the Cloud report-file limit, so required evidence can be transferred
 
 
 class ConfigError(RuntimeError):
@@ -124,6 +126,42 @@ def slug(name):
 # One scenario
 
 
+def _effect_check(session, scenario, run_dir, url):
+    import hashlib
+
+    from .pixels import PixelError, compare
+
+    spec = scenario.expect["effect"]
+    if run_dir is None:
+        raise PixelError("effect comparison needs a report folder for its evidence")
+    frames = {}
+    for state in ("off", "on"):
+        try:
+            for hook in spec[state]:
+                session.run_hook(hook, url)
+            frames[state] = session.capture_region_png(spec["region"])
+            if not isinstance(frames[state], bytes) or len(frames[state]) > EFFECT_MAX_BYTES:
+                raise PixelError("PNG capture is missing or exceeds the 32 MiB evidence limit")
+        except (RuntimeError, ValueError, OSError, TimeoutError) as e:
+            raise PixelError(f"effect {spec['name']!r}, {state} capture: {e}") from None
+    metrics, difference = compare(frames["off"], frames["on"], tolerance=spec["tolerance"],
+                                  min_changed=spec["min_changed"])
+    # Hash the complete scenario name: distinct names with the same filename slug must keep distinct evidence.
+    stem = "effect-" + hashlib.sha256(scenario.name.encode()).hexdigest()[:16]
+    evidence = {"name": spec["name"], "region": spec["region"], "metrics": metrics}
+    for state, contents in (("off", frames["off"]), ("on", frames["on"]), ("difference", difference)):
+        relative = f"shots/{stem}-{state}.png"
+        path = run_dir / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(contents)
+        evidence[state] = relative
+    detail = (f"{metrics['changed']}/{metrics['total']} pixels changed (fraction {metrics['fraction']:.8g}); "
+              f"minimum {metrics['min_changed']:.8g}, RGB tolerance {metrics['tolerance']}; "
+              f"region {spec['region']['name']!r}")
+    check = {**verdict.effect_planned(spec), "ok": metrics["ok"], "detail": detail, "value": metrics}
+    return check, evidence
+
+
 def run_scenario(session, scenario, *, opts, hosts, run_dir):
     from .session import GuardMissing, HookFailed, LeftSite
 
@@ -199,7 +237,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             session.set_color_scheme(scheme)
         session.set_device(scenario.device)
         session.arm(scenario.mode, scenario.speech)
-        if any("pad" in hook for hook in [*scenario.before, *scenario.after]):
+        effect = scenario.expect.get("effect") or {}
+        if any("pad" in hook for hook in [*scenario.before, *scenario.after, *effect.get("off", []),
+                                         *effect.get("on", [])]):
             session.use_pad()  # before the page loads: a game may read its pads only once, at load
         if scenario.url:
             session.check_host(scenario.url)
@@ -274,12 +314,22 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                 if assist:
                     session.assists.append(assist)
                     read()
+            measured_effect = None
+            if scenario.expect.get("effect") and stop not in verdict.HARNESS_STOPS:
+                measured_effect, result["effect"] = _effect_check(session, scenario, run_dir,
+                                                                 observed.get("url") or scenario.url)
+                ran.add("effect")
+                read()  # ordinary page checks and looks judge the final, enabled state
             checks = verdict.page_checks(scenario.expect, observed)
+            if measured_effect is not None:
+                checks.append(measured_effect)
             if scenario.expect.get("looks") and stop not in verdict.HARNESS_STOPS:
-                image = session.screen_image()
+                structured = any(isinstance(entry, dict) for entry in scenario.expect["looks"])
+                image = session.screen_image_png() if structured else session.screen_image()
                 try:
                     checks += vision.look(session.jev.model.post_json, image, scenario.expect["looks"],
-                                          {"page": {"url": observed.get("url"), "title": observed.get("title")}})
+                                          {"page": {"url": observed.get("url"), "title": observed.get("title")}},
+                                          folder=getattr(session, "cwd", None), evidence_dir=run_dir)
                     ran.add("looks")
                 except (RuntimeError, ValueError) as e:  # Clef failed, not the browser
                     stop, detail = "model_error", f"while judging looks: {e}"
@@ -330,7 +380,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     result["findings"] = verdict.dedupe(findings)
     result["stop"] = stop
     wanted = {"looks": scenario.expect.get("looks"), "after": scenario.after, "fetch": scenario.expect.get("fetch"),
-              "command": scenario.expect.get("command")}
+              "command": scenario.expect.get("command"), "effect": scenario.expect.get("effect")}
     not_run = [NOT_RUN[k] for k, v in wanted.items() if v and k not in ran]
     outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail,
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),

@@ -24,7 +24,11 @@ import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from qajev_upload_privacy import public_reference, remember_paths, sanitize_request, sanitize_upload
+from qajev_upload_privacy import seed_remote as _seed_remote
+
 from . import config
+from .report_files import image_paths, publish
 
 RUNNERS, MODELS = config.RUNNERS, config.CLOUD_MODELS
 # QAJEV_RUNNER may also say `dashboard`: follow the Settings page's "Where runs go by default" (`qajev runner`).
@@ -36,6 +40,8 @@ KEYCHAIN_SERVICE = "qajev-cloud-agent"
 KINDS = ("check", "run", "smoke")  # websites; play (games, native and mobile apps) stays on this Mac for now
 EXIT_CONFIG, EXIT_TROUBLE = 3, 4  # as cli.py: a setting to fix; the dashboard could not take or finish the run
 POLL_S = 10  # seconds between two looks at a cloud run
+# Only reads and same-file PUTs may replay an uncertain reply; never a run POST.
+RETRY_WAITS = (2, 5)
 WAIT_S = 2 * 3600  # how long a run is waited for (QAJEV_CLOUD_WAIT, seconds); the run itself goes on
 # How long a run that waits for credits is followed before QAJev says so and returns (QAJEV_CLOUD_CREDIT_WAIT,
 # seconds). The run stays queued: a top-up starts it, and QAJev Cloud ends it after 2 hours with no charge (the
@@ -70,6 +76,19 @@ class ApiError(CloudError):
 
 class NotAllowed(Exception):
     """This run cannot go to the cloud (yet): --runner cloud refuses it, --runner auto runs it on this Mac."""
+
+
+def _public_upload(data, paths=None):
+    try:
+        return sanitize_upload(data, paths=paths)
+    except ValueError as e:
+        raise CloudError(str(e), EXIT_CONFIG) from None
+
+
+def _public_name(remote):
+    if not _plain_relative(remote):
+        raise CloudError("an upload file needs a safe relative name", EXIT_CONFIG)
+    return remote
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -202,11 +221,42 @@ class Client:
         """The dashboard's answer without the key in it, whatever it says: QAJev prints what it gets."""
         return config.redact_tree(obj, [self._key]) if self._key else obj
 
-    def _call(self, method, path, body=None, raw=None, headers=None, timeout=None, as_bytes=False):
+    def _call(self, method, path, body=None, raw=None, headers=None, timeout=None, as_bytes=False,
+              confirm_upload=None):
+        import urllib.error  # noqa: PLC0415
+
+        waits = RETRY_WAITS if method in ("GET", "PUT") else ()
+        uncertain = False
+        for attempt, wait in enumerate((*waits, None), 1):
+            try:
+                return self._once(method, path, body, raw, headers, timeout, as_bytes)
+            except ApiError as e:
+                if uncertain and e.status in (403, 409) and confirm_upload is not None:
+                    receipt = confirm_upload()
+                    if receipt is not None:
+                        return receipt
+                raise
+            except (urllib.error.URLError, OSError) as e:
+                uncertain = True
+                if wait is not None:
+                    time.sleep(wait)
+                    continue
+                if confirm_upload is not None:
+                    receipt = confirm_upload()
+                    if receipt is not None:
+                        return receipt
+                reason = getattr(e, "reason", None) or e
+                tries = str(attempt) + (" attempts" if attempt != 1 else " attempt")
+                raise CloudError(f"the dashboard at {self.base} does not answer after {tries} "
+                                 f"({method} {path}, {timeout or self.timeout} s per attempt): "
+                                 f"{self._hide(str(reason))}") from None
+
+    def _once(self, method, path, body, raw, headers, timeout, as_bytes):
         import urllib.error  # noqa: PLC0415 (deferred: `qajev --help` imports this module for its choices)
         import urllib.request  # noqa: PLC0415
 
-        data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+        data = (sanitize_request(method, path, bytes(raw)) if raw is not None else
+                json.dumps(sanitize_request(method, path, body)).encode() if body is not None else None)
         h = {"User-Agent": "qajev-cloud/1"}
         if self._key:  # None only for the doctor's GET /api/v1/config
             h["Authorization"] = f"Bearer {self._key}"
@@ -225,10 +275,10 @@ class Client:
         except urllib.error.HTTPError as e:
             try:
                 msg = json.loads(e.read()).get("error") or e.reason
-            except (ValueError, AttributeError):
+            except (ValueError, AttributeError, OSError):
                 msg = e.reason
             raise ApiError(e.code, self._hide(str(msg))) from None
-        except (urllib.error.URLError, OSError, ValueError) as e:
+        except ValueError as e:
             reason = getattr(e, "reason", None) or e
             raise CloudError(f"the dashboard at {self.base} does not answer: {self._hide(str(reason))}") from None
 
@@ -239,14 +289,31 @@ class Client:
         return self._call("POST", path, body=body if body is not None else {})
 
     def put_file(self, run_id, remote_path, data):
-        if remote_path.startswith("/") or ".." in remote_path.split("/"):
-            raise CloudError(f"unsafe file path: {remote_path}", EXIT_CONFIG)
+        return self._put_prepared_file(run_id, _public_name(remote_path), data)
+
+    def _put_prepared_file(self, run_id, remote_path, data):
+        """Transmit submit's public scratch bytes, including tar parts that must remain byte-exact."""
+        if not _plain_relative(remote_path):
+            raise CloudError("an upload file needs a safe relative name", EXIT_CONFIG)
         quoted = urllib.parse.quote(remote_path)
-        return self._call("PUT", f"/api/v1/runs/{urllib.parse.quote(run_id)}/files/{quoted}", raw=data,
-                          headers={"x-content-sha256": hashlib.sha256(data).hexdigest(),
-                                   "x-content-size": str(len(data)),
+        path = f"/api/v1/runs/{urllib.parse.quote(run_id)}/files/{quoted}"
+        sha, timeout = hashlib.sha256(data).hexdigest(), self.timeout_for(len(data))
+
+        def confirm():
+            # A final reply can be lost after dispatch starts; the Worker then refuses another input PUT.
+            # Read only this file once, with the same permission checks. A refusal or mismatch is no receipt.
+            try:
+                stored = self._once("GET", path, None, None, None, timeout, True)
+            except (CloudError, OSError):
+                return None
+            if stored != data:
+                return None
+            return {"path": remote_path, "size": len(data), "sha256": sha, "url": path}
+
+        return self._call("PUT", path, raw=data,
+                          headers={"x-content-sha256": sha, "x-content-size": str(len(data)),
                                    "Content-Type": "application/octet-stream"},
-                          timeout=self.timeout_for(len(data)))
+                          timeout=timeout, confirm_upload=confirm)
 
 
 def connect(env_file=None):
@@ -410,9 +477,8 @@ SEED_REF = re.compile(r"seed:([^\s\"'#,\]\}]+)#([A-Za-z0-9_.-]+)")
 
 
 def seed_remote(file):
-    """Where a seed fixture goes in a cloud run: in/seed/<hash of its absolute path on this Mac>.json. The cloud
-    runner reads it there for that path (qcloud.runner), so the suite needs no other change."""
-    return f"in/seed/{hashlib.sha256(os.path.abspath(file).encode()).hexdigest()[:16]}.json"
+    """A seed fixture's name, from its public reference; the runner uses the same idempotent reference."""
+    return _seed_remote(file)
 
 
 def seeded_account(account, tunnel, targets, source, folder):
@@ -463,9 +529,25 @@ def seeded_account(account, tunnel, targets, source, folder):
 
     def absolute(m):
         file = m.group(1) if os.path.isabs(m.group(1)) else os.path.join(str(folder), m.group(1))
-        return f"seed:{os.path.abspath(file)}#{m.group(2)}"
+        return f"seed:{public_reference(os.path.abspath(file))}#{m.group(2)}"
 
     return [(source[0], SEED_REF.sub(absolute, Path(source[1]).read_text(encoding="utf-8")).encode()), *out]
+
+
+def _looks_inputs(entries, folder):
+    from . import vision
+    from .crops import crop
+
+    try:
+        files = vision.reference_files(entries, folder)
+        for _, path in files:
+            with path.open("rb") as stream:
+                vision.data_url(crop(stream.read(32 * 1024 * 1024 + 1)))
+    except (vision.VisionError, ValueError) as e:
+        raise CloudError(f"looks reference refused: {e}", EXIT_CONFIG) from None
+    except OSError:
+        raise CloudError("looks reference image could not be read", EXIT_CONFIG) from None
+    return [("in/" + relative, path) for relative, path in files]
 
 
 def plan(args):
@@ -518,6 +600,17 @@ def plan(args):
         writes = writes or target.get("mode") == "mutate"
         remote = f"in/{proj.config_path.name}"
         files.append((remote, proj.config_path.resolve()))
+        has_looks = any(isinstance(obj.get("expect"), dict) and obj["expect"].get("looks")
+                        for obj in proj.objectives)
+        if cmd == "run" and not getattr(args, "objective", None) and has_looks:
+            try:
+                chosen = project_mod.suite_data(proj, env=env, tags=args.tags, names=args.names)
+            except project_mod.ProjectError as e:
+                raise CloudError(str(e), EXIT_CONFIG) from None
+            for scenario in chosen["scenarios"]:
+                expect = scenario.get("expect") if isinstance(scenario.get("expect"), dict) else {}
+                files.extend(item for item in _looks_inputs(expect.get("looks"),
+                                                            proj.config_path.parent) if item not in files)
         swap["project"] = remote
         project_name, plan_base = proj.name, proj.config_path.parent
     elif cmd == "run":
@@ -538,6 +631,9 @@ def plan(args):
         writes = writes or suite.mutates
         remote = f"in/{args.suite.name}"
         files.append((remote, args.suite.resolve()))
+        for scenario in suite.scenarios:
+            files.extend(item for item in _looks_inputs(scenario.expect.get("looks"), args.suite.resolve().parent)
+                         if item not in files)
         swap["suite"] = remote
         named_plan, plan_base = suite.plan, args.suite.resolve().parent
         from . import project as project_mod
@@ -612,9 +708,19 @@ def plan(args):
 
 
 def site_files(root, scratch):
-    """A served folder's files as [(remote, local)]: as they are, or packed into tar parts when there are many."""
+    """Exact scratch copies as [(remote, local)]; packing never rewrites the site's contents."""
     site = [f for f in sorted(root.rglob("*")) if f.is_file() and not f.is_symlink()
             and not any(part.startswith(".") for part in f.relative_to(root).parts)]
+    public_root, public = scratch / "site-public", []
+    for f in site:
+        dest = public_root / _public_name(f.relative_to(root).as_posix())
+        if dest.exists():
+            raise CloudError("two served files would have the same public name", EXIT_CONFIG)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(f.read_bytes())
+        dest.chmod(0o600)
+        public.append(dest)
+    root, site = public_root, public
     if len(site) > PACK_OVER_FILES or any(f.stat().st_size > PART_BYTES for f in site):
         return [(f"site/{p.name}", p) for p in pack_parts(root, site, scratch)]
     return [(f"site/{f.relative_to(root).as_posix()}", f) for f in site]
@@ -624,10 +730,16 @@ def pack_parts(root, site, scratch):
     """The served files as one uncompressed tar, cut into PART_BYTES parts. -> the part Paths, in order."""
     import tarfile  # noqa: PLC0415
 
+    def public_owner(info):
+        info.uid = info.gid = 0
+        info.uname = info.gname = ""
+        info.pax_headers = {}
+        return info
+
     whole = scratch / "qcloud-archive.tar"
     with tarfile.open(whole, "w", format=tarfile.PAX_FORMAT) as tar:
         for f in site:
-            tar.add(f, arcname=f.relative_to(root).as_posix(), recursive=False)
+            tar.add(f, arcname=f.relative_to(root).as_posix(), recursive=False, filter=public_owner)
     parts = []
     with whole.open("rb") as fh:
         while chunk := fh.read(PART_BYTES):
@@ -659,13 +771,20 @@ def submit(client, plan):
     ever) and raises CloudError with the run's id and address."""
     import tempfile  # noqa: PLC0415
 
-    with tempfile.TemporaryDirectory(prefix="qajev-cloud-") as scratch:
-        files = list(plan.files) + (site_files(plan.serve_root, Path(scratch)) if plan.serve_root else [])
+    with tempfile.TemporaryDirectory(prefix="qajev-cloud-") as temporary:
+        scratch = Path(temporary)
+        files = []
+        for i, (remote, original) in enumerate(plan.files):
+            local = scratch / f"input-{i}"
+            local.write_bytes(original.read_bytes())
+            local.chmod(0o600)
+            files.append((_public_name(remote), local))
+        files += site_files(plan.serve_root, scratch) if plan.serve_root else []
         for i, (remote, data) in enumerate(plan.inline):  # written only into this scratch folder, removed after
-            local = Path(scratch) / f"inline-{i}"
+            local = scratch / f"inline-{i}"
             local.write_bytes(data)
             local.chmod(0o600)
-            files.insert(i, (remote, local))
+            files.insert(i, (_public_name(remote), local))
         names = [r for r, _ in files]
         if len(set(names)) != len(names):
             raise CloudError("two files would have the same name on the cloud machine; rename one", EXIT_CONFIG)
@@ -673,16 +792,25 @@ def submit(client, plan):
         if total > MAX_RUN_BYTES:
             raise CloudError(f"the files are {total // 2**20} MB; a cloud run takes at most "
                              f"{MAX_RUN_BYTES // 2**20} MB", EXIT_CONFIG)
-        # Each file is read again at upload time, one at a time: a big build never sits in memory whole.
+        # Public copies are hashed and sent one at a time; a whole build never sits in memory.
         declared = [{"path": remote, "sha256": _sha256(local), "size": local.stat().st_size} for remote, local in files]
         body = {"kind": plan.kind, "args": plan.args, "runner": "cloud", "surface": "web", "files": declared,
                 "name": plan.name}
-        project = _known_project(client, plan.project) if plan.project else None
+        project = json.loads(_public_upload(json.dumps(plan.project).encode())) if plan.project else None
+        project = _known_project(client, project) if project else None
         for key, value in (("model", plan.model), ("sees_screen", plan.sees_screen), ("project", project),
                            ("serve", {"path": "site", "port": plan.port} if plan.serve_root else None),
                            ("tunnel", plan.tunnel or ({"port": plan.tunnel_port} if plan.tunnel_port else None))):
             if value is not None:
                 body[key] = value
+        paths = {} if plan.tunnel else None
+        body = sanitize_request("POST", "/api/v1/runs", body, paths=paths)
+        if paths:
+            try:
+                remember_paths(paths, directory=config.HOME)
+            except (OSError, ValueError):
+                raise CloudError("could not keep private local tunnel references; no run was created",
+                                 EXIT_CONFIG) from None
         created = client.post("/api/v1/runs", body) or {}
         run = created.get("run") if isinstance(created, dict) else None
         run_id = run.get("id") if isinstance(run, dict) else run
@@ -690,8 +818,11 @@ def submit(client, plan):
             raise CloudError("the dashboard did not return a run id")
         remote = None
         try:
-            for remote, local in files:
-                client.put_file(run_id, remote, local.read_bytes())
+            for (remote, local), declaration in zip(files, declared):
+                data = local.read_bytes()
+                if len(data) != declaration["size"] or hashlib.sha256(data).hexdigest() != declaration["sha256"]:
+                    raise CloudError("a public upload copy changed after preflight", EXIT_CONFIG)
+                client._put_prepared_file(run_id, remote, data)
         except BaseException as e:
             with contextlib.suppress(CloudError):
                 client.post(f"/api/v1/runs/{urllib.parse.quote(run_id)}/stop")
@@ -725,35 +856,52 @@ def fetch_report(client, run_id, folder):
     """A cloud run's report.json, report.md, report.html and the screenshots its report names, kept in `folder` (12-13
     Oct: an agent asked for Jev's steps and the last screen, and the report link asked it for a key). A named path that
     would leave the folder is skipped. -> (the report, the number of screenshots kept). Raises CloudError."""
-    folder.mkdir(parents=True, exist_ok=True)
     raw = get_file(client, run_id, "report.json")
     data = json.loads(raw)
-    (folder / "report.json").write_bytes(raw)
-    for name in ("report.md", "report.html"):
-        try:
-            (folder / name).write_bytes(get_file(client, run_id, name))
-        except ApiError as e:
-            if e.status != 404:
+    if not isinstance(data, dict):
+        raise CloudError("the cloud report must be a JSON object")
+    try:
+        named = image_paths(data)
+    except (AttributeError, TypeError, ValueError):
+        raise CloudError("the cloud report has invalid scenario or screenshot metadata") from None
+    kept = 0
+    incomplete = data.get("report_incomplete") or {}
+    missing = (incomplete.get("missing") or []) if isinstance(incomplete, dict) else []
+    if not isinstance(missing, list) or not all(isinstance(path, str) for path in missing):
+        raise CloudError("the cloud report has invalid missing-frame metadata")
+    if missing and (data.get("gate") not in {"FAIL", "INCOMPLETE"} or not data.get("exit_code")):
+        raise CloudError("the cloud report cannot mark missing frames on a passing or ungraded report")
+    unavailable = set(missing)
+
+    def downloads():
+        nonlocal kept
+        yield "report.json", raw
+        for name in ("report.md", "report.html"):
+            try:
+                body = get_file(client, run_id, name)
+            except ApiError as e:
+                if e.status != 404:
+                    raise
+            else:
+                yield name, body
+        for path in named:
+            if path in unavailable:
+                continue  # The final report already says these frames are unavailable and its gate is incomplete.
+            try:
+                body = get_file(client, run_id, path)
+            except ApiError as e:
+                if e.status == 404:
+                    raise CloudError(f"the cloud report is incomplete: required frame {path} is missing") from None
                 raise
-    named = set()
-    for s in data.get("scenarios") or []:
-        for path in [s.get("shot"), *[(r or {}).get("path") for r in s.get("react") or [] if isinstance(r, dict)]]:
-            if _plain_relative(path):
-                named.add(path)
-    kept, root = 0, folder.resolve()
-    for path in sorted(named):
-        dest = (folder / path).resolve()
-        if root not in dest.parents:
-            continue
-        try:
-            body = get_file(client, run_id, path)
-        except ApiError as e:
-            if e.status == 404:
-                continue
-            raise
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(body)
-        kept += 1
+            if not body:
+                raise CloudError(f"the cloud report is incomplete: required frame {path} is empty")
+            yield path, body
+            kept += 1
+
+    try:
+        publish(folder, downloads())
+    except ValueError:
+        raise CloudError("the cloud report has an unsafe or duplicate artifact path") from None
     return data, kept
 
 

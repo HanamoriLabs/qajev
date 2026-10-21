@@ -1,11 +1,36 @@
 # Changelog
 
+- Inventory outgoing diagnostic tails and reject unclassified cuts. Dashboard-start and nightly errors clean
+  complete output before shortening it, including JSON that can be captured by a job wrapper.
+
+- Clean generated command, page-check and mobile failure diagnostics before retaining a character tail, so a
+  cut through a home path cannot expose its username. Command matching and declared cloud inputs stay exact.
+
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
 ### Fixed
 
+- Device authorization preserves only its opaque device_code field; other token-request metadata follows
+  the same default privacy rule as every other metadata request.
+- Cloud clients clean metadata on every route by default, including raw JSON. Named file/model/protocol inputs
+  and run arguments stay exact. An inventory test requires a privacy classification for every production route.
+- Quoted local paths in generated reports and metadata keep their spaces together even inside another pair
+  of quotes or backticks, so a path's trailing file name no longer survives the privacy cleaner.
+- Dispatcher machine status, heartbeat and claim metadata use the shared report-path cleaner. Tunnel-refusal
+  reasons hide restored local paths while preserving the explanation; declared run inputs stay unchanged.
+- A lost reply for the last declared cloud input is confirmed with one exact-file read if the retried upload
+  receives 403 or 409 after dispatch starts. Matching bytes let the run continue. An initial refusal or a missing,
+  unreadable or different file still fails; run creation and stop requests are never retried.
+- Cloud submissions keep declared suites, served assets, archive parts and check arguments byte-for-byte.
+  Filesystem-path cleanup applies to QAJev's reports, logs and ownership/tunnel metadata. It does not rewrite
+  JavaScript routes, regular expressions, CSS URLs or expected text in the submitted inputs. Unquoted paths in
+  report prose stop at whitespace, so the following explanation and independent paths are preserved.
+- A failed `command` check shows the end of its output: the last 400 characters of stderr, or of stdout when stderr
+  is empty. It showed the first 200 characters of stderr only, so a gate that writes its failed step to stdout (a
+  JSON report) failed as "exit 1:" with no reason. A command's output is redacted before any cut, so a secret
+  that crosses the cut no longer leaves its tail in the report.
 - Headless Chrome, as in QAJev Cloud, says it is a normal Chrome. Its user agent said `HeadlessChrome/155`, and some
   sites refuse a headless browser. Now it says `Chrome/155` with `QAJev/<version>` on the end, and its client hints
   name "Google Chrome", not "HeadlessChrome". QAJev itself still knows the browser is headless.

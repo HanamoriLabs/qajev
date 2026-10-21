@@ -20,10 +20,12 @@ from string import Template
 from types import SimpleNamespace
 from typing import Any
 
+from qajev_upload_privacy import sanitize_text
+
 from . import __version__, chrome, keys, live, netlog, providers
 from . import guard as guard_mod
 from . import pad as pad_mod
-from .config import is_loopback
+from .config import is_loopback, redact
 
 _jev = None
 
@@ -1026,6 +1028,27 @@ class Session:
         if parts.netloc not in self.hosts:
             raise LeftSite(f"now on {parts.netloc}, allowed: {sorted(self.hosts)}")
 
+    def capture_region_png(self, region):
+        """Lossless pixels of a fixed viewport region. Guard protections stay active; marker overlays stay off."""
+        import base64
+        import math
+
+        self.evaluate("window.__qajev && window.__qajev.mark && window.__qajev.mark(false)", timeout_ms=2000)
+        view = self.evaluate("({width: innerWidth, height: innerHeight, scrollX, scrollY})")
+        if not isinstance(view, dict) or any(
+                isinstance(view.get(key), bool) or not isinstance(view.get(key), (int, float))
+                or not math.isfinite(view[key]) for key in ("width", "height", "scrollX", "scrollY")):
+            raise RuntimeError("effect capture could not measure the viewport")
+        x, y, width, height = (region[key] for key in ("x", "y", "width", "height"))
+        if x < 0 or y < 0 or width <= 0 or height <= 0 or x + width > view["width"] or y + height > view["height"]:
+            raise ValueError(f"effect region {region['name']!r} is outside the visible viewport")
+        data = self.call("Page.captureScreenshot", format="png", fromSurface=True, captureBeyondViewport=False,
+                         clip={"x": view["scrollX"] + x, "y": view["scrollY"] + y,
+                               "width": width, "height": height, "scale": 1})
+        if not isinstance(data, dict) or not isinstance(data.get("data"), str):
+            raise RuntimeError("effect capture returned no PNG")
+        return base64.b64decode(data["data"], validate=True)
+
     def screenshot(self, path, marked=True):
         """The viewport as a JPEG at path. marked: where the read-only guard hid a control, the picture shows a dashed
         box labelled "hidden by guard" (guard.js mark), so a missing button never reads as the page's bug (13 Oct)."""
@@ -1063,6 +1086,13 @@ class Session:
         """The viewport as a JPEG data URL, for Clef (vision.py): what a visitor sees right now."""
         data = self.call("Page.captureScreenshot", format="jpeg", quality=70)["data"]
         return f"data:image/jpeg;base64,{data}"
+
+    def screen_image_png(self):
+        """Unmarked lossless input for frame-pixel claim crops; write guards remain active."""
+        self.evaluate("window.__qajev && window.__qajev.mark && window.__qajev.mark(false)", timeout_ms=2000)
+        data = self.call("Page.captureScreenshot", format="png", fromSurface=True,
+                         captureBeyondViewport=False)["data"]
+        return f"data:image/png;base64,{data}"
 
     def fetch(self, probe):
         method = probe.get("method", "GET").upper()
@@ -1417,7 +1447,8 @@ class Session:
         elif kind == "command":
             result = self.command(value, current_url)
             if result["exit"] != 0:
-                raise HookFailed(f"command exited {result['exit']}: {result['stderr'][-300:]}")
+                diagnostic = result.get("diagnostic_stderr", result["stderr"])
+                raise HookFailed(f"command exited {result['exit']}: {sanitize_text(diagnostic, 300, tail=True)}")
         self.observe()
 
     def command(self, run, current_url):
@@ -1429,7 +1460,11 @@ class Session:
             p = subprocess.run(run, shell=True, cwd=self.cwd, env=env, capture_output=True, text=True, timeout=120)
         except subprocess.TimeoutExpired:
             return {"exit": None, "stdout": "", "stderr": "timed out after 120 s"}
-        return {"exit": p.returncode, "stdout": p.stdout[-4000:], "stderr": p.stderr[-4000:]}
+        # Redact before the cut: redaction replaces whole secret values, so a token cut in two keeps its tail
+        stdout, stderr = redact(p.stdout), redact(p.stderr)
+        return {"exit": p.returncode, "stdout": stdout[-4000:], "stderr": stderr[-4000:],
+                "diagnostic_stdout": sanitize_text(stdout, 4000, tail=True),
+                "diagnostic_stderr": sanitize_text(stderr, 4000, tail=True)}
 
     # ---- teardown ----
     def close(self):

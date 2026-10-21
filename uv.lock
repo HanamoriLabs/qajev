@@ -801,6 +801,7 @@ source = { editable = "." }
 dependencies = [
     { name = "jev-ultrafast" },
     { name = "mcp" },
+    { name = "pillow" },
     { name = "pyyaml" },
 ]
 
@@ -816,6 +817,7 @@ dev = [
 requires-dist = [
     { name = "jev-ultrafast", git = "https://github.com/browser-use/jev-ultrafast?rev=1231850a0bf1a0c0341fe408ef1668dbbfdfac46" },
     { name = "mcp", specifier = ">=2.2,<3" },
+    { name = "pillow", specifier = ">=12.3,<13" },
     { name = "pyyaml", specifier = ">=6,<7" },
 ]
 

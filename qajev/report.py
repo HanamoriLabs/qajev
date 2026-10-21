@@ -1,11 +1,14 @@
 """report.json (machine), report.md and report.html (people). Product findings and harness notes are kept apart."""
 
 import json
-import os
+import tempfile
 import time
+from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 from . import __version__, config, plan, planfile, report_html, verdict
+from .report_files import PUBLISH_LOCK, missing_images, publish
 
 OBVIOUS = 0.8
 MOTION = {
@@ -15,9 +18,7 @@ MOTION = {
 
 
 def _atomic(path, text):
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text)
-    os.replace(tmp, path)
+    publish(path.parent, [(path.name, text.encode())])
 
 
 class Partial:
@@ -28,11 +29,18 @@ class Partial:
         self.results = []
 
     def add(self, result):
-        self.results.append(result)
-        data = {"qajev": __version__, "qajev_commit": config.qajev_commit(), "suite": self.suite.name, "partial": True,
-                "started_at": self.started_at,
-                "browser": self.browser, "scenarios": self.results}
-        _atomic(self.run_dir / "report.json", json.dumps(data, indent=2, default=str))
+        with PUBLISH_LOCK:
+            self.results.append(result)
+            try:
+                if not json.loads((self.run_dir / "report.json").read_text()).get("partial"):
+                    return
+            except (OSError, ValueError):
+                pass
+            data = {"qajev": __version__, "qajev_commit": config.qajev_commit(),
+                    "suite": self.suite.name, "partial": True,
+                    "started_at": self.started_at,
+                    "browser": self.browser, "scenarios": self.results}
+            _atomic(self.run_dir / "report.json", json.dumps(data, indent=2, default=str))
 
 
 def merge_ledgers(ledgers):
@@ -111,9 +119,38 @@ def build(suite, results, ledgers, *, browser, started_at, strict, interrupted, 
 
 
 def write(run_dir, data):
-    _atomic(run_dir / "report.json", json.dumps(data, indent=2, default=str))
-    _atomic(run_dir / "report.md", markdown(data))
-    write_html(run_dir, data)
+    missing = missing_images(run_dir, data)
+    if missing:
+        data["report_incomplete"] = {"reason": "Required report images are missing or empty.", "missing": missing}
+        if data.get("gate") == "PASS":
+            data["gate"], data["exit_code"] = "INCOMPLETE", verdict.EXIT_CODES["INCOMPLETE"]
+    else:
+        data.pop("report_incomplete", None)
+    # Render all formats before any visible file changes; a render exception preserves the previous generation.
+    files = [("report.md", markdown(data).encode()), ("report.html", report_html.render(data).encode()),
+             ("report.json", json.dumps(data, indent=2, default=str).encode())]
+    publish(run_dir, files)
+
+
+def suite_error(out_dir, source, message, code, *, outcome="suite_error", runner=None):
+    """A run rejected before any scenario ran. Keep the normal report schema and non-product INCOMPLETE gate."""
+    source = config.redact(str(source)) if source else None
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # Independent attempts never overwrite one another, even in the same second.
+    run_dir = Path(tempfile.mkdtemp(prefix="suite-error-", dir=out_dir))
+    data = build(SimpleNamespace(name=Path(source).stem if source else "suite"), [], [], browser={},
+                 started_at=time.time(), strict=False, interrupted=False, run_dir=run_dir)
+    reason = " ".join(config.redact(str(message)).split())
+    data.update(outcome=outcome, error=reason, reason=reason, gate="INCOMPLETE", exit_code=code)
+    if runner:
+        data["runner"] = runner
+    if source:
+        data["source"] = str(source)
+        data["error"] = data["reason"] = f"{source}: {reason}"
+    data = config.redact_tree(data)
+    write(run_dir, data)
+    return data
 
 
 def write_html(run_dir, data):
@@ -129,9 +166,9 @@ def _where(url):
     return f"{parts.netloc}{parts.path}"  # no query strings: they carry tokens and codes
 
 
-def _cell(text, limit=160):
+def _cell(text, limit: int | None = 160):
     text = " ".join(str(text or "").split())
-    return (text[: limit - 1] + "…" if len(text) > limit else text).replace("|", "\\|")
+    return (text[: limit - 1] + "…" if limit is not None and len(text) > limit else text).replace("|", "\\|")
 
 
 def _clients_md(r):
@@ -191,7 +228,7 @@ def _changes_md(ch):
     if not ch:
         return []
     since = ch.get("since") or {}
-    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(since["started_at"])) if since.get("started_at") else "?"
+    when = report_html.format_time(since["started_at"]) if since.get("started_at") else "?"
     out = ["", f"## Changes since the previous run ({when}, {since.get('gate')})", "", f"**{ch['summary']}**"]
     for label, key in (("Newly failing", "newly_failing"), ("Fixed", "fixed"), ("Other outcome changes", "other")):
         for item in ch.get(key) or []:
@@ -249,6 +286,13 @@ def markdown(data):
           if data.get("test_plan") else []),
         f"**Gate: {data['gate']}**" + (" (interrupted)" if data.get("interrupted") else ""),
         "",
+        *([f"Started: {report_html.format_time(data['started_at'])}", ""] if data.get("started_at") else []),
+        *(["## Report incomplete", "", data["report_incomplete"]["reason"], "",
+           *["- " + name for name in data["report_incomplete"]["missing"]], ""]
+          if data.get("report_incomplete") else []),
+        *(["## Run did not start", "", "No scenarios were judged. Correct the error before running again.", "",
+           # An error can contain Markdown or backticks from a malformed input. Keep it literal, in full.
+           "    " + data["error"].replace("\n", "\n    "), ""] if data.get("error") else []),
         *([f"> **{report_html.DESTRUCTIVE}**", ""] if data.get("allow_destructive") else []),
         f"{c['pass']} pass · {c['fail']} fail · {c['stuck']} stuck · {c['harness']} harness · "
         f"{c['unverified']} unverified · {c['skipped']} skipped · {data['seconds']:.0f} s · "
@@ -300,6 +344,12 @@ def markdown(data):
         lines.append("")
         if r.get("about"):
             lines += [f"About: {r['about']}", ""]
+        effect = r.get("effect")
+        if effect:
+            lines += ["Visible effect: " + _cell(effect["name"], 200), "",
+                      "Region: " + json.dumps(effect["region"], ensure_ascii=False), "",
+                      "Pixels: " + json.dumps(effect["metrics"], ensure_ascii=False, sort_keys=True), "",
+                      " · ".join(f"[{key}]({effect[key]})" for key in ("off", "on", "difference")), ""]
         if r.get("expected"):
             tag = report_html.planted_tag(r)
             lines += [f"{tag[:1].upper()}{tag[1:]}. Gate: {r['graded_reason']}", ""]
@@ -308,8 +358,21 @@ def markdown(data):
             lines.append("")
         for check in r.get("checks", []):
             mark = "✅" if check["ok"] else "❌"
-            lines.append(f"- {mark} {_cell(check['check'], 200)}" + (f" — {_cell(check['detail'])}"
+            lines.append(f"- {mark} {_cell(check['check'], 200)}" + (f" — {_cell(check['detail'], None)}"
                                                                        if check.get("detail") else ""))
+            evidence = check.get("evidence")
+            if isinstance(evidence, dict):
+                lines += ["", "Claim evidence: " + json.dumps(evidence, ensure_ascii=False, sort_keys=True), "",
+                          " · ".join(f"[{key}]({evidence[key]})" for key in
+                                     ("crop", "reference", "panel", "difference") if evidence.get(key)), ""]
+        diagnostics = r.get("diagnostics")
+        if isinstance(diagnostics, dict):
+            state = "complete" if diagnostics.get("complete") else "incomplete"
+            lines += ["", f"Native output: {state}", ""]
+            if diagnostics.get("reason"):
+                lines += [str(diagnostics["reason"]), ""]
+            for error in diagnostics.get("errors") or []:
+                lines += ["    " + str(error).replace("\n", "\n    "), ""]
         if r.get("blocked_writes"):
             first = r["blocked_writes"][0]
             lines.append(f"- Read-only guard blocked {len(r['blocked_writes'])} write request(s), e.g. "

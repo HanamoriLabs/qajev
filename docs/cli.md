@@ -31,6 +31,22 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | `5` | refused: the run would change a production site (`mode: mutate` or `--allow-destructive` on a host that is not a local dev host), or a play suite asked for `mode: mutate`. Nothing was started; `--json` prints `{"outcome": "refused", "reason": ...}` |
 | `130` | stopped (Ctrl-C or `qajev stop`) |
 
+If `qajev run` rejects a suite before its first scenario, it still writes `report.md`, `report.json` and
+`report.html` under `--out`, and prints the report path even with `--quiet`. The report keeps the full redacted
+cause and source file, with line and column for malformed YAML/JSON. Its gate is `INCOMPLETE`, its run-level
+outcome is `suite_error` (`refused` for a safety refusal), and no scenario is counted as a product failure.
+Exit codes remain 3 for configuration errors, 4 for browser setup errors, and 5 for safety refusals. `--json`
+prints one JSON document, and MCP returns the same error and report paths. A rejected job is `failed`.
+
+The suite loader reports the parser's cause and position, never the YAML source lines: those lines can contain
+private values that no configured-secret list can identify. The CLI failure handler owns redaction of console,
+JSON and job metadata, including failures without a report writer. The report writer independently owns redaction
+before writing Markdown, JSON and HTML files.
+
+A shell wrapper must preserve QAJev's exit status. A later successful `echo`, `tee` or `DONE` line can otherwise
+hide it; a wrapper's own exit 0 does not prove the run passed. If the output folder cannot be written, QAJev
+prints that error and the original cause, and still exits non-zero.
+
 ## Options shared by `check`, `run` and `smoke`
 
 **Browser**
@@ -323,8 +339,25 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
   `4`), a refused upload (QAJev stops that run), a run stopped on the dashboard, or a wait that runs out
   (`QAJEV_CLOUD_WAIT`, default 2 hours; the run goes on in the cloud). Each says why, with the run's address when it
   has one.
+- **Transport recovery.** A file PUT or GET that times out or loses its connection gets up to three attempts,
+  with waits of 2 and 5 seconds. Upload attempts keep the same run, path, bytes and hash. The per-attempt timeout
+  stays 30 seconds for small files and grows with large files. Run-creation and other POSTs are never replayed.
+  An HTTP refusal or malformed JSON is an answer, so it fails at once. If upload attempts are exhausted, QAJev
+  stops that run and reports the operation, timeout and attempt count. A transient report GET can recover too.
+  After an uncertain reply, a final same-file read can confirm the exact input bytes already arrived.
+  This also handles a run that started before its last upload reply reached the CLI. Permission refusals
+  and different or unreadable bytes remain failures; no Worker upload permission is changed.
 - The suite file, a project's `.toml` and the `--plan` file go with the run. A folder of more than 150 files, or
   with a file over 45 MB, ships as tar parts (at most 500 MB in all).
+
+Before creating a cloud run, the CLI makes public scratch copies of uploaded files and metadata with the same path
+privacy policy as the dispatcher. Local filesystem paths become stable relative references; safe web URLs and
+relative links stay intact. Upload hashes and sizes describe those public copies. Originals stay unchanged. A binary
+artifact with identifiable local path metadata is refused before upload. Served archives contain the public member
+copies, with tar owner names and IDs cleared, before they are split into parts. Direct file uploads use the same
+privacy check. Seeded test-account references and their fixture names use the same stable public reference.
+For a full tunnel, a private local registry lets the dispatcher restore those references on this machine before its
+existing process and permission checks. The registry is never part of the uploaded files.
 
 ## `qajev report`
 
@@ -339,6 +372,15 @@ A cloud run's id fetches its `report.json`, `report.md`, `report.html` and the s
 machine's cloud key (no dashboard sign-in), keeps them in `~/.qajev/cloud-reports/<id>/`, and prints the report like a
 local one. A run with no report (unknown, or not finished) exits `4`. MCP: `qa_report("r_...")` does the same and adds
 `kept_in` and `screenshots`.
+
+`--json` writes exactly one complete JSON document to stdout. It validates a local `report.json` before printing it;
+malformed or concatenated JSON is an error, never trimmed or repaired. Errors write one JSON object with `error` and
+`exit_code` to stdout, a safe diagnostic to stderr, and exit nonzero (`3` for a local report, `4` for a cloud report
+fetch failure). A successful cloud JSON fetch still keeps all companion files and screenshots, but omits the
+"kept in" confirmation. `--html` and `--json` cannot be used together (exit `3`, with a JSON error).
+
+Read the complete stdout document and keep stderr separate. A cloud run summary uses `tests`;
+the full report uses `scenarios`.
 
 ## `qajev projects`
 

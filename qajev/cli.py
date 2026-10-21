@@ -1007,6 +1007,7 @@ def cmd_play(args):
             native.check_judged_by(session_steps)
             native.check_window(session_steps)
             native.check_pad(session_steps)
+            native.check_looks(session_steps, args.suite.parent)
             from .handoff import check_handoff
             from .mackeys import check_keys
             from .openurl import check_open_url
@@ -1098,6 +1099,7 @@ def cmd_play(args):
     emit = _printer(args) or (lambda _event: None)
     ledger = Ledger(args.cost_cap, args.usd_per_call)
     results, browser, interrupted = [], {}, False
+    game_cm = None
     started_at = time.time()
     run_dir = args.out / f"{time.strftime('%Y%m%d-%H%M%S')}-play-{slug(name)}"
     try:
@@ -1148,7 +1150,8 @@ def cmd_play(args):
                 with live.frames(run_dir, getattr(game, "page_ws", None)):  # its screen, while someone watches it
                     if session_steps:
                         results = native.run_session(game, session_steps, ledger=ledger, run_dir=run_dir,
-                                                     shots=shots, emit=emit, vision=sees)
+                                                     shots=shots, emit=emit, vision=sees,
+                                                     looks_folder=args.suite.parent if args.suite else None)
                     else:
                         emit({"event": "start", "scenario": name})
                         result = native.play(game, name=name, goal=args.goal, expect=expect, about=args.about,
@@ -1162,6 +1165,7 @@ def cmd_play(args):
         return _fail(args, str(e), EXIT_BROWSER)
     except KeyboardInterrupt:
         interrupted = True
+    native.finalize_output(game_cm, results, steps=session_steps)
     built = report_mod.build(SimpleNamespace(name=f"play {name}", about=run_about, test_plan=test_plan), results,
                              [ledger.summary()], browser=browser,
                              started_at=started_at, strict=False, interrupted=interrupted, run_dir=run_dir)
@@ -1405,23 +1409,30 @@ def _cloud_report(args):
     folder = HOME / "cloud-reports" / run_id
     try:
         data, shots = cloud.fetch_report(cloud.connect(getattr(args, "env_file", None)), run_id, folder)
+    except json.JSONDecodeError as e:
+        return _failure(args, f"invalid JSON in cloud report.json: {e.msg} (line {e.lineno}, column {e.colno})",
+                        cloud.EXIT_TROUBLE, report=False)
+    except UnicodeError:
+        return _failure(args, "invalid JSON in cloud report.json: text is not valid UTF-8", cloud.EXIT_TROUBLE,
+                        report=False)
     except cloud.ApiError as e:
         if e.status == 404:
-            print(f"qajev: cloud run {run_id} has no report: no such run, or it has not finished", file=sys.stderr)
-            return cloud.EXIT_TROUBLE
-        print(f"qajev: {e}", file=sys.stderr)
-        return e.code
-    except (cloud.CloudError, ValueError) as e:
-        print(f"qajev: {e}", file=sys.stderr)
-        return getattr(e, "code", cloud.EXIT_TROUBLE)
+            return _failure(args, f"cloud run {run_id} has no report: no such run, or it has not finished",
+                            cloud.EXIT_TROUBLE, report=False)
+        return _failure(args, str(e), e.code, report=False)
+    except (cloud.CloudError, ValueError, OSError) as e:
+        return _failure(args, str(e), getattr(e, "code", cloud.EXIT_TROUBLE), report=False)
     md = folder / "report.md"
     print(json.dumps(data, indent=2) if args.json else (md.read_text() if md.exists() else json.dumps(data, indent=2)))
-    print(f"qajev: kept in {folder}: report.html, report.md, report.json and {shots} screenshot"
-          f"{'' if shots == 1 else 's'}", file=sys.stderr)
+    if not args.json:
+        print(f"qajev: kept in {folder}: report.html, report.md, report.json and {shots} screenshot"
+              f"{'' if shots == 1 else 's'}", file=sys.stderr)
     return 0
 
 
 def cmd_report(args):
+    if args.html and args.json:
+        return _failure(args, "--html and --json cannot be used together", EXIT_CONFIG, report=False)
     if not args.html and not args.run_dir.exists():
         from .cloud import RUN_ID
 
@@ -1440,8 +1451,19 @@ def cmd_report(args):
         return 0
     path = args.run_dir / ("report.json" if args.json else "report.md")
     if not path.exists():
-        print(f"qajev: no {path.name} in {args.run_dir}", file=sys.stderr)
-        return EXIT_CONFIG
+        return _failure(args, f"no {path.name} in {args.run_dir}", EXIT_CONFIG, report=False)
+    if args.json:
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError as e:
+            return _failure(args, f"invalid JSON in report.json: {e.msg} (line {e.lineno}, column {e.colno})",
+                            EXIT_CONFIG, report=False)
+        except UnicodeError:
+            return _failure(args, "invalid JSON in report.json: text is not valid UTF-8", EXIT_CONFIG, report=False)
+        except OSError as e:
+            return _failure(args, f"could not read report.json: {e}", EXIT_CONFIG, report=False)
+        print(json.dumps(data, indent=2))
+        return 0
     print(path.read_text())
     return 0
 
@@ -1638,7 +1660,10 @@ def cmd_dashboard(args):
                 child.terminate()
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     child.wait(5)
-            said = log.read_text(errors="replace")[start:].strip()[-600:] if log.exists() else ""
+            from qajev_upload_privacy import sanitize_text
+
+            said = (sanitize_text(log.read_bytes()[start:].decode("utf-8", errors="replace").strip(), 600, tail=True)
+                    if log.exists() else "")
             return _fail(args, f"the dashboard did not start (exit {child.poll()}): {said or 'it said nothing'}",
                          EXIT_CONFIG)
         tell(there["url"], False)
@@ -1748,11 +1773,7 @@ def _stop_when_orphaned(every=2.0, stop=None):
 
 def _refused(args, message):
     """Production is read-only, destructive is never: nothing was started (exit 5, outcome "refused")."""
-    _record({"outcome": "refused", "reason": message, "error": message, "exit_code": EXIT_REFUSED})
-    if getattr(args, "json", False):
-        print(json.dumps({"outcome": "refused", "reason": message, "error": message, "exit_code": EXIT_REFUSED}))
-    print(f"qajev: refused: {message}", file=sys.stderr)
-    return EXIT_REFUSED
+    return _failure(args, message, EXIT_REFUSED, {"outcome": "refused", "reason": message}, prefix="refused: ")
 
 
 def cmd_plan(args):
@@ -1773,6 +1794,7 @@ def cmd_plan(args):
             name, run_about = spec.get("name") or args.file.stem, about(spec.get("about"), "about")
             native.check_window(spec["steps"])
             native.check_pad(spec["steps"])
+            native.check_looks(spec["steps"], args.file.parent)
             from .mackeys import check_keys
 
             check_keys(spec["steps"], spec.get("app"))
@@ -1828,10 +1850,30 @@ def url_refusal(args):
 
 
 def _fail(args, message, code):
-    _record({"error": message, "exit_code": code})
+    return _failure(args, message, code)
+
+
+def _failure(args, message, code, extra=None, *, prefix="", suffix="", report=True):
+    args._failure_code = code  # a closed output pipe must not turn a rejected run into exit 0
+    message = config.redact(str(message))
+    out = config.redact_tree({"error": message, "exit_code": code, **(extra or {})})
+    if report and getattr(args, "command", None) == "run":
+        from . import report as report_mod
+
+        source = getattr(args, "suite", None) or getattr(args, "project", None)
+        try:
+            data = report_mod.suite_error(args.out, source, message, code,
+                                         outcome=out.get("outcome", "suite_error"), runner=out.get("runner"))
+        except OSError as e:
+            # A full disk or an invalid --out must not turn a rejection into a traceback or a clean exit.
+            print(f"qajev: could not write error report: {config.redact(str(e))}", file=sys.stderr)
+        else:
+            out = data
+            print(f"Report: {Path(data['run_dir']) / 'report.md'} (also report.json, report.html)", file=sys.stderr)
+    _record(out)
     if getattr(args, "json", False):
-        print(json.dumps({"error": message, "exit_code": code}))
-    print(f"qajev: {message}", file=sys.stderr)
+        print(json.dumps(out))
+    print(f"qajev: {prefix}{out['error']}{config.redact(suffix)}", file=sys.stderr)
     return code
 
 
@@ -1879,10 +1921,8 @@ def _cloud_fail(args, message, code, run_id=None, url=None):
     out = {"runner": "cloud", "error": message, "reason": message, "exit_code": code}
     if run_id:
         out.update(run_id=run_id, url=url)
-    if getattr(args, "json", False):
-        print(json.dumps(out))
-    print(f"qajev: {message}" + (f" ({url})" if url and url not in message else ""), file=sys.stderr)
-    return code
+    suffix = f" ({url})" if url and url not in message else ""
+    return _failure(args, message, code, out, suffix=suffix, report=run_id is None)
 
 
 def cmd_cloud(args, plan):
@@ -1991,6 +2031,8 @@ def _cloud_job(args, stopping=False):
 
 
 def main(argv=None):
+    global _job_dir
+    _job_dir = None
     args = build_parser().parse_args(argv)
     args.argv = list(sys.argv[1:] if argv is None else argv)
     if args.command in {"check", "run", "smoke", "play"}:
@@ -2004,8 +2046,6 @@ def main(argv=None):
             return routed
     if getattr(args, "background", False):
         return cmd_background(args)
-    global _job_dir
-    _job_dir = None
     if args.command in {"check", "run", "smoke", "play"}:
         signal.signal(signal.SIGTERM, _interrupt)
         signal.signal(signal.SIGINT, _interrupt)
@@ -2026,8 +2066,8 @@ def main(argv=None):
         code = handlers[args.command](args)
         return code
     except BrokenPipeError:
-        code = 0
-        return 0
+        code = getattr(args, "_failure_code", 0)
+        return code
     except KeyboardInterrupt:
         code = EXIT_INTERRUPTED
         if args.command in {"check", "run", "smoke", "play"}:  # stopped before its handler could (still importing)

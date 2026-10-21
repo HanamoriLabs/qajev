@@ -93,9 +93,22 @@ def planned(expect):
     if expect.get("command"):
         out.append({"check": f"command {expect['command']['run']!r}",
                     **({"says": says["command"]} if says.get("command") else {})})
+    if expect.get("effect"):
+        out.append(effect_planned(expect["effect"]))
+    if expect.get("looks"):
+        from . import vision
+
+        out.extend(vision.planned(entry) for entry in expect["looks"])
     for c in expect.get("across") or []:
         out.append({"check": f"across: {c['check']}", **({"says": c["says"]} if c.get("says") else {})})
     return out
+
+
+def effect_planned(spec):
+    name, region = spec["name"], spec["region"]["name"]
+    return {"check": f"effect {name!r} in region {region!r}",
+            "says": f"{name}: at least {spec['min_changed']:.6g} of pixels in region {region} change "
+                    f"between off and on, with RGB difference greater than {spec['tolerance']}"}
 
 
 VALUE_KEEP = 200
@@ -140,12 +153,35 @@ def fetch_check(probe, result):
     return _check(f"fetch {probe.get('method', 'GET')} {probe['url']} -> {want}", ok, detail if not ok else None)
 
 
+COMMAND_KEEP = 400  # characters of a failed command's output kept as its reason
+
+
+def _tail(text):
+    """The end of a command's output, where its error usually is."""
+    from qajev_upload_privacy import sanitize_text
+
+    text = sanitize_text(text or "").strip()
+    return text if len(text) <= COMMAND_KEEP else "…" + text[-COMMAND_KEEP:]
+
+
 def command_check(spec, result):
+    from .config import redact
+
     ok = result.get("exit") == int(spec.get("exit", 0))
-    detail = None if ok else f"exit {result.get('exit')}: {(result.get('stderr') or '').strip()[:200]}"
+    # Redact before any cut (redteam, 19 Oct): redaction replaces whole secret values, so a token cut in two by the
+    # report's limit kept its tail. The report's own redaction runs only after the cut.
+    from qajev_upload_privacy import sanitize_text
+
+    stdout = sanitize_text(redact(result.get("diagnostic_stdout", result.get("stdout")) or ""))
+    stderr = sanitize_text(redact(result.get("diagnostic_stderr", result.get("stderr")) or ""))
+    # A gate wrote its failed step to stdout and the report said only "exit 1:". A failed command
+    # shows the end of stderr, or of stdout when stderr is empty.
+    out = _tail(stdout)
+    said = _tail(stderr) or (f"stdout: {out}" if out else "")
+    detail = None if ok else f"exit {result.get('exit')}: {said}"
     if ok and "stdout" in spec:
         ok = str(spec["stdout"]) in (result.get("stdout") or "")
-        detail = None if ok else f"stdout {(result.get('stdout') or '').strip()[:200]!r} lacks {spec['stdout']!r}"
+        detail = None if ok else f"stdout {stdout.strip()[:200]!r} lacks {spec['stdout']!r}"
     return _check(f"command {spec['run']!r}", ok, detail)
 
 

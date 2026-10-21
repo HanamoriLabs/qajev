@@ -20,7 +20,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import chrome, verdict
+from . import chrome, config, verdict
 from .config import HOME
 from .ledger import CostCapReached
 from .lowprio import niced
@@ -32,6 +32,7 @@ PORTS = range(9400, 9450)
 GODOT = os.environ.get("QAJEV_GODOT") or shutil.which("godot") or "/Applications/Godot.app/Contents/MacOS/Godot"
 ERROR_LINE = re.compile(r"^(SCRIPT ERROR|ERROR|USER ERROR|Parse Error)\b")
 HARMLESS = re.compile(r"resources still in use at exit|ObjectDB instances leaked at exit")
+OUTPUT_DRAIN_S = 2.0
 # Hidden from Jev in a game, on top of the web guard's list (sign out, delete account, buy, billing...): quitting
 # ends the test, and wiping saves or progress is not something a QA run should ever do.
 # Native apps and games are not web pages: QAJev cannot block their network writes, so more is hidden by name.
@@ -158,6 +159,7 @@ class GodotGame:
         self.env = dict(env or {})  # extra settings for the game, e.g. SUHO_FORCE_MOBILE=1
         self.proc = self.sock = self.file = None
         self.errors, self.log = [], []
+        self._output_captures: list[dict] = []
         self.user_dir = None
 
     def __enter__(self):
@@ -187,7 +189,7 @@ class GodotGame:
         args += ["--headless"] if self.headless else ["--resolution", f"{self.size[0]}x{self.size[1]}"]
         self.proc = subprocess.Popen(niced(args), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                      stdin=subprocess.DEVNULL, start_new_session=True)
-        threading.Thread(target=self._read_output, daemon=True).start()
+        self._start_output()
         self.record = {"pid": self.proc.pid, "owner_pid": os.getpid(), "engine": "godot", "project": str(self.project),
                        "adapter": self.adapter.stem if self.adapter else None, "port": self.port,
                        "headless": self.headless, "started_at": time.time(), "user_dir": self.user_dir,
@@ -230,15 +232,54 @@ class GodotGame:
 
     error_line, harmless = ERROR_LINE, HARMLESS
 
+    def _start_output(self):
+        assert self.proc is not None
+        capture: dict = {"proc": self.proc, "stream": self.proc.stdout, "errors": self.errors, "log": self.log,
+                   "eof": False, "failure": None, "results": []}
+        reader = threading.Thread(target=self._read_output, daemon=True)
+        capture["reader"] = reader
+        self._output_captures.append(capture)
+        reader.start()
+
     def _read_output(self):
-        if self.proc is None or self.proc.stdout is None:
+        capture = next((item for item in self._output_captures
+                        if item["reader"] is threading.current_thread()), None)
+        if capture is None:
             return
-        for line in self.proc.stdout:
-            line = line.rstrip()
-            self.log.append(line)
-            del self.log[:-200]
-            if self.error_line.search(line) and not self.harmless.search(line):
-                self.errors.append(line[:300])
+        stream, errors, log = capture["stream"], capture["errors"], capture["log"]
+        if stream is None:
+            capture["failure"] = "native output capture has no stream"
+            return
+        try:
+            for line in stream:
+                line = line.rstrip()
+                log.append(line)
+                del log[:-200]
+                if self.error_line.search(line) and not self.harmless.search(line):
+                    errors.append(config.redact(line))
+            capture["eof"] = True
+        except UnicodeError:
+            capture["failure"] = "native output capture could not be decoded"
+        except (OSError, ValueError):
+            capture["failure"] = "native output capture could not be read"
+        finally:
+            with contextlib.suppress(OSError, ValueError):
+                stream.close()
+
+    def _drain_output(self):
+        deadline = time.monotonic() + OUTPUT_DRAIN_S
+        for capture in reversed(self._output_captures):
+            reader = capture["reader"]
+            if reader is not threading.current_thread():
+                reader.join(max(0.0, deadline - time.monotonic()))
+            if reader.is_alive():
+                capture["failure"] = (capture["failure"] or
+                                      f"native output capture did not finish within {OUTPUT_DRAIN_S:g} s")
+            elif not capture["eof"]:
+                capture["failure"] = capture["failure"] or "native output capture ended before EOF"
+            if capture["proc"].poll() is None:
+                capture["failure"] = (capture["failure"] or
+                                      "native output capture is incomplete: owned process did not stop")
 
     def call(self, **request):
         if self.file is None:
@@ -294,10 +335,85 @@ class GodotGame:
                 except subprocess.TimeoutExpired:
                     with contextlib.suppress(ProcessLookupError, PermissionError):
                         os.killpg(self.proc.pid, signal.SIGKILL)
+                    with contextlib.suppress(subprocess.TimeoutExpired):
+                        self.proc.wait(1)
+        self._drain_output()
+        finalize_output(self)
         if self.proc is not None:
             (STATE / f"{self.proc.pid}.json").unlink(missing_ok=True)
         if self.user_dir and not keep_saves:
             shutil.rmtree(self.user_dir, ignore_errors=True)
+
+
+def _track_output(game, result, *, check_errors=None, capture=None):
+    captures = getattr(game, "_output_captures", [])
+    if not captures:
+        return
+    capture = captures[-1] if capture is None else capture
+    if all(item[0] is not result for item in capture["results"]):
+        if check_errors is None:
+            check_errors = any(c.get("check") == "no engine or script errors" for c in result.get("checks", []))
+        capture["results"].append((result, check_errors, result.get("outcome") in {"pass", "unverified"}))
+
+
+def finalize_output(game, results=None, *, steps=None):
+    """Refresh closed launches' results before publication; never close a live interactive session here."""
+    captures = getattr(game, "_output_captures", [])
+    if not captures:
+        return
+    linked = {}
+    for launch, capture in enumerate(captures, 1):
+        if capture["proc"].poll() is None and capture["failure"] is None:
+            continue
+        if not capture["results"] and results is not None:
+            incomplete = capture["failure"] or not capture["eof"] or capture["reader"].is_alive()
+            if not capture["errors"] and not incomplete:
+                continue
+            target = _step_result(f"Native launch {launch} shutdown diagnostics", "checked", [
+                {"check": "no engine or script errors", "ok": not capture["errors"],
+                 "detail": capture["errors"][0] if capture["errors"] else None}])
+            results.append(target)
+            _track_output(game, target, check_errors=True, capture=capture)
+        for result, check_errors, eligible in capture["results"]:
+            entry = linked.setdefault(id(result), [result, check_errors, eligible, []])
+            entry[3].append(capture)
+    for result, check_errors, eligible, sources in linked.values():
+        errors = [error for source in sources for error in list(source["errors"])]
+        reasons = list(dict.fromkeys(source["failure"] for source in sources if source["failure"]))
+        complete = all(source["eof"] and not source["reader"].is_alive() for source in sources) and not reasons
+        reason = "; ".join(reasons) or (None if complete else "native output capture has not finished")
+        result["diagnostics"] = {"complete": complete, "errors": list(errors), "reason": reason}
+        checks = result.setdefault("checks", [])
+        if check_errors:
+            engine: dict | None = next((c for c in checks if c.get("check") == "no engine or script errors"), None)
+            if engine is None:
+                engine = {"check": "no engine or script errors"}
+                checks.append(engine)
+            engine.update(ok=not errors and complete, detail=errors[0] if errors else reason)
+            if not errors and not complete:
+                engine["broke"] = True
+            else:
+                engine.pop("broke", None)
+        findings = result.setdefault("findings", [])
+        known = {f.get("detail") for f in findings if f.get("kind") == "engine error"}
+        for error in errors[:10]:
+            if error not in known:
+                findings.append({"severity": "S2", "kind": "engine error", "detail": error,
+                                 "scenario": result["name"], "url": None})
+                known.add(error)
+        if errors and check_errors and (eligible or result.get("outcome") == "pass"):
+            result.update(outcome="fail", reason=f"no engine or script errors ({errors[0]})")
+        if not complete:
+            assert reason is not None
+            if not any(c.get("check") == "native output capture completed" for c in checks):
+                checks.append({"check": "native output capture completed", "ok": False, "broke": True,
+                               "detail": reason})
+            if result.get("outcome") in {"pass", "unverified"}:
+                result.update(outcome="harness", reason=reason)
+            elif reason not in (result.get("reason") or ""):
+                result["reason"] = f"{result.get('reason') or ''}; {reason}".lstrip("; ")
+    if steps:
+        _judge(results or [], steps)
 
 
 def running():
@@ -448,7 +564,7 @@ def compare(have, want):
     return have == want
 
 
-def game_image(game):
+def game_image(game, *, max_bytes=None):
     """The game's screen as a data URL, for Clef (vision.py). A headless Godot game draws nothing to show."""
     from . import vision
 
@@ -458,23 +574,44 @@ def game_image(game):
         shot = game.shot(Path(name))
         if not shot:
             raise vision.VisionError("no picture of the game: it runs headless (vision and looks need its window)")
-        raw = Path(shot).read_bytes()
+        with Path(shot).open("rb") as stream:
+            raw = stream.read((max_bytes or vision.MAX_BYTES) + 1)
     except NativeError as e:
         raise vision.VisionError(f"no picture of the game: {e}") from None
     finally:
         for leftover in {Path(name), Path(name).with_suffix(".png")}:
             leftover.unlink(missing_ok=True)
-    return vision.data_url(raw)
+    return vision.data_url(raw, max_bytes=max_bytes or vision.MAX_BYTES)
 
 
-def looks_checks(game, statements, ledger, obs):
+def looks_checks(game, statements, ledger, obs, *, folder=None, evidence_dir=None):
     """`expect: {looks: [...]}` on a game or app screen: each statement judged by Clef from its screenshot."""
     from . import session as session_mod
     from . import vision
 
     jev = session_mod.load(ledger)
-    return vision.look(jev.model.post_json, game_image(game), statements,
-                       {"game": game_name(game), "screen": obs.get("screen")})
+    structured = any(isinstance(entry, dict) for entry in statements)
+    image = game_image(game, max_bytes=32 * 1024 * 1024 if structured else vision.MAX_BYTES)
+    return vision.look(jev.model.post_json, image, statements,
+                       {"game": game_name(game), "screen": obs.get("screen")},
+                       folder=folder, evidence_dir=evidence_dir)
+
+
+def check_looks(steps, folder=None):
+    from . import vision
+
+    for i, step in enumerate(steps):
+        expect = step.get("expect") if isinstance(step, dict) else None
+        if not isinstance(expect, dict) or "looks" not in expect:
+            continue
+        try:
+            expect["looks"] = vision.normalize(expect["looks"])
+            if expect["looks"] and (any(step.get(key) is not None for key in ("js", "handoff", "open_url"))
+                                    or step.get("crash_renderer")):
+                raise vision.VisionError("looks needs a separate check/goal/play step; this step cannot judge it")
+            vision.reference_files(expect["looks"], folder)
+        except vision.VisionError as e:
+            raise NativeError(f"steps[{i}].expect.looks: {e}") from None
 
 
 def _fingerprint(obs):
@@ -523,7 +660,7 @@ def stop_at_end(step):
 
 
 def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, settle=0.4, emit=None, wait=10.0,
-         poll=0.5, vision=False, about=None, stop_at_end=False, prior=()):
+         poll=0.5, vision=False, about=None, stop_at_end=False, prior=(), looks_folder=None):
     """One scenario on a running game: Jev pursues `goal` (if any), then the checks judge the game's state.
     vision: Clef sees the game's screenshot with every decision. about: what the test proves, for its result.
     prior: checks made before this ran (a step's `before:` and `lasted:`), judged with its own.
@@ -638,7 +775,7 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
         checks = native_checks(expect or {}, obs, game.errors) if stop != "browser_error" else []
         if (expect or {}).get("looks") and stop not in verdict.HARNESS_STOPS:
             try:
-                checks += looks_checks(game, expect["looks"], ledger, obs)
+                checks += looks_checks(game, expect["looks"], ledger, obs, folder=looks_folder, evidence_dir=run_dir)
             except (RuntimeError, ValueError) as e:  # no picture, or Clef unreachable: QAJev's side, no verdict
                 stop, detail = "model_error", f"could not judge looks: {e}"
     checks = [*prior, *checks]
@@ -659,6 +796,7 @@ def play(game, *, name, goal, expect, budget, ledger, run_dir=None, shots=True, 
     if goal:
         result["jev"] = {"status": stop, "actions": len(history), "decisions": len(decisions), "text_calls": 0,
                          "elapsed_ms": round((time.monotonic() - started) * 1000)}
+    _track_output(game, result)
     return result
 
 
@@ -682,7 +820,7 @@ def _decider_name():
 
 def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledger=None, run_dir=None, shots=True,
              sample=0.5, stall_after=6.0, emit=None, every=2.0, overlay_limit=90.0, pilot_wait=30.0,
-             pilot_poll=0.5, strict_decisions=False, vision=False, seen=None, until_optional=False):
+             pilot_poll=0.5, strict_decisions=False, vision=False, seen=None, until_optional=False, looks_folder=None):
     """Play in real time for up to `seconds` (or `until` the game state matches): the adapter's pilot steers each
     frame; Jev makes every decision the game stops for (`decide` is its goal there); every `sample` seconds QAJev
     records fps, frame time, memory and the game state, and flags a soft-lock (the game stops advancing while
@@ -873,7 +1011,7 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
     looks = (expect or {}).get("looks")
     if looks and stop not in {"browser_error", "model_error"} and not held:
         try:
-            checks += looks_checks(game, looks, ledger, obs)
+            checks += looks_checks(game, looks, ledger, obs, folder=looks_folder, evidence_dir=run_dir)
         except (RuntimeError, ValueError) as e:  # no picture, or Clef unreachable: QAJev's side, no verdict
             stop, detail = "model_error", f"could not judge looks: {e}"
     run_stop = "checked" if locked else {"played": "checked", "game_over": "checked", "strict": "checked",
@@ -898,6 +1036,7 @@ def play_for(game, *, name, seconds, until=None, decide=None, expect=None, ledge
                   seconds=round(time.monotonic() - started, 2))
     result["jev"] = {"status": stop, "actions": len(history), "decisions": len(decisions), "text_calls": 0,
                      "elapsed_ms": round((time.monotonic() - started) * 1000)}
+    _track_output(game, result)
     return result
 
 
@@ -995,7 +1134,7 @@ def js_step(game, *, name, expression, emit=None):
                         page_errors=list(getattr(game, "errors", errors)[before:])[:10])
 
 
-def pad_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shots=True, emit=None):
+def pad_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shots=True, emit=None, looks_folder=None):
     """A suite's `pad:` step (Electron): buttons, a stick or a trigger on the virtual pad (pad.py), then the step's
     `expect` checks, if it has any (with the usual grace for the game to answer the input)."""
     from . import pad as pad_mod
@@ -1020,7 +1159,7 @@ def pad_step(game, *, name, value, expect=None, ledger=None, run_dir=None, shots
     if not expect:
         return _step_result(name, "reached", [sent])
     return play(game, name=name, goal=None, expect=expect, budget={"actions": 0, "seconds": 0}, ledger=ledger,
-                run_dir=run_dir, shots=shots, emit=emit, prior=[sent])
+                run_dir=run_dir, shots=shots, emit=emit, prior=[sent], looks_folder=looks_folder)
 
 
 def check_pad(steps):
@@ -1169,7 +1308,7 @@ def _answers(game):
         return False
 
 
-def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit, vision=False):
+def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit, vision=False, looks_folder=None):
     """A `relaunch:` step: quit the game and start it again on the same save folder (save, relaunch, Continue);
     then the step's goal and checks, if it has any."""
     if callable(emit):
@@ -1189,7 +1328,8 @@ def relaunch_step(game, step, *, name, ledger, run_dir, shots, emit, vision=Fals
             game.call(op="pilot", on=False)
         r = play(game, name=name, goal=step.get("goal"), expect=step.get("expect") or {}, stop_at_end=stop_at_end(step),
                  budget={"actions": 20, "seconds": 90, **(step.get("budget") or {})}, ledger=ledger,
-                 run_dir=run_dir, shots=shots, emit=emit, vision=bool(step.get("vision", vision)))
+                 run_dir=run_dir, shots=shots, emit=emit, vision=bool(step.get("vision", vision)),
+                 looks_folder=looks_folder)
         r["checks"] = [started, *r.get("checks", [])]
     else:
         r = _step_result(name, "reached", [started])
@@ -1266,7 +1406,8 @@ def _judge(results, steps):
         said = judged_words(judges)
         r["judged_by"] = judges
         if r.get("outcome") not in ("pass", "unverified"):
-            r["reason"] = f"{r.get('reason')}; {said}"
+            if said not in (r.get("reason") or ""):
+                r["reason"] = f"{r.get('reason')}; {said}"
             continue
         verdicts = [(j, (by_name.get(j) or {}).get("outcome", "not run")) for j in judges]
         if not ((r.get("jev") or {}).get("actions") or 0):
@@ -1278,7 +1419,8 @@ def _judge(results, steps):
             ok, reason = False, f"{said}; not proven: {missed} (their own results say what went wrong)"
         r.update(outcome="pass" if ok else "unverified", reason=reason)
         proves = f"Jev acted, and the later steps {', '.join(judges)} passed"
-        r["checks"] = [*(r.get("checks") or []), {"check": said, "ok": ok, "detail": None if ok else reason,
+        r["checks"] = [*(c for c in r.get("checks") or [] if c.get("check") != said),
+                       {"check": said, "ok": ok, "detail": None if ok else reason,
                                                    "says": proves}]
 
 
@@ -1309,9 +1451,10 @@ def _before(game, step, name):
     return [], r
 
 
-def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=False):
+def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=False, looks_folder=None):
     """Several steps in one game session, in order: `goal` steps (Jev on the UI) and `play` steps (real-time
     play). A step that loses the game ends the session; the rest are skipped."""
+    check_looks(steps, looks_folder)
     results = []
     unopened = None  # an app or page that would not open: the steps that use it are skipped until the next open
     fresh = 0  # where the current launch's steps begin: a relaunch revives a game an earlier step closed or lost
@@ -1327,10 +1470,11 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
             continue
         if step.get("relaunch"):
             r = relaunch_step(game, step, name=name, ledger=ledger, run_dir=run_dir, shots=shots, emit=emit,
-                              vision=vision)
+                              vision=vision, looks_folder=looks_folder)
             if r.get("stop") != "browser_error":
                 fresh = len(results)
                 problems = set()  # a new process: its watchdog starts again, and so do its problems
+            _track_output(game, r, check_errors=(step.get("expect") or {}).get("no_errors", True))
             results.append(r)
             if callable(emit):
                 emit({"event": "scenario", "result": r})
@@ -1384,26 +1528,29 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
             from .mackeys import keys_step
 
             r = keys_step(game, name=name, value=step["keys"], expect=step.get("expect"), ledger=ledger,
-                          run_dir=run_dir, shots=shots, emit=emit)
+                          run_dir=run_dir, shots=shots, emit=emit, looks_folder=looks_folder)
         elif step.get("js") is not None:
             r = js_step(game, name=name, expression=str(step["js"]), emit=emit)
         elif step.get("pad") is not None:
             r = pad_step(game, name=name, value=step["pad"], expect=step.get("expect"), ledger=ledger,
-                         run_dir=run_dir, shots=shots, emit=emit)
+                         run_dir=run_dir, shots=shots, emit=emit, looks_folder=looks_folder)
         elif step.get("crash_renderer"):
             r = crash_step(game, name=name, emit=emit)
         elif step.get("idle") and getattr(game, "renderer_gone", False):
-            idled = idle_for(game, name=name, seconds=float(step["idle"]), emit=emit)
-            r = idled if "outcome" in idled else _step_result(
-                name, "reached", [{"check": "the app kept running", "ok": True, "detail": None}],
-                idled_s=idled["idled_s"])
+            if (step.get("expect") or {}).get("looks"):
+                r = _step_result(name, "browser_error", [], "looks cannot judge a renderer that is gone")
+            else:
+                idled = idle_for(game, name=name, seconds=float(step["idle"]), emit=emit)
+                r = idled if "outcome" in idled else _step_result(
+                    name, "reached", [{"check": "the app kept running", "ok": True, "detail": None}],
+                    idled_s=idled["idled_s"])
         elif step.get("play"):
             p = step["play"]
             r = play_for(game, name=name, seconds=float(p.get("seconds", 60)), until=p.get("until"),
                          until_optional=bool(p.get("until_optional")), decide=p.get("decide"),
                          expect=step.get("expect"), ledger=ledger, run_dir=run_dir, shots=shots, emit=emit,
                          strict_decisions=bool(p.get("strict_decisions")), vision=bool(step.get("vision", vision)),
-                         seen=problems)
+                         seen=problems, looks_folder=looks_folder)
         else:
             with contextlib.suppress(NativeError):  # Jev has the controls: a game's bot would undo its moves
                 game.call(op="pilot", on=False)
@@ -1419,7 +1566,8 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
                 # a measured window is judged now: no grace for the checks after it to come true later
                 r = play(game, name=name, goal=step.get("goal"), expect=step.get("expect") or {}, budget=budget,
                          ledger=ledger, run_dir=run_dir, shots=shots, emit=emit, wait=0.0 if window else 10.0,
-                         vision=bool(step.get("vision", vision)), stop_at_end=stop_at_end(step), prior=prior)
+                         vision=bool(step.get("vision", vision)), stop_at_end=stop_at_end(step), prior=prior,
+                         looks_folder=looks_folder)
                 start = []  # judged inside play
                 if idled:
                     r.update(idled_s=idled["idled_s"], **({"look_gap_s": idled["look_gap_s"]} if window else {}))
@@ -1428,6 +1576,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
         if r.get("idled_s") is not None:  # the step's time includes its idle (it was 0 s after a 45 s idle)
             r["seconds"] = round(time.monotonic() - began, 2)
         r["cost_usd"] = round(ledger.spent() - spent, 5)
+        _track_output(game, r, check_errors=(step.get("expect") or {}).get("no_errors", True))
         results.append(r)
         if callable(emit):
             emit({"event": "scenario", "result": r})

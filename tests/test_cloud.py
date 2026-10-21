@@ -15,9 +15,80 @@ import pytest
 
 from qajev import cli, cloud, config, jobs, mcp_server
 from qajev.mcp_server import ToolError
+from qajev_upload_privacy import public_reference, restore_paths
 
 KEY = "qjk_SECRETKEYVALUE0123456789abcdef"
 RUN = "r_test1"
+
+
+def test_cloud_suite_manifest_carries_only_explicit_looks_reference_images(tmp_path):
+    import io
+
+    from PIL import Image
+
+    (tmp_path / "references").mkdir()
+    output = io.BytesIO()
+    Image.new("RGB", (4, 4), "gray").save(output, format="PNG")
+    reference = tmp_path / "references/blockout.png"
+    reference.write_bytes(output.getvalue())
+    (tmp_path / "references/unasked.png").write_bytes(output.getvalue())
+    path = tmp_path / "scene.yaml"
+    path.write_text("""devices: [desktop]
+scenarios:
+  - name: scene
+    about: The scene is finished.
+    url: https://example.com/
+    expect:
+      looks:
+        - claim: The scene has finished materials.
+          crop: {name: scene, x: 0, y: 0, width: 4, height: 4}
+          reference: {path: references/blockout.png, role: blockout}
+""")
+    args = cli.build_parser().parse_args(["run", str(path)])
+    args.argv = ["run", str(path)]
+    prepared = cloud.plan(args)
+    assert ("in/references/blockout.png", reference) in prepared.files
+    assert not any("unasked" in remote for remote, _ in prepared.files)
+
+
+def test_cloud_project_manifest_carries_only_selected_objectives_references(tmp_path):
+    import io
+
+    from PIL import Image
+
+    references = tmp_path / "references"
+    references.mkdir()
+    output = io.BytesIO()
+    Image.new("RGB", (4, 4), "gray").save(output, format="PNG")
+    for name in ("selected", "unselected"):
+        (references / f"{name}.png").write_bytes(output.getvalue())
+    path = tmp_path / "project.toml"
+    text = 'name="visual"\n[env.prod]\nbase_url="https://example.com/"\n'
+    for name, tag in (("selected", "core"), ("unselected", "other")):
+        text += f'''\n[[objective]]
+name="{name}"
+about="The scene is finished."
+url="/"
+tags=["{tag}"]
+[objective.expect]
+[[objective.expect.looks]]
+claim="The scene is finished."
+[objective.expect.looks.crop]
+name="scene"
+x=0
+y=0
+width=4
+height=4
+[objective.expect.looks.reference]
+path="references/{name}.png"
+role="blockout"
+'''
+    path.write_text(text)
+    args = cli.build_parser().parse_args(["run", "--project", str(path), "--suite", "core"])
+    args.argv = ["run", "--project", str(path), "--suite", "core"]
+    prepared = cloud.plan(args)
+    assert ("in/references/selected.png", references / "selected.png") in prepared.files
+    assert not any("unselected" in remote for remote, _ in prepared.files)
 
 
 class FakeDashboard:
@@ -303,7 +374,7 @@ def test_a_suite_with_a_tunnel_goes_to_the_cloud_with_its_ports_writes_and_folde
     path = suite_file(repo / "qa", base="http://127.0.0.1:8871",
                       extra=f"mode: mutate\nhosts: [127.0.0.1:8871, localhost:8787]\n{TUNNEL}")
     assert cli.main(["run", str(path)]) == 0
-    assert dash.created()["tunnel"] == {
+    assert restore_paths(dash.created()["tunnel"], directory=config.HOME) == {
         "ports": {"8871": {"command": "node serve-folder.mjs"}, "8787": {"command": "wrangler dev"}},
         "data": "local", "root": str(repo.resolve()), "writes": True, "source": {"file": str(path.resolve())}}
     assert local == []
@@ -748,7 +819,8 @@ def test_a_project_env_with_a_tunnel_sends_it_from_the_repo_and_a_bad_one_fails_
                     'tunnel = { ports = { 8871 = { command = "node serve-folder.mjs" } } }\n'
                     '[[objective]]\nname = "home"\nurl = "/"\nabout = "it loads"\nexpect = { text = ["Hi"] }\n')
     assert cli.main(["run", "--project", str(path), "--suite", "core"]) == 0
-    assert dash.created()["tunnel"] == {"ports": {"8871": {"command": "node serve-folder.mjs"}},
+    assert restore_paths(dash.created()["tunnel"], directory=config.HOME) == {"ports": {"8871": {
+        "command": "node serve-folder.mjs"}},
                                         "root": str(repo.resolve()),
                                         "source": {"file": str(path.resolve()), "env": "local"}}
     assert cli.main(["tunnel", str(path), "--env", "local"]) == 0
@@ -911,7 +983,7 @@ def test_a_seeded_account_goes_with_only_its_own_value_and_the_suite_points_at_i
     assert json.loads(dash.files[remote]) == {"test_account": True, "allowed_hosts": ["127.0.0.1", "localhost"],
                                               "password_a": "pw-a-1234"}  # not B's, not the admin's
     suite = dash.files["in/s.yaml"].decode()
-    assert f"seed:{fixture_file}#password_a" in suite and "../fixtures" not in suite
+    assert f"seed:{public_reference(fixture_file)}#password_a" in suite and "../fixtures" not in suite
     assert path.read_text().count("../fixtures/users.json") == 1  # the file on this Mac is never changed
     assert body["tunnel"]["writes"] is True  # signing in posts a form
     blob = json.dumps(body)
@@ -994,7 +1066,7 @@ def test_a_project_account_from_the_seed_fixture_goes_through_the_tunnel(dash, l
     assert cli.main(["run", "--project", str(path), "--suite", "core"]) == 0
     fixture_file = str((repo / "fixtures" / "users.json").resolve())
     assert json.loads(dash.files[cloud.seed_remote(fixture_file)])["password_b"] == "pw-b-5678"
-    assert f'"seed:{fixture_file}#password_b"' in dash.files["in/project.toml"].decode()  # anchored to the repo
+    assert f'"seed:{public_reference(fixture_file)}#password_b"' in dash.files["in/project.toml"].decode()
     assert "password_a" not in dash.files[cloud.seed_remote(fixture_file)].decode()
     assert local == []
 
@@ -1023,6 +1095,19 @@ def test_report_reads_a_cloud_run_and_keeps_its_report_and_screenshots(dash, loc
 def test_report_of_an_unknown_cloud_run_says_so(dash, local, capsys):
     assert cli.main(["report", "r_nosuchrun"]) == 4
     assert "r_nosuchrun" in capsys.readouterr().err
+
+
+def test_effect_report_download_keeps_each_png_and_refuses_outside_paths(dash, local, tmp_path):
+    effect = {"off": "shots/off.png", "on": "shots/on.png", "difference": "shots/difference.png"}
+    data = {"scenarios": [{"effect": effect}, {"effect": {"off": "../../outside.png"}}]}
+    dash.files.update({"report.json": json.dumps(data).encode(), "report.md": b"effect", "report.html": b"effect"})
+    for key, path in effect.items():
+        dash.files[path] = key.encode()
+    saved, count = cloud.fetch_report(cloud.connect(), RUN, tmp_path / "download")
+    assert saved == data and count == 3
+    for key, path in effect.items():
+        assert (tmp_path / "download" / path).read_bytes() == key.encode()
+    assert not (tmp_path / "outside.png").exists()
 
 
 def test_mcp_qa_report_reads_a_cloud_run_too(dash):

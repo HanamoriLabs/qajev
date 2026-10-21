@@ -2,8 +2,9 @@
 relative to the run folder). URLs lose their query strings, as in report.md: they carry tokens and codes."""
 
 import base64
+import json
 import re
-import time
+from datetime import datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -16,6 +17,13 @@ DESTRUCTIVE = ("Destructive controls were shown (allow_destructive): Jev could d
                "things in this run. Local dev hosts only; production never shows them.")
 
 OBVIOUS = 0.8
+MYT = timezone(timedelta(hours=8), "MYT")
+
+
+def format_time(timestamp):
+    return datetime.fromtimestamp(timestamp, MYT).strftime("%Y-%m-%d %H:%M %Z")
+
+
 OUTCOME_ORDER = ("pass", "fail", "stuck", "harness", "unverified", "skipped")
 LEGEND = {
     "pass": "every expectation held",
@@ -280,6 +288,20 @@ def _scenario(i, r, who="Jev"):
     if r.get("expected"):
         parts.append(f'<p class="planted"><span class="tag">{_e(planted_tag(r))}</span> Gate: '
                      f'{_e(r.get("graded_reason"))}</p>')
+    effect = r.get("effect")
+    if effect:
+        parts += [f'<h4>Visible effect: {_e(effect["name"])}</h4>',
+                  f'<pre>Region: {_e(json.dumps(effect["region"], ensure_ascii=False))}\n'
+                  f'Pixels: {_e(json.dumps(effect["metrics"], ensure_ascii=False, sort_keys=True))}</pre>']
+        parts += [_shot(effect[key], f"{effect['name']} — {key}", f"{effect['region']['name']} — {key}")
+                  for key in ("off", "on", "difference")]
+    for check in r.get("checks") or []:
+        evidence = check.get("evidence")
+        if isinstance(evidence, dict):
+            parts += [f'<h4>{_e(check.get("check"))}</h4>',
+                      f'<pre>{_e(json.dumps(evidence, ensure_ascii=False, sort_keys=True))}</pre>']
+            parts += [_shot(evidence[key], f"{check.get('check')} — {key}", f"{check.get('check')} — {key}")
+                      for key in ("crop", "reference", "panel", "difference") if evidence.get(key)]
     r = {**r, "_lines": [{**line, "detail": c.get("detail")} for line, c in zip(it["checks"], r.get("checks") or [])]}
     facts = []
     if r.get("url"):
@@ -395,6 +417,13 @@ def _scenario(i, r, who="Jev"):
         parts.append(_clients_html(r))
     elif r.get("shot"):
         parts.append(_shot(r["shot"], f"Screenshot at the end of {r['name']}", f"{r['name']} · the last screen"))
+    diagnostics = r.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        state = "complete" if diagnostics.get("complete") else "incomplete"
+        messages = [*([diagnostics["reason"]] if diagnostics.get("reason") else []),
+                    *(diagnostics.get("errors") or [])]
+        detail = "\n".join(str(message) for message in messages) or "No engine or script errors."
+        parts.append(f"<details><summary>Native output: {_e(state)}</summary><pre>{_e(detail)}</pre></details>")
     parts.append("</section>")
     return "".join(parts)
 
@@ -445,7 +474,7 @@ def _changes(ch):
     if not ch:
         return ""
     since = ch.get("since") or {}
-    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(since["started_at"])) if since.get("started_at") else "?"
+    when = format_time(since["started_at"]) if since.get("started_at") else "?"
     items = []
     for label, key, cls in (("Newly failing", "newly_failing", "fail"), ("Fixed", "fixed", "pass"),
                             ("Changed", "other", "harness")):
@@ -542,7 +571,7 @@ def render(data):
     project = data.get("project") or {}
     sub = [f"{project['name']} · {project['env']}"] if project else []
     if data.get("started_at"):
-        sub.append(time.strftime("%Y-%m-%d %H:%M", time.localtime(data["started_at"])))
+        sub.append(format_time(data["started_at"]))
     approved = (data.get("test_plan") or {}).get("approved_at")
     if approved and (data.get("test_plan") or {}).get("approved"):
         sub.append(f"plan approved {approved}")
@@ -558,6 +587,14 @@ def render(data):
         f'<p class="planted">{_e(planted_count(data["expected_fail"]))}</p>' if data.get("expected_fail") else "",
     ]
     out.append(_test_plan(data.get("test_plan")))
+    incomplete = data.get("report_incomplete")
+    if incomplete:
+        detail = incomplete["reason"] + "\n" + "\n".join(incomplete["missing"])
+        out.append('<div class="box fail" role="alert"><strong>Report incomplete.</strong>'
+                   f'<pre>{_e(detail)}</pre></div>')
+    if data.get("error"):
+        out.append('<div class="box fail" role="alert"><strong>Run did not start.</strong> '
+                   f'No scenarios were judged.<pre>{_e(data["error"])}</pre></div>')
     if data.get("allow_destructive"):
         out.append(f'<div class="box fail" role="alert"><strong>{_e(DESTRUCTIVE)}</strong></div>')
     wall = data.get("needs_sign_in")
