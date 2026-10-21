@@ -6,6 +6,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Dispatcher machine status, heartbeat and claim metadata use the shared report-path cleaner. Tunnel-refusal
+  reasons hide restored local paths while preserving the explanation; declared run inputs stay unchanged.
 - A lost reply for the last declared cloud input is confirmed with one exact-file read if the retried upload
   receives 403 or 409 after dispatch starts. Matching bytes let the run continue. An initial refusal or a missing,
   unreadable or different file still fails; run creation and stop requests are never retried.

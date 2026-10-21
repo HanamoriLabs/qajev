@@ -256,8 +256,10 @@ def sanitize_request(method, path, body, *, paths=None):
             if key in clean:
                 clean[key] = _tree(clean[key], key, paths)
         return clean
-    if (path in {"/api/v1/sync/runs", "/api/v1/projects"}
-            or re.fullmatch(r"/api/v1/jobs/[^/?#]+/(?:events|finish)", path)):
+    if (path in {"/api/v1/sync/runs", "/api/v1/projects",
+                 "/api/v1/dispatch/hosts", "/api/v1/dispatch/claim"}
+            or re.fullmatch(r"/api/v1/jobs/[^/?#]+/(?:events|finish)", path)
+            or re.fullmatch(r"/api/v1/dispatch/[^/?#]+/machine", path)):
         return _tree(body, paths=paths)
     return body
 
