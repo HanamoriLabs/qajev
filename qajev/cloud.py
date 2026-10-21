@@ -255,8 +255,8 @@ class Client:
         import urllib.error  # noqa: PLC0415 (deferred: `qajev --help` imports this module for its choices)
         import urllib.request  # noqa: PLC0415
 
-        data = raw if raw is not None else (json.dumps(sanitize_request(method, path, body)).encode()
-                                            if body is not None else None)
+        data = (sanitize_request(method, path, bytes(raw)) if raw is not None else
+                json.dumps(sanitize_request(method, path, body)).encode() if body is not None else None)
         h = {"User-Agent": "qajev-cloud/1"}
         if self._key:  # None only for the doctor's GET /api/v1/config
             h["Authorization"] = f"Bearer {self._key}"

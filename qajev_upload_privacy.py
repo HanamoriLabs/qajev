@@ -9,6 +9,7 @@ import stat
 import tempfile
 import unicodedata
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 MASK = "[local path]"
@@ -198,7 +199,7 @@ def _tree(value, key=None, paths=None):
         if url_key and value.startswith("/"):
             return value
         return _text(value, paths, whole_path=key in ("source", "run_dir", "root", "file", "path"))
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_tree(item, paths=paths) for item in value]
     if isinstance(value, dict):
         result = {}
@@ -253,22 +254,93 @@ def seed_remote(file):
 
 
 
-def sanitize_request(method, path, body, *, paths=None):
-    """Clean only QAJev-generated metadata; creation arguments and declared inputs remain exact."""
-    if method == "POST" and path == "/api/v1/runs":
-        if not isinstance(body, dict):
-            return body
-        clean = dict(body)
-        for key in ("name", "project", "tunnel"):
-            if key in clean:
-                clean[key] = _tree(clean[key], key, paths)
+# Audit inventory: every current route is classified. This is not a metadata allowlist;
+# unrecognized request bodies are also cleaned, unless an exact input route is explicitly named here.
+REQUEST_ROUTES = (
+    ("GET", "/api/v1/me", "metadata"),
+    ("GET", "/api/v1/overview", "metadata"),
+    ("GET", "/api/v1/runs", "metadata"),
+    ("POST", "/api/v1/runs", "run-input"),
+    ("GET", "/api/v1/runs/:id", "metadata"),
+    ("POST", "/api/v1/runs/:id/stop", "metadata"),
+    ("POST", "/api/v1/runs/:id/rerun", "metadata"),
+    ("PUT", "/api/v1/runs/:id/files/*", "byte-exact"),
+    ("GET", "/api/v1/runs/:id/files/*", "byte-exact"),
+    ("GET", "/api/v1/projects", "metadata"),
+    ("PUT", "/api/v1/projects", "metadata"),
+    ("GET", "/api/v1/projects/:name", "metadata"),
+    ("PUT", "/api/v1/projects/:name", "metadata"),
+    ("GET", "/api/v1/runners", "metadata"),
+    ("POST", "/api/v1/runners/start", "metadata"),
+    ("POST", "/api/v1/runners/hosts/:id/stop", "metadata"),
+    ("GET", "/api/v1/usage", "metadata"),
+    ("GET", "/api/v1/credits", "metadata"),
+    ("POST", "/api/v1/credits/adjust", "metadata"),
+    ("POST", "/api/v1/credits/checkout", "metadata"),
+    ("GET", "/api/v1/settings", "metadata"),
+    ("PUT", "/api/v1/settings", "metadata"),
+    ("GET", "/api/v1/keys", "metadata"),
+    ("GET", "/api/v1/device/:code", "metadata"),
+    ("POST", "/api/v1/device/:code/approve", "metadata"),
+    ("POST", "/api/v1/device/:code/deny", "metadata"),
+    ("POST", "/api/v1/keys", "metadata"),
+    ("DELETE", "/api/v1/keys/:id", "metadata"),
+    ("POST", "/api/v1/dispatch/claim", "metadata"),
+    ("GET", "/api/v1/dispatch/hosts", "metadata"),
+    ("POST", "/api/v1/dispatch/hosts", "metadata"),
+    ("POST", "/api/v1/dispatch/:id/machine", "metadata"),
+    ("GET", "/api/v1/jobs/:id", "metadata"),
+    ("POST", "/api/v1/jobs/:id/decide", "byte-exact"),
+    ("POST", "/api/v1/jobs/:id/text/chat/completions", "byte-exact"),
+    ("POST", "/api/v1/jobs/:id/text", "byte-exact"),
+    ("POST", "/api/v1/jobs/:id/events", "metadata"),
+    ("POST", "/api/v1/jobs/:id/finish", "metadata"),
+    ("POST", "/api/v1/sync/runs", "metadata"),
+    ("GET", "/api/v1/config", "metadata"),
+    ("POST", "/api/v1/device/start", "metadata"),
+    ("POST", "/api/v1/device/token", "byte-exact"),
+    ("POST", "/api/v1/stripe/webhook", "byte-exact"),
+    ("GET", "/__/auth/*", "byte-exact"),
+    ("POST", "/__/auth/*", "byte-exact"),
+)
+
+
+RUN_INPUT_FIELDS = frozenset(("args", "files", "serve", "seed_files"))
+
+
+def request_mode(method: str, path: str) -> str | None:
+    """The explicit audit classification, or None for a route not yet inventoried."""
+    path = path.split("?", 1)[0].split("#", 1)[0]
+    for verb, route, mode in REQUEST_ROUTES:
+        if verb != method:
+            continue
+        pattern = "/".join(".+" if part == "*" else "[^/]+" if part.startswith(":") else re.escape(part)
+                           for part in route.split("/"))
+        if re.fullmatch(pattern, path):
+            return mode
+    return None
+
+
+def sanitize_request(method: str, path: str, body: Any, *, paths=None) -> Any:
+    """Clean metadata by default; only named runner/protocol inputs retain their exact values."""
+    mode = request_mode(method, path)
+    if mode == "byte-exact":
+        return body
+    if isinstance(body, (bytes, bytearray)):
+        try:
+            value = json.loads(body.decode("utf-8"))
+        except (UnicodeError, ValueError):
+            raise ValueError("metadata request body must be UTF-8 JSON") from None
+        clean = sanitize_request(method, path, value, paths=paths)
+        return body if clean == value else json.dumps(clean, ensure_ascii=False).encode()
+    if mode == "run-input" and isinstance(body, dict):
+        clean = cast(dict[str, Any], _tree(
+            {key: value for key, value in body.items() if key not in RUN_INPUT_FIELDS}, paths=paths))
+        for field in body:
+            if field in RUN_INPUT_FIELDS:
+                clean[field] = body[field]
         return clean
-    if (path in {"/api/v1/sync/runs", "/api/v1/projects",
-                 "/api/v1/dispatch/hosts", "/api/v1/dispatch/claim"}
-            or re.fullmatch(r"/api/v1/jobs/[^/?#]+/(?:events|finish)", path)
-            or re.fullmatch(r"/api/v1/dispatch/[^/?#]+/machine", path)):
-        return _tree(body, paths=paths)
-    return body
+    return _tree(body, paths=paths)
 
 
 def upload_artifact(client, run_id, remote_path, data):

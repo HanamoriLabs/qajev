@@ -41,7 +41,7 @@ class DispatchMetadataPrivacyTest(unittest.TestCase):
 
     def capture(self, request, timeout=None):
         self.calls.append((request.get_method(), urllib.parse.urlsplit(request.full_url).path,
-                           json.loads(request.data)))
+                           json.loads(bytes(request.data))))
         return Reply()
 
     def assert_clean_reason(self, body):
@@ -94,10 +94,49 @@ class DispatchMetadataPrivacyTest(unittest.TestCase):
         self.client.post("/api/v1/runs", {"kind": "check", "name": "checks", "args": args})
         self.assertEqual(self.calls[-1][2]["args"], args)
 
-    def test_unknown_dispatch_request_is_not_reclassified_as_owned_metadata(self):
+    def test_new_metadata_routes_are_cleaned_by_default(self):
         original = {"source": SOURCE, "args": ["--expect-url", "/dashboard", "/[a-z]+/g"]}
-        self.client.post("/api/v1/dispatch/input", original)
-        self.assertEqual(self.calls[-1][2], original)
+        for route in ("/api/v1/dispatch/future-status", "/api/v1/future/status"):
+            with self.subTest(route=route):
+                self.client.post(route, original)
+                self.assertNotIn(PERSON, json.dumps(self.calls[-1][2]))
+                self.assertNotEqual(self.calls[-1][2]["source"], SOURCE)
+                self.assertEqual(original["source"], SOURCE)
+
+    def test_raw_json_metadata_cannot_bypass_the_shared_cleaner(self):
+        for buffer in (bytes, bytearray, memoryview):
+            with self.subTest(buffer=buffer):
+                self.client._call("POST", "/api/v1/dispatch/future-status",
+                                  raw=buffer(json.dumps({"error": REASON}).encode()),
+                                  headers={"Content-Type": "application/json"})
+                self.assert_clean_reason(self.calls[-1][2])
+
+    def test_tuple_metadata_is_cleaned_before_json_serialization(self):
+        self.client.post("/api/v1/dispatch/future-status", {"locations": (SOURCE, (SOURCE,))})
+        self.assertNotIn(PERSON, json.dumps(self.calls[-1][2]))
+
+    def test_new_run_metadata_fields_are_cleaned_while_arguments_remain_exact(self):
+        args = ["--expect-url", "/dashboard", "--expect-js", "location.pathname === '/done'"]
+        body = {"args": args, "future_diagnostics": {"source": SOURCE}}
+        self.client.post("/api/v1/runs", body)
+        self.assertNotIn(PERSON, json.dumps(self.calls[-1][2]))
+        self.assertEqual(self.calls[-1][2]["args"], args)
+        self.assertEqual(body["future_diagnostics"]["source"], SOURCE)
+
+    def test_run_input_declarations_stay_exact_while_new_metadata_is_cleaned(self):
+        inputs = {
+            "args": ["--expect-url", "/dashboard", "--expect-js", "location.pathname === '/done'"],
+            "files": [{"path": "in/suite.yaml", "sha256": "a" * 64, "size": 17}],
+            "serve": {"path": "site", "port": 8877},
+            "seed_files": [{"file": SOURCE + "/first.json"}, {"file": SOURCE + "/second.json"}],
+        }
+        body = {**inputs, "future_diagnostics": {"source": SOURCE}}
+        self.client.post("/api/v1/runs", body)
+        sent = self.calls[-1][2]
+        for field, value in inputs.items():
+            self.assertEqual(sent[field], value)
+        self.assertNotIn(PERSON, json.dumps(sent["future_diagnostics"]))
+        self.assertEqual(body["future_diagnostics"]["source"], SOURCE)
 
     def test_device_codes_keep_their_exact_opaque_values(self):
         original = {"device_code": "/opaque/code/value"}
