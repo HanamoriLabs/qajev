@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from qajev import cli, cloud, config
-from qajev_upload_privacy import restore_paths, sanitize_upload
+from qajev_upload_privacy import restore_paths, sanitize_upload, upload_artifact
 
 PRIVATE_PATHS = (
     "/Users/upload-fixture/project/input.json",
@@ -125,18 +125,17 @@ def make_plan(tmp_path, *, serve=True):
 
 
 @pytest.mark.parametrize("path", PRIVATE_PATHS)
-def test_direct_put_sanitizes_before_http_hash_size_and_payload(dashboard, path):
+def test_direct_input_put_keeps_exact_bytes_hash_and_size(dashboard, path):
     original = json.dumps({"source": path, "url": "/home/login", "relative": "assets/logo.png"}).encode()
     dashboard.client.put_file(RUN, "in/source.json", original)
     data, headers = dashboard.uploads["in/source.json"]
-    assert data == sanitize_upload(original) and data != original
-    assert_public(data)
+    assert data == original
     assert headers["x-content-sha256"] == hashlib.sha256(data).hexdigest()
     assert int(headers["x-content-size"]) == len(data)
     assert json.loads(data)["url"] == "/home/login"
 
 
-def test_direct_post_sanitizes_nested_metadata_before_http(dashboard):
+def test_direct_post_cleans_only_owned_metadata_and_keeps_arguments(dashboard):
     original = {
         "name": PRIVATE_PATHS[0],
         "args": [PRIVATE_PATHS[1]],
@@ -144,8 +143,9 @@ def test_direct_post_sanitizes_nested_metadata_before_http(dashboard):
         "url": "/home/login",
     }
     dashboard.client.post("/api/v1/runs", original)
-    assert dashboard.created() == json.loads(sanitize_upload(json.dumps(original).encode()))
-    assert_public(dashboard.calls[0][2])
+    assert dashboard.created()["args"] == original["args"]
+    metadata = {k: v for k, v in dashboard.created().items() if k != "args"}
+    assert_public(json.dumps(metadata).encode())
     assert original["name"] == PRIVATE_PATHS[0]
 
 
@@ -155,7 +155,7 @@ def test_safe_relative_web_assets_remain_byte_exact(dashboard):
     assert dashboard.uploads["site/safe.html"][0] == raw
 
 
-def test_submit_serve_prepares_public_files_and_matching_metadata_without_changing_originals(tmp_path, dashboard):
+def test_submit_serve_prepares_exact_files_and_matching_metadata_without_changing_originals(tmp_path, dashboard):
     plan, site, suite, originals = make_plan(tmp_path)
     source = suite.read_bytes()
     plan.name = " / ".join(PRIVATE_PATHS)
@@ -165,10 +165,10 @@ def test_submit_serve_prepares_public_files_and_matching_metadata_without_changi
     assert_public(json.dumps(dashboard.created()).encode())
     for name, raw in originals.items():
         assert (site / name).read_bytes() == raw
-        assert dashboard.uploads[f"site/{name}"][0] == sanitize_upload(raw)
+        assert dashboard.uploads[f"site/{name}"][0] == raw
     assert suite.read_bytes() == source
-    assert dashboard.uploads["in/upload.yaml"][0] == sanitize_upload(source)
-    assert dashboard.uploads["in/extra.json"][0] == sanitize_upload(plan.inline[0][1])
+    assert dashboard.uploads["in/upload.yaml"][0] == source
+    assert dashboard.uploads["in/extra.json"][0] == plan.inline[0][1]
     assert dashboard.uploads["site/safe.html"][0] == originals["safe.html"]
     assert dashboard.uploads["site/logo.png"][0] == originals["logo.png"]
 
@@ -184,11 +184,11 @@ def test_submit_uses_preflight_copies_even_if_original_changes_after_create(tmp_
     dashboard.after_create = change_originals
     cloud.submit(dashboard.client, plan)
     assert_declarations(dashboard)
-    assert dashboard.uploads["site/app.js"][0] == sanitize_upload(originals["app.js"])
-    assert dashboard.uploads["in/upload.yaml"][0] == sanitize_upload(source)
+    assert dashboard.uploads["site/app.js"][0] == originals["app.js"]
+    assert dashboard.uploads["in/upload.yaml"][0] == source
 
 
-def test_packed_submit_sanitizes_members_before_splitting_and_clears_tar_owners(tmp_path, dashboard, monkeypatch):
+def test_packed_submit_keeps_members_exact_and_clears_tar_owners(tmp_path, dashboard, monkeypatch):
     plan, site, suite, originals = make_plan(tmp_path)
     # Root-relative web URLs cross small part boundaries: sanitizing chunks after packing would corrupt the tar.
     originals["boundary.html"] = b"x" * 1000 + b'<a href="/home/login">ok</a>'
@@ -200,33 +200,40 @@ def test_packed_submit_sanitizes_members_before_splitting_and_clears_tar_owners(
     parts = sorted(name for name in dashboard.uploads if name.startswith("site/qcloud-archive."))
     assert len(parts) > 1
     archive = b"".join(dashboard.uploads[name][0] for name in parts)
-    assert_public(archive)
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         assert set(tar.getnames()) == set(originals)
         for member in tar.getmembers():
             assert member.uid == member.gid == 0 and member.uname == member.gname == ""
             assert not member.name.startswith("/") and ".." not in member.name.split("/") and "\\" not in member.name
             stream = tar.extractfile(member)
-            assert stream is not None and stream.read() == sanitize_upload(originals[member.name])
+            assert stream is not None and stream.read() == originals[member.name]
     for name, raw in originals.items():
         assert (site / name).read_bytes() == raw
 
 
 @pytest.mark.parametrize("packed", [False, True])
-def test_binary_path_metadata_is_refused_before_any_run_is_created(tmp_path, dashboard, monkeypatch, packed):
+def test_declared_binary_input_keeps_its_bytes_in_plain_and_packed_submissions(
+    tmp_path, dashboard, monkeypatch, packed
+):
     plan, site, suite, originals = make_plan(tmp_path)
     unsafe = b"\x89PNG\xff\x00" + PRIVATE_PATHS[0].encode()
     (site / "unsafe.png").write_bytes(unsafe)
     if packed:
         monkeypatch.setattr(cloud, "PACK_OVER_FILES", 0)
-    with pytest.raises(cloud.CloudError, match="binary artifact contains a local filesystem path"):
-        cloud.submit(dashboard.client, plan)
-    assert dashboard.calls == [] and (site / "unsafe.png").read_bytes() == unsafe
+    cloud.submit(dashboard.client, plan)
+    assert_declarations(dashboard)
+    if packed:
+        parts = sorted(name for name in dashboard.uploads if name.startswith("site/qcloud-archive."))
+        with tarfile.open(fileobj=io.BytesIO(b"".join(dashboard.uploads[name][0] for name in parts))) as archive:
+            assert archive.extractfile("unsafe.png").read() == unsafe
+    else:
+        assert dashboard.uploads["site/unsafe.png"][0] == unsafe
+    assert (site / "unsafe.png").read_bytes() == unsafe
 
 
-def test_direct_binary_refusal_cannot_bypass_the_submit_preflight(dashboard):
-    with pytest.raises(cloud.CloudError, match="binary artifact contains a local filesystem path"):
-        dashboard.client.put_file(RUN, "shots/unsafe.png", b"\xff\x00" + PRIVATE_PATHS[1].encode())
+def test_owned_binary_artifact_is_refused_before_upload(dashboard):
+    with pytest.raises(ValueError, match="binary artifact contains a local filesystem path"):
+        upload_artifact(dashboard.client, RUN, "shots/unsafe.png", b"\xff\x00" + PRIVATE_PATHS[1].encode())
     assert dashboard.calls == []
 
 
@@ -246,6 +253,11 @@ def test_actual_seeded_plan_keeps_public_suite_reference_and_fixture_mapping(tmp
         "  ports: {8877: {command: 'node fixture.js'}}\nscenarios:\n"
         "  - name: home\n    url: /\n    about: the page loads\n    expect: {text: [Hi]}\n"
     )
+    original_suite = original_suite.replace(
+        "    expect: {text: [Hi]}\n",
+        "    expect:\n      text: ['Saved to /tmp/out']\n"
+        "      js: [\"location.pathname === '/done'\"]\n",
+    )
     suite.write_text(original_suite)
     argv = ["run", str(suite), "--runner", "cloud"]
     args = cli.build_parser().parse_args(argv)
@@ -260,6 +272,9 @@ def test_actual_seeded_plan_keeps_public_suite_reference_and_fixture_mapping(tmp
     assert cloud.seed_remote(str(seed.resolve())) == cloud.seed_remote(public_ref) == expected
     assert expected in dashboard.uploads
     assert f"seed:{public_ref}#password_a" in dashboard.uploads["in/seed.yaml"][0].decode()
+    assert dashboard.uploads["in/seed.yaml"][0].decode() == original_suite.replace(
+        "seed:../fixtures/users.json#password_a", f"seed:{public_ref}#password_a"
+    )
     assert json.loads(dashboard.uploads[expected][0])["password_a"] == "test-value-123"
     assert str(seed.resolve()).encode() not in b"".join(raw for method, path, raw in dashboard.calls)
     assert seed.read_bytes() == original_seed and suite.read_text() == original_suite

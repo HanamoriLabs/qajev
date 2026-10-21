@@ -24,7 +24,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from qajev_upload_privacy import remember_paths, sanitize_upload
+from qajev_upload_privacy import public_reference, remember_paths, sanitize_request, sanitize_upload
 from qajev_upload_privacy import seed_remote as _seed_remote
 
 from . import config
@@ -86,7 +86,6 @@ def _public_upload(data, paths=None):
 
 
 def _public_name(remote):
-    remote = json.loads(_public_upload(json.dumps(remote).encode()))
     if not _plain_relative(remote):
         raise CloudError("an upload file needs a safe relative name", EXIT_CONFIG)
     return remote
@@ -256,7 +255,8 @@ class Client:
         import urllib.error  # noqa: PLC0415 (deferred: `qajev --help` imports this module for its choices)
         import urllib.request  # noqa: PLC0415
 
-        data = raw if raw is not None else (_public_upload(json.dumps(body).encode()) if body is not None else None)
+        data = raw if raw is not None else (json.dumps(sanitize_request(method, path, body)).encode()
+                                            if body is not None else None)
         h = {"User-Agent": "qajev-cloud/1"}
         if self._key:  # None only for the doctor's GET /api/v1/config
             h["Authorization"] = f"Bearer {self._key}"
@@ -289,7 +289,7 @@ class Client:
         return self._call("POST", path, body=body if body is not None else {})
 
     def put_file(self, run_id, remote_path, data):
-        return self._put_prepared_file(run_id, _public_name(remote_path), _public_upload(data))
+        return self._put_prepared_file(run_id, _public_name(remote_path), data)
 
     def _put_prepared_file(self, run_id, remote_path, data):
         """Transmit submit's public scratch bytes, including tar parts that must remain byte-exact."""
@@ -529,7 +529,7 @@ def seeded_account(account, tunnel, targets, source, folder):
 
     def absolute(m):
         file = m.group(1) if os.path.isabs(m.group(1)) else os.path.join(str(folder), m.group(1))
-        return f"seed:{os.path.abspath(file)}#{m.group(2)}"
+        return f"seed:{public_reference(os.path.abspath(file))}#{m.group(2)}"
 
     return [(source[0], SEED_REF.sub(absolute, Path(source[1]).read_text(encoding="utf-8")).encode()), *out]
 
@@ -708,7 +708,7 @@ def plan(args):
 
 
 def site_files(root, scratch):
-    """Public scratch copies as [(remote, local)], packed only after every member passes privacy preflight."""
+    """Exact scratch copies as [(remote, local)]; packing never rewrites the site's contents."""
     site = [f for f in sorted(root.rglob("*")) if f.is_file() and not f.is_symlink()
             and not any(part.startswith(".") for part in f.relative_to(root).parts)]
     public_root, public = scratch / "site-public", []
@@ -717,7 +717,7 @@ def site_files(root, scratch):
         if dest.exists():
             raise CloudError("two served files would have the same public name", EXIT_CONFIG)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(_public_upload(f.read_bytes()))
+        dest.write_bytes(f.read_bytes())
         dest.chmod(0o600)
         public.append(dest)
     root, site = public_root, public
@@ -776,13 +776,13 @@ def submit(client, plan):
         files = []
         for i, (remote, original) in enumerate(plan.files):
             local = scratch / f"input-{i}"
-            local.write_bytes(_public_upload(original.read_bytes()))
+            local.write_bytes(original.read_bytes())
             local.chmod(0o600)
             files.append((_public_name(remote), local))
         files += site_files(plan.serve_root, scratch) if plan.serve_root else []
         for i, (remote, data) in enumerate(plan.inline):  # written only into this scratch folder, removed after
             local = scratch / f"inline-{i}"
-            local.write_bytes(_public_upload(data))
+            local.write_bytes(data)
             local.chmod(0o600)
             files.insert(i, (_public_name(remote), local))
         names = [r for r, _ in files]
@@ -804,7 +804,7 @@ def submit(client, plan):
             if value is not None:
                 body[key] = value
         paths = {} if plan.tunnel else None
-        body = json.loads(_public_upload(json.dumps(body).encode(), paths=paths))
+        body = sanitize_request("POST", "/api/v1/runs", body, paths=paths)
         if paths:
             try:
                 remember_paths(paths, directory=config.HOME)

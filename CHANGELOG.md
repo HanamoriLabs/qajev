@@ -6,6 +6,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Cloud submissions keep declared suites, served assets, archive parts and check arguments byte-for-byte.
+  Filesystem-path cleanup applies to QAJev's reports, logs and ownership/tunnel metadata. It does not rewrite
+  JavaScript routes, regular expressions, CSS URLs or expected text in the submitted inputs. Unquoted paths in
+  report prose stop at whitespace, so the following explanation and independent paths are preserved.
 - A failed `command` check shows the end of its output: the last 400 characters of stderr, or of stdout when stderr
   is empty. It showed the first 200 characters of stderr only, so a gate that writes its failed step to stdout (a
   JSON report) failed as "exit 1:" with no reason. A command's output is redacted before any cut, so a secret

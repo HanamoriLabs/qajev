@@ -160,17 +160,17 @@ def test_confirmation_uses_the_same_run_encoded_file_path_and_large_timeout(monk
     ]
 
 
-def test_receipt_confirms_public_input_bytes_and_declarations_not_the_original(monkeypatch, tmp_path):
+def test_receipt_confirms_exact_declared_input_not_a_rewritten_copy(monkeypatch, tmp_path):
     original = b'{"source":"/Users/receipt-fixture/project/input.json","url":"/home/login"}'
     public = sanitize_upload(original)
     assert public != original
-    client, calls, _ = dashboard(monkeypatch, public)
+    client, calls, _ = dashboard(monkeypatch, original)
     assert submit(client, tmp_path, original, remote="in/input.json") == RUN
     declaration = json.loads(next(request.data for method, path, request, timeout in calls if method == "POST"))[
         "files"
     ][0]
-    assert declaration["size"] == len(public) and declaration["sha256"] == hashlib.sha256(public).hexdigest()
-    assert all(request.data == public for method, path, request, timeout in calls if method == "PUT")
+    assert declaration["size"] == len(original) and declaration["sha256"] == hashlib.sha256(original).hexdigest()
+    assert all(request.data == original for method, path, request, timeout in calls if method == "PUT")
     assert (tmp_path / "input").read_bytes() == original
 
 
@@ -212,5 +212,5 @@ def test_packed_public_parts_are_confirmed_without_sanitizing_finished_tar_chunk
         member = tar.getmember("index.html")
         assert member.uid == member.gid == 0 and member.uname == member.gname == ""
         stream = tar.extractfile(member)
-        assert stream is not None and stream.read() == sanitize_upload(original)
+        assert stream is not None and stream.read() == original
     assert (site / "index.html").read_bytes() == original
