@@ -1,5 +1,7 @@
 """Shared privacy policy for QAJev-owned results and metadata, never declared run inputs."""
 
+from __future__ import annotations
+
 import base64
 import hashlib
 import json
