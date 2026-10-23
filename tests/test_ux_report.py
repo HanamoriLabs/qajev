@@ -167,11 +167,13 @@ def test_a_finding_without_a_safe_crop_says_not_saved_and_plain_dict_notes_remai
 
 
 def test_ux_fields_are_escaped_in_markdown_html_and_crop_attributes(tmp_path):
-    hostile = '<img src=x onerror="alert(1)"> | [bad](javascript:alert(2))'
+    hostile = ('<img src=x onerror="alert(1)"> | [bad](javascript:alert(2))'
+               + r' see \[x\](javascript:alert(1)) a\|b')
     crop = 'ux/crop" onerror="bad.png'
+    link_crop = 'ux/a) [z](javascript:alert(2)).png'
     item = finding(check="UX-COVER<script>", message=hostile,
                    element={"key": hostile, "desc": hostile}, screenshot=crop)
-    data = document(tmp_path, findings=[item], notes=[hostile],
+    data = document(tmp_path, findings=[item, finding(screenshot=link_crop)], notes=[hostile],
                     skipped=[{"check": hostile, "reason": hostile}])
     md, html = report.markdown(data), report_html.render(data)
     assert hostile not in md and hostile not in html
@@ -180,17 +182,34 @@ def test_ux_fields_are_escaped_in_markdown_html_and_crop_attributes(tmp_path):
     assert "UX-COVER&lt;script&gt;" in md and "UX-COVER&lt;script&gt;" in html
     assert crop not in html and 'onerror="bad.png' not in html
     assert 'src="ux/crop%22%20onerror%3D%22bad.png"' in html
+    assert r'see \\\[x\\\](javascript:alert(1)) a\\\|b' in md
+    encoded = 'ux/a%29%20%5Bz%5D%28javascript%3Aalert%282%29%29.png'
+    assert f'[![UX-COVER crop]({encoded})]({encoded})' in md
+    assert link_crop not in md
     assert re.search(r'<td>[^<]*&lt;img', html)
+
+
+@pytest.mark.parametrize("repeats", [1, None])
+def test_single_or_unspecified_repeat_is_not_labelled_as_repeated(tmp_path, repeats):
+    item = finding(repeats=repeats)
+    if repeats is None:
+        item.pop("repeats")
+    data = document(tmp_path, findings=[item])
+    assert "Repeated" not in report.markdown(data)
+    assert "Repeated" not in report_html.render(data)
 
 
 def test_ux_crop_collection_keeps_all_safe_unique_paths_and_missing_evidence_fails_report(tmp_path):
     data = document(tmp_path, findings=[finding(), finding(screenshot="ux/second.png"), finding(),
-                                      finding(screenshot="../outside.png"), finding(screenshot="/private.png")])
+                                      finding(screenshot="../outside.png"), finding(screenshot="/private.png"),
+                                      finding(screenshot="shots/x.png")])
     assert report_files.image_paths(data) == ["ux/second.png", "ux/t1-UX-COVER-1.png"]
     report.write(tmp_path, data)
     assert data["gate"] == "INCOMPLETE"
     assert data["report_incomplete"]["missing"] == ["ux/second.png", "ux/t1-UX-COVER-1.png"]
     assert "../outside.png" not in report.markdown(data)
+    assert "shots/x.png" not in report.markdown(data)
+    assert "Not saved" in report.markdown(data)
     assert 'src="/private.png"' not in report_html.render(data)
 
 

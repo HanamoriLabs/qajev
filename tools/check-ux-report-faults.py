@@ -80,6 +80,14 @@ FAULTS = (
     ("UI09", "qajev/report.py", "{_ux_cell(field.get('key'))}", "{field.get('key')}", INCOMPLETE),
     ("UI10", "qajev/report_html.py", "{_e(field.get('desc'))}", "{field.get('desc')}", INCOMPLETE),
     ("UI11", "qajev/report_html.py", "{_e(field.get('key'))}", "{field.get('key')}", INCOMPLETE),
+    ("UR21", "qajev/report.py", '.replace("\\\\", "\\\\\\\\")', "", ESCAPING),
+    ("UR22", "qajev/report.py", 'href = quote(path, safe="/") if path else None',
+     'href = path if path else None', ESCAPING),
+    ("UR23", "qajev/report_files.py", 'relative(path) and path.startswith("ux/")', 'relative(path)', CROPS),
+    ("UR24", "qajev/report.py", '(finding.get("repeats") or 1) > 1',
+     '(finding.get("repeats") or 1) >= 1', 'test_single_or_unspecified_repeat_is_not_labelled_as_repeated[1]'),
+    ("UR25", "qajev/report_html.py", '(finding.get("repeats") or 1) > 1',
+     '(finding.get("repeats") or 1) >= 1', 'test_single_or_unspecified_repeat_is_not_labelled_as_repeated[1]'),
 )
 
 
