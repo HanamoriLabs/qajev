@@ -131,8 +131,14 @@
   let pageConsoleOmitted = 0;
   const keepPageConsole = (level, args) => {
     // Keep whole strings until Python cleans secrets and paths, then applies the display character cap.
-    if (state.pageConsole.length < 50) state.pageConsole.push({ level, text: consoleText(args) });
-    else pageConsoleOmitted++;
+    if (state.pageConsole.length >= 50) {
+      pageConsoleOmitted++;
+      const routine = level === 'warn' || level === 'error'
+        ? state.pageConsole.findIndex(row => row.level === 'log' || row.level === 'info') : -1;
+      if (routine < 0) return;
+      state.pageConsole.splice(routine, 1);
+    }
+    state.pageConsole.push({ level, text: consoleText(args) });
   };
   state.drainPageConsole = () => {
     const out = { page_console: state.pageConsole.splice(0),
@@ -149,8 +155,7 @@
     else push(state.errors, { kind: 'console', detail: text });
     return consoleError.apply(this, args);
   };
-  // In a frame only: what its console says (log, info, warn, debug), for the report with the frame's errors
-  // (drainConsole). The top page's console is left as it is.
+  // Frames keep their own console stream with frame addresses. The top page has separate scenario diagnostics.
   state.console = [];
   const framed = (() => { try { return window.top !== window; } catch (e) { return true; } })();
   if (framed) {
@@ -162,7 +167,7 @@
       };
     }
   } else {
-    for (const level of ['warn']) {
+    for (const level of ['log', 'info', 'warn']) {
       const real = console[level];
       console[level] = function (...args) {
         keepPageConsole(level, args);

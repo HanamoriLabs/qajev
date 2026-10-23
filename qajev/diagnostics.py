@@ -9,7 +9,7 @@ from .config import redact
 
 CONSOLE_LINES = 50
 CONSOLE_CHARACTERS = 500
-CONSOLE_LEVELS = {"warn", "error"}
+CONSOLE_LEVELS = {"log", "info", "warn", "error"}
 DIAGNOSTIC_BYTES = 64 * 1024
 
 
@@ -59,7 +59,11 @@ def keep_console(result: dict, probe: dict) -> None:
         kept = result.setdefault("page_console", [])
         if len(kept) >= CONSOLE_LINES:
             result["page_console_omitted"] = result.get("page_console_omitted", 0) + 1
-            continue
+            routine = next((i for i, row in enumerate(kept) if row["level"] in {"log", "info"}), None) \
+                if item["level"] in {"warn", "error"} else None
+            if routine is None:
+                continue
+            kept.pop(routine)
         text = sanitize_text(redact(item["text"]))
         kept.append({"level": item["level"], "text": text[:CONSOLE_CHARACTERS],
                      **({"truncated": True} if len(text) > CONSOLE_CHARACTERS else {})})
