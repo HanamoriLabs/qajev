@@ -62,7 +62,7 @@ def image_paths(data: dict) -> list[str]:
             evidence = check.get("evidence")
             if evidence is not None and not isinstance(evidence, dict):
                 raise ValueError("invalid report claim evidence metadata")
-            if evidence:
+            if evidence and check.get("evidence_type") != "js":
                 paths.extend(evidence.get(key) for key in ("crop", "reference", "panel", "difference"))
         ux = ux_details(scenario)
         if ux is not None:

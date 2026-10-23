@@ -286,11 +286,16 @@ PROBE_JS = Template("""(async () => {
       try { JSON.stringify(v); data = true; } catch (e) {}
     }
     const kind = v instanceof Element ? 'element' : v instanceof Node ? 'node' : typeof v;
-    js = 'error' in r ? { error: r.error } : data ? { value: v } : { type: kind, shown: String(v).slice(0, 200) };
+    js = 'error' in r ? { error: r.error } : data ? { value: v } : { type: kind, shown: String(v) };
   }
   let status = null;
   try { status = performance.getEntriesByType('navigation')[0].responseStatus || null; } catch (e) {}
   const seen = spec.visible.map(onScreen);
+  // Include diagnostics emitted by the check itself, in the same read that carries its verdict.
+  if (probe && q.drainPageConsole) {
+    const after = q.drainPageConsole();
+    for (const key of ['page_console', 'page_console_omitted']) probe[key] = (probe[key] || []).concat(after[key] || []);
+  }
   return { probe, url: location.href, title: document.title, status,
     text: spec.text.map(t => has(t)), guarded, absent: spec.absent.map(t => has(t)), visible: seen.map(s => s.ok),
     visible_why: seen.map(s => s.why),
@@ -847,11 +852,13 @@ class Session:
     # ---- navigation and page reads ----
     def carry(self):
         """Take what the page's guard recorded (blocked and allowed writes, dialogs) before the tab leaves it."""
+        leaving_last_test = self.last_test_page is not None and self._document() == self.last_test_page
         with contextlib.suppress(RuntimeError, TimeoutError):
             got = self.evaluate(DRAIN_JS, timeout_ms=3000) or {}
             for key, items in got.items():
+                if leaving_last_test and key in ("page_console", "page_console_omitted"):
+                    continue
                 self.carried.setdefault(key, []).extend(items or [])
-        leaving_last_test = self.last_test_page is not None and self._document() == self.last_test_page
         for key, items in self.frames_drained().items():
             if leaving_last_test and key in ("frames_not_observed", "frames_accepted", "frame_console",
                                              "frame_requests"):
@@ -1003,6 +1010,8 @@ class Session:
         under this test (that test's own looks named them). Its blocked writes still carry on."""
         self.carried.pop("frames_not_observed", None)
         self.carried.pop("frames_accepted", None)
+        self.carried.pop("page_console", None)
+        self.carried.pop("page_console_omitted", None)
         self.last_test_page = self._document()
 
     def _document(self):

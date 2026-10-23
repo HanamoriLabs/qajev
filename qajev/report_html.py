@@ -301,12 +301,23 @@ def _scenario(i, r, who="Jev"):
         parts += [_shot(effect[key], f"{effect['name']} — {key}", f"{effect['region']['name']} — {key}")
                   for key in ("off", "on", "difference")]
     for check in r.get("checks") or []:
+        if check.get("ok") is False and check.get("value") is not None:
+            value = check["value"]
+            text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)
+            parts.append(f'<details><summary>Returned value</summary><pre>{_e(text)}</pre></details>')
         evidence = check.get("evidence")
         if isinstance(evidence, dict):
             parts += [f'<h4>{_e(check.get("check"))}</h4>',
                       f'<pre>{_e(json.dumps(evidence, ensure_ascii=False, sort_keys=True))}</pre>']
-            parts += [_shot(evidence[key], f"{check.get('check')} — {key}", f"{check.get('check')} — {key}")
-                      for key in ("crop", "reference", "panel", "difference") if evidence.get(key)]
+            if check.get("evidence_type") != "js":
+                parts += [_shot(evidence[key], f"{check.get('check')} — {key}", f"{check.get('check')} — {key}")
+                          for key in ("crop", "reference", "panel", "difference") if evidence.get(key)]
+    if r.get("page_console") or r.get("page_console_omitted"):
+        lines = [f"{entry.get('level')}: {entry.get('text')}" + (" [truncated]" if entry.get("truncated") else "")
+                 for entry in r.get("page_console") or []]
+        if r.get("page_console_omitted"):
+            lines.append(f"{r['page_console_omitted']} console lines omitted")
+        parts.append('<details><summary>Page console</summary><pre>' + _e("\n".join(lines)) + '</pre></details>')
     r = {**r, "_lines": [{**line, "detail": c.get("detail")} for line, c in zip(it["checks"], r.get("checks") or [])]}
     facts = []
     if r.get("url"):

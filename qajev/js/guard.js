@@ -121,12 +121,32 @@
   addEventListener('unhandledrejection', (e) => {
     push(state.errors, { kind: 'rejection', detail: String(e.reason && (e.reason.stack || e.reason.message) || e.reason) });
   });
+  const consoleText = (args) => args.map((a) => {
+    try {
+      if (a && a.stack) return String(a.stack);
+      return typeof a === 'string' ? a : JSON.stringify(a) ?? String(a);
+    } catch (e) { return '[unserializable console argument]'; }
+  }).join(' ');
+  state.pageConsole = [];
+  let pageConsoleOmitted = 0;
+  const keepPageConsole = (level, args) => {
+    // Keep whole strings until Python cleans secrets and paths, then applies the display character cap.
+    if (state.pageConsole.length < 50) state.pageConsole.push({ level, text: consoleText(args) });
+    else pageConsoleOmitted++;
+  };
+  state.drainPageConsole = () => {
+    const out = { page_console: state.pageConsole.splice(0),
+                  page_console_omitted: pageConsoleOmitted ? [pageConsoleOmitted] : [] };
+    pageConsoleOmitted = 0;
+    return out;
+  };
   const consoleError = console.error;
   console.error = function (...args) {
     const text = args.map((a) => (a && a.message) || String(a)).join(' ');
+    if (!framed) keepPageConsole('error', args);
     // re-classed, never hidden: its text goes to the report's harness note
     if (guardHydration(args)) { state.hydration++; push(state.hydrationText, text.slice(0, 500)); }
-    else push(state.errors, { kind: 'console', detail: text.slice(0, 500) });
+    else push(state.errors, { kind: 'console', detail: text });
     return consoleError.apply(this, args);
   };
   // In a frame only: what its console says (log, info, warn, debug), for the report with the frame's errors
@@ -138,6 +158,14 @@
       const real = console[level];
       console[level] = function (...args) {
         push(state.console, { level, text: args.map((a) => (a && a.message) || String(a)).join(' ').slice(0, 300) });
+        return real.apply(this, args);
+      };
+    }
+  } else {
+    for (const level of ['warn']) {
+      const real = console[level];
+      console[level] = function (...args) {
+        keepPageConsole(level, args);
         return real.apply(this, args);
       };
     }
@@ -545,6 +573,7 @@
       hidden_controls: forgetGone().slice(0, 20),
       blank_ms: state.busySince === null ? 0 : Math.round(performance.now() - state.busySince),
       lcp: state.lcp, cls: Math.round(state.cls * 1000) / 1000,
+      ...state.drainPageConsole(),
     };
     if (signInWall()) out.sign_in = true;
     return out;
@@ -562,7 +591,7 @@
   state.reconfigure = (next) => { configure(next); guardDoc(); };
   // What this page recorded and nobody has read yet: the session takes it before the tab leaves the page.
   state.drain = () => ({ blocked: state.blocked.splice(0), allowed: state.allowed.splice(0),
-                         dialogs: state.dialogs.splice(0) });
+                         dialogs: state.dialogs.splice(0), ...state.drainPageConsole() });
   // A frame's console and errors since the last read (frames only: the top page's errors go to its own findings).
   state.drainConsole = () => [...state.console.splice(0), ...state.errors.splice(0).map((e) => (
     { level: e.kind === 'console' ? 'error' : e.kind, text: String(e.detail || '').slice(0, 300) }))];

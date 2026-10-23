@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import chrome, live, plan, providers, ux, verdict, vision
 from .config import redact, redact_tree, secret_values
+from .diagnostics import keep_console
 from .ledger import CostCapReached, Ledger
 from .suite import has_checks
 from .suite import page_checks as has_page_checks
@@ -202,6 +203,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
 
     def absorb(obs):
         probe = (obs or {}).get("probe") or {}
+        keep_console(result, probe)
         findings.extend(verdict.findings_from_probe(probe, scenario=scenario.name, url=obs.get("url"),
                                                     first_party_hosts=hosts, why=getattr(session, "why_failed", None)))
         result["blocked_writes"].extend(probe.get("blocked") or [])
