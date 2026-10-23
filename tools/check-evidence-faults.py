@@ -71,7 +71,7 @@ FAULTS = [
      UNIT+'test_diagnostic_cleaning_preserves_json_numbers_and_cleans_nested_keys'),
     ('D25-key-collision', D, 'if name in out:', 'if False:',
      UNIT+'test_diagnostic_cleaning_refuses_colliding_redacted_keys'),
-    ('C01-warn-capture', G, "for (const level of ['warn'])", 'for (const level of [])',
+    ('C01-warn-capture', G, "for (const level of ['log', 'info', 'warn'])", 'for (const level of [])',
      LIVE+'test_measured_js_executes_once_and_keeps_object_console_numbers'),
     ('C02-error-capture', G, "if (!framed) keepPageConsole('error', args);", '',
      LIVE+'test_console_buffer_counts_omissions_and_keeps_text_until_privacy_cleaning'),
@@ -158,6 +158,14 @@ FAULTS = [
      UNIT+'test_item_bound_counts_utf8_bytes_without_splitting_a_character'),
     ('B17-evidence-wire', V, 'evidence=clean_evidence(measured["evidence"])', 'evidence=clean_data(measured["evidence"])',
      UNIT+'test_structured_evidence_has_its_own_item_boundary'),
+    ('L01-log-capture', G, "for (const level of ['log', 'info', 'warn'])", "for (const level of ['info', 'warn'])",
+     'tests/test_page_console.py::test_page_log_and_info_reach_the_report_without_changing_the_verdict[log]'),
+    ('L02-info-capture', G, "for (const level of ['log', 'info', 'warn'])", "for (const level of ['log', 'warn'])",
+     'tests/test_page_console.py::test_page_log_and_info_reach_the_report_without_changing_the_verdict[info]'),
+    ('L03-log-filter', D, '{"log", "info", "warn", "error"}', '{"info", "warn", "error"}',
+     'tests/test_page_console.py::test_runner_keeps_page_log_and_info_measurements[log]'),
+    ('L04-info-filter', D, '{"log", "info", "warn", "error"}', '{"log", "warn", "error"}',
+     'tests/test_page_console.py::test_runner_keeps_page_log_and_info_measurements[info]'),
 ]
 
 

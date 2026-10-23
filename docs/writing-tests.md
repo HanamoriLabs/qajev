@@ -752,8 +752,8 @@ UTF-8 text after privacy cleaning, plus a visible `[truncated N characters]` mar
 characters are retained. An evidence object whose serialized JSON exceeds 64 KiB is replaced by
 `{"_qajev_truncated": "[truncated N characters]"}`; smaller objects keep their numbers and JSON types.
 
-Scenarios also retain page console warnings and errors under `page_console`. Objects are serialized so their
-numbers remain visible. One scenario keeps at most 50 lines of 500 characters, after privacy cleaning;
+Scenarios also retain page console log, info, warning and error lines under `page_console`. Objects are serialized
+so their numbers remain visible. One scenario keeps at most 50 lines of 500 characters, after privacy cleaning;
 `truncated: true` marks a shortened line and `page_console_omitted` counts omitted lines. Navigation within a
 scenario retains its diagnostics, while the next scenario starts its own console record. These diagnostics
 do not add a new pass/fail rule; existing console-error findings keep their verdict behavior.

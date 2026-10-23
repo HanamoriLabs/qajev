@@ -149,8 +149,7 @@
     else push(state.errors, { kind: 'console', detail: text });
     return consoleError.apply(this, args);
   };
-  // In a frame only: what its console says (log, info, warn, debug), for the report with the frame's errors
-  // (drainConsole). The top page's console is left as it is.
+  // Frames keep their own console stream with frame addresses. The top page has separate scenario diagnostics.
   state.console = [];
   const framed = (() => { try { return window.top !== window; } catch (e) { return true; } })();
   if (framed) {
@@ -162,7 +161,7 @@
       };
     }
   } else {
-    for (const level of ['warn']) {
+    for (const level of ['log', 'info', 'warn']) {
       const real = console[level];
       console[level] = function (...args) {
         keepPageConsole(level, args);

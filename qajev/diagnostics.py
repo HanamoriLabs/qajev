@@ -9,7 +9,7 @@ from .config import redact
 
 CONSOLE_LINES = 50
 CONSOLE_CHARACTERS = 500
-CONSOLE_LEVELS = {"warn", "error"}
+CONSOLE_LEVELS = {"log", "info", "warn", "error"}
 DIAGNOSTIC_BYTES = 64 * 1024
 
 
