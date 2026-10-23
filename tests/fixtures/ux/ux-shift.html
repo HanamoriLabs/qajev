@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UX fixture: layout shift</title>
+<!--
+  QAJev UX fixture: ux-shift.html
+  Viewport: 390x844, mobile.
+  Planted fault: tapping "Take photo" inserts a 160 px photo tray ABOVE "Take the next photo",
+  300 ms later (like an async scan answer). "Take the next photo" jumps down by exactly 160 px.
+  The tray goes into a slot that is always in the flex column, so the gap does not change
+  and the move is exactly the tray height. Only the first tap inserts the tray.
+  Steps: tap "Take photo".
+  Expected findings: exactly 1.
+    UX-SHIFT  button "Take the next photo" moved 160 px down after tap on button "Take photo".
+              Cause: a 160 px tall div "Photos" appeared above it.
+    data: dx 0, dy 160.
+  "Take photo" is the tapped control, so it is not tracked. "Back" does not move.
+  Nothing else is wrong: all targets are 44 px or more, no text is cut off, nothing is covered.
+-->
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #0f1115; color: #e8eaf0;
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .screen {
+    min-height: 100%; max-width: 390px; margin: 0 auto; box-sizing: border-box;
+    padding: 0 16px 24px; display: flex; flex-direction: column; gap: 12px;
+  }
+  header { height: 56px; flex: none; display: flex; align-items: center; gap: 8px; margin: 0 -8px; }
+  h1 { font-size: 20px; margin: 0; }
+  .back {
+    min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+    color: #93b4ff; text-decoration: none; padding: 0 8px; box-sizing: border-box;
+  }
+  p { margin: 0; color: #a9b0c0; }
+  .btn {
+    flex: none; width: 100%; min-height: 52px; border: 0; border-radius: 12px;
+    background: #3b82f6; color: #fff; font: 600 16px/1.2 system-ui, sans-serif;
+  }
+  .btn.secondary { background: #232836; color: #e8eaf0; border: 1px solid #2a2f3a; }
+  #tray-slot { flex: none; }
+  .tray {
+    height: 160px; box-sizing: border-box; padding: 12px; border-radius: 12px;
+    background: #1a1d24; border: 1px solid #2a2f3a;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .tray-title { font-size: 14px; color: #a9b0c0; }
+  .thumbs { display: flex; gap: 8px; }
+  .thumb { width: 72px; height: 100px; border-radius: 8px; background: linear-gradient(160deg, #334155, #1e293b); }
+</style>
+</head>
+<body>
+  <div class="screen">
+    <header>
+      <a class="back" href="#" aria-label="Back">‹ Back</a>
+      <h1>Scan cards</h1>
+    </header>
+    <p>Put a card in the frame, then take a photo.</p>
+    <button id="take" class="btn" type="button">Take photo</button>
+    <div id="tray-slot"></div>
+    <button id="next" class="btn secondary" type="button">Take the next photo</button>
+  </div>
+  <script>
+    var slot = document.getElementById('tray-slot');
+    document.getElementById('take').addEventListener('click', function () {
+      setTimeout(function () {
+        if (slot.firstChild) return;
+        // The planted fault: new content goes ABOVE the next button.
+        var tray = document.createElement('div');
+        tray.className = 'tray';
+        tray.id = 'tray';
+        tray.setAttribute('aria-label', 'Photos');
+        tray.innerHTML = '<div class="tray-title">1 photo</div>' +
+          '<div class="thumbs"><div class="thumb"></div></div>';
+        slot.appendChild(tray);
+      }, 300);
+    });
+  </script>
+</body>
+</html>

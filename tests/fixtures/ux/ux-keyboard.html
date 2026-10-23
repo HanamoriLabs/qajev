@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UX fixture: keyboard hides Save</title>
+<!--
+  QAJev UX fixture: ux-keyboard.html
+  Viewport: 390x844, mobile.
+  Planted fault: the screen height is read once at load (like Dimensions.get("window") read once),
+  html and body do not scroll (like the Expo web template), and the screen clips its content.
+  When the keyboard opens (viewport 844 -> 464), Save stays at y 768..820, out of view,
+  and nothing can scroll it up. There is also no way to close the keyboard: no Done control,
+  no enterkeyhint, and a tap outside does nothing.
+  Save is a React Native Web style div with role="button" and no data-qa-main, so QAJev must find
+  it with the name rule.
+  Steps: type "Comic Fiesta" into "Show name".
+  Expected findings: exactly 2 (one per finding id for this screen).
+    UX-KEYBOARD-MAIN     With the keyboard open on input[text] "Show name", the main button button "Save" is hidden
+                         and cannot be scrolled into view (button top 768 px, visible area ends at 464 px).
+    UX-KEYBOARD-DISMISS  No way to close the keyboard on input[text] "Show name": no Done button, Return does not
+                         close it, and tapping outside does not close it.
+  With ux_keyboard_scope: all, the same 2 findings list both fields ("Show name", "Venue").
+  No UX-KEYBOARD-FOCUS: both fields stay in view. Nothing else is wrong at full height.
+-->
+<style>
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: #0f1115; color: #e8eaf0;
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .screen {
+    max-width: 390px; margin: 0 auto; box-sizing: border-box; overflow: hidden;
+    padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px;
+  }
+  header { height: 56px; flex: none; display: flex; align-items: center; gap: 8px; margin: 0 -8px; }
+  h1 { font-size: 20px; margin: 0; }
+  .back {
+    min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+    color: #93b4ff; text-decoration: none; padding: 0 8px; box-sizing: border-box;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; flex: none; }
+  label { font-size: 14px; color: #a9b0c0; }
+  input {
+    height: 48px; box-sizing: border-box; padding: 0 12px; border-radius: 10px;
+    border: 1px solid #2a2f3a; background: #1a1d24; color: #e8eaf0; font: inherit;
+  }
+  .save {
+    margin-top: auto; flex: none; height: 52px; border-radius: 12px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    background: #3b82f6; color: #fff; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+  <div class="screen" id="screen">
+    <header>
+      <a class="back" href="#" aria-label="Back">‹ Back</a>
+      <h1>New show</h1>
+    </header>
+    <div class="field">
+      <label for="name">Show name</label>
+      <input id="name" type="text" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="venue">Venue</label>
+      <input id="venue" type="text" autocomplete="off">
+    </div>
+    <div id="save" class="save" role="button" tabindex="0">Save</div>
+  </div>
+  <script>
+    // The planted fault: the height is fixed once and never follows the viewport.
+    document.getElementById('screen').style.height = window.innerHeight + 'px';
+  </script>
+</body>
+</html>

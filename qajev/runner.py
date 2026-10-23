@@ -15,6 +15,7 @@ from .config import redact, redact_tree, secret_values
 from .ledger import CostCapReached, Ledger
 from .suite import has_checks
 from .suite import page_checks as has_page_checks
+from .ux_options import resolve as resolve_ux
 
 MODEL_ERROR = re.compile(r"model|typesafe|text helper|text_model|provider", re.I)
 STALE_LIMIT = 8  # decisions without an executed action before we call the page churning
@@ -45,7 +46,16 @@ class Options:
     load_wait: float = 600.0
     only: list = field(default_factory=list)
     shots: bool = True
-    ux: bool = True  # smoke: measure each page's UX (contrast, keyboard, zoom, dialogs, design consistency): free
+    ux: str | None = None  # None inherits suite; default advisory. No model calls.
+    ux_checks: list | None = None
+    ux_keyboard_scope: str | None = None
+    ux_keyboard_ratio: float | None = None
+    ux_keyboard_main: str | None = None
+    ux_keyboard_press_return: bool | None = None
+    ux_settle_ms: int | None = None
+    ux_shift_px: float | None = None
+    ux_tap_min_px: float | None = None
+    ux_max_findings: int | None = None
     motion: str | None = None  # overrides the suite's motion (reduce | full)
     color_scheme: str | None = None  # light | dark for every test that names none (a test's own wins)
     cpu_throttle: int | None = None  # overrides the suite's cpu_throttle (1 to 8)
@@ -187,6 +197,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     observed = {}
     stop, detail = None, None
     before = None  # the page's checks as Jev found it, before its first move
+    ux_observer = None
+    ux_enabled = resolve_ux(opts, getattr(scenario, "ux_options", None))["ux"] != "off"
 
     def absorb(obs):
         probe = (obs or {}).get("probe") or {}
@@ -237,6 +249,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             session.set_color_scheme(scheme)
         session.set_device(scenario.device)
         session.arm(scenario.mode, scenario.speech)
+        if hasattr(session, "configure_ux"):
+            ux_observer = session.configure_ux(opts, run_dir, scenario.name, getattr(scenario, "ux_options", None))
         effect = scenario.expect.get("effect") or {}
         if any("pad" in hook for hook in [*scenario.before, *scenario.after, *effect.get("off", []),
                                          *effect.get("on", [])]):
@@ -247,6 +261,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if error:
                 stop, detail = "unreachable", error
         if stop is None:
+            if ux_observer:
+                ux_observer.safe(ux_observer.start)
             # What it is doing, for the dashboard and qajev top, while a slow check runs in the page (a script that
             # plays the game for a minute said nothing at all before).
             _emit(opts, "step", scenario=scenario.name, at=time.time(),
@@ -394,7 +410,11 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                 profile=None if opts.ephemeral or opts.profile == "default" else opts.profile)
     if outcome not in {"pass", "skipped"} and wall:
         result["needs_sign_in"] = wall
-        return _finish(result, "harness", wall["reason"], started)
+        result = _finish(result, "harness", wall["reason"], started)
+        if ux_observer:
+            ux_observer.safe(ux_observer.finish)
+            ux_observer.apply(result)
+        return result
     assists = getattr(session, "assists", []) if scenario.goal else []
     if assists:
         result["assists"] = assists
@@ -414,14 +434,18 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     blame = ux.blocked_by(scenario.goal, outcome, hidden) if scenario.goal else None
     if blame:
         outcome, reason = "harness", f"{blame}; {reason}"
-    elif scenario.goal and session.agent.state["history"]:  # how findable the goal was, from Jev's own run (free)
+    elif ux_enabled and scenario.goal and session.agent.state["history"]:  # free notes on finding the goal
         result["ux"] = [*result.get("ux", []), *ux.struggle(session.agent.state["history"], result.get("screens") or [],
                                                              outcome, assists,
                                                              jev_done=session.agent.state.get("status") == "done")]
     if not (blame or "").startswith("blocked by the guard"):  # the blame already names what the guard hid
         reason = verdict.with_guard_note(outcome, reason, hidden)
     outcome, reason = verdict.unguarded(outcome, reason, result.get("frames_not_observed"))
-    return _finish(result, outcome, reason, started)
+    result = _finish(result, outcome, reason, started)
+    if ux_observer:
+        ux_observer.safe(ux_observer.finish)
+        ux_observer.apply(result)
+    return result
 
 
 VISIBLE_SCROLLS = 6  # how far a person reads on for something already on the page; beyond that it is not "visible"
@@ -568,8 +592,12 @@ def run_clients(scenario, *, opts, suite_meta, run_dir, ledger):
         _emit(opts, "step", scenario=scenario.name, doing=doing, at=time.time())
 
     try:
+        from .ux_options import resolve
+
+        ux_config = resolve(opts, getattr(scenario, "ux_options", None))
         result = clients.run(scenario, ledger=ledger, hosts=set(suite_meta["hosts"]), run_dir=run_dir,
-                             suite_meta=suite_meta, step=step)
+                             suite_meta={**suite_meta, "ux_options": ux_config},
+                             step=step)
     except KeyboardInterrupt:
         return _finish({**base, "stop": "interrupted", "interrupted": True}, "harness",
                        "interrupted: stopped by the operator", started)

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UX fixture: covered control</title>
+<!--
+  QAJev UX fixture: ux-covered.html
+  Viewport: 390x844, mobile.
+  Planted fault: a fixed round "Settings" button (64x64, bottom-right) sits on top of the form's Save button.
+  Steps: none (open the page and let it settle).
+  Expected findings: exactly 1.
+    UX-COVER  button "Save" is covered by button "Settings" (fixed, 64x64 px) at 3 of 5 tap points.
+  Geometry at 390x844: Save is 96x52 at x 270..366, y 768..820.
+  Settings is 64x64 at x 310..374, y 764..828. It covers the center and the 2 right inset points of Save.
+  Nothing else is wrong: inputs have enterkeyhint="done", the page scrolls when the keyboard opens,
+  all targets are 44 px or more, no text is cut off.
+-->
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #0f1115; color: #e8eaf0;
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .screen {
+    min-height: 100%; max-width: 390px; margin: 0 auto; box-sizing: border-box;
+    padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px;
+  }
+  header { height: 56px; display: flex; align-items: center; gap: 8px; margin: 0 -8px; }
+  h1 { font-size: 20px; margin: 0; }
+  .back {
+    min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+    color: #93b4ff; text-decoration: none; padding: 0 8px; box-sizing: border-box;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  label { font-size: 14px; color: #a9b0c0; }
+  input {
+    height: 48px; box-sizing: border-box; padding: 0 12px; border-radius: 10px;
+    border: 1px solid #2a2f3a; background: #1a1d24; color: #e8eaf0; font: inherit;
+  }
+  .save {
+    margin-top: auto; align-self: flex-end; margin-right: 8px;
+    width: 96px; height: 52px; border: 0; border-radius: 12px;
+    background: #3b82f6; color: #fff; font: 600 16px/1 system-ui, sans-serif;
+  }
+  /* The planted fault: a floating button anchored to the screen's bottom-right corner. */
+  .fab {
+    position: fixed; z-index: 10; bottom: 16px;
+    right: max(16px, calc(50vw - 195px + 16px));
+    width: 64px; height: 64px; border-radius: 50%; border: 0;
+    background: #2563eb; color: #fff; font-size: 28px; line-height: 1;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, .5);
+  }
+</style>
+</head>
+<body>
+  <div class="screen">
+    <header>
+      <a class="back" href="#" aria-label="Back">‹ Back</a>
+      <h1>New show</h1>
+    </header>
+    <div class="field">
+      <label for="name">Show name</label>
+      <input id="name" type="text" enterkeyhint="done" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="venue">Venue</label>
+      <input id="venue" type="text" enterkeyhint="done" autocomplete="off">
+    </div>
+    <button id="save" class="save" type="button">Save</button>
+  </div>
+  <button id="settings" class="fab" type="button" aria-label="Settings"><span aria-hidden="true">⚙</span></button>
+</body>
+</html>

@@ -630,6 +630,8 @@ class Session:
         self.assists = []
         self.last_stale = None
         self.net = None
+        self.ux_observer = None
+        self.ux_script_id = None
         self.carried = {}  # what a page's guard recorded before the tab left it, for the next probe
         self.loaded_at = 0.0  # when the last navigation or reload ended (a click into a frame waits FRAME_INPUT_S)
         self.last_test_page = None  # the page the last test left this tab on (begin_test): its frames are named
@@ -677,6 +679,21 @@ class Session:
             raise
 
     # ---- plumbing ----
+    def configure_ux(self, opts, run_dir, name, inherited=None):
+        from .ux_checks import attach
+
+        return attach(self, opts, run_dir, name, inherited)
+
+    @contextlib.contextmanager
+    def ux_action(self, target=None, *, typing=False, action="action"):
+        observer = getattr(self, "ux_observer", None)
+        entered = observer.safe(observer.before, target, typing=typing, action=action) if observer else False
+        try:
+            yield
+        finally:
+            if entered:
+                observer.safe(observer.after)
+
     def call(self, method, **params):
         return self.browser.call(method, **params)
 
@@ -1123,7 +1140,13 @@ class Session:
         try:
             self.agent.command("predict")
             self.require_guard()
-            self.agent.command("act", {"fingerprint": state["page"]["fingerprint"]})
+            decision = state.get("decision") or {}
+            action = next((a for a in state["page"].get("actions", []) if a.get("id") == decision.get("choice")), {})
+            boundary = (self.ux_action({"jevNode": action.get("node")}, typing=action.get("kind") == "fill",
+                                       action=f"{action.get('kind', 'action')} {action.get('label', '')}")
+                        if action.get("kind") in {"fill", "click", "key", "press"} else contextlib.nullcontext())
+            with boundary:
+                self.agent.command("act", {"fingerprint": state["page"]["fingerprint"]})
             self.settle_scroll()
             return True
         except stale as e:
@@ -1359,7 +1382,8 @@ class Session:
                     raise HookFailed(f"{what}: the point is covered by {at.get('over')}")
                 break
             time.sleep(0.1)
-        self.trusted_click(at["x"], at["y"])
+        with self.ux_action({"x": at["x"], "y": at["y"]}, action=what):
+            self.trusted_click(at["x"], at["y"])
 
     def settled(self, selector, timeout=2.0):
         """A click target scrolled into view, on top, and at the same spot two looks in a row: a fading splash, a
@@ -1406,11 +1430,19 @@ class Session:
 
     def run_hook(self, hook, current_url):
         kind, value = next(iter(hook.items()))
+        if kind in {"key", "js", "navigate", "reload"}:
+            with self.ux_action(None, action=f"{kind} {value}" if kind == "key" else kind):
+                return self._run_hook(hook, current_url)
+        return self._run_hook(hook, current_url)
+
+    def _run_hook(self, hook, current_url):
+        kind, value = next(iter(hook.items()))
         if kind == "js":
             self.evaluate(value)
         elif kind == "click":
             found = self.settled(value)
-            self.trusted_click(found["x"], found["y"])
+            with self.ux_action({"x": found["x"], "y": found["y"]}, action=f"click {value}"):
+                self.trusted_click(found["x"], found["y"])
         elif kind == "click_at":
             self.click_at(value)
         elif kind == "fill":
@@ -1418,7 +1450,9 @@ class Session:
                 found = self.find(selector)
                 if found["secret"] and not is_loopback(current_url):
                     raise HookFailed(f"refused: {selector!r} is a secret field on a non-loopback host")
-                self.fill(selector, found, os.path.expandvars(str(text)))
+                with self.ux_action({"x": found["x"], "y": found["y"]}, typing=True, action=f"type into {selector}"):
+                    # Keyboard probing restores scroll, so locate the step's target again.
+                    self.fill(selector, self.find(selector), os.path.expandvars(str(text)))
         elif kind == "navigate":
             from urllib.parse import urljoin
 

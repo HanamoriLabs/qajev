@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-from . import keys, pad, verdict
+from . import keys, pad, ux_options, verdict
 from . import plan as plan_mod
 from .config import host_of, is_local_dev, is_loopback, is_test_email, plain_host, user_info_refusal
 from .guard import MODES
@@ -60,7 +60,7 @@ SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
     "persona", "speech", "vision", "about", "clients", "steps", "state", "seed", "color_scheme", "expect_fail",
-}
+} | set(ux_options.KEYS)
 # A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
 MAX_CLIENTS = 12
 CLIENT_EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "ignore_case", "across"}
@@ -70,7 +70,7 @@ SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
     "cpu_throttle", "plan", "color_scheme", "tunnel",
-}
+} | set(ux_options.KEYS)
 COLOR_SCHEMES = ("light", "dark")
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
@@ -121,6 +121,7 @@ class Scenario:
     seed: int | None = None  # for `jitter`: the same seed gives the same offsets
     color_scheme: str | None = None  # light | dark: the page's prefers-color-scheme answers so; None: the browser's
     expect_fail: dict | None = None  # a planted fault: {check, words}, the one check it must fail on (_expect_fail)
+    ux_options: dict = field(default_factory=dict)  # explicit suite/scenario options; run flags override them
 
     @property
     def task(self):
@@ -153,6 +154,7 @@ class Suite:
     plan: str | None = None  # the approved test plan this run follows (planfile.py), as the suite names it
     test_plan: dict | None = None  # that plan's check (planfile.check), set before the run
     tunnel: dict | None = None  # the full tunnel: this machine's dev servers a cloud run reaches (tunnel_spec)
+    ux_options: dict = field(default_factory=dict)
 
     @property
     def mutates(self):
@@ -544,6 +546,7 @@ def parse(data, path=None, devices=None):
     if not isinstance(data, dict):
         raise SuiteError("a suite must be a mapping with a scenarios list")
     _unknown("suite", data, SUITE_KEYS)
+    suite_ux = _ux_options(data, "suite")
     base = data.get("base_url")
     if base and (refused := user_info_refusal(base)):  # first: no later error may quote the URL
         raise SuiteError(f"base_url: {refused}")
@@ -655,6 +658,7 @@ def parse(data, path=None, devices=None):
             seed=item.get("seed"),
             color_scheme=color_scheme(item.get("color_scheme", data.get("color_scheme")), f"{where}.color_scheme"),
             expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where),
+            ux_options=_ux_options({**suite_ux, **_ux_options(item, where)}, where),
         ))
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")
@@ -692,6 +696,7 @@ def parse(data, path=None, devices=None):
         about=about(data.get("about"), "about"),
         plan=_plan_path(data.get("plan")),
         tunnel=tunnel_spec(data.get("tunnel")),
+        ux_options=suite_ux,
     )
     check_safety(suite)
     if path:
@@ -703,6 +708,13 @@ def parse(data, path=None, devices=None):
             except vision.VisionError as e:
                 raise SuiteError(f"{scenario.name}.expect.looks: {e}") from None
     return suite
+
+
+def _ux_options(data, where):
+    try:
+        return ux_options.parse(data, where)
+    except ValueError as e:
+        raise SuiteError(str(e)) from None
 
 
 TUNNEL_KEYS = {"ports", "data", "test_keys"}

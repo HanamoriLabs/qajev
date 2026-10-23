@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UX fixture: wrong input kind</title>
+<!--
+  QAJev UX fixture: ux-input-kind.html
+  Viewport: 390x844, mobile.
+  Planted fault: two fields use a plain text box.
+    "First day" is type="text" and holds 2026-11-22. Its label is a sibling div above it with no <label>
+    and no aria-label (React Native Web style), so QAJev must find it with the near-label rule.
+    "Table fee (RM)" is type="text" with no inputmode. Its label comes from aria-label.
+  Steps: none (open the page and let it settle).
+  Expected findings: exactly 2.
+    UX-INPUT-DATE    input[text] "First day" is a text box for a date (it holds "2026-11-22").
+                     Use a date picker (input type="date" or a picker).
+    UX-INPUT-NUMBER  input[text] "Table fee (RM)" is a money field but opens the full keyboard.
+                     Add inputmode="decimal" (React Native: keyboardType="decimal-pad").
+  "Show name" must give no finding. Nothing else is wrong: the main button sits in a footer that
+  follows the viewport, inputs have enterkeyhint="done", targets are 44 px or more.
+-->
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #0f1115; color: #e8eaf0;
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .screen { height: 100%; max-width: 390px; margin: 0 auto; display: flex; flex-direction: column; }
+  header {
+    flex: none; height: 56px; display: flex; align-items: center; gap: 8px;
+    padding: 0 8px; border-bottom: 1px solid #2a2f3a;
+  }
+  h1 { font-size: 20px; margin: 0; }
+  .back {
+    min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+    color: #93b4ff; text-decoration: none; padding: 0 8px; box-sizing: border-box;
+  }
+  main { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  main > * { flex: none; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .label, label { font-size: 14px; color: #a9b0c0; }
+  input {
+    height: 48px; box-sizing: border-box; padding: 0 12px; border-radius: 10px;
+    border: 1px solid #2a2f3a; background: #1a1d24; color: #e8eaf0; font: inherit;
+  }
+  footer { flex: none; padding: 16px; border-top: 1px solid #2a2f3a; background: #151820; }
+  .btn {
+    width: 100%; min-height: 52px; border: 0; border-radius: 12px;
+    background: #3b82f6; color: #fff; font: 600 16px/1.2 system-ui, sans-serif;
+  }
+</style>
+</head>
+<body>
+  <div class="screen">
+    <header>
+      <a class="back" href="#" aria-label="Back">‹ Back</a>
+      <h1>New show</h1>
+    </header>
+    <main>
+      <div class="field">
+        <label for="name">Show name</label>
+        <input id="name" type="text" enterkeyhint="done" autocomplete="off" value="Comic Fiesta">
+      </div>
+      <div class="field">
+        <div class="label">First day</div>
+        <!-- Planted fault 1: a date in a plain text box. -->
+        <input id="first-day" type="text" enterkeyhint="done" autocomplete="off" value="2026-11-22">
+      </div>
+      <div class="field">
+        <div class="label" aria-hidden="true">Table fee (RM)</div>
+        <!-- Planted fault 2: money with no number keyboard. -->
+        <input id="fee" type="text" enterkeyhint="done" autocomplete="off" aria-label="Table fee (RM)" placeholder="0.00">
+      </div>
+    </main>
+    <footer>
+      <button id="save" class="btn" type="button" data-qa-main>Save</button>
+    </footer>
+  </div>
+</body>
+</html>

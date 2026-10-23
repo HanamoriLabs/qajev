@@ -62,7 +62,7 @@ def replay(off, on, name, expected, tmp_path, monkeypatch):
     parsed = specification(name)
     page = SavedFramesPage(off, on)
     monkeypatch.setattr(runner, "wait_for_quiet", lambda opts: (True, 0))
-    result = runner.run_scenario(page, parsed.scenarios[0], opts=runner.Options(shots=False),
+    result = runner.run_scenario(page, parsed.scenarios[0], opts=runner.Options(shots=False, ux="off"),
                                  hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
     assert result["outcome"] == expected, result.get("reason")
     assert page.hooks == ["off", "on"]
