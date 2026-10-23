@@ -3,12 +3,13 @@
 import json
 import tempfile
 import time
+from html import escape
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from . import __version__, config, plan, planfile, report_html, verdict
-from .report_files import PUBLISH_LOCK, missing_images, publish
+from .report_files import PUBLISH_LOCK, missing_images, publish, ux_crop, ux_details
 
 OBVIOUS = 0.8
 MOTION = {
@@ -249,7 +250,7 @@ def _ux_md(data):
     """The UX section: each note with what it rests on (measured, a struggle signal, a model's opinion) and its rule.
     It never changes the gate."""
     ux = data.get("ux") or {}
-    pages = [(r["name"], r["ux"]) for r in data["scenarios"] if r.get("ux")]
+    pages = [(r["name"], r["ux"]) for r in data["scenarios"] if isinstance(r.get("ux"), list) and r["ux"]]
     if not pages and not ux.get("consistency"):
         return []
     out = ["", "## UX", "", "Notes on how easy the pages are to use. They never change the gate; each says what it "
@@ -266,6 +267,59 @@ def _ux_md(data):
         out += [f"- **{n['kind']}**: {_cell(n['detail'], 400)}" for n in notes] or ["No differences between pages."]
         out.append("")
     return out
+
+
+def _ux_cell(text):
+    """Keep DOM text literal inside a Markdown table, with the complete diagnostic message."""
+    text = escape(" ".join(str(text if text is not None else "").split()), quote=False).replace("\\", "\\\\")
+    for char in "|`*_[]":
+        text = text.replace(char, "\\" + char)
+    return text
+
+
+def _ux_note_md(note):
+    if not isinstance(note, dict):
+        return ["- " + _ux_cell(note)]
+    if "kind" not in note:
+        return ["- " + _ux_cell(json.dumps(note, ensure_ascii=False, sort_keys=True))]
+    basis = note.get("basis")
+    out = [f"- **{_ux_cell(note['kind'])}**"
+           + (f" ({_ux_cell(BASIS.get(basis, basis))})" if basis else "")
+           + f": {_ux_cell(note.get('detail'))}"
+           + (f". Rule: {_ux_cell(note['rule'])}" if note.get("rule") else "")]
+    return out + ["  - " + _ux_cell(sample) for sample in note.get("samples") or []]
+
+
+def _scenario_ux_md(scenario):
+    ux = ux_details(scenario)
+    if ux is None:
+        return []
+    findings = ux.get("findings") or []
+    out = ["#### UX", ""]
+    if ux.get("status") == "incomplete":
+        out += ["Scan incomplete.", ""]
+    if findings:
+        out += ["| Check | Severity | Step | Message | Element key | Crop |", "|---|---|---|---|---|---|"]
+        for finding in findings:
+            path = ux_crop(finding)
+            href = quote(path, safe="/") if path else None
+            check = _ux_cell(finding.get("check"))
+            crop = f"[![{check} crop]({href})]({href})" if href else "Not saved"
+            message = _ux_cell(finding.get("message"))
+            if (finding.get("repeats") or 1) > 1:
+                message += f" Repeated {finding['repeats']} times."
+            out.append(f"| {check} | {_ux_cell(finding.get('severity'))} | {_ux_cell(finding.get('step'))} | "
+                       f"{message} | {_ux_cell((finding.get('element') or {}).get('key'))} | {crop} |")
+    elif ux.get("status") != "incomplete":
+        out.append("No UX findings.")
+    out.append("")
+    for skipped in ux.get("skipped") or []:
+        out.append(f"- Skipped {_ux_cell(skipped.get('check'))}: {_ux_cell(skipped.get('reason'))}")
+        out += [f"  - Not checked: {_ux_cell(field.get('desc'))} ({_ux_cell(field.get('key'))})"
+                for field in skipped.get("unchecked") or []]
+    for note in ux.get("notes") or []:
+        out += _ux_note_md(note)
+    return out + [""]
 
 
 def _needs_sign_in_md(wall):
@@ -315,7 +369,7 @@ def markdown(data):
         shot = f"[shot]({r['shot']})" if r.get("shot") else ""
         ended = _cell(_where(r.get("end_url")), 80)
         planted = f" ({report_html.planted_tag(r)})" if r.get("expected") else ""
-        lines.append(f"| {_cell(r['name'], 60)} | **{r['outcome']}**{_cell(planted, 120)} | "
+        lines.append(f"| {_cell(r['name'], 60)} | **{report_html.ux_summary(r)}**{_cell(planted, 120)} | "
                      f"{_cell(r.get('graded_reason') or r.get('reason'))} | "
                      f"{jev.get('actions', '')} | {r.get('seconds', '')} | {ended} | {shot} |")
 
@@ -340,8 +394,9 @@ def markdown(data):
     lines += _ux_md(data)
     lines += ["", "## Per scenario", ""]
     for r in data["scenarios"]:
-        lines.append(f"### {r['name']} — {r['outcome']}")
+        lines.append(f"### {r['name']} — {report_html.ux_summary(r)}")
         lines.append("")
+        lines += _scenario_ux_md(r)
         if r.get("about"):
             lines += [f"About: {r['about']}", ""]
         effect = r.get("effect")
