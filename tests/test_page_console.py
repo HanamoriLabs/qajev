@@ -13,7 +13,7 @@ from test_ux_dom_live import ENDPOINT
 from test_ux_dom_live import no_model_initialization as no_model_initialization
 from test_ux_dom_live import page as page
 
-from qajev import report, runner, suite
+from qajev import diagnostics, report, runner, suite
 
 
 @pytest.fixture
@@ -47,6 +47,84 @@ def test_runner_keeps_page_log_and_info_measurements(monkeypatch, level):
     text = 'measured {"difference":0.29,"minimum":0.3}'
     result = run_page(monkeypatch, {"page_console": [{"level": level, "text": text}]})
     assert result.get("page_console") == [{"level": level, "text": text}]
+
+
+@pytest.mark.parametrize("routine", ["log", "info"])
+@pytest.mark.parametrize("important", ["warn", "error"])
+def test_later_warning_or_error_replaces_a_routine_line_across_reads(routine, important):
+    result = {}
+    diagnostics.keep_console(result, {"page_console": [{"level": routine, "text": str(i)} for i in range(50)]})
+    diagnostics.keep_console(result, {"page_console": [{"level": important, "text": "important diagnostic"}],
+                                      "page_console_omitted": [2]})
+    assert len(result["page_console"]) == 50 and result["page_console_omitted"] == 3
+    assert result["page_console"][0]["text"] == "1"
+    assert result["page_console"][-1] == {"level": important, "text": "important diagnostic"}
+
+
+@pytest.mark.parametrize("routine", ["log", "info"])
+@pytest.mark.parametrize("important", ["warn", "error"])
+def test_routine_lines_cannot_evict_a_buffer_full_of_important_lines(routine, important):
+    result = {}
+    diagnostics.keep_console(result, {"page_console": [{"level": important, "text": str(i)} for i in range(50)]})
+    diagnostics.keep_console(result, {"page_console": [{"level": routine, "text": "routine diagnostic"}]})
+    assert result["page_console"] == [{"level": important, "text": str(i)} for i in range(50)]
+    assert result["page_console_omitted"] == 1
+
+
+def test_scenario_eviction_keeps_earlier_warnings_and_removes_only_a_routine_line():
+    result = {}
+    first = {"level": "warn", "text": "earlier warning"}
+    diagnostics.keep_console(result, {"page_console": [first] + [{"level": "log", "text": str(i)} for i in range(49)]})
+    diagnostics.keep_console(result, {"page_console": [{"level": "error", "text": "later error"}]})
+    assert len(result["page_console"]) == 50 and result["page_console_omitted"] == 1
+    assert result["page_console"][0] == first and result["page_console"][1]["text"] == "1"
+    assert result["page_console"][-1] == {"level": "error", "text": "later error"}
+
+
+@pytest.mark.skipif(not ENDPOINT or os.uname().sysname != "Linux", reason="requires approved CPU fixture browser")
+@pytest.mark.parametrize("routine", ["log", "info"])
+@pytest.mark.parametrize("important", ["warn", "error"])
+def test_browser_keeps_later_warning_or_error_after_fifty_routine_lines(page, site, routine, important):
+    session, _ = page
+    session.hosts = {urlsplit(site).netloc}
+    session.arm("readonly")
+    session.navigate(site + "/")
+    session.evaluate(f"for (let i = 0; i < 50; i++) console.{routine}(String(i)); "
+                     f"console.{important}('important diagnostic'); true")
+    observed = session.probe({})["probe"]
+    lines = observed["page_console"]
+    assert len(lines) == 50 and sum(observed["page_console_omitted"]) == 1
+    assert lines[0]["text"] == "1" and lines[-1] == {"level": important, "text": "important diagnostic"}
+
+
+@pytest.mark.skipif(not ENDPOINT or os.uname().sysname != "Linux", reason="requires approved CPU fixture browser")
+def test_browser_eviction_keeps_earlier_warnings_and_removes_only_a_routine_line(page, site):
+    session, _ = page
+    session.hosts = {urlsplit(site).netloc}
+    session.arm("readonly")
+    session.navigate(site + "/")
+    session.evaluate("console.warn('earlier warning'); for (let i = 0; i < 49; i++) console.log(String(i)); "
+                     "console.error('later error'); true")
+    observed = session.probe({})["probe"]
+    lines = observed["page_console"]
+    assert len(lines) == 50 and sum(observed["page_console_omitted"]) == 1
+    assert lines[0] == {"level": "warn", "text": "earlier warning"} and lines[1]["text"] == "1"
+    assert lines[-1] == {"level": "error", "text": "later error"}
+
+
+@pytest.mark.skipif(not ENDPOINT or os.uname().sysname != "Linux", reason="requires approved CPU fixture browser")
+@pytest.mark.parametrize("routine", ["log", "info"])
+@pytest.mark.parametrize("important", ["warn", "error"])
+def test_browser_routine_lines_cannot_evict_a_full_important_buffer(page, site, routine, important):
+    session, _ = page
+    session.hosts = {urlsplit(site).netloc}
+    session.arm("readonly")
+    session.navigate(site + "/")
+    session.evaluate(f"for (let i = 0; i < 50; i++) console.{important}(String(i)); "
+                     f"console.{routine}('routine diagnostic'); true")
+    observed = session.probe({})["probe"]
+    assert observed["page_console"] == [{"level": important, "text": str(i)} for i in range(50)]
+    assert sum(observed["page_console_omitted"]) == 1
 
 
 @pytest.mark.skipif(not ENDPOINT or os.uname().sysname != "Linux", reason="requires approved CPU fixture browser")

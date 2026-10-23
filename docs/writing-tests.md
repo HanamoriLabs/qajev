@@ -754,6 +754,8 @@ characters are retained. An evidence object whose serialized JSON exceeds 64 KiB
 
 Scenarios also retain page console log, info, warning and error lines under `page_console`. Objects are serialized
 so their numbers remain visible. One scenario keeps at most 50 lines of 500 characters, after privacy cleaning;
+later warnings and errors can replace the oldest log/info line in a full buffer. Routine lines never evict
+warnings or errors. This applies across page reads and navigation as well as within one document.
 `truncated: true` marks a shortened line and `page_console_omitted` counts omitted lines. Navigation within a
 scenario retains its diagnostics, while the next scenario starts its own console record. These diagnostics
 do not add a new pass/fail rule; existing console-error findings keep their verdict behavior.

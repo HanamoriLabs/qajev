@@ -131,8 +131,14 @@
   let pageConsoleOmitted = 0;
   const keepPageConsole = (level, args) => {
     // Keep whole strings until Python cleans secrets and paths, then applies the display character cap.
-    if (state.pageConsole.length < 50) state.pageConsole.push({ level, text: consoleText(args) });
-    else pageConsoleOmitted++;
+    if (state.pageConsole.length >= 50) {
+      pageConsoleOmitted++;
+      const routine = level === 'warn' || level === 'error'
+        ? state.pageConsole.findIndex(row => row.level === 'log' || row.level === 'info') : -1;
+      if (routine < 0) return;
+      state.pageConsole.splice(routine, 1);
+    }
+    state.pageConsole.push({ level, text: consoleText(args) });
   };
   state.drainPageConsole = () => {
     const out = { page_console: state.pageConsole.splice(0),

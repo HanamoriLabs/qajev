@@ -13,7 +13,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 ### Fixed
 
 - Page console log/info measurements join warnings and errors in scenario reports, with the same privacy,
-  retention limits and navigation handling. Console output does not add a new pass/fail rule.
+  retention limits and navigation handling. Warnings and errors replace routine lines in a full buffer.
+  Console output does not add a new pass/fail rule.
 - JavaScript checks retain returned values and failure reasons up to 64 KiB per item, with visible cut counts
   above that limit. Oversized measurement objects show a truncation marker. Explicit `{ok, says, evidence}` results
   attach measured numbers to the report, and each scenario keeps bounded page warnings/errors with visible
