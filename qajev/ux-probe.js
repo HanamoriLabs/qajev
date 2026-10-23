@@ -361,10 +361,11 @@
         '. Use a date picker (input type="date" or a picker).', {value, placeholder}));
     }
     const mode = (el.getAttribute("inputmode") || "").toLowerCase();
+    const search = el.type === "search" || el.getAttribute("role") === "searchbox" || /\bsearch\b/i.test(label);
     const notNumber = /\b(phone|tel|mobile|zip|postcode|post code|code|id|pin|otp|serial|cert|card number|iban|account)\b/i;
     const money = /\b(price|fee|cost|amount|total|rm|myr|usd|sgd|pay|payment|deposit|budget|offer|discount|tax|tip)\b|[$€£¥]/i.test(label);
     const count = /\b(qty|quantity|count|number of|how many|tables|stock|copies|pieces|pcs|age|year)\b/i.test(label);
-    if ((!check || check === "UX-INPUT-NUMBER") && !ignored(el, "UX-INPUT-NUMBER") && !["numeric", "decimal", "tel"].includes(mode) && !notNumber.test(label) &&
+    if ((!check || check === "UX-INPUT-NUMBER") && !ignored(el, "UX-INPUT-NUMBER") && !search && !["numeric", "decimal", "tel"].includes(mode) && !notNumber.test(label) &&
         (money || count || /^-?\d+([.,]\d+)?$/.test(value))) {
       const inputmode = money ? "decimal" : "numeric", keyboardType = money ? "decimal-pad" : "number-pad";
       results.push(finding("UX-INPUT-NUMBER", el, desc(el) + " is a " + (money ? "money" : "number") +

@@ -30,6 +30,15 @@ def row(name, test, path, before, after, *more):
 
 
 FAULTS = [
+    row("I04-search-type", DOM + "test_search_fields_keep_text_keyboards_without_hiding_numeric_controls",
+        JS, 'el.type === "search" || el.getAttribute("role") === "searchbox"',
+        'el.getAttribute("role") === "searchbox"'),
+    row("I05-search-role", DOM + "test_search_fields_keep_text_keyboards_without_hiding_numeric_controls",
+        JS, 'el.type === "search" || el.getAttribute("role") === "searchbox" ||', 'el.type === "search" ||'),
+    row("I06-search-label", DOM + "test_search_fields_keep_text_keyboards_without_hiding_numeric_controls",
+        JS, '/\\bsearch\\b/i.test(label)', 'false'),
+    row("I07-search-guard", DOM + "test_search_fields_keep_text_keyboards_without_hiding_numeric_controls",
+        JS, '&& !search &&', '&&'),
     row("K11-neutral-controls", DOM + "test_keyboard_neutral_point_never_clicks_backdrop_controls_even_past_the_cap",
         JS, 'isControl(p) || p.tagName === "LABEL"', 'p.tagName === "LABEL"'),
     row("K12-default-return", DOM + "test_default_keyboard_probe_sends_no_enter_event_or_app_send_action",

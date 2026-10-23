@@ -436,6 +436,27 @@ def test_picker_phone_and_numeric_keyboard_exemptions(page, site):
     assert counts(observer) == {}, observer.result
 
 
+@pytest.mark.parametrize("attributes", [
+    'aria-label="Search stock"',
+    'placeholder="Search stock"',
+    'type="search" aria-label="Stock"',
+    'role="searchbox" aria-label="Stock"',
+    'aria-label="Search price"',
+    'placeholder="Search price"',
+])
+@pytest.mark.parametrize("query", ["Pikachu", "151"])
+def test_search_fields_keep_text_keyboards_without_hiding_numeric_controls(page, site, attributes, query):
+    session, _ = page
+    observer = inline(session, site, f'<input id="query" {attributes} value="{query}">'
+                       '<input id="quantity" aria-label="Stock quantity" value="151">'
+                       '<input id="fee" aria-label="Table fee" value="1.50">'
+                       '<input id="price-filter" aria-label="Filter price" value="10">', ["input-kind"])
+    assert [(item["check"], item["element"]["key"]) for item in observer.result["findings"]] == [
+        ("UX-INPUT-NUMBER", "#quantity"), ("UX-INPUT-NUMBER", "#fee"),
+        ("UX-INPUT-NUMBER", "#price-filter")], observer.result
+    assert [item["data"]["kind"] for item in observer.result["findings"]] == ["number", "money", "money"]
+
+
 def test_secondary_ellipsis_is_allowed_but_partial_hard_clip_is_reported(page, site):
     session, _ = page
     observer = inline(session, site, '<div style="font-size:14px;font-weight:400;width:60px;overflow:hidden;'
