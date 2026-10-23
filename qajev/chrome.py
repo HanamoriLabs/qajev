@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import time
 import urllib.request
+from contextlib import suppress
 from pathlib import Path
 
 from .config import HOME
@@ -32,6 +33,7 @@ FLAGS = [
     "--disable-background-timer-throttling",
     "--disable-features=Translate,MediaRouter,OptimizationHints",
     "--deny-permission-prompts",
+    "--password-store=basic",
     # Defence in depth for the mic: synthetic devices, and never --use-fake-ui-for-media-stream
     # (that flag GRANTS the real microphone to the page's speech recognition).
     "--use-fake-device-for-media-stream",
@@ -198,6 +200,8 @@ def start(profile="default", *, headless=False, port=None, ephemeral=False, visi
                     f"profile {profile!r} already runs {'headless' if running[0]['headless'] else 'headed'} "
                     f"on port {running[0]['port']}; stop it first"
                 )
+            if running[0].get("password_services_disabled") is not True:
+                raise ChromeError("Restart this QAJev Chrome profile to disable its password services")
             return running[0]
     # A loaded machine (load 300+) has taken over 30 s to open the debugging port.
     wait = wait or float(os.environ.get("QAJEV_CHROME_START_WAIT", "60"))
@@ -226,7 +230,44 @@ def run_record(owned):
             "port": owned["port"], "ephemeral": bool(owned.get("ephemeral"))}
 
 
+def _disable_password_services(profile_dir: Path) -> None:
+    """Prepare only this owned profile, preserving unrelated Chrome preferences."""
+    default = profile_dir / "Default"
+    preferences = default / "Preferences"
+    if profile_dir.is_symlink() or default.is_symlink() or preferences.is_symlink():
+        raise ChromeError("QAJev refuses linked Chrome preferences; use a dedicated profile")
+    temporary = None
+    try:
+        default.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            data = json.loads(preferences.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            data = {}
+        except ValueError:
+            raise ChromeError("QAJev Chrome preferences are not valid JSON") from None
+        if not isinstance(data, dict) or not isinstance(data.get("profile", {}), dict):
+            raise ChromeError("QAJev Chrome preferences must contain JSON objects")
+        data["credentials_enable_service"] = False
+        data["credentials_enable_autosignin"] = False
+        data.setdefault("profile", {})["password_manager_leak_detection"] = False
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=default,
+                                         prefix=".qajev-preferences-", delete=False) as output:
+            temporary = Path(output.name)
+            json.dump(data, output)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, preferences)
+    except OSError:
+        raise ChromeError("QAJev could not prepare its Chrome password privacy settings") from None
+    finally:
+        if temporary is not None:
+            with suppress(OSError):
+                temporary.unlink(missing_ok=True)
+
+
 def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait):
+    _disable_password_services(profile_dir)
     args = [binary(), f"--user-data-dir={profile_dir}", f"--remote-debugging-port={port}", *flags()]
     if headless:
         args.append("--headless=new")
@@ -255,6 +296,7 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait):
         "profile": profile, "state_key": state_key, "pid": proc.pid, "port": port, "cdp_url": cdp_url,
         "profile_dir": str(profile_dir), "headless": headless, "ephemeral": ephemeral, "owner_pid": os.getpid(),
         "started_at": time.time(),
+        "password_services_disabled": True,
     }
     _state_file(state_key).write_text(json.dumps(record, indent=2))
     return {**record, "alive": True}

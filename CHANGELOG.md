@@ -12,6 +12,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Managed Chrome profiles disable password saving, automatic sign-in and online password leak checks before
+  launch, while preserving unrelated preferences. Older running profiles require a restart before reuse.
 - Device authorization preserves only its opaque device_code field; other token-request metadata follows
   the same default privacy rule as every other metadata request.
 - Cloud clients clean metadata on every route by default, including raw JSON. Named file/model/protocol inputs
