@@ -49,6 +49,17 @@ def test_runner_keeps_page_log_and_info_measurements(monkeypatch, level):
     assert result.get("page_console") == [{"level": level, "text": text}]
 
 
+@pytest.mark.parametrize("first_level", ["log", "info"])
+@pytest.mark.parametrize("later_level", ["log", "info"])
+def test_first_fifty_routine_lines_stay_after_a_later_routine_line_in_a_second_read(first_level, later_level):
+    first = [{"level": first_level, "text": f"original measurement {i}"} for i in range(50)]
+    result = {}
+    diagnostics.keep_console(result, {"page_console": first})
+    diagnostics.keep_console(result, {"page_console": [{"level": later_level, "text": "later measurement 50"}]})
+    assert result["page_console"] == first
+    assert result["page_console_omitted"] == 1
+
+
 @pytest.mark.parametrize("routine", ["log", "info"])
 @pytest.mark.parametrize("important", ["warn", "error"])
 def test_later_warning_or_error_replaces_a_routine_line_across_reads(routine, important):
