@@ -165,13 +165,14 @@
     return "";
   }
 
-  function name(el, metadataOnly) {
+  // Query inference must not borrow a nearby heading as the field's purpose.
+  function name(el, metadataOnly, explicitOnly) {
     const labelled = clean((el.getAttribute("aria-labelledby") || "").split(/\s+/)
       .map(value => { const node = document.getElementById(value); return node ? metadataOnly ? node.textContent : node.innerText : ""; }).join(" "));
     const labels = el.labels ? clean(Array.from(el.labels).map(label => metadataOnly ? label.textContent : label.innerText).join(" ")) : "";
     const field = /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable;
     const image = el.querySelector("img[alt]");
-    return (labelled || clean(el.getAttribute("aria-label")) || labels || (field ? nearLabel(el, metadataOnly) : "") ||
+    return (labelled || clean(el.getAttribute("aria-label")) || labels || (field && !explicitOnly ? nearLabel(el, metadataOnly) : "") ||
       clean(metadataOnly ? el.textContent : el.innerText) || (/^(button|submit|reset)$/i.test(el.type || "") ? clean(el.value) : "") ||
       clean(el.title) || (image ? clean(image.alt) : "")).slice(0, 60);
   }
@@ -361,7 +362,8 @@
         '. Use a date picker (input type="date" or a picker).', {value, placeholder}));
     }
     const mode = (el.getAttribute("inputmode") || "").toLowerCase();
-    const search = el.type === "search" || el.getAttribute("role") === "searchbox" || /\bsearch\b/i.test(label);
+    const queryName = name(el, true, true) || clean(el.getAttribute("placeholder"));
+    const search = el.type === "search" || el.getAttribute("role") === "searchbox" || /^\s*search\b/i.test(queryName);
     const notNumber = /\b(phone|tel|mobile|zip|postcode|post code|code|id|pin|otp|serial|cert|card number|iban|account)\b/i;
     const money = /\b(price|fee|cost|amount|total|rm|myr|usd|sgd|pay|payment|deposit|budget|offer|discount|tax|tip)\b|[$€£¥]/i.test(label);
     const count = /\b(qty|quantity|count|number of|how many|tables|stock|copies|pieces|pcs|age|year)\b/i.test(label);

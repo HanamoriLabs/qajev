@@ -23,6 +23,8 @@ PY = "qajev/ux_checks.py"
 DOM = "tests/test_ux_dom_live.py::"
 UNIT = "tests/test_ux_checks.py::"
 WIRE = "tests/test_ux_wires.py::"
+SEARCH = DOM + "test_search_fields_keep_text_keyboards_without_hiding_numeric_controls"
+SEARCH_CONTEXT = DOM + "test_numeric_fields_near_search_metadata_keep_numeric_findings"
 
 
 def row(name, test, path, before, after, *more):
@@ -30,15 +32,32 @@ def row(name, test, path, before, after, *more):
 
 
 FAULTS = [
-    row("I04-search-type", DOM + "test_search_fields_keep_text_keyboards_without_hiding_numeric_controls",
+    row("I04-search-type", SEARCH + "[numeric-query-type-search]",
         JS, 'el.type === "search" || el.getAttribute("role") === "searchbox"',
         'el.getAttribute("role") === "searchbox"'),
-    row("I05-search-role", DOM + "test_search_fields_keep_text_keyboards_without_hiding_numeric_controls",
+    row("I05-search-role", SEARCH + "[numeric-query-role-searchbox]",
         JS, 'el.type === "search" || el.getAttribute("role") === "searchbox" ||', 'el.type === "search" ||'),
-    row("I06-search-label", DOM + "test_search_fields_keep_text_keyboards_without_hiding_numeric_controls",
-        JS, '/\\bsearch\\b/i.test(label)', 'false'),
-    row("I07-search-guard", DOM + "test_search_fields_keep_text_keyboards_without_hiding_numeric_controls",
+    row("I06-search-label", SEARCH + "[card-name-label-stock]",
+        JS, '/^\\s*search\\b/i.test(queryName)', 'false'),
+    row("I07-search-guard", SEARCH + "[numeric-query-label-price]",
         JS, '&& !search &&', '&&'),
+    row("I08-search-word-boundary", SEARCH + "[card-name-label-stock]",
+        JS, '/^\\s*search\\b/i.test(queryName)', '/search/i.test(queryName)'),
+    row("I09-search-word-end", SEARCH + "[card-name-label-price]",
+        JS, '/^\\s*search\\b/i.test(queryName)', '/^\\s*search/i.test(queryName)'),
+    row("I10-search-prefix", SEARCH_CONTEXT,
+        JS, '/^\\s*search\\b/i.test(queryName)', '/\\bsearch\\b/i.test(queryName)'),
+    row("I11-search-near-heading", SEARCH_CONTEXT,
+        JS, 'const queryName = name(el, true, true)', 'const queryName = name(el, true)'),
+    row("I12-search-id-fallback", SEARCH_CONTEXT,
+        JS, 'const queryName = name(el, true, true) || clean(el.getAttribute("placeholder"));',
+        'const queryName = name(el, true, true) || clean(el.getAttribute("placeholder")) || '
+        'clean(el.getAttribute("name") || el.id);'),
+    row("I13-search-placeholder", SEARCH + "[numeric-query-placeholder-stock]",
+        JS, 'const queryName = name(el, true, true) || clean(el.getAttribute("placeholder"));',
+        'const queryName = name(el, true, true);'),
+    row("I14-search-case", SEARCH + "[card-name-label-stock]",
+        JS, '/^\\s*search\\b/i.test(queryName)', '/^\\s*search\\b/.test(queryName)'),
     row("K11-neutral-controls", DOM + "test_keyboard_neutral_point_never_clicks_backdrop_controls_even_past_the_cap",
         JS, 'isControl(p) || p.tagName === "LABEL"', 'p.tagName === "LABEL"'),
     row("K12-default-return", DOM + "test_default_keyboard_probe_sends_no_enter_event_or_app_send_action",

@@ -12,8 +12,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
-- Search fields keep their text keyboard when a query is numeric or its label contains words such as
-  "stock" or "price". Quantity and money fields still receive numeric-keyboard UX findings.
+- Search inputs and explicit labels or placeholders beginning with "Search" keep text keyboards for queries
+  such as card names and 151. Numeric fees, filters and fields near search headings still receive findings.
 - Device authorization preserves only its opaque device_code field; other token-request metadata follows
   the same default privacy rule as every other metadata request.
 - Cloud clients clean metadata on every route by default, including raw JSON. Named file/model/protocol inputs
