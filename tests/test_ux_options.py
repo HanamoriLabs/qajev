@@ -8,6 +8,7 @@ from qajev import cli, cloud, mcp_server, suite, ux_options
 
 def test_defaults_and_old_boolean_modes_are_resolved_without_shared_lists():
     assert ux_options.resolve()["ux"] == "advisory"
+    assert ux_options.resolve()["ux_keyboard_press_return"] is False
     assert ux_options.resolve({"ux": True})["ux"] == "advisory"
     assert ux_options.resolve({"ux": False})["ux"] == "off"
     first = ux_options.resolve()

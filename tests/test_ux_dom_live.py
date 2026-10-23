@@ -288,6 +288,85 @@ def inline(session, site, html, checks):
                            before_scan="document.body.innerHTML = " + json.dumps(html))
 
 
+@pytest.mark.parametrize("tag,preceding_controls", [("button", 0), ("a", 0), ("button", 300)])
+def test_keyboard_neutral_point_never_clicks_backdrop_controls_even_past_the_cap(page, site, tag, preceding_controls):
+    session, _ = page
+    hidden = '<button style="position:fixed;left:-1000px;top:-1000px">Off screen</button>' * preceding_controls
+    attributes = 'type="button"' if tag == "button" else 'href="#clicked-control"'
+    html = (hidden + f'<{tag} id="backdrop" {attributes} style="position:fixed;inset:0;display:block;'
+            'width:100%;height:100%;padding:0;margin:0;border:0;z-index:0">'
+            f'<span style="position:absolute;inset:0">Backdrop control</span></{tag}>'
+            '<input id="name" aria-label="Name" style="position:fixed;left:16px;top:32px;'
+            'width:300px;height:48px;z-index:2">')
+    observer = inline(session, site, html, ["keyboard"])
+    session.evaluate("window.proofControlClicks=0;document.querySelector('#backdrop').addEventListener('click',"
+                     "()=>proofControlClicks++);")
+    field = observer.probe("element", "#name")
+    neutral = observer.probe("neutralPoint", field["id"])
+    session.run_hook({"fill": {"#name": "Seeded fixture"}}, site)
+    assert {"neutral_point": neutral, "control_clicks": session.evaluate("proofControlClicks")} == {
+        "neutral_point": None, "control_clicks": 0,
+    }
+    assert session.evaluate("document.querySelector('#name').value") == "Seeded fixture"
+
+
+def test_default_keyboard_probe_sends_no_enter_event_or_app_send_action(page, site):
+    session, _ = page
+    inline(session, site, '<input id="message" aria-label="Message" enterkeyhint="send" '
+           'style="position:fixed;left:16px;top:32px;width:300px;height:48px">', ["keyboard"])
+    session.evaluate("window.proofSends=0;document.querySelector('#message').addEventListener('keydown',"
+                     "event=>{if(event.key==='Enter')proofSends++;});")
+    original = session.call
+    enter_events = []
+
+    def call(method, **params):
+        if method == "Input.dispatchKeyEvent" and (params.get("key") == "Enter"
+                                                 or params.get("windowsVirtualKeyCode") == 13):
+            enter_events.append(dict(params))
+        return original(method, **params)
+
+    session.call = call
+    session.run_hook({"fill": {"#message": "Keep this draft"}}, site)
+    assert {"enter_events": enter_events, "send_actions": session.evaluate("proofSends")} == {
+        "enter_events": [], "send_actions": 0,
+    }
+    assert session.evaluate("document.querySelector('#message').value") == "Keep this draft"
+
+
+def test_typed_desktop_keyboard_probe_makes_no_click_or_metrics_change(page, site):
+    session, _ = page
+    desktop = {"width": 1280, "height": 800, "mobile": False, "scale": 1}
+    session.set_device(desktop)
+    observer = inline(session, site, '<input id="name" aria-label="Name" '
+                      'style="position:fixed;left:16px;top:32px;width:300px;height:48px">', ["keyboard"])
+    session.evaluate("window.proofFocus=0;document.querySelector('#name').addEventListener('focus',"
+                     "()=>proofFocus++);")
+    original_call, original_click = session.call, session.trusted_click
+    metrics, clicks = [], []
+
+    def call(method, **params):
+        if method in {"Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride"}:
+            metrics.append({"method": method, **params})
+        return original_call(method, **params)
+
+    def click(x, y):
+        clicks.append([x, y])
+        return original_click(x, y)
+
+    session.call, session.trusted_click = call, click
+    # Exercise the real pre-typing boundary, without the user's legitimate fill
+    # action, so every recorded click or viewport change belongs to the probe.
+    assert observer.probe("element", "#name")["is_text_field"] is True
+    with session.ux_action("#name", typing=True, action="type into #name"):
+        pass
+    assert {"clicks": clicks, "metrics": metrics, "focus": session.evaluate("proofFocus")} == {
+        "clicks": [], "metrics": [], "focus": 0,
+    }
+    assert session.device == desktop
+    assert session.evaluate("({width:innerWidth,height:innerHeight})") == {"width": 1280, "height": 800}
+    assert {"check": "UX-KEYBOARD", "reason": "viewport is not a phone (1280 px wide)"} in observer.result["skipped"]
+
+
 @pytest.mark.parametrize("positions,expected", [([(145, 145)], 1), ([(115, 115)], 0),
                                                 ([(115, 115), (175, 115)], 1)])
 def test_cover_center_or_two_inset_points_boundary(page, site, positions, expected):

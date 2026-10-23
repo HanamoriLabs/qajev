@@ -30,6 +30,12 @@ def row(name, test, path, before, after, *more):
 
 
 FAULTS = [
+    row("K11-neutral-controls", DOM + "test_keyboard_neutral_point_never_clicks_backdrop_controls_even_past_the_cap",
+        JS, 'isControl(p) || p.tagName === "LABEL"', 'p.tagName === "LABEL"'),
+    row("K12-default-return", DOM + "test_default_keyboard_probe_sends_no_enter_event_or_app_send_action",
+        "qajev/ux_options.py", '"ux_keyboard_press_return": False,', '"ux_keyboard_press_return": True,'),
+    row("K13-desktop-width", DOM + "test_typed_desktop_keyboard_probe_makes_no_click_or_metrics_change",
+        PY, '        if width > 500:\n            self.skipped', '        if False:\n            self.skipped'),
     row("E01-crop-context", DOM + "test_inserted_tray_shifts_other_control_and_names_cause", JS,
         "for (const r of regions) if (area(r) > 0)", "for (const r of []) if (area(r) > 0)"),
     row("E02-old-outline", DOM + "test_inserted_tray_shifts_other_control_and_names_cause", JS,

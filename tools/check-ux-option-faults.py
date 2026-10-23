@@ -57,6 +57,8 @@ FAULTS = [
      'if False:', INVALID, 0),
     ("O18", "qajev/ux_options.py", 'if key in out and out[key] not in choices:',
      'if False:', INVALID, 0),
+    ("O19", "qajev/ux_options.py", '"ux_keyboard_press_return": False,',
+     '"ux_keyboard_press_return": True,', DEFAULTS, 0),
 ]
 
 
