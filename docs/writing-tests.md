@@ -742,10 +742,15 @@ expect:
     js: At least eight wall pixels and a finite panel difference of at least 0.3
 ```
 
-`report.json` keeps the complete returned JS value and failure reason, plus the structured `evidence` and
+`report.json` keeps the returned JS value and failure reason, plus the structured `evidence` and
 `evidence_type: js`. Known secrets and local filesystem paths are cleaned. These measurements are data:
 keys such as `crop` or `reference` never become image links or downloadable artifacts. HTML and Markdown
 show the values as escaped text; long returned values can be opened in the HTML report.
+
+Normal diagnostics stay complete. Each reason, returned value and page-error finding keeps up to 64 KiB of
+UTF-8 text after privacy cleaning, plus a visible `[truncated N characters]` marker when needed. Whole
+characters are retained. An evidence object whose serialized JSON exceeds 64 KiB is replaced by
+`{"_qajev_truncated": "[truncated N characters]"}`; smaller objects keep their numbers and JSON types.
 
 Scenarios also retain page console warnings and errors under `page_console`. Objects are serialized so their
 numbers remain visible. One scenario keeps at most 50 lines of 500 characters, after privacy cleaning;

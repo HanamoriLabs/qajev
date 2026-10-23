@@ -56,6 +56,24 @@ def test_browser_keeps_long_check_values_and_errors(page, site):
                        for error in observed["probe"]["errors"])
 
 
+def test_frame_console_error_stays_out_of_the_top_page_console(page, site):
+    session, _ = open_fixture(page, site)
+    session.evaluate("""new Promise(resolve => {
+      const frame = document.createElement('iframe');
+      frame.src = '/ux-clean.html?frame';
+      frame.onload = () => { frame.contentWindow.console.error('frame-only diagnostic'); resolve(true); };
+      document.body.append(frame);
+    })""")
+    probe = session.probe({})["probe"]
+    assert probe.get("page_console", []) == []
+    frame = session.evaluate("""(() => {
+      const q = document.querySelector('iframe').contentWindow.__qajev;
+      return {...q.drain(), frame_console: q.drainConsole()};
+    })()""")
+    assert frame["page_console"] == []
+    assert {"level": "error", "text": "frame-only diagnostic"} in frame["frame_console"]
+
+
 def test_browser_keeps_the_complete_shown_value_of_non_data_results(page, site):
     session, _ = open_fixture(page, site)
     text = 'function diagnostic ' * 60 + 'last measured number 0.29'

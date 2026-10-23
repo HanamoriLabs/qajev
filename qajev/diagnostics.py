@@ -10,6 +10,7 @@ from .config import redact
 CONSOLE_LINES = 50
 CONSOLE_CHARACTERS = 500
 CONSOLE_LEVELS = {"warn", "error"}
+DIAGNOSTIC_BYTES = 64 * 1024
 
 
 def _redacted(value: Any) -> Any:
@@ -30,6 +31,24 @@ def clean_data(value: Any) -> Any:
     """Keep JSON types and measured numbers while cleaning strings before retention."""
     encoded = json.dumps(_redacted(value), ensure_ascii=False).encode("utf-8")
     return json.loads(sanitize_upload(encoded))
+
+
+def bound_text(text: str) -> str:
+    """Bound an already cleaned diagnostic, retaining whole UTF-8 characters and a visible cut count."""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= DIAGNOSTIC_BYTES:
+        return text
+    kept = encoded[:DIAGNOSTIC_BYTES].decode("utf-8", errors="ignore")
+    return kept + f"\n[truncated {len(text) - len(kept)} characters]"
+
+
+def clean_evidence(value: dict) -> dict:
+    """Keep typed measurements, or an explicit marker when the whole evidence object exceeds one item."""
+    public = clean_data(value)
+    shown = json.dumps(public, ensure_ascii=False)
+    if len(shown.encode("utf-8")) <= DIAGNOSTIC_BYTES:
+        return public
+    return {"_qajev_truncated": f"[truncated {len(shown)} characters]"}
 
 
 def keep_console(result: dict, probe: dict) -> None:

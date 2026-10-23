@@ -9,7 +9,7 @@ import re
 from typing import Any, TypeGuard
 from urllib.parse import urlsplit
 
-from .diagnostics import clean_data
+from .diagnostics import bound_text, clean_data, clean_evidence
 
 OUTCOMES = ("pass", "fail", "stuck", "harness", "unverified", "skipped")
 # Stop reasons that mean the harness, not the product, ended the scenario.
@@ -69,7 +69,7 @@ def page_checks(expect, observed):
                        **({"broke": True} if check_broke(raw) else {})})
         measured = raw.get("value") if isinstance(raw, dict) else None
         if _measured_result(measured) and "error" not in raw:
-            checks[-1].update(evidence=clean_data(measured["evidence"]), evidence_type="js")
+            checks[-1].update(evidence=clean_evidence(measured["evidence"]), evidence_type="js")
     says = expect.get("says") or {}  # the checks only their author can describe, in the author's words
     for c in checks:
         kind = "js" if c["check"].startswith("js ") else "url_regex" if c["check"].startswith("url matches ") else None
@@ -129,27 +129,27 @@ def js_result(r):
     string as the reason; false and null say so; any other value fails as the wrong type, so nothing leans on
     truthiness again. An explicit {ok: boolean, says: string, evidence: object} also gives a verdict and measurements.
     `r` is the page's {value} | {error} | {type, shown}, or a bare value. Waits stay truthy.
-    -> (ok, detail, value): complete public diagnostics, without a character cut."""
+    -> (ok, detail, value): public diagnostics, with visible cuts only above the 64 KiB per-item limit."""
     if not isinstance(r, dict):
         r = {"error": r[len("error: "):]} if isinstance(r, str) and r.startswith("error: ") else {"value": r}
     if "error" in r:
-        return False, clean_data(f"error: {r['error']}"), None
+        return False, bound_text(clean_data(f"error: {r['error']}")), None
     if "type" in r:
-        return False, f"check must return true, got {r['type']}", clean_data(str(r.get("shown") or r["type"]))
+        return False, f"check must return true, got {r['type']}", bound_text(clean_data(str(r.get("shown") or r["type"])))
     value = r.get("value")
     if _measured_result(value):
         public = clean_data(value)
-        return value["ok"], None if value["ok"] else public["says"], json.dumps(public)
+        return value["ok"], None if value["ok"] else bound_text(public["says"]), bound_text(json.dumps(public))
     if value is True:
         return True, None, "true"
     if isinstance(value, str):
-        public = clean_data(value)
+        public = bound_text(clean_data(value))
         return False, public or "returned an empty string", public
     if value is False or value is None:
         said = json.dumps(value)
         return False, f"returned {said}", said
     kind = "number" if isinstance(value, (int, float)) else "array" if isinstance(value, list) else "object"
-    return False, f"check must return true, got {kind}", json.dumps(clean_data(value))
+    return False, f"check must return true, got {kind}", bound_text(json.dumps(clean_data(value)))
 
 
 def _check(name, ok, detail=None):
@@ -383,7 +383,7 @@ def findings_from_probe(probe, *, scenario, url, first_party_hosts, why=None):
     given, says why a resource failed to load (Chrome's net::ERR_*, from netlog)."""
     out = []
     for err in (probe or {}).get("errors", []):
-        kind, detail = err.get("kind"), clean_data(str(err.get("detail", "")))
+        kind, detail = err.get("kind"), bound_text(clean_data(str(err.get("detail", ""))))
         host = urlsplit(detail).netloc if detail.startswith("http") else None
         third_party = bool(host) and host not in first_party_hosts
         if kind in {"exception", "rejection"}:

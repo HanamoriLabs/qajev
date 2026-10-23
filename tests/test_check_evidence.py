@@ -66,6 +66,77 @@ def test_console_error_findings_keep_the_complete_diagnostic():
     assert len(found) == 1 and found[0]["detail"] == LONG
 
 
+@pytest.mark.parametrize("length", [65535, 65536, 65537, 2_000_000])
+def test_js_reason_and_value_have_a_visible_per_item_boundary(length):
+    text = "x" * length
+    expected = text if length <= 65536 else "x" * 65536 + f"\n[truncated {length - 65536} characters]"
+    ok, detail, value = verdict.js_result({"value": text})
+    assert ok is False and bool(detail == expected) and bool(value == expected)
+
+
+@pytest.mark.parametrize("kind", ["console", "exception", "rejection", "worker"])
+def test_page_error_findings_bound_each_oversized_item(kind):
+    text = "x" * 2_000_000
+    [finding] = verdict.findings_from_probe({"errors": [{"kind": kind, "detail": text}]},
+                                            scenario="fixture", url="http://127.0.0.1/",
+                                            first_party_hosts={"127.0.0.1"})
+    assert bool(finding["detail"] == "x" * 65536 + "\n[truncated 1934464 characters]")
+
+
+@pytest.mark.parametrize("wire", ["error", "shown", "object", "measured"])
+def test_all_js_diagnostic_wires_bound_oversized_text(wire):
+    text = "x" * 2_000_000
+    raw = {"error": text} if wire == "error" else {"type": "function", "shown": text} if wire == "shown" else {
+        "value": {"message": text} if wire == "object" else {"ok": False, "says": text, "evidence": {"ratio": 0.29}}}
+    [check] = verdict.page_checks({"js": "fixture"}, {"js": raw})
+    assert check["ok"] is False
+    outputs = ([check["detail"]] if wire == "error" else [check["value"]] if wire in {"shown", "object"}
+               else [check["detail"], check["value"]])
+    assert all(len(item.encode()) < 65600 and "[truncated " in item for item in outputs)
+    if wire == "measured":
+        assert check["evidence"] == {"ratio": 0.29}
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("🧪" * 16384, "🧪" * 16384),
+    ("x" * 65535 + "🧪", "x" * 65535 + "\n[truncated 1 characters]"),
+])
+def test_item_bound_counts_utf8_bytes_without_splitting_a_character(text, expected):
+    _, detail, value = verdict.js_result({"value": text})
+    assert bool(detail == expected) and bool(value == expected)
+
+
+def test_item_bound_cleans_the_whole_secret_and_path_before_cutting(monkeypatch):
+    secret = "SYNTHETIC-BOUNDARY-SECRET-ABCDEFGHIJK"
+    monkeypatch.setattr(config, "_REMEMBERED", {secret})
+    text = "x" * 65530 + secret + " /Users/DiagnosticPerson/repo/check.js " + "z" * 500
+    _, detail, value = verdict.js_result({"value": text})
+    assert isinstance(value, str)
+    assert detail == value and len(value.encode()) < 65600 and "[truncated " in value
+    assert value.startswith("x" * 65530 + "[redac")
+    assert "SYNTHETIC" not in value and "DiagnosticPerson" not in value
+
+
+@pytest.mark.parametrize("length,kept", [(65520, True), (65521, True), (65522, False), (2_000_000, False)])
+def test_structured_evidence_has_its_own_item_boundary(length, kept):
+    evidence = {"message": "x" * length}
+    [check] = verdict.page_checks({"js": "fixture"}, {"js": {"value": {
+        "ok": False, "says": "measured", "evidence": evidence}}})
+    assert check["detail"] == "measured" and check["evidence_type"] == "js"
+    if kept:
+        assert bool(check["evidence"] == evidence)
+    else:
+        assert bool(check["evidence"] == {"_qajev_truncated": f"[truncated {length + 15} characters]"})
+
+
+def test_oversized_diagnostics_write_visible_markers_to_all_reports(tmp_path):
+    [check] = verdict.page_checks({"js": "fixture"}, {"js": {"value": "x" * 2_000_000}})
+    report.write(tmp_path, document(tmp_path, check))
+    for name in ("report.json", "report.html", "report.md"):
+        text = (tmp_path / name).read_text()
+        assert "[truncated 1934464 characters]" in text and "x" * 65537 not in text
+
+
 def document(folder, check, **extra):
     scenario = {"name": "measured", "about": "measured values explain the failure", "outcome": "fail",
                 "reason": "one check failed", "seconds": 1, "checks": [check], "findings": [], "screens": [], **extra}
