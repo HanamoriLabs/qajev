@@ -164,6 +164,7 @@ REACT_JS = Template("""(async () => {
 
 PROBE_JS = Template("""(async () => {
   const q = window.__qajev;
+  const diagnostic = $diagnostic_limit;
   const probe = q ? q.probe() : null;
   // Visible text as a person reads it: CSS text-transform applies, and runs of whitespace (line breaks from <br>,
   // wrapped markup) count as one space on both sides. ignore_case for labels styled in capitals.
@@ -287,6 +288,9 @@ PROBE_JS = Template("""(async () => {
     }
     const kind = v instanceof Element ? 'element' : v instanceof Node ? 'node' : typeof v;
     js = 'error' in r ? { error: r.error } : data ? { value: v } : { type: kind, shown: String(v) };
+    if ('error' in js) js.error = diagnostic.error(js.error);
+    else if ('value' in js) js.value = diagnostic.value(js.value);
+    else js.shown = diagnostic.text(js.shown);
   }
   let status = null;
   try { status = performance.getEntriesByType('navigation')[0].responseStatus || null; } catch (e) {}
@@ -1029,7 +1033,8 @@ class Session:
     def probe(self, expect):
         spec = {"text": expect.get("text", []), "absent": expect.get("absent", []), "js": bool(expect.get("js")),
                 "ci": bool(expect.get("ignore_case")), "visible": expect.get("visible", [])}
-        expression = PROBE_JS.substitute(spec=json.dumps(spec), js=awaited(expect.get("js") or "null"))
+        expression = PROBE_JS.substitute(spec=json.dumps(spec), js=awaited(expect.get("js") or "null"),
+                                         diagnostic_limit=guard_mod.DIAGNOSTIC_LIMIT)
         out = self.evaluate(expression) or {}
         if isinstance(out.get("probe"), dict):
             for key, items in self.frames_drained().items():  # the frames' own records, after the page's
