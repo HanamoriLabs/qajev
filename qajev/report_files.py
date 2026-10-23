@@ -30,6 +30,21 @@ def _objects(value):
     return value
 
 
+def ux_details(scenario: dict) -> dict | None:
+    """New deterministic findings, apart from legacy UX note lists and an explicitly disabled scan."""
+    value = scenario.get("ux")
+    if not isinstance(value, dict) or value.get("mode") == "off":
+        return None
+    _objects(value.get("findings"))
+    return value
+
+
+def ux_crop(finding: dict) -> str | None:
+    """UX crops belong to the run's UX folder, never an absolute path or an external URL."""
+    path = finding.get("screenshot")
+    return path if relative(path) and path.startswith("ux/") else None
+
+
 def image_paths(data: dict) -> list[str]:
     """Every safe run-relative frame named by the full report, once, in stable order."""
     named = set()
@@ -49,6 +64,9 @@ def image_paths(data: dict) -> list[str]:
                 raise ValueError("invalid report claim evidence metadata")
             if evidence:
                 paths.extend(evidence.get(key) for key in ("crop", "reference", "panel", "difference"))
+        ux = ux_details(scenario)
+        if ux is not None:
+            paths.extend(ux_crop(finding) for finding in _objects(ux.get("findings")))
         named.update(path for path in paths if relative(path))
     return sorted(named)
 

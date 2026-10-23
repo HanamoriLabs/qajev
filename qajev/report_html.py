@@ -7,9 +7,10 @@ import re
 from datetime import datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from . import plan as plan_mod
+from .report_files import ux_crop, ux_details
 from .verdict import NO_ADDRESS, hidden_list
 
 # The red banner of a run that showed destructive controls (allow_destructive; refused for a production host).
@@ -285,6 +286,10 @@ def _scenario(i, r, who="Jev"):
              f'<p class="about"><strong>{title}:</strong> '
              + (_e(r["about"]) if r.get("about") else f"{NOT_DESCRIBED}: this test has no about") + "</p>",
              f'<p>{_e(r.get("reason"))}</p>']
+    ux = ux_details(r)
+    if ux is not None:
+        parts.append(f'<p><strong>{_e(ux_summary(r))}</strong></p>')
+        parts.append(_scenario_ux(r, ux))
     if r.get("expected"):
         parts.append(f'<p class="planted"><span class="tag">{_e(planted_tag(r))}</span> Gate: '
                      f'{_e(r.get("graded_reason"))}</p>')
@@ -540,7 +545,7 @@ def _ux(data):
     from .report import BASIS
 
     ux = data.get("ux") or {}
-    pages = [(r["name"], r["ux"]) for r in data["scenarios"] if r.get("ux")]
+    pages = [(r["name"], r["ux"]) for r in data["scenarios"] if isinstance(r.get("ux"), list) and r["ux"]]
     if not pages and not ux.get("consistency"):
         return ""
     out = ["<h2>UX</h2>", '<p class="muted">Notes on how easy the pages are to use. They never change the gate; each '
@@ -557,6 +562,64 @@ def _ux(data):
         none = '<p class="muted">No differences between pages.</p>'
         out.append(f'<div class="card"><h3>Design consistency ({_e(device)})</h3>'
                    + (f"<ul>{items}</ul>" if items else none) + "</div>")
+    return "".join(out)
+
+
+def ux_summary(scenario):
+    """Add advisory context to the existing verdict; the runner alone decides that verdict."""
+    ux = ux_details(scenario)
+    outcome = scenario["outcome"]
+    if ux is None:
+        return outcome
+    if ux.get("status") == "incomplete":
+        return f"{outcome.upper()} · UX scan incomplete"
+    suffix = " advisory" if ux.get("mode") != "strict" else ""
+    return f"{outcome.upper()} · UX {len(ux.get('findings') or [])}{suffix}"
+
+
+def _ux_note(note):
+    from .report import BASIS
+
+    if not isinstance(note, dict):
+        return f"<li>{_e(note)}</li>"
+    if "kind" not in note:
+        return f"<li>{_e(json.dumps(note, ensure_ascii=False, sort_keys=True))}</li>"
+    basis = note.get("basis")
+    return (f"<li><strong>{_e(note['kind'])}</strong>"
+            + (f" ({_e(BASIS.get(basis, basis))})" if basis else "") + f": {_e(note.get('detail'))}"
+            + (f'<br><span class="muted">Rule: {_e(note["rule"])}</span>' if note.get("rule") else "")
+            + ("<ul>" + "".join(f"<li>{_e(sample)}</li>" for sample in note["samples"]) + "</ul>"
+               if note.get("samples") else "") + "</li>")
+
+
+def _scenario_ux(scenario, ux):
+    out = ["<h4>UX</h4>"]
+    if ux.get("status") == "incomplete":
+        out.append("<p><strong>Scan incomplete.</strong></p>")
+    rows = []
+    for finding in ux.get("findings") or []:
+        check = finding.get("check")
+        path = ux_crop(finding)
+        crop = _shot(quote(path, safe="/"), f"{check} crop", f"{scenario['name']} · {check} · step "
+                     f"{finding.get('step')}") if path else '<span class="muted">Not saved</span>'
+        message = _e(finding.get("message"))
+        if (finding.get("repeats") or 1) > 1:
+            message += f" Repeated {_e(finding['repeats'])} times."
+        rows.append([_e(check), _e(finding.get("severity")), _e(finding.get("step")), message,
+                     f"<code>{_e((finding.get('element') or {}).get('key'))}</code>", crop])
+    if rows:
+        out.append(_table(["Check", "Severity", "Step", "Message", "Element key", "Crop"], rows))
+    elif ux.get("status") != "incomplete":
+        out.append('<p class="muted">No UX findings.</p>')
+    notes = []
+    for skipped in ux.get("skipped") or []:
+        unchecked = "".join(f"<li>Not checked: {_e(field.get('desc'))} <code>{_e(field.get('key'))}</code></li>"
+                            for field in skipped.get("unchecked") or [])
+        notes.append(f"<li>Skipped {_e(skipped.get('check'))}: {_e(skipped.get('reason'))}"
+                     + (f"<ul>{unchecked}</ul>" if unchecked else "") + "</li>")
+    notes += [_ux_note(note) for note in ux.get("notes") or []]
+    if notes:
+        out.append("<ul>" + "".join(notes) + "</ul>")
     return "".join(out)
 
 
@@ -604,7 +667,8 @@ def render(data):
                    "</div>")
 
     out.append(_plan(data.get("plan") or plan_mod.from_results(data["scenarios"]), data["scenarios"]))
-    rows = [[f'<a href="#s{i}">{_e(r["name"])}</a>', _pill(r["outcome"]), _e(r.get("reason")),
+    rows = [[f'<a href="#s{i}">{_e(r["name"])}</a>', _pill(r["outcome"])
+             + (f"<br>{_e(ux_summary(r))}" if ux_details(r) is not None else ""), _e(r.get("reason")),
              _link(r.get("end_url") or r.get("url"))] for i, r in enumerate(data["scenarios"])]
     out += ["<h2>Scenarios</h2>", _table(["Scenario", "Outcome", "Why", "Ended at"], rows) or
             '<p class="muted">No scenarios ran.</p>']

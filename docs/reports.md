@@ -108,6 +108,11 @@ A smoke crawl lists every page it visited, its outcome, and the findings per pag
 
 ## UX
 
+Saved deterministic UX findings appear beside each scenario's verdict, with
+their crops below it. See the [deterministic UX report contract](ux-report-contract.md)
+for modes, incomplete scans and evidence rules. The report renderer preserves
+the outcome supplied by the runner.
+
 A smoke crawl also measures how easy each page is to use, and adds a **UX** section to the report. It costs nothing
 (no model calls) and never changes the gate: a UX note is advice, not a failure. Each note says what it rests on
 (**measured** here) and the rule it was measured against, with examples:
