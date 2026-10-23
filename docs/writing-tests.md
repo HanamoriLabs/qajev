@@ -721,3 +721,39 @@ Cloud report downloads keep the final shot, every multiplayer client's shot, rea
 claim evidence. A required frame that is missing fails the download with its path and leaves the previous report
 intact. A report that already declares missing evidence must have a failing or incomplete gate. Unsafe paths
 outside the report folder are never downloaded.
+## Measured JavaScript results
+
+A JS check can return an explicit result with its measured values. `ok` must be a boolean, `says` a string,
+and `evidence` a JSON object. Ordinary objects still fail; QAJev never grades an object by truthiness.
+Promises are awaited, and the expression runs once per page read.
+
+```yaml
+expect:
+  js: |
+    (() => {
+      const evidence = {pixels: window.wallPixels, minimum: 8, ratio: window.panelDifference, threshold: 0.3};
+      return {
+        ok: evidence.pixels >= evidence.minimum && Number.isFinite(evidence.ratio) && evidence.ratio >= evidence.threshold,
+        says: 'Wall pixels ' + evidence.pixels + ' (need 8); panel difference ' + evidence.ratio + ' (need 0.3)',
+        evidence
+      };
+    })()
+  says:
+    js: At least eight wall pixels and a finite panel difference of at least 0.3
+```
+
+`report.json` keeps the returned JS value and failure reason, plus the structured `evidence` and
+`evidence_type: js`. Known secrets and local filesystem paths are cleaned. These measurements are data:
+keys such as `crop` or `reference` never become image links or downloadable artifacts. HTML and Markdown
+show the values as escaped text; long returned values can be opened in the HTML report.
+
+Normal diagnostics stay complete. Each reason, returned value and page-error finding keeps up to 64 KiB of
+UTF-8 text after privacy cleaning, plus a visible `[truncated N characters]` marker when needed. Whole
+characters are retained. An evidence object whose serialized JSON exceeds 64 KiB is replaced by
+`{"_qajev_truncated": "[truncated N characters]"}`; smaller objects keep their numbers and JSON types.
+
+Scenarios also retain page console warnings and errors under `page_console`. Objects are serialized so their
+numbers remain visible. One scenario keeps at most 50 lines of 500 characters, after privacy cleaning;
+`truncated: true` marks a shortened line and `page_console_omitted` counts omitted lines. Navigation within a
+scenario retains its diagnostics, while the next scenario starts its own console record. These diagnostics
+do not add a new pass/fail rule; existing console-error findings keep their verdict behavior.

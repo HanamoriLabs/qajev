@@ -12,6 +12,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- JavaScript checks retain returned values and failure reasons up to 64 KiB per item, with visible cut counts
+  above that limit. Oversized measurement objects show a truncation marker. Explicit `{ok, says, evidence}` results
+  attach measured numbers to the report, and each scenario keeps bounded page warnings/errors with visible
+  omission counts. Measurement data is escaped and never treated as image paths.
 - Managed Chrome profiles disable password saving, automatic sign-in and online password leak checks before
   launch, while preserving unrelated preferences. Older running profiles require a restart before reuse.
 - Device authorization preserves only its opaque device_code field; other token-request metadata follows

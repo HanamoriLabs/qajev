@@ -413,13 +413,27 @@ def markdown(data):
             lines.append("")
         for check in r.get("checks", []):
             mark = "✅" if check["ok"] else "❌"
-            lines.append(f"- {mark} {_cell(check['check'], 200)}" + (f" — {_cell(check['detail'], None)}"
+            lines.append(f"- {mark} {_cell(check['check'], 200)}" + (f" — {_ux_cell(check['detail'])}"
                                                                        if check.get("detail") else ""))
             evidence = check.get("evidence")
+            if check.get("ok") is False and check.get("value") is not None:
+                value = check["value"]
+                text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)
+                lines += ["", "Returned value:", "", "    " + text.replace("\n", "\n    "), ""]
             if isinstance(evidence, dict):
-                lines += ["", "Claim evidence: " + json.dumps(evidence, ensure_ascii=False, sort_keys=True), "",
-                          " · ".join(f"[{key}]({evidence[key]})" for key in
-                                     ("crop", "reference", "panel", "difference") if evidence.get(key)), ""]
+                text = json.dumps(evidence, ensure_ascii=False, sort_keys=True, indent=2)
+                lines += ["", "Claim evidence:", "", "    " + text.replace("\n", "\n    "), ""]
+                if check.get("evidence_type") != "js":
+                    lines += [" · ".join(f"[{key}]({evidence[key]})" for key in
+                                         ("crop", "reference", "panel", "difference") if evidence.get(key)), ""]
+        if r.get("page_console") or r.get("page_console_omitted"):
+            lines += ["", "Page console:", ""]
+            for entry in r.get("page_console") or []:
+                text = f"{entry.get('level')}: {entry.get('text')}" + (" [truncated]" if entry.get("truncated") else "")
+                lines += ["    " + text.replace("\n", "\n    ")]
+            if r.get("page_console_omitted"):
+                lines += ["", f"{r['page_console_omitted']} console lines omitted"]
+            lines += [""]
         diagnostics = r.get("diagnostics")
         if isinstance(diagnostics, dict):
             state = "complete" if diagnostics.get("complete") else "incomplete"
