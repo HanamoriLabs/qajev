@@ -41,6 +41,14 @@ accept the same option names.
 | UX-TAP | A tap area is smaller than 44 CSS pixels (with a 0.5 pixel rounding allowance). |
 | UX-CLIP | A primary label has ellipsis or text is partly hidden by hard clipping. |
 
+The number-keyboard check skips search queries: `type="search"`,
+`role="searchbox"`, or an accessible label or placeholder beginning with the
+word search. Nearby headings and internal field names or IDs do not establish
+a query, and a label such as Max price to search still describes a numeric field.
+For example, Search stock can accept both a card name and `151` with a text
+keyboard. Stock quantity, money fields and numeric price filters still receive
+numeric-keyboard findings.
+
 Keyboard checks use a real viewport resize before typing, then restore metrics,
 scroll and focus before the requested step. The default checks typed fields;
 `ux_keyboard_scope: all` also checks visible fields on each new screen. Desktop
