@@ -471,6 +471,20 @@ def test_numeric_fields_near_search_metadata_keep_numeric_findings(page, site):
         ("UX-INPUT-NUMBER", "#search-max-price")], observer.result
 
 
+@pytest.mark.parametrize("label", [
+    '<label for="price">Price</label>',
+    '',
+], ids=["associated-label", "aria-label"])
+def test_numeric_label_wins_over_a_search_placeholder(page, site, label):
+    session, _ = page
+    aria = '' if label else 'aria-label="Price"'
+    observer = inline(session, site, label + f'<input id="price" {aria} placeholder="Search..." value="10">',
+                      ["input-kind"])
+    assert [(item["check"], item["element"]["key"]) for item in observer.result["findings"]] == [
+        ("UX-INPUT-NUMBER", "#price")], observer.result
+    assert observer.result["findings"][0]["data"]["kind"] == "money"
+
+
 def test_secondary_ellipsis_is_allowed_but_partial_hard_clip_is_reported(page, site):
     session, _ = page
     observer = inline(session, site, '<div style="font-size:14px;font-weight:400;width:60px;overflow:hidden;'
