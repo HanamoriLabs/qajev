@@ -27,7 +27,7 @@ CONTROLS_JS = """(() => {
     ? e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.getAttribute('name') || e.type
     : e.getAttribute('aria-label') || e.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 40);
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  window.__qajevUx = new Map();
+  window.__qajevUxLegacy = new Map();
   const out = [];
   let n = 0;
   for (const e of document.querySelectorAll('a[href], button, input:not([type="hidden"]), select, textarea, ' +
@@ -38,7 +38,7 @@ CONTROLS_JS = """(() => {
     if (r.width < 1 || r.height < 1) continue;
     const id = 'c' + (n++);
     e.dataset.qajevUx = id;
-    window.__qajevUx.set(id, look(e));
+    window.__qajevUxLegacy.set(id, look(e));
     out.push({ id, path: path(e), said: said(e) });
   }
   return out;
@@ -74,7 +74,7 @@ FOCUSED_JS = """(() => {
     s.textDecorationLine].join('|');
   const id = e.dataset ? e.dataset.qajevUx || null : null;
   const r = e.getBoundingClientRect();
-  return { id, changed: id ? now !== window.__qajevUx.get(id) : null, tag: e.tagName.toLowerCase(),
+  return { id, changed: id ? now !== window.__qajevUxLegacy.get(id) : null, tag: e.tagName.toLowerCase(),
            onscreen: r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth, cancelled };
 })()"""
 

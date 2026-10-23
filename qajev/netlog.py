@@ -18,6 +18,7 @@ waitForDebuggerOnStart), puts the guard and the block list in it, and only then 
 import contextlib
 import itertools
 import json
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -99,6 +100,8 @@ class Failures(threading.Thread):
         self.block_list = []  # requests to a blocked address, since the last take
         self.listed = OrderedDict()  # request id -> its block_list entry, until Chrome says how it ended
         self.inflight = OrderedDict()  # request id -> (address, method, document, when sent): not finished yet
+        self.ux_requests = {}
+        self.ux_activity = time.monotonic()
         self.gone_wrong = []  # requests that failed since the last frame_requests: {method, url, frame, state}
         self.contexts = {}  # frame id -> its page-world execution context (Runtime), for drain_frames
         self.runtime = False
@@ -135,6 +138,16 @@ class Failures(threading.Thread):
         method, params = message.get("method"), message.get("params") or {}
         sid = message.get("sessionId")  # an attached frame's events carry its session; the page's carry none
         with self.lock:
+            rid = (sid, params.get("requestId"))
+            if method == "Network.requestWillBeSent":
+                url = (params.get("request") or {}).get("url", "")
+                streaming = params.get("type") in {"WebSocket", "EventSource"}
+                if not streaming and not re.search(r"(?:hot-update|/__hmr|/hot\?|/symbolicate)", url):
+                    self.ux_requests[rid] = time.monotonic()
+                    self.ux_activity = time.monotonic()
+            elif method in {"Network.loadingFinished", "Network.loadingFailed"} and rid in self.ux_requests:
+                self.ux_requests.pop(rid, None)
+                self.ux_activity = time.monotonic()
             if "id" in message and message["id"] in self.replies:
                 waiter = self.replies[message["id"]]
                 waiter[1] = message
@@ -196,6 +209,14 @@ class Failures(threading.Thread):
                 self.contexts = {f: c for f, c in self.contexts.items() if c != gone}
             elif method == "Runtime.executionContextsCleared":
                 self.contexts = {}
+
+    def ux_quiet_ms(self):
+        """Quiet time for UX settle, ignoring streaming and ten-second long polls."""
+        now = time.monotonic()
+        with self.lock:
+            if any(now - sent < 10 for sent in self.ux_requests.values()):
+                return 0
+            return (now - self.ux_activity) * 1000
 
     def _send(self, method, session=None, **params):
         """Send a command without waiting for its reply: a frame paused at its start waits for these, in order."""

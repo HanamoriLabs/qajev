@@ -112,6 +112,15 @@ def _motion_args(motion):
     return ["--motion", motion]
 
 
+def _ux_args(values):
+    from . import ux_options
+
+    try:
+        return ux_options.cli_args(values)
+    except ValueError as e:
+        raise ToolError(str(e)) from None
+
+
 def _browser_args(profile, cdp_url, headless):
     """Agents get a headless throwaway Chrome by default: nothing appears on the person's screen and nothing is
     left behind. Name a `profile` for signed-in runs (the person signs in once with qa_browser login)."""
@@ -355,7 +364,7 @@ def _trim(report, verbose):
             "stop_detail", "not_run", "seconds", "cost_usd", "end_url",
             "checks", "findings", "shot", "jev", "blocked_writes", "allowed_writes", "dialogs", "page_says",
             "needs_sign_in", "block_list_requests", "frames_not_observed", "frames_accepted", "frame_console",
-            "frame_requests", "effect")
+            "frame_requests", "effect", "ux")
     out = {k: v for k, v in report.items() if k not in ("scenarios", "plan")}  # the plan repeats the scenarios
     out["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [], {})} for r in report["scenarios"]]
     for r in out["scenarios"]:
@@ -425,6 +434,16 @@ async def qa_check(
     runner: str | None = None,
     serve: str | None = None,
     model: str | None = None,
+    ux: str | bool | None = None,
+    ux_checks: list[str] | None = None,
+    ux_keyboard_scope: str | None = None,
+    ux_keyboard_ratio: float | None = None,
+    ux_keyboard_main: str | None = None,
+    ux_keyboard_press_return: bool | None = None,
+    ux_settle_ms: int | None = None,
+    ux_shift_px: float | None = None,
+    ux_tap_min_px: float | None = None,
+    ux_max_findings: int | None = None,
 ) -> dict:
     """Run one QA scenario: open `url`, optionally let Jev pursue `goal`, then judge the page.
 
@@ -440,6 +459,8 @@ async def qa_check(
     device: desktop | tall | phone | tablet | WIDTHxHEIGHT pins one; otherwise `devices` (default desktop and
     phone). real_devices: also in ios Safari / android Chrome on a throwaway simulator (read-only, slower).
     about: what this test proves and why, in plain words, for the person reading the report (always give it).
+    ux: advisory (default), strict (UX findings fail), or off. Deterministic checks use no model calls.
+    ux_checks: cover, keyboard, shift, input-kind, tap and clip; omitted options inherit suite/default values.
     expect_fail: a planted fault: the says text of the one check it must fail on (true: the test's only check). It
     counts as met only when it fails there; a pass, or a failure on another check, turns the gate FAIL.
     Returns the report with a gate and findings.
@@ -492,6 +513,7 @@ async def qa_check(
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)
+    args += _ux_args(locals())
     return _trim(await _dispatch(args, where, ctx, background), verbose)
 
 
@@ -519,10 +541,22 @@ async def qa_run_suite(
     runner: str | None = None,
     serve: str | None = None,
     model: str | None = None,
+    ux: str | bool | None = None,
+    ux_checks: list[str] | None = None,
+    ux_keyboard_scope: str | None = None,
+    ux_keyboard_ratio: float | None = None,
+    ux_keyboard_main: str | None = None,
+    ux_keyboard_press_return: bool | None = None,
+    ux_settle_ms: int | None = None,
+    ux_shift_px: float | None = None,
+    ux_tap_min_px: float | None = None,
+    ux_max_findings: int | None = None,
 ) -> dict:
     """Run a QAJev suite (YAML/JSON) from a file path or inline text. `only` limits to named scenarios
     (plus their dependencies). jobs > 1 runs independent chains in parallel; keep 1 on a busy machine.
     allow_destructive: show delete/remove/refund/cancel... controls (every host a local dev host, or refused).
+    ux: advisory (default), strict (UX findings fail), or off. Explicit ux_* options override suite values;
+    omitted options keep them. Deterministic checks use no model calls.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
     runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot go,
     never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a dev server
@@ -565,6 +599,7 @@ async def qa_run_suite(
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)
+    args += _ux_args(locals())
     return _trim(await _dispatch(args, where, ctx, background, title), verbose)
 
 
@@ -585,15 +620,26 @@ async def qa_smoke(
     motion: str | None = None,
     color_scheme: str | None = None,
     cpu_throttle: int | None = None,
-    ux: bool = True,
+    ux: str | bool | None = None,
     plan: str | None = None,
     runner: str | None = None,
     serve: str | None = None,
     model: str | None = None,
+    ux_checks: list[str] | None = None,
+    ux_keyboard_scope: str | None = None,
+    ux_keyboard_ratio: float | None = None,
+    ux_keyboard_main: str | None = None,
+    ux_keyboard_press_return: bool | None = None,
+    ux_settle_ms: int | None = None,
+    ux_shift_px: float | None = None,
+    ux_tap_min_px: float | None = None,
+    ux_max_findings: int | None = None,
 ) -> dict:
     """Crawl same-origin pages from `url` with NO model calls and lint each one: HTTP status, script
     errors, failed requests, CSP blocks and report-only violations, broken images, unlabeled fields,
-    unnamed buttons, overflow, SEO basics. ux (default on, free): measured UX notes per page (WCAG AA
+    unnamed buttons, overflow, SEO basics. ux: advisory (default), strict (findings fail), or off. Deterministic
+    checks cover covered controls, phone keyboards, layout shifts, input kinds, tap targets and cut-off text,
+    with no model calls. Existing measured UX notes per page (WCAG AA
     contrast, keyboard reach and visible focus, 200% zoom, cut-off or overlapping text, open dialogs) and
     a design-consistency comparison across pages; they never change the gate.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
@@ -613,13 +659,12 @@ async def qa_smoke(
             *_browser_args(profile, cdp_url, headless)]
     if check_links:
         args.append("--check-links")
-    if not ux:
-        args.append("--no-ux")
     args += _motion_args(motion)
     args += _scheme_args(color_scheme)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices)
     args += _plan_args(plan)
+    args += _ux_args(locals())
     return _trim(await _dispatch(args, where, ctx, background), verbose)
 
 
@@ -670,6 +715,16 @@ async def qa_project_run(
     runner: str | None = None,
     serve: str | None = None,
     model: str | None = None,
+    ux: str | bool | None = None,
+    ux_checks: list[str] | None = None,
+    ux_keyboard_scope: str | None = None,
+    ux_keyboard_ratio: float | None = None,
+    ux_keyboard_main: str | None = None,
+    ux_keyboard_press_return: bool | None = None,
+    ux_settle_ms: int | None = None,
+    ux_shift_px: float | None = None,
+    ux_tap_min_px: float | None = None,
+    ux_max_findings: int | None = None,
 ) -> dict:
     """Prove a product works: run a project's stored objectives (optionally only those tagged `suite`, or named
     in `names`), or one ad-hoc `objective` in plain words with `expect_text`/`expect_url` checks and an `about` (what
@@ -677,6 +732,7 @@ async def qa_project_run(
     filed with the project and in the cross-project index. Production environments are always read-only: an env
     with mode = "mutate" on a production host is refused. allow_destructive: show delete/remove/refund/cancel...
     controls (a local dev env only).
+    ux: advisory (default), strict (UX findings fail), or off. Deterministic ux_* checks use no model calls.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
     runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot go,
     never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a dev server
@@ -706,6 +762,7 @@ async def qa_project_run(
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)
+    args += _ux_args(locals())
     return _trim(await _dispatch(args, where, ctx, background), verbose)
 
 

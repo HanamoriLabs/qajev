@@ -108,6 +108,10 @@ A smoke crawl lists every page it visited, its outcome, and the findings per pag
 
 ## UX
 
+The [deterministic UX checks](ux-checks.md) run in web scenarios and smoke crawls.
+They are advisory by default; `ux: strict` makes their findings fail a test.
+`ux: off` disables them. They use no model calls.
+
 Saved deterministic UX findings appear beside each scenario's verdict, with
 their crops below it. See the [deterministic UX report contract](ux-report-contract.md)
 for modes, incomplete scans and evidence rules. The report renderer preserves

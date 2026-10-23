@@ -219,9 +219,15 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
         def open_page(c):
             c.session.arm(scenario.mode)
             c.session.set_device(scenario.device)
+            observer = None
+            if hasattr(c.session, "configure_ux"):
+                observer = c.session.configure_ux(suite_meta.get("ux_options"), run_dir,
+                                                  f"{scenario.name} [{c.name}]")
             error = c.session.navigate(c.url)
             if error:
                 raise RuntimeError(f"page did not load: {error}")
+            if observer:
+                observer.safe(observer.start)
             observed = absorb(c, c.session.probe(page_expect))
             findings.extend(verdict.document_findings(observed.get("status"), scenario.expect,
                                                       scenario=f"{scenario.name} [{c.name}]",
@@ -303,6 +309,11 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
                 entry["shot"] = str(shot.relative_to(run_dir)) if shot else None
             result["shot"] = next((r.get("shot") for r in result["clients"] if r.get("shot")), None)
         for c in clients:
+            observer = getattr(c.session, "ux_observer", None)
+            if observer:
+                observer.safe(observer.finish)
+                entry = next(r for r in result["clients"] if r["name"] == c.name)
+                observer.apply(entry)
             c.session.close()
         if tab is not None:
             tab.close()
@@ -321,6 +332,18 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
     outcome, reason = verdict.unguarded(outcome, reason, result.get("frames_not_observed"))
     result.update(outcome=outcome, reason=reason, stop_detail=detail, not_run=not_run,
                   seconds=round(time.monotonic() - started, 2))
+    ux_results = [(c["name"], c["ux"]) for c in result["clients"] if isinstance(c.get("ux"), dict)]
+    if ux_results:
+        result["ux"] = {"mode": ux_results[0][1]["mode"],
+                        "status": "incomplete" if any(ux.get("status") == "incomplete" for _, ux in ux_results)
+                        else "complete",
+                        "findings": [{**f, "client": name} for name, ux in ux_results for f in ux["findings"]],
+                        "skipped": [{**s, "client": name} for name, ux in ux_results for s in ux["skipped"]],
+                        "notes": [note for _, ux in ux_results for note in ux["notes"]]}
+        if result["ux"]["mode"] == "strict" and result["ux"]["findings"]:
+            result.update(outcome="fail", reason=f"ux: {len(result['ux']['findings'])} findings")
+        if result["ux"]["mode"] == "strict" and result["ux"]["status"] == "incomplete":
+            result.update(outcome="fail", reason="ux: scan incomplete")
     return result
 
 

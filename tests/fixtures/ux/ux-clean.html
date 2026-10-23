@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UX fixture: clean form</title>
+<!--
+  QAJev UX fixture: ux-clean.html
+  Viewport: 390x844, mobile.
+  No planted fault. This page does everything right:
+    - "First day" is type="date". Money uses inputmode="decimal". The count uses inputmode="numeric".
+    - Nothing floats over the content.
+    - Save (data-qa-main) sits in a footer outside the scroll area. The screen is height: 100%,
+      so when the keyboard opens the footer moves up and stays in view.
+    - Close the keyboard: single-line fields have enterkeyhint="done". "Notes" is a textarea
+      (Return adds a new line), so it relies on the tap-outside path: a tap on empty space blurs the field.
+    - All targets are 44 px or more. Long text wraps. Nothing is cut off.
+    - Tapping "Take photo" adds the photo tray 300 ms later BELOW both photo buttons, so nothing moves.
+  Steps:
+    1. type "Comic Fiesta" into "Show name"   (keyboard check, Return path)
+    2. type "Bring the PSA slabs" into "Notes" (keyboard check, tap-outside path)
+    3. tap "Take photo"                        (layout shift check)
+  Expected findings: 0, in every mode (also with ux_keyboard_scope: all and ux: strict).
+-->
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #0f1115; color: #e8eaf0;
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .screen { height: 100%; max-width: 390px; margin: 0 auto; display: flex; flex-direction: column; }
+  header {
+    flex: none; height: 56px; display: flex; align-items: center; gap: 8px;
+    padding: 0 8px; border-bottom: 1px solid #2a2f3a;
+  }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 16px; margin: 0; color: #a9b0c0; }
+  .back {
+    min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+    color: #93b4ff; text-decoration: none; padding: 0 8px; box-sizing: border-box;
+  }
+  main { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  main > * { flex: none; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  label { font-size: 14px; color: #a9b0c0; }
+  input, textarea {
+    min-height: 48px; box-sizing: border-box; padding: 12px; border-radius: 10px;
+    border: 1px solid #2a2f3a; background: #1a1d24; color: #e8eaf0; font: inherit;
+    color-scheme: dark;
+  }
+  input { height: 48px; padding: 0 12px; }
+  textarea { height: 72px; resize: none; }
+  .photos { display: flex; flex-direction: column; gap: 12px; }
+  .btn {
+    width: 100%; min-height: 52px; border: 0; border-radius: 12px;
+    background: #3b82f6; color: #fff; font: 600 16px/1.2 system-ui, sans-serif;
+  }
+  .btn.secondary { background: #232836; color: #e8eaf0; border: 1px solid #2a2f3a; }
+  .tray {
+    height: 160px; box-sizing: border-box; padding: 12px; border-radius: 12px;
+    background: #1a1d24; border: 1px solid #2a2f3a;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .tray-title { font-size: 14px; color: #a9b0c0; }
+  .thumbs { display: flex; gap: 8px; }
+  .thumb { width: 72px; height: 100px; border-radius: 8px; background: linear-gradient(160deg, #334155, #1e293b); }
+  footer { flex: none; padding: 16px; border-top: 1px solid #2a2f3a; background: #151820; }
+</style>
+</head>
+<body>
+  <div class="screen">
+    <header>
+      <a class="back" href="#" aria-label="Back">‹ Back</a>
+      <h1>New show</h1>
+    </header>
+    <main id="main">
+      <div class="field">
+        <label for="name">Show name</label>
+        <input id="name" type="text" enterkeyhint="done" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="first-day">First day</label>
+        <input id="first-day" type="date" value="2026-11-22">
+      </div>
+      <div class="field">
+        <label for="fee">Table fee (RM)</label>
+        <input id="fee" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="0.00">
+      </div>
+      <div class="field">
+        <label for="tables">Tables</label>
+        <input id="tables" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" value="2">
+      </div>
+      <div class="field">
+        <label for="notes">Notes</label>
+        <textarea id="notes" autocomplete="off"></textarea>
+      </div>
+      <section class="photos" aria-label="Photos">
+        <h2>Table photo</h2>
+        <button id="take" class="btn secondary" type="button">Take photo</button>
+        <button id="next" class="btn secondary" type="button">Take the next photo</button>
+        <div id="tray-slot"></div>
+      </section>
+    </main>
+    <footer>
+      <button id="save" class="btn" type="button" data-qa-main>Save</button>
+    </footer>
+  </div>
+  <script>
+    // Tap outside closes the keyboard, like Keyboard.dismiss on a background press.
+    document.addEventListener('click', function (e) {
+      if (e.target.closest('input, textarea, select, button, a, label, [role=button]')) return;
+      var active = document.activeElement;
+      if (active && active !== document.body) active.blur();
+    });
+
+    // The photo tray goes BELOW both photo buttons, so no button moves.
+    var slot = document.getElementById('tray-slot');
+    document.getElementById('take').addEventListener('click', function () {
+      setTimeout(function () {
+        if (slot.firstChild) return;
+        var tray = document.createElement('div');
+        tray.className = 'tray';
+        tray.setAttribute('aria-label', 'Photos taken');
+        tray.innerHTML = '<div class="tray-title">1 photo</div>' +
+          '<div class="thumbs"><div class="thumb"></div></div>';
+        slot.appendChild(tray);
+      }, 300);
+    });
+  </script>
+</body>
+</html>

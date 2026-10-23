@@ -123,6 +123,35 @@ def _common(p):
                    help="start the run as a job and return at once; follow it with `qajev jobs`, stop it with "
                         "`qajev stop`")
     _runner_flags(p)
+    _ux_flags(p)
+
+
+def _ux_flags(p):
+    from . import ux_options
+
+    def value(key, convert):
+        def read(text):
+            try:
+                return ux_options.parse({key: convert(text)})[key]
+            except (ValueError, TypeError) as e:
+                raise argparse.ArgumentTypeError(str(e)) from None
+        return read
+
+    g = p.add_argument_group("deterministic UX checks (no model calls)")
+    g.add_argument("--ux", choices=ux_options.ENUMS["ux"],
+                   help="advisory (default): report UX findings; strict: findings fail; off: skip UX checks")
+    g.add_argument("--no-ux", dest="ux", action="store_const", const="off", help="same as --ux off")
+    g.add_argument("--ux-checks", type=value("ux_checks", str), metavar="CHECKS",
+                   help="comma-separated cover,keyboard,shift,input-kind,tap,clip (default: all)")
+    g.add_argument("--ux-keyboard-scope", choices=ux_options.ENUMS["ux_keyboard_scope"])
+    g.add_argument("--ux-keyboard-ratio", type=value("ux_keyboard_ratio", float), metavar="RATIO")
+    g.add_argument("--ux-keyboard-main", choices=ux_options.ENUMS["ux_keyboard_main"])
+    g.add_argument("--ux-keyboard-press-return", action=argparse.BooleanOptionalAction, default=None,
+                   help="verify that Return closes the keyboard, while preventing form submission")
+    g.add_argument("--ux-settle-ms", type=value("ux_settle_ms", int), metavar="MS")
+    g.add_argument("--ux-shift-px", type=value("ux_shift_px", float), metavar="PX")
+    g.add_argument("--ux-tap-min-px", type=value("ux_tap_min_px", float), metavar="PX")
+    g.add_argument("--ux-max-findings", type=value("ux_max_findings", int), metavar="N")
 
 
 ALLOW_DESTRUCTIVE_HELP = ("show delete, remove, refund, cancel... controls, hidden by default everywhere; local dev "
@@ -206,8 +235,6 @@ def build_parser():
     smoke.add_argument("--max-pages", type=int, default=20)
     smoke.add_argument("--device", help="crawl on this device only (default: every device in --devices)")
     smoke.add_argument("--check-links", action="store_true", help="also HEAD-check discovered links not crawled")
-    smoke.add_argument("--no-ux", action="store_true",
-                       help="skip the UX measurements (contrast, keyboard, 200%% zoom, dialogs, design consistency)")
     smoke.add_argument("--delay", type=float,
                        help="seconds between page loads (default 1 for public hosts, 0 for loopback; "
                             "robots.txt crawl-delay wins if larger)")
@@ -485,11 +512,14 @@ def _screen_printer(args):
             spent = f" · ${event['spent_usd']:.4f}" if isinstance(event.get("spent_usd"), (int, float)) else ""
             print(f"      Jev: {event['doing']}{p}{spent}", file=sys.stderr, flush=True)
         elif kind == "scenario":
+            from .report_html import ux_summary
+
             r = event["result"]
             actions = (r.get("jev") or {}).get("actions")
             extra = f", {actions} actions" if actions is not None else ""
+            ux = ux_summary(r).partition(" · ")[2]
             print(f"  {marks.get(r['outcome'], '?')} {r['outcome']:<10} {r['name']} ({r.get('seconds', 0)}s{extra})"
-                  f" {r.get('reason', '')}", file=sys.stderr, flush=True)
+                  f" {r.get('reason', '')}" + (f" · {ux}" if ux else ""), file=sys.stderr, flush=True)
         elif kind == "reaped":
             print(f"  cleaned up after a dead run: {', '.join(event['items'])}", file=sys.stderr, flush=True)
         elif kind == "signin" and "ok" in event:
@@ -503,6 +533,7 @@ def _screen_printer(args):
 
 
 def _options(args):
+    from . import ux_options
     from .runner import Options
 
     return Options(
@@ -511,7 +542,7 @@ def _options(args):
         allow_commands=getattr(args, "allow_commands", False), typesafe_usd_per_call=args.usd_per_call,
         cost_cap_usd=args.cost_cap, load_high=args.load_high or None, load_ok=args.load_ok,
         load_wait=args.load_wait, only=getattr(args, "only", []), shots=not args.no_shots, emit=_printer(args),
-        ux=not getattr(args, "no_ux", False),
+        **ux_options.parse(args),
         motion=args.motion, cpu_throttle=args.cpu_throttle, color_scheme=getattr(args, "color_scheme", None),
     )
 
