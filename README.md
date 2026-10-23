@@ -113,6 +113,12 @@ run your project's objectives, read reports and screenshots, and follow or stop 
 
 ## Limits
 
+QAJev's own Chrome profiles disable password saving, automatic sign-in and
+online password leak checks before the browser starts. Other profile settings
+are preserved. An already running profile from an older version must be
+restarted before QAJev can reuse it with these settings. A browser attached
+through `--cdp-url` keeps its own settings.
+
 Jev reads pages as text and works with standard controls. Shadow DOM, iframes, canvas-drawn interfaces, file
 uploads, pop-up windows and custom keyboard widgets are out of its reach today, and it does not scroll far on its
 own (start a scenario close to its target). Pages that never stop changing make its decisions go stale; those
