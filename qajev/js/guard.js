@@ -11,8 +11,11 @@
 
   const state = { v: '', mode: '', deaf: false, hidden: 0, errors: [], blocked: [], allowed: [], dialogs: [], lcp: 0,
                   cls: 0, busySince: null, hydration: 0, hydrationText: [] };
+  const diagnostic = __QAJEV_DIAGNOSTIC_LIMIT__;
   const MAX = 200;
-  const push = (list, item) => { if (list.length < MAX) list.push(item); };
+  const push = (list, item) => {
+    if (list.length < MAX) list.push(list === state.errors ? {...item, detail: diagnostic.text(item.detail)} : item);
+  };
   const re = (list) => (list && list.length ? new RegExp(list.join('|'), 'i') : null);
   const loopback = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|[^.]+\.localhost)$/i.test(location.hostname);
   // A local dev host (config.is_local_dev): loopback, or a name under .localhost or .test. Every other host is
@@ -121,16 +124,16 @@
   addEventListener('unhandledrejection', (e) => {
     push(state.errors, { kind: 'rejection', detail: String(e.reason && (e.reason.stack || e.reason.message) || e.reason) });
   });
-  const consoleText = (args) => args.map((a) => {
+  const consoleText = (args) => diagnostic.text(args.map((a) => {
     try {
       if (a && a.stack) return String(a.stack);
       return typeof a === 'string' ? a : JSON.stringify(a) ?? String(a);
     } catch (e) { return '[unserializable console argument]'; }
-  }).join(' ');
+  }).join(' '));
   state.pageConsole = [];
   let pageConsoleOmitted = 0;
   const keepPageConsole = (level, args) => {
-    // Keep whole strings until Python cleans secrets and paths, then applies the display character cap.
+    // Keep normal strings whole for privacy cleaning; oversized items become content-free source markers.
     if (state.pageConsole.length >= 50) {
       pageConsoleOmitted++;
       const routine = level === 'warn' || level === 'error'

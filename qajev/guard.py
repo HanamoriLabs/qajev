@@ -9,7 +9,8 @@ import hashlib
 import json
 from pathlib import Path
 
-SOURCE = (Path(__file__).parent / "js" / "guard.js").read_text()
+DIAGNOSTIC_LIMIT = (Path(__file__).parent / "js" / "diagnostic_limit.js").read_text()
+SOURCE = (Path(__file__).parent / "js" / "guard.js").read_text().replace("__QAJEV_DIAGNOSTIC_LIMIT__", DIAGNOSTIC_LIMIT)
 
 # Always hidden, in every mode.
 DENY = [

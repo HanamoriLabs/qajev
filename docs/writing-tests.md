@@ -752,6 +752,12 @@ UTF-8 text after privacy cleaning, plus a visible `[truncated N characters]` mar
 characters are retained. An evidence object whose serialized JSON exceeds 64 KiB is replaced by
 `{"_qajev_truncated": "[truncated N characters]"}`; smaller objects keep their numbers and JSON types.
 
+Before CDP transfer, the browser also enforces a loose 1 MiB item bound. A larger diagnostic is omitted in
+full and replaced by `[truncated N characters before transfer; exceeds 1 MiB]`. No raw prefix is sent, so
+an uncleaned secret or path cannot be cut in half. Oversized structured JS results keep their boolean `ok`,
+with bounded `says` and evidence plus `_qajev_source_truncated` metadata; this limit does not change the
+check's verdict. Ordinary diagnostics still reach Python whole for privacy cleaning and the 64 KiB report cap.
+
 Scenarios also retain page console log, info, warning and error lines under `page_console`. Objects are serialized
 so their numbers remain visible. One scenario keeps at most 50 lines of 500 characters, after privacy cleaning;
 later warnings and errors can replace the oldest log/info line in a full buffer. Routine lines never evict

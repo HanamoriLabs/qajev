@@ -12,6 +12,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Browser diagnostics above 1 MiB become visible omission markers before CDP transfer. Normal text remains
+  whole for Python privacy cleaning; oversized measured JS results keep their original boolean verdict.
 - Page console log/info measurements join warnings and errors in scenario reports, with the same privacy,
   retention limits and navigation handling. Warnings and errors replace routine lines in a full buffer.
   Console output does not add a new pass/fail rule.
