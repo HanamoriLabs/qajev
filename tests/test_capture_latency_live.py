@@ -162,6 +162,7 @@ def test_inactive_target_captures_fresh_native_pixels_without_a_thirty_second_wa
         session.shot_dir, session.shot_prefix = tmp_path, "native"
         width, height, scale = device
         session.call("Page.enable")
+        session.call("Emulation.setFocusEmulationEnabled", enabled=True)  # Jev also keeps background JS focused
         session.call("Emulation.setDeviceMetricsOverride", width=width, height=height,
                      deviceScaleFactor=scale, mobile=width < 500)
         session.call("Page.navigate", url=site)
