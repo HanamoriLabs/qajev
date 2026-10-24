@@ -55,6 +55,96 @@ def test_password_services_are_disabled_in_private_preferences_before_spawn(laun
     assert len(launch["calls"]) == 1
 
 
+@pytest.mark.parametrize("required", [
+    "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps",
+    "--disable-domain-reliability", "--disable-client-side-phishing-detection", "--no-pings",
+    "--metrics-recording-only", "--safebrowsing-disable-auto-update",
+    "--disable-extensions", "--disable-component-extensions-with-background-pages",
+])
+def test_background_network_switches_reach_the_managed_browser(launch, monkeypatch, required):
+    monkeypatch.delenv("QAJEV_CHROME_FLAGS", raising=False)
+    chrome.start("network", headless=True)
+    assert required in launch["calls"][0]
+
+
+@pytest.mark.parametrize("required", [
+    "Translate", "MediaRouter", "OptimizationHints", "AutofillServerCommunication", "PasswordLeakDetection",
+    "OptimizationGuideModelDownloading", "NetworkTimeServiceQuerying", "AimServerEligibilityEnabled",
+    "AimServerRequestOnStartupEnabled",
+])
+def test_extra_disabled_features_keep_the_product_network_policy(launch, monkeypatch, required):
+    monkeypatch.setenv("QAJEV_CHROME_FLAGS", "--disable-features=FixtureUiFeature,Translate --no-pings")
+    chrome.start("network", headless=True)
+    flags = launch["calls"][0]
+    combined = [arg.split("=", 1)[1] for arg in flags if arg.startswith("--disable-features=")]
+    assert len(combined) == 1, "Chromium uses the last repeated switch"
+    features = combined[0].split(",")
+    assert required in features
+    assert "FixtureUiFeature" in features
+    assert features.count("Translate") == 1
+    assert "--no-pings" in flags
+
+
+@pytest.mark.parametrize("extra", ["--disable-features", "--disable-features FixtureUiFeature"])
+def test_bare_disabled_feature_switch_refuses_before_spawn(launch, monkeypatch, extra):
+    monkeypatch.setenv("QAJEV_CHROME_FLAGS", extra)
+    with pytest.raises(chrome.ChromeError, match="--disable-features="):
+        chrome.start("network", headless=True)
+    assert launch["calls"] == []
+
+
+@pytest.mark.parametrize("ephemeral", [False, True])
+def test_dictionary_downloads_are_disabled_before_spawn(launch, ephemeral):
+    def before_spawn(profile, _args):
+        preferences = json.loads((profile / "Default/Preferences").read_text())
+        assert preferences.get("browser", {}).get("enable_spellchecking") is False
+        assert preferences.get("spellcheck", {}).get("dictionary") == ""
+        assert preferences.get("spellcheck", {}).get("dictionaries") == []
+        assert preferences.get("spellcheck", {}).get("use_spelling_service") is False
+
+    launch["before_spawn"] = before_spawn
+    record = chrome.start("network", headless=True, ephemeral=ephemeral)
+    assert record.get("background_services_disabled") is True
+
+
+def test_existing_dictionary_download_preferences_are_replaced_and_unrelated_settings_survive(launch):
+    path = chrome.PROFILES / "network" / "Default/Preferences"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"browser": {"enable_spellchecking": True, "show_bookmarks": True},
+                                "spellcheck": {"dictionary": "en-US", "dictionaries": ["en-US"],
+                                               "use_spelling_service": True, "other": "keep"}}))
+    chrome.start("network", headless=True)
+    preferences = json.loads(path.read_text())
+    assert preferences["browser"] == {"enable_spellchecking": False, "show_bookmarks": True}
+    assert preferences["spellcheck"] == {"dictionary": "", "dictionaries": [],
+                                        "use_spelling_service": False, "other": "keep"}
+
+
+@pytest.mark.parametrize("key", ["browser", "spellcheck"])
+@pytest.mark.parametrize("value", [None, [], "invalid"])
+def test_invalid_network_preferences_refuse_without_spawn_or_overwrite(launch, key, value):
+    path = chrome.PROFILES / "network" / "Default/Preferences"
+    path.parent.mkdir(parents=True)
+    original = json.dumps({key: value})
+    path.write_text(original)
+    with pytest.raises(Exception) as error:
+        chrome.start("network", headless=True)
+    assert isinstance(error.value, chrome.ChromeError)
+    assert path.read_text() == original
+    assert launch["calls"] == []
+
+
+@pytest.mark.parametrize("marker", [None, False, 1, "true"])
+def test_running_browser_without_background_policy_is_not_reused(launch, monkeypatch, marker):
+    monkeypatch.setattr(chrome, "status", lambda _profile: [{
+        "alive": True, "headless": True, "password_services_disabled": True,
+        "background_services_disabled": marker,
+    }])
+    with pytest.raises(chrome.ChromeError, match="Restart.*background"):
+        chrome.start("network", headless=True)
+    assert launch["calls"] == []
+
+
 def test_unrelated_existing_preferences_survive_the_privacy_update(launch):
     path = chrome.PROFILES / "existing" / "Default" / "Preferences"
     path.parent.mkdir(parents=True)
@@ -66,6 +156,8 @@ def test_unrelated_existing_preferences_survive_the_privacy_update(launch):
         "credentials_enable_service": False,
         "credentials_enable_autosignin": False,
         "profile": {"password_manager_leak_detection": False, "name": "Fixture profile"},
+        "browser": {"enable_spellchecking": False},
+        "spellcheck": {"dictionary": "", "dictionaries": [], "use_spelling_service": False},
         "other": {"theme": "dark", "labels": ["保持", chr(0xD800)]},
     }
 
@@ -135,7 +227,8 @@ def test_running_legacy_profile_is_refused_without_restart_or_preference_writes(
 
 
 def test_running_private_profile_is_reused_without_rewriting_active_preferences(launch, monkeypatch):
-    record = {"alive": True, "headless": True, "password_services_disabled": True}
+    record = {"alive": True, "headless": True, "password_services_disabled": True,
+              "background_services_disabled": True}
     monkeypatch.setattr(chrome, "status", lambda _profile: [record])
     assert chrome.start("private", headless=True) is record
     assert launch["calls"] == []

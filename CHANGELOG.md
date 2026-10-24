@@ -19,6 +19,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Managed Chrome disables background update, network-time, search-eligibility and dictionary requests.
+  Additional disabled features preserve the managed defaults, and older running profiles require a restart.
 - Browser diagnostics above 1 MiB become visible omission markers before CDP transfer. Normal text remains
   whole for Python privacy cleaning; oversized measured JS results keep their original boolean verdict.
 - Page console log/info measurements join warnings and errors in scenario reports, with the same privacy,
