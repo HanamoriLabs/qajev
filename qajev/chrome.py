@@ -167,6 +167,21 @@ def _state_file(profile):
     return STATE / f"{profile}.json"
 
 
+def _write_state(key, record):
+    """Other runs scan STATE during startup: publish a complete record in one rename."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=STATE, prefix=".qajev-state-", delete=False) as output:
+            temporary = Path(output.name)
+            json.dump(record, output, indent=2)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, _state_file(key))
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def status(profile=None):
     STATE.mkdir(parents=True, exist_ok=True)
     records = []
@@ -331,7 +346,7 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, *, t
         "launch_port": launch_port, "temp_dir": str(temporary) if temporary else None,
     }
     try:
-        _state_file(state_key).write_text(json.dumps(record, indent=2))
+        _write_state(state_key, record)
     except BaseException:
         _kill(proc.pid)
         _state_file(state_key).unlink(missing_ok=True)

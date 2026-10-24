@@ -467,12 +467,8 @@ def test_failed_chrome_record_write_stops_the_spawned_process_before_deleting_it
         (profile[0] / "DevToolsActivePort").write_text("43003\n/fixture\n")
         return SimpleNamespace(pid=900001, poll=lambda: None)
 
-    class Record:
-        def write_text(self, _):
-            raise OSError("fixture disk full")
-
-        def unlink(self, **_):
-            pass
+    def failed_write(*_a, **_kw):
+        raise OSError("fixture disk full")
 
     stopped = []
 
@@ -481,13 +477,79 @@ def test_failed_chrome_record_write_stops_the_spawned_process_before_deleting_it
         stopped.append(pid)
 
     monkeypatch.setattr(chrome.subprocess, "Popen", spawn)
-    monkeypatch.setattr(chrome, "_state_file", lambda _: Record())
+    monkeypatch.setattr(chrome, "_write_state", failed_write)
     monkeypatch.setattr(chrome, "_kill", stop)
     with pytest.raises(OSError):
         chrome.start(ephemeral=True, port=0)
     assert stopped == [900001]
     assert not profile[0].exists()
     assert not any(Path(path).exists() for path in pool)
+
+
+def test_parallel_chrome_never_publishes_a_partial_state_record_to_other_runs(monkeypatch, tmp_path):
+    from qajev import chrome
+
+    monkeypatch.setattr(chrome, "STATE", tmp_path / "state")
+    monkeypatch.setattr(chrome, "EPHEMERAL_ROOT", tmp_path / "profiles")
+    monkeypatch.setattr(chrome, "binary", lambda: "/fixture/chrome")
+    monkeypatch.setattr(chrome, "version", lambda *_a, **_kw: {"Browser": "fixture"})
+    monkeypatch.setattr(chrome, "_kill", lambda _: None)
+
+    def spawn(args, **_kwargs):
+        profile = Path(next(a.split("=", 1)[1] for a in args if a.startswith("--user-data-dir=")))
+        (profile / "DevToolsActivePort").write_text("43003\n/fixture\n")
+        return SimpleNamespace(pid=900001, poll=lambda: None)
+
+    original_dump, original_write = json.dump, Path.write_text
+    observed = []
+
+    def paused_write(output, text):
+        split = len(text) // 2
+        output.write(text[:split])
+        output.flush()
+        try:
+            chrome.status()  # a second run's actual reader, interleaved before this write finishes
+        except ValueError as error:
+            raise AssertionError("another run observed a partial Chrome record") from error
+        observed.append(True)
+        output.write(text[split:])
+
+    def dump(value, output, **kwargs):
+        if Path(output.name).parent == chrome.STATE:
+            paused_write(output, json.dumps(value, **kwargs))
+        else:
+            original_dump(value, output, **kwargs)
+
+    def write(path, text, *args, **kwargs):
+        if path.parent == chrome.STATE and path.suffix == ".json":
+            with path.open("w") as output:
+                paused_write(output, text)
+            return len(text)
+        return original_write(path, text, *args, **kwargs)
+
+    monkeypatch.setattr(chrome.subprocess, "Popen", spawn)
+    monkeypatch.setattr(chrome.json, "dump", dump)
+    monkeypatch.setattr(Path, "write_text", write)
+    record = chrome.start(ephemeral=True, port=0)
+    assert observed
+    assert json.loads(chrome._state_file(record["state_key"]).read_text())["port"] == 43003
+
+
+def test_failed_atomic_record_write_keeps_old_state_and_removes_its_temporary_file(monkeypatch, tmp_path):
+    from qajev import chrome
+
+    monkeypatch.setattr(chrome, "STATE", tmp_path)
+    original = tmp_path / "kept.json"
+    original.write_text('{"port": 43001}')
+
+    def fail(*_a, **_kw):
+        raise OSError("fixture disk full")
+
+    monkeypatch.setattr(chrome.json, "dump", fail)
+    with pytest.raises(OSError):
+        chrome._write_state("kept", {"port": 43002})
+    assert original.read_text() == '{"port": 43001}'
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["kept.json"]
 
 
 def test_temp_cleanup_refuses_paths_outside_its_owned_namespace(tmp_path):
