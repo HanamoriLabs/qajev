@@ -32,7 +32,18 @@ FLAGS = [
     "--disable-backgrounding-occluded-windows",
     "--disable-renderer-backgrounding",
     "--disable-background-timer-throttling",
-    "--disable-features=Translate,MediaRouter,OptimizationHints",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-sync",
+    "--disable-default-apps",
+    "--disable-domain-reliability",
+    "--disable-client-side-phishing-detection",
+    "--no-pings",
+    "--metrics-recording-only",
+    "--safebrowsing-disable-auto-update",
+    "--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication,"
+    "PasswordLeakDetection,OptimizationGuideModelDownloading,NetworkTimeServiceQuerying,"
+    "AimServerEligibilityEnabled,AimServerRequestOnStartupEnabled",
     "--deny-permission-prompts",
     "--password-store=basic",
     # Defence in depth for the mic: synthetic devices, and never --use-fake-ui-for-media-stream
@@ -93,7 +104,19 @@ def flags():
     namespaces, where Chrome otherwise stops with "No usable sandbox!")."""
     import shlex
 
-    return [*FLAGS, *shlex.split(os.environ.get("QAJEV_CHROME_FLAGS", ""))]
+    combined = [*FLAGS, *shlex.split(os.environ.get("QAJEV_CHROME_FLAGS", ""))]
+    result, disabled = [], []
+    for value in combined:
+        if value == "--disable-features":
+            raise ChromeError("Use --disable-features=FEATURES in QAJEV_CHROME_FLAGS")
+        if value.startswith("--disable-features="):
+            disabled.extend(feature for feature in value.split("=", 1)[1].split(",") if feature)
+        else:
+            result.append(value)
+    # Chromium keeps the last occurrence of a switch. An extra UI feature must not erase the service policy.
+    if disabled:
+        result.append("--disable-features=" + ",".join(dict.fromkeys(disabled)))
+    return result
 
 
 PROC = Path("/proc")  # Linux: the process list when there is no `ps` (slim images, minimal CI)
@@ -220,6 +243,8 @@ def start(profile="default", *, headless=False, port=None, ephemeral=False, visi
                 )
             if running[0].get("password_services_disabled") is not True:
                 raise ChromeError("Restart this QAJev Chrome profile to disable its password services")
+            if running[0].get("background_services_disabled") is not True:
+                raise ChromeError("Restart this QAJev Chrome profile to disable its background services")
             return running[0]
     # A loaded machine (load 300+) has taken over 30 s to open the debugging port.
     wait = wait or float(os.environ.get("QAJEV_CHROME_START_WAIT", "60"))
@@ -257,7 +282,7 @@ def run_record(owned):
 
 
 def _disable_password_services(profile_dir: Path) -> None:
-    """Prepare only this owned profile, preserving unrelated Chrome preferences."""
+    """Prepare password and dictionary-service preferences only in this owned profile."""
     default = profile_dir / "Default"
     preferences = default / "Preferences"
     if profile_dir.is_symlink() or default.is_symlink() or preferences.is_symlink():
@@ -271,11 +296,15 @@ def _disable_password_services(profile_dir: Path) -> None:
             data = {}
         except ValueError:
             raise ChromeError("QAJev Chrome preferences are not valid JSON") from None
-        if not isinstance(data, dict) or not isinstance(data.get("profile", {}), dict):
+        if not isinstance(data, dict) or any(
+            not isinstance(data.get(key, {}), dict) for key in ("profile", "browser", "spellcheck")
+        ):
             raise ChromeError("QAJev Chrome preferences must contain JSON objects")
         data["credentials_enable_service"] = False
         data["credentials_enable_autosignin"] = False
         data.setdefault("profile", {})["password_manager_leak_detection"] = False
+        data.setdefault("browser", {})["enable_spellchecking"] = False
+        data.setdefault("spellcheck", {}).update(dictionary="", dictionaries=[], use_spelling_service=False)
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=default,
                                          prefix=".qajev-preferences-", delete=False) as output:
             temporary = Path(output.name)
@@ -343,6 +372,7 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, *, t
         "profile_dir": str(profile_dir), "headless": headless, "ephemeral": ephemeral, "owner_pid": os.getpid(),
         "started_at": time.time(),
         "password_services_disabled": True,
+        "background_services_disabled": True,
         "launch_port": launch_port, "temp_dir": str(temporary) if temporary else None,
     }
     try:

@@ -87,7 +87,7 @@ What is inside `~/.qajev`:
 | Variable | Is | Default |
 |---|---|---|
 | `QAJEV_CHROME` | the Chrome or Chromium binary | found automatically |
-| `QAJEV_CHROME_FLAGS` | extra Chrome flags, e.g. `--no-sandbox` in Docker or on CI runners that block user namespaces | none |
+| `QAJEV_CHROME_FLAGS` | extra Chrome flags, e.g. `--no-sandbox` in Docker or on CI runners that block user namespaces; disabled features are combined with the managed service policy | none |
 | `QAJEV_CHROME_START_WAIT` | seconds Chrome may take to start | `60` |
 | `QAJEV_OUTLIVE_PARENT` | `1`: a run keeps going after the process that started it ends. By default `check`, `run`, `smoke` and `play` stop, like Ctrl-C, and close their browser or game | unset |
 | `QAJEV_CDP_TIMEOUT` | seconds per browser command | `30` |
@@ -110,6 +110,20 @@ The load gate only matters on shared or busy machines; set `QAJEV_LOAD_HIGH=0` t
 
 `qajev doctor` has a `cloud` line: whether the key is found (never its value), the default runner and where it came
 from, and whether the dashboard answers.
+
+### Managed Chrome services
+
+QAJev starts its managed Chrome with background updating, sync, network-time checks and search-eligibility
+requests disabled. Its private preferences also disable password services and spelling-dictionary downloads.
+Page navigation and local form input still work normally.
+
+Extra `--disable-features=FEATURES` entries in `QAJEV_CHROME_FLAGS` are combined with the managed defaults
+into one switch. Use the equals syntax; a bare `--disable-features` is refused before Chrome starts.
+
+After updating, restart an already running managed profile with `qajev browser stop --profile NAME` before
+using it again. QAJev preserves unrelated profile preferences and asks for this restart instead of reusing
+a process that started without the service policy. Externally supplied `--cdp-url` browsers keep their own
+launcher settings.
 
 ## Games
 
