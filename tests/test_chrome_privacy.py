@@ -59,6 +59,7 @@ def test_password_services_are_disabled_in_private_preferences_before_spawn(laun
     "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps",
     "--disable-domain-reliability", "--disable-client-side-phishing-detection", "--no-pings",
     "--metrics-recording-only", "--safebrowsing-disable-auto-update",
+    "--disable-extensions", "--disable-component-extensions-with-background-pages",
 ])
 def test_background_network_switches_reach_the_managed_browser(launch, monkeypatch, required):
     monkeypatch.delenv("QAJEV_CHROME_FLAGS", raising=False)

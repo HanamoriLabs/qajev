@@ -36,6 +36,8 @@ FLAGS = [
     "--disable-component-update",
     "--disable-sync",
     "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-component-extensions-with-background-pages",
     "--disable-domain-reliability",
     "--disable-client-side-phishing-detection",
     "--no-pings",

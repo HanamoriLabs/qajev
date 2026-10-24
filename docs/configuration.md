@@ -113,8 +113,8 @@ from, and whether the dashboard answers.
 
 ### Managed Chrome services
 
-QAJev starts its managed Chrome with background updating, sync, network-time checks and search-eligibility
-requests disabled. Its private preferences also disable password services and spelling-dictionary downloads.
+QAJev starts its managed Chrome with background updating, sync, extensions, network-time checks and
+search-eligibility requests disabled. Its private preferences also disable password services and dictionary downloads.
 Page navigation and local form input still work normally.
 
 Extra `--disable-features=FEATURES` entries in `QAJEV_CHROME_FLAGS` are combined with the managed defaults

@@ -17,7 +17,8 @@ T = "tests/test_chrome_network_audit.py::"
 
 switches = ("--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps",
             "--disable-domain-reliability", "--disable-client-side-phishing-detection", "--no-pings",
-            "--metrics-recording-only", "--safebrowsing-disable-auto-update")
+            "--metrics-recording-only", "--safebrowsing-disable-auto-update", "--disable-extensions",
+            "--disable-component-extensions-with-background-pages")
 features = ("AutofillServerCommunication", "PasswordLeakDetection", "OptimizationGuideModelDownloading",
             "NetworkTimeServiceQuerying", "AimServerEligibilityEnabled", "AimServerRequestOnStartupEnabled")
 base.FAULTS = [
