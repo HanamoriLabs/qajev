@@ -170,7 +170,7 @@ def acquire(what, *, browser_runs=None, emit=None, wait: float = 3600, job=None,
                 active = [row for _, row in rows if row["state"] == "active"]
                 first = next((name for name, row in rows if row["state"] == "queued"), None)
                 capacity = min([requested, *(r["limit"] for r in active)])
-                memory = ram_capacity(requested, available_memory(), budget, reserve) if browser_runs else 64
+                memory = ram_capacity(requested, available_memory(), budget, reserve) if requested > 1 else 64
                 capacity = min(capacity, memory)
                 admitted = first == path.name and len(active) < capacity
                 if admitted:

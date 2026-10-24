@@ -119,6 +119,23 @@ def test_insufficient_known_memory_blocks_even_the_first_browser(monkeypatch, av
     assert not browser_pool.holders()
 
 
+@pytest.mark.parametrize("command", ["check", "run", "smoke"])
+@pytest.mark.parametrize("available", [0, 2 * 1024**3, None])
+def test_default_cli_serial_admission_does_not_wait_for_ram(monkeypatch, command, available):
+    from qajev import cli
+
+    monkeypatch.setattr(browser_pool, "available_memory", lambda: available)
+    monkeypatch.setenv("QAJEV_LOCK_WAIT", "0")
+    args = SimpleNamespace(command=command, argv=[command], browser_runs=None, cdp_url=None,
+                           real_devices=None, quiet=True, events=False)
+    try:
+        with cli._machine_lock(args):
+            assert not browser_pool.parallel()
+            assert [h["limit"] for h in browser_pool.holders()] == [1]
+    except jobs.Busy as error:
+        raise AssertionError("a default serial run must not wait for RAM") from error
+
+
 def test_unknown_memory_allows_only_one_active_browser(monkeypatch):
     monkeypatch.setattr(browser_pool, "available_memory", lambda: None)
     with jobs.machine_lock("first", browser_runs=4):
@@ -160,9 +177,14 @@ def test_darwin_available_memory_uses_the_reported_page_size(monkeypatch, output
     assert SAMPLE_MEMORY() == expected
 
 
-def test_native_and_serial_requests_remain_exclusive():
+@pytest.mark.parametrize("configured", [None, "4"])
+def test_native_and_serial_requests_remain_exclusive(monkeypatch, configured):
+    if configured is not None:
+        monkeypatch.setenv("QAJEV_BROWSER_RUNS", configured)
     for kwargs in ({}, {"browser_runs": 1}):
         with jobs.machine_lock("exclusive", **kwargs):
+            assert not browser_pool.parallel()
+            assert [h["limit"] for h in browser_pool.holders()] == [1]
             with pytest.raises(jobs.Busy):
                 with jobs.machine_lock("parallel", browser_runs=4, wait=0.05):
                     raise AssertionError("parallel run overlapped exclusive work")
@@ -196,6 +218,31 @@ def test_exception_releases_lease_and_emits_separate_timings():
     assert ended["timing"]["run_seconds"] >= 0.02
     assert measured is not None
     assert ended["timing"]["queue_seconds"] == measured["queue_seconds"]
+
+
+def test_run_seconds_excludes_a_long_queue_wait(monkeypatch):
+    events = []
+    clock = [100.0]
+    with jobs.LOCK.open("a+") as legacy:
+        fcntl.flock(legacy, fcntl.LOCK_EX)
+
+        def release_legacy(_delay):
+            clock[0] = 1000.0
+            fcntl.flock(legacy, fcntl.LOCK_UN)
+
+        monkeypatch.setattr(browser_pool, "time", SimpleNamespace(
+            monotonic=lambda: clock[0], monotonic_ns=time.monotonic_ns,
+            time=lambda: 1700000000 + clock[0], sleep=release_legacy))
+        with jobs.machine_lock("queued browser", browser_runs=2, wait=1000, emit=events.append):
+            clock[0] = 1012.5
+            assert browser_pool.timing() == {
+                "queued_at": 1700000100.0, "admitted_at": 1700001000.0,
+                "queue_seconds": 900.0, "run_seconds": 12.5,
+            }
+    assert events[0]["event"] == "waiting"
+    assert events[-1]["event"] == "released"
+    assert events[-1]["timing"]["queue_seconds"] == 900.0
+    assert events[-1]["timing"]["run_seconds"] == 12.5
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "65", "x", "1.5", True])
@@ -559,6 +606,18 @@ def test_temp_cleanup_refuses_paths_outside_its_owned_namespace(tmp_path):
     sentinel.mkdir()
     (sentinel / "keep").write_text("keep")
     chrome._remove_temp({"temp_dir": str(sentinel), "owner_pid": os.getpid()})
+    assert (sentinel / "keep").read_text() == "keep"
+
+
+def test_temp_cleanup_refuses_a_matching_name_outside_tmp(tmp_path):
+    from qajev import chrome
+
+    sentinel = tmp_path / f"qajev-tmp-{os.getpid()}-matching"
+    sentinel.mkdir()
+    assert sentinel.parent != chrome.TEMP_ROOT
+    (sentinel / "keep").write_text("keep")
+    chrome._remove_temp({"temp_dir": str(sentinel), "owner_pid": os.getpid()})
+    assert (sentinel / "keep").is_file()
     assert (sentinel / "keep").read_text() == "keep"
 
 

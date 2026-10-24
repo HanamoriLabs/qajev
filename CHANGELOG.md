@@ -13,7 +13,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 ### Added
 
 - Configurable local browser-run concurrency (`--browser-runs` / `QAJEV_BROWSER_RUNS`) with FIFO queueing,
-  RAM admission, isolated throwaway Chrome resources and unique report folders. Job results and reports
+  RAM admission for N above 1, isolated throwaway Chrome resources and unique report folders. Serial N=1
+  admission stays unchanged. Job results and reports
   separate queue and run time; native actions, real devices and external Chrome remain exclusive.
 
 ### Fixed
