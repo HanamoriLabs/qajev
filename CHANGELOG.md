@@ -19,6 +19,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Linux viewport captures activate the test tab before readback to avoid long waits on inactive or minimized
+  surfaces. Captures keep their native pixels, requested crops, individual frame files and measured timing.
 - Browser diagnostics above 1 MiB become visible omission markers before CDP transfer. Normal text remains
   whole for Python privacy cleaning; oversized measured JS results keep their original boolean verdict.
 - Page console log/info measurements join warnings and errors in scenario reports, with the same privacy,

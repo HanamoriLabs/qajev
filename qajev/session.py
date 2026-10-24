@@ -13,6 +13,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -704,6 +705,9 @@ class Session:
                 observer.safe(observer.after)
 
     def call(self, method, **params):
+        # An inactive or minimized Linux surface can wait a full CDP timeout for its next frame.
+        if method == "Page.captureScreenshot" and sys.platform == "linux":
+            self.browser.call("Page.bringToFront")
         return self.browser.call(method, **params)
 
     def evaluate(self, expression, timeout_ms=15000):
