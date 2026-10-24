@@ -25,6 +25,10 @@ qajev check https://shop.example \
 
 ## Why QAJev
 
+Local browser runs can overlap with `--browser-runs N` or `QAJEV_BROWSER_RUNS=N` (default 1).
+Each parallel run owns a fresh Chrome profile, debug port and temporary directory. Extra runs queue;
+available RAM can reduce admission. [Limits, timing and examples](docs/cli.md#parallel-browser-runs).
+
 - **Plain-language tests.** No selectors to maintain. "Find the refund policy. Stop when the number of days is
   visible." still works after a redesign.
 - **Verdicts you can trust.** Jev saying "done" is never proof: your expectations decide. And a problem with the

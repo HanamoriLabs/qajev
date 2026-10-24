@@ -1,5 +1,5 @@
-"""QAJev runs as jobs any agent or terminal on this machine can list, inspect and stop, and the machine-wide lock
-that makes browser runs take turns (one at a time across every session, CLI and MCP alike).
+"""QAJev runs as jobs any agent or terminal on this machine can list, inspect and stop, and machine-wide browser
+admission (configurable parallel browser slots, exclusive native work, across CLI and MCP sessions).
 
 A job is a folder under ~/.qajev/jobs/<id>/: job.json (what and who), events.jsonl (the run's progress events),
 result.json (the final report JSON) and exit_code. A small shell wrapper runs `python -m qajev ... --json --events`
@@ -25,7 +25,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from . import chrome, config, plan
+from . import browser_pool, chrome, config, plan
 from .config import HOME
 
 JOBS = HOME / "jobs"
@@ -285,6 +285,9 @@ def describe_argv(argv, cwd=None):
 
 def holder():
     """Who holds the browser right now: {pid, what, since, job} or None."""
+    active = browser_pool.holders()
+    if active:
+        return {**active[0], "holders": active}
     if not LOCK.exists():
         return None
     with open(LOCK) as handle:
@@ -307,40 +310,23 @@ def _who(h):
 
 
 @contextlib.contextmanager
-def machine_lock(what, emit=None, wait=None, job=None):
-    """Hold the one browser slot on this machine; queue (and say so) while another run has it."""
+def machine_lock(what, emit=None, wait=None, job=None, browser_runs=None):
+    """Acquire a browser slot, or exclusive admission for native/legacy callers."""
     if local_runs_off():
         raise LocalRunsOff("this machine runs no QAJev test (QAJEV_LOCAL_RUNS=off in ~/.qajev/.env): send it to QAJev "
                            "Cloud with --runner cloud")
     wait = float(os.environ.get("QAJEV_LOCK_WAIT", "3600")) if wait is None else wait
     held = holder()
-    if held and held.get("pid") == os.getppid():  # a play run's open_url step: its parent already holds the slot
+    if held and held.get("pid") == os.getppid() and held.get("inherit_children", True):
+        # A native play run's open_url step inherits its exclusive slot; browser children acquire their own.
         yield
         return
-    HOME.mkdir(parents=True, exist_ok=True)
-    handle = open(LOCK, "a+")
     try:
-        deadline, told = time.monotonic() + wait, None
-        while True:
-            try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                now = time.monotonic()
-                if now >= deadline:
-                    raise Busy(f"another QAJev run kept the browser for over {wait:.0f}s: {_who(holder())}") from None
-                if callable(emit) and (told is None or now - told >= 60):
-                    emit({"event": "waiting", "queued": True, "reason": f"queued behind {_who(holder())}"})
-                    told = now
-                time.sleep(0.5)
-        handle.seek(0)
-        handle.truncate()
-        handle.write(json.dumps({"pid": os.getpid(), "what": what, "since": time.time(),
-                                 "job": job or os.environ.get("QAJEV_JOB")}))
-        handle.flush()
-        yield
-    finally:
-        handle.close()  # closing releases the lock, also when the process dies
+        with browser_pool.acquire(what, browser_runs=browser_runs, emit=emit, wait=wait,
+                                  job=job or os.environ.get("QAJEV_JOB"), legacy_lock=LOCK) as lease:
+            yield lease
+    except browser_pool.PoolBusy as error:
+        raise Busy(str(error)) from None
 
 
 # ---- jobs ----
@@ -585,7 +571,9 @@ def _status(job_id, detail):
                  "done" if final and "gate" in final and final.get("outcome") not in {"suite_error", "refused"}
                  else "failed")
     elif running:
-        state = "queued" if not run and last.get("queued") else "running"
+        admission = next((e for e in events if e.get("event") == "admitted"), None)
+        waiting = any(e.get("queued") for e in events)
+        state = "queued" if not run and not admission and waiting else "running"
     else:
         state = "stopped" if meta.get("stop_requested") else "lost"  # killed without recording an exit code
     out = {
@@ -597,6 +585,16 @@ def _status(job_id, detail):
                      "outcomes": {o: sum(1 for r in finished if r.get("outcome") == o)
                                   for o in {r.get("outcome") for r in finished}}},
     }
+    measured = next((e.get("timing") for e in reversed(events) if e.get("timing")), None)
+    if measured:
+        measured = dict(measured)
+        if exit_code is None and running:
+            now = time.time()
+            if measured.get("admitted_at") is not None:
+                measured["run_seconds"] = round(max(0, now - measured["admitted_at"]), 3)
+            else:
+                measured["queue_seconds"] = round(max(0, now - measured["queued_at"]), 3)
+        out["timing"] = measured
     if run.get("decider"):  # the model making the decisions: Jev, Clef or Clef-flash
         out["decider"] = run["decider"]
     if current and state == "running":

@@ -19,6 +19,49 @@ Every command, what it is for, and its options. `qajev <command> --help` prints 
 | [`init`](#qajev-init) | write a starter suite |
 | [`mcp`](#qajev-mcp) | run the MCP server for AI agents |
 
+## Parallel browser runs
+
+`check`, `run` (including projects), and `smoke` accept `--browser-runs N` (1 to 64).
+The caller's flag wins over `QAJEV_BROWSER_RUNS` in the shell or QAJev's env file. Default: 1.
+MCP `qa_check`, `qa_run_suite`, `qa_project_run`, and `qa_smoke` take `browser_runs=N`.
+This setting applies to local browser admission; Cloud scheduling is unchanged.
+
+```bash
+qajev run suite-a.yaml --runner local --headless --browser-runs 4 --events &
+qajev run suite-b.yaml --runner local --headless --browser-runs 4 --events &
+wait
+```
+
+The pool is shared by QAJev processes using the same OS user and `/tmp` filesystem, even across different
+`QAJEV_HOME` folders. Containers need a shared pool path in `/tmp` to use one quota. Requests beyond capacity
+queue in arrival order. The lowest requested limit
+among active runs and the next request wins, so a serial caller remains exclusive. Native `play`, real-device
+passes, account checks and externally supplied `--cdp-url` runs stay exclusive. Older QAJev clients still
+exclude new clients through the existing home lock when they use the same `QAJEV_HOME`.
+
+With N above 1, every managed run uses a fresh throwaway profile, kernel-assigned debug port and private
+temporary folder, even when `--profile` is named. It never borrows the named profile's cookies. Use a suite's
+test-account login for parallel authentication, or N=1 for a kept signed-in profile. Chrome closes and its
+private folder is deleted after the run. Each report also gets a unique output folder.
+
+RAM can lower N for new admissions. Defaults: 1024 MiB per admitted run (`QAJEV_BROWSER_RAM_MIB`) plus
+2048 MiB kept free (`QAJEV_BROWSER_RESERVE_MIB`). Both accept positive integer MiB values in QAJev's env file
+or shell. Admission uses the smaller of the requested capacity and
+`floor((available MiB - reserve MiB) / per-run MiB)`. This is deliberately conservative: available RAM is
+sampled again as browsers consume it. Linux cgroup v2 limits also apply. Unknown memory permits at most
+one run; insufficient known memory queues even the first run. Active work is never killed to lower N.
+
+`--events` emits `waiting` immediately when queued, then every 10 seconds, `admitted` before browser startup,
+and `released` on exit. Reports and `qajev jobs ID --json` carry `timing.queue_seconds` and
+`timing.run_seconds`, plus `queued_at` and `admitted_at` epoch timestamps. Queue time stops at admission;
+run time includes browser startup and execution. A queued cancellation has zero run time. Existing job
+`seconds` remains the total wall time, and report `seconds` keeps its existing execution meaning.
+Start a lane's execution watchdog at `admitted`, rather than charging queue wait to the page.
+
+`--jobs N` is separate: it runs independent scenario chains within one suite using tabs in that run's Chrome.
+The pool limits browser runs, not tabs, scenario workers or application server ports. Callers must isolate
+their own application state and servers. `QAJEV_LOCK_WAIT` still bounds the queue wait (default 3600 seconds).
+
 ## Exit codes
 
 | Code | Means |
