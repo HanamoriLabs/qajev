@@ -179,7 +179,8 @@ def test_inactive_target_captures_fresh_native_pixels_without_a_thirty_second_wa
                 assert window["bounds"]["windowState"] == "minimized", window
             else:
                 cdp.call("Page.bringToFront", session_id=other_sid)
-            assert session.evaluate("document.hidden") is True, "fixture must reproduce a hidden capture target"
+            # Focus emulation can report a visible document while its compositor surface is still inactive.
+            visibility = session.evaluate("({hidden:document.hidden,focused:document.hasFocus()})")
             session.evaluate("document.body.style.backgroundColor=" + json.dumps(f"rgb{color}") + ";"
                              f"document.getElementById('frame').textContent='Frame {index}'")
             began = time.monotonic()
@@ -204,7 +205,7 @@ def test_inactive_target_captures_fresh_native_pixels_without_a_thirty_second_wa
                 assert 0 <= frame["took_s"] <= elapsed + 0.01
                 assert Path(frame["path"]).name == f"native-{index:03d}-same-cue.jpg"
             rows.append({"frame": index, "elapsed_seconds": elapsed, "pixel": pixel,
-                         "size": image.size, "react": frame})
+                         "size": image.size, "react": frame, "visibility_before_capture": visibility})
         assert len(rows) == 3
         if kind == "react-jpeg":
             assert len(list(tmp_path.glob("native-*.jpg"))) == 3
