@@ -84,4 +84,4 @@ def test_a_smoke_run_names_its_site_without_the_urls_user_info(tmp_path, monkeyp
 
     assert built["suite"] == "smoke shop.example:8443"
     folders = [p.name for p in tmp_path.iterdir()]
-    assert len(folders) == 1 and folders[0].endswith("-smoke-shop.example-8443")
+    assert len(folders) == 1 and "-smoke-shop.example-8443-" in folders[0]

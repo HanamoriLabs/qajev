@@ -24,6 +24,7 @@ PORTS = range(9350, 9400)  # 9333 and 9340-9347 belong to other harnesses on Jos
 STATE = HOME / "chrome"
 PROFILES = HOME / "profiles"
 EPHEMERAL_ROOT = HOME / "tmp"  # throwaway profiles live here, deleted after every run (and reaped if a run dies)
+TEMP_ROOT = Path("/tmp")  # Chrome's Unix socket must fit sun_path, even with a deeply nested QAJEV_HOME
 MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 FLAGS = [
     "--no-first-run",
@@ -157,11 +158,28 @@ def processes():
 
 def owns(record):
     line = cmdline(record["pid"])
-    return f"--user-data-dir={record['profile_dir']}" in line and f"--remote-debugging-port={record['port']}" in line
+    port = record.get('launch_port', record['port'])
+    return f"--user-data-dir={record['profile_dir']}" in line \
+        and bool(re.search(rf"(?:^|\s)--remote-debugging-port={port}(?:\s|$)", line))
 
 
 def _state_file(profile):
     return STATE / f"{profile}.json"
+
+
+def _write_state(key, record):
+    """Other runs scan STATE during startup: publish a complete record in one rename."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=STATE, prefix=".qajev-state-", delete=False) as output:
+            temporary = Path(output.name)
+            json.dump(record, output, indent=2)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, _state_file(key))
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def status(profile=None):
@@ -205,8 +223,8 @@ def start(profile="default", *, headless=False, port=None, ephemeral=False, visi
             return running[0]
     # A loaded machine (load 300+) has taken over 30 s to open the debugging port.
     wait = wait or float(os.environ.get("QAJEV_CHROME_START_WAIT", "60"))
-    port = port or free_port()
-    if listening(port):
+    port = free_port() if port is None else port
+    if port and listening(port):
         raise ChromeError(f"port {port} is already in use")
     if ephemeral:
         # The owner's pid is in the name, so reap() can find this profile if its owner dies without cleaning up.
@@ -215,11 +233,17 @@ def start(profile="default", *, headless=False, port=None, ephemeral=False, visi
     else:
         profile_dir = PROFILES / profile
         profile_dir.mkdir(parents=True, exist_ok=True)
+    temporary = None
     try:
-        return _launch(profile, profile_dir, port, headless, visible, ephemeral, wait)
+        if ephemeral and port == 0:
+            temporary = Path(tempfile.mkdtemp(prefix=f"qajev-tmp-{os.getpid()}-", dir=TEMP_ROOT))
+        return _launch(profile, profile_dir, port, headless, visible, ephemeral, wait,
+                       **({"temporary": temporary} if temporary is not None else {}))
     except BaseException:
         if ephemeral:
             shutil.rmtree(profile_dir, ignore_errors=True)  # a failed start must not leave its temp profile
+        if temporary is not None:
+            shutil.rmtree(temporary, ignore_errors=True)
         raise
 
 
@@ -227,7 +251,9 @@ def run_record(owned):
     """What a run's report says about the Chrome it started (or reused): a throwaway one is called that, not by the
     profile name it was started under."""
     return {"cdp_url": owned["cdp_url"], "managed": True, "profile": owned["profile"], "headless": owned["headless"],
-            "port": owned["port"], "ephemeral": bool(owned.get("ephemeral"))}
+            "port": owned["port"], "ephemeral": bool(owned.get("ephemeral")),
+            **({k: owned[k] for k in ("state_key", "profile_dir", "temp_dir")}
+               if owned.get("launch_port") == 0 else {})}
 
 
 def _disable_password_services(profile_dir: Path) -> None:
@@ -266,9 +292,14 @@ def _disable_password_services(profile_dir: Path) -> None:
                 temporary.unlink(missing_ok=True)
 
 
-def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait):
+def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, *, temporary=None):
     _disable_password_services(profile_dir)
-    args = [binary(), f"--user-data-dir={profile_dir}", f"--remote-debugging-port={port}", *flags()]
+    isolated = port == 0 and ephemeral
+    extra = flags()
+    if isolated and any(flag.split("=", 1)[0] in {"--user-data-dir", "--remote-debugging-port",
+                                                "--remote-debugging-pipe"} for flag in extra):
+        raise ChromeError("parallel Chrome flags cannot override its profile or debug port")
+    args = [binary(), f"--user-data-dir={profile_dir}", f"--remote-debugging-port={port}", *extra]
     if headless:
         args.append("--headless=new")
     elif not visible:
@@ -276,29 +307,50 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait):
         args.append("--start-minimized")
     args.append("about:blank")
     STATE.mkdir(parents=True, exist_ok=True)
-    with open(STATE / f"{profile}.log", "ab") as log:
+    state_key = f"{profile}.ephemeral-{os.getpid()}-{profile_dir.name.rsplit('-', 1)[-1]}" if ephemeral else profile
+    launch_port = port
+    env = None
+    if temporary is not None:
+        env = {**os.environ, "TMPDIR": str(temporary), "TMP": str(temporary), "TEMP": str(temporary)}
+    with open(STATE / f"{state_key}.log", "ab") as log:
         proc = subprocess.Popen(
             niced(args), stdout=subprocess.DEVNULL, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True,
+            env=env,
         )
-    cdp_url = f"http://127.0.0.1:{port}"
     deadline = time.monotonic() + wait
-    while time.monotonic() < deadline:
-        if version(cdp_url, timeout=0.5):
-            break
-        if proc.poll() is not None:
-            raise ChromeError(f"Chrome exited with {proc.returncode} (see {STATE / (profile + '.log')})")
-        time.sleep(0.2)
-    else:
+    try:
+        while time.monotonic() < deadline:
+            if launch_port == 0:
+                try:
+                    port = int((profile_dir / "DevToolsActivePort").read_text().splitlines()[0])
+                    if not 1 <= port <= 65535:
+                        raise ValueError
+                except (OSError, ValueError, IndexError):
+                    port = 0
+            cdp_url = f"http://127.0.0.1:{port}"
+            if port and version(cdp_url, timeout=0.5):
+                break
+            if proc.poll() is not None:
+                raise ChromeError(f"Chrome exited with {proc.returncode} (see {STATE / (state_key + '.log')})")
+            time.sleep(0.2)
+        else:
+            raise ChromeError(f"Chrome did not open its debugging port within {wait}s")
+    except BaseException:
         _kill(proc.pid)
-        raise ChromeError(f"Chrome did not open its debugging port {port} within {wait}s")
-    state_key = f"{profile}.ephemeral-{os.getpid()}" if ephemeral else profile
+        raise
     record = {
         "profile": profile, "state_key": state_key, "pid": proc.pid, "port": port, "cdp_url": cdp_url,
         "profile_dir": str(profile_dir), "headless": headless, "ephemeral": ephemeral, "owner_pid": os.getpid(),
         "started_at": time.time(),
         "password_services_disabled": True,
+        "launch_port": launch_port, "temp_dir": str(temporary) if temporary else None,
     }
-    _state_file(state_key).write_text(json.dumps(record, indent=2))
+    try:
+        _write_state(state_key, record)
+    except BaseException:
+        _kill(proc.pid)
+        _state_file(state_key).unlink(missing_ok=True)
+        raise
     return {**record, "alive": True}
 
 
@@ -348,7 +400,14 @@ def stop(profile="default"):
     path.unlink(missing_ok=True)
     if record.get("ephemeral"):
         shutil.rmtree(record["profile_dir"], ignore_errors=True)
+        _remove_temp(record)
     return stopped
+
+
+def _remove_temp(record):
+    path = Path(record["temp_dir"]) if record.get("temp_dir") else None
+    if path and path.parent == TEMP_ROOT and re.fullmatch(rf"qajev-tmp-{record.get('owner_pid')}-\w+", path.name):
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def alive(pid):
@@ -381,7 +440,8 @@ def reap():
         shutil.rmtree(profile_dir, ignore_errors=True)
         reaped.append(f"chrome {pid_text} ({Path(profile_dir).name})")
     stray = [*EPHEMERAL_ROOT.glob("qajev-*-*-*")] if EPHEMERAL_ROOT.exists() else []
-    for folder in stray + [*Path(tempfile.gettempdir()).glob("qajev-*-*-*")]:
+    short = [*TEMP_ROOT.glob("qajev-tmp-*-*")]
+    for folder in stray + short + [*Path(tempfile.gettempdir()).glob("qajev-*-*-*")]:
         match = re.fullmatch(r"qajev-[\w.]+?-(\d+)-\w+", folder.name)
         if match and folder.is_dir() and not alive(int(match.group(1))):
             shutil.rmtree(folder, ignore_errors=True)
@@ -390,6 +450,7 @@ def reap():
         record = json.loads(path.read_text())
         if not alive(record.get("owner_pid", 0)):
             shutil.rmtree(record["profile_dir"], ignore_errors=True)
+            _remove_temp(record)
             path.unlink(missing_ok=True)
     runtime = Path(os.environ.get("BH_RUNTIME_DIR") or Path.home() / ".config" / "browser-harness" / "runtime")
     for path in runtime.glob("bu-qajev-*.pid") if runtime.exists() else []:

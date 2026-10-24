@@ -88,6 +88,9 @@ def _common(p):
                    help="QAJev Chrome profile (sign in once with `qajev browser login`)")
     g.add_argument("--headless", action="store_true", help="run QAJev's Chrome headless")
     g.add_argument("--ephemeral", action="store_true", help="throwaway profile, deleted after the run")
+    g.add_argument("--browser-runs", type=int, metavar="N",
+                   help="machine-wide concurrent browser runs (1..64; QAJEV_BROWSER_RUNS, default 1). "
+                        "Above 1 uses a fresh profile per run. RAM may lower admission; --jobs is separate")
     g.add_argument("--plan", type=Path, help=PLAN_HELP)
     g.add_argument("--real-devices", help="also run each website scenario in a real device browser: android (Chrome "
                                           "on a read-only emulator), ios (Safari on a throwaway simulator clone; "
@@ -505,6 +508,9 @@ def _screen_printer(args):
             print(f"qajev: {event['suite']} -> {event['run_dir']} ({where})", file=sys.stderr)
         elif kind == "waiting":
             print(f"  waiting: {event['reason']}", file=sys.stderr, flush=True)
+        elif kind == "admitted":
+            print(f"  browser slot ready: queued {event['timing']['queue_seconds']:.1f}s "
+                  f"(capacity {event['capacity']})", file=sys.stderr, flush=True)
         elif kind == "start":
             print(f"  ▸ {event['scenario']}", file=sys.stderr, flush=True)
         elif kind == "step" and not event.get("pulse"):
@@ -640,11 +646,23 @@ def check_suite(args):
     return suite_mod.parse(data)
 
 
-def _machine_lock(args):
-    """One browser run at a time on this machine, across every session: later runs queue (and say so)."""
-    from . import jobs
+def _machine_lock(args, suite=None):
+    """Browser runs share the pool; external Chrome, real devices and desktop work stay exclusive."""
+    from . import browser_pool, jobs
+    from .runner import ConfigError
 
-    return jobs.machine_lock(jobs.describe_argv(args.argv), emit=_printer(args),
+    capacity = None
+    if args.command in {"run", "check", "smoke"}:
+        try:
+            capacity = browser_pool.limit(getattr(args, "browser_runs", None))
+        except ValueError as error:
+            raise ConfigError(str(error)) from None
+        devices = getattr(suite, "real_devices", getattr(args, "real_devices", None))
+        if isinstance(devices, str):
+            devices = bool(devices.strip()) and devices.strip().lower() != "off"
+        if getattr(args, "cdp_url", None) or devices:
+            capacity = 1
+    return jobs.machine_lock(jobs.describe_argv(args.argv), emit=_printer(args), browser_runs=capacity,
                              job=_job_dir.name if _job_dir else None)
 
 
@@ -774,7 +792,7 @@ def cmd_run(args):
         if args.command == "run" and getattr(args, "project", None):
             proj, env, suite = _project_suite(args)  # refused before the queue and before Chrome
             suite.test_plan = _test_plan(args, suite.plan, proj.config_path.parent)
-            with _machine_lock(args):
+            with _machine_lock(args, suite):
                 return _run_project(args, proj, env, suite)
         if args.command == "run" and not args.suite:
             return _fail(args, "give a suite file or --project", EXIT_CONFIG)
@@ -785,11 +803,11 @@ def cmd_run(args):
 
             suite.real_devices = _real_devices(args.real_devices)
         suite.test_plan = _test_plan(args, suite.plan, suite.path.parent if suite.path else Path.cwd())
-        with _machine_lock(args):
+        with _machine_lock(args, suite):
             report = run(suite, _options(args))
     except Refused as e:
         return _refused(args, str(e))
-    except (SuiteError, ConfigError, FileNotFoundError, ProjectError) as e:
+    except (SuiteError, ConfigError, FileNotFoundError, ProjectError, ValueError) as e:
         return _fail(args, str(e), EXIT_CONFIG)
     except (ChromeError, Busy) as e:
         return _fail(args, str(e), EXIT_BROWSER)
@@ -1516,7 +1534,9 @@ def _job_line(j):
     p = j["progress"]
     done = f"{p['done']}/{p['total']}" if p.get("total") else f"{p['done']} done"
     extra = j.get("gate") or j.get("current") or j.get("waiting") or j.get("error") or ""
-    return f"{j['id']}  {j['state']:<8} {done:<8} {j['seconds']:>5}s  {j['title'][:60]}  {extra}"[:200]
+    timing = j.get("timing")
+    clocks = (f"queued {timing['queue_seconds']:.0f}s, run {timing['run_seconds']:.0f}s  " if timing else "")
+    return f"{j['id']}  {j['state']:<8} {done:<8} {j['seconds']:>5}s  {clocks}{j['title'][:60]}  {extra}"[:200]
 
 
 def cmd_jobs(args):

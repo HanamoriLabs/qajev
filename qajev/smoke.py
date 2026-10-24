@@ -225,7 +225,9 @@ def _examine(session, result, page, dev, *, settle, host, opts, run_dir):
 
 
 def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links=False, settle=0.8, delay=None):
-    from . import report
+    import tempfile
+
+    from . import browser_pool, report
     from . import session as session_mod
     from .jobs import plain_host
     from .suite import _device, wanted_devices
@@ -241,8 +243,8 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     if reaped and callable(opts.emit):
         opts.emit({"event": "reaped", "items": reaped})
     started_at = time.time()
-    run_dir = opts.out_dir / f"{time.strftime('%Y%m%d-%H%M%S')}-{slug(name)}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    opts.out_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = Path(tempfile.mkdtemp(prefix=f"{time.strftime('%Y%m%d-%H%M%S')}-{slug(name)}-", dir=opts.out_dir))
     owned = None
     if opts.cdp_url:
         cdp_url = opts.cdp_url.rstrip("/")
@@ -250,7 +252,8 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
             raise ConfigError(f"no Chrome DevTools endpoint at {cdp_url}")
         browser = {"cdp_url": cdp_url, "managed": False}
     else:
-        owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral)
+        owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral or browser_pool.parallel(),
+                             port=0 if browser_pool.parallel() else None)
         cdp_url = owned["cdp_url"]
         browser = chrome.run_record(owned)
 
@@ -390,6 +393,8 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     built = report.build(suite, results, [ledger.summary()], browser=browser, started_at=started_at,
                          strict=opts.strict, interrupted=interrupted, run_dir=run_dir)
     built["motion"] = opts.motion or "reduce"
+    if measured := browser_pool.timing():
+        built["timing"] = measured
     if getattr(opts, "color_scheme", None):
         built["color_scheme"] = opts.color_scheme
     built["cpu_throttle"] = opts.cpu_throttle or 1

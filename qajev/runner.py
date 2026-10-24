@@ -6,11 +6,12 @@ own one daemon. Every worker opens its own tab in the same QAJev Chrome and stop
 
 import os
 import re
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import chrome, live, plan, providers, ux, verdict, vision
+from . import browser_pool, chrome, live, plan, providers, ux, verdict, vision
 from .config import redact, redact_tree, secret_values
 from .diagnostics import keep_console
 from .ledger import CostCapReached, Ledger
@@ -778,8 +779,8 @@ def run(suite, opts):
     if reaped:
         _emit(opts, "reaped", items=reaped)
     started_at = time.time()
-    run_dir = opts.out_dir / f"{time.strftime('%Y%m%d-%H%M%S')}-{slug(suite.name)}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    opts.out_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = Path(tempfile.mkdtemp(prefix=f"{time.strftime('%Y%m%d-%H%M%S')}-{slug(suite.name)}-", dir=opts.out_dir))
     owned = None
     if opts.cdp_url:
         cdp_url = opts.cdp_url.rstrip("/")
@@ -787,7 +788,8 @@ def run(suite, opts):
             raise ConfigError(f"no Chrome DevTools endpoint at {cdp_url}")
         browser = {"cdp_url": cdp_url, "managed": False}
     else:
-        owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral)
+        owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral or browser_pool.parallel(),
+                             port=0 if browser_pool.parallel() else None)
         cdp_url = owned["cdp_url"]
         browser = chrome.run_record(owned)
     _emit(opts, "run", suite=suite.name, run_dir=str(run_dir), browser=browser, scenarios=len(scenarios),
@@ -884,6 +886,8 @@ def run(suite, opts):
     built["models"] = models
     built["motion"] = motion
     built["cpu_throttle"] = cpu_throttle
+    if measured := browser_pool.timing():
+        built["timing"] = measured
     if live.watched_seconds(run_dir):  # someone watched it LIVE in the dashboard: for how long
         built["watched_live_s"] = live.watched_seconds(run_dir)
     signed = signed or getattr(opts, "signed_here", None)

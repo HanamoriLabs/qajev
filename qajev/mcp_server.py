@@ -121,12 +121,15 @@ def _ux_args(values):
         raise ToolError(str(e)) from None
 
 
-def _browser_args(profile, cdp_url, headless):
+def _browser_args(profile, cdp_url, headless, browser_runs=None):
     """Agents get a headless throwaway Chrome by default: nothing appears on the person's screen and nothing is
     left behind. Name a `profile` for signed-in runs (the person signs in once with qa_browser login)."""
+    from .browser_pool import limit
+
+    args = ["--browser-runs", str(limit(browser_runs))] if browser_runs is not None else []
     if cdp_url:
-        return ["--cdp-url", cdp_url]
-    args = ["--profile", profile] if profile else ["--ephemeral"]
+        return [*args, "--cdp-url", cdp_url]
+    args += ["--profile", profile] if profile else ["--ephemeral"]
     if headless:
         args.append("--headless")
     return args
@@ -420,6 +423,7 @@ async def qa_check(
     profile: str | None = None,
     cdp_url: str | None = None,
     headless: bool = True,
+    browser_runs: int | None = None,
     cost_cap: float | None = None,
     out_dir: str | None = None,
     verbose: bool = False,
@@ -479,7 +483,7 @@ async def qa_check(
     args = ["check", url, "--mode", mode, *(["--device", device] if device else []), "--max-actions",
             str(max_actions),
             "--max-seconds", str(max_seconds), "--settle", str(settle), "--out", out_dir or str(DEFAULT_OUT),
-            *_browser_args(profile, cdp_url, headless)]
+            *_browser_args(profile, cdp_url, headless, browser_runs)]
     if goal:
         args += ["--goal", goal]
     for text in expect_text or []:
@@ -527,6 +531,7 @@ async def qa_run_suite(
     profile: str | None = None,
     cdp_url: str | None = None,
     headless: bool = True,
+    browser_runs: int | None = None,
     cost_cap: float | None = None,
     out_dir: str | None = None,
     verbose: bool = False,
@@ -585,7 +590,7 @@ async def qa_run_suite(
         except yaml.YAMLError:
             title = "run suite (inline)"
     args = ["run", suite_path, "--jobs", str(jobs), "--out", out_dir or str(DEFAULT_OUT),
-            *_browser_args(profile, cdp_url, headless)]
+            *_browser_args(profile, cdp_url, headless, browser_runs)]
     for name in only or []:
         args += ["--only", name]
     if cost_cap is not None:
@@ -613,6 +618,7 @@ async def qa_smoke(
     profile: str | None = None,
     cdp_url: str | None = None,
     headless: bool = True,
+    browser_runs: int | None = None,
     out_dir: str | None = None,
     verbose: bool = False,
     background: bool = False,
@@ -656,7 +662,7 @@ async def qa_smoke(
     where = _runner_args(runner, serve, model)
     args = ["smoke", url, "--max-pages", str(max_pages), *(["--device", device] if device else []),
             "--out", out_dir or str(DEFAULT_OUT),
-            *_browser_args(profile, cdp_url, headless)]
+            *_browser_args(profile, cdp_url, headless, browser_runs)]
     if check_links:
         args.append("--check-links")
     args += _motion_args(motion)
@@ -703,6 +709,7 @@ async def qa_project_run(
     expect_url: str | None = None,
     profile: str | None = None,
     headless: bool = True,
+    browser_runs: int | None = None,
     verbose: bool = False,
     background: bool = False,
     devices: list[str] | None = None,
@@ -746,7 +753,7 @@ async def qa_project_run(
     Without runner, the project's `runner` in project.toml counts after QAJEV_RUNNER.
     """
     where = _runner_args(runner, serve, model)
-    args = ["run", "--project", project, *_browser_args(profile, None, headless)]
+    args = ["run", "--project", project, *_browser_args(profile, None, headless, browser_runs)]
     for flag, value in (("--env", env), ("--objective", objective), ("--suite", suite), ("--url", url),
                         ("--expect-url", expect_url), ("--about", about)):
         if value:
