@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -77,8 +78,9 @@ def test_cloud_messaging_endpoints_are_nonnetwork_urls_before_spawn(launch, monk
 
 @pytest.mark.parametrize("endpoint", ["gcm-checkin-url", "gcm-registration-url", "gcm-mcs-endpoint"])
 @pytest.mark.parametrize("value", ["", "=https://example.test/service"])
-def test_extra_flags_cannot_restore_cloud_messaging_endpoints(launch, monkeypatch, endpoint, value):
-    monkeypatch.setenv("QAJEV_CHROME_FLAGS", f"--{endpoint}{value}")
+@pytest.mark.parametrize("prefix", ["--", "-", " --", " -"])
+def test_extra_flags_cannot_restore_cloud_messaging_endpoints(launch, monkeypatch, endpoint, value, prefix):
+    monkeypatch.setenv("QAJEV_CHROME_FLAGS", shlex.quote(f"{prefix}{endpoint}{value}"))
     with pytest.raises(chrome.ChromeError, match="messaging endpoint"):
         chrome.start("network", headless=True)
     assert launch["calls"] == []
@@ -89,8 +91,10 @@ def test_extra_flags_cannot_restore_cloud_messaging_endpoints(launch, monkeypatc
     "OptimizationGuideModelDownloading", "NetworkTimeServiceQuerying", "AimServerEligibilityEnabled",
     "AimServerRequestOnStartupEnabled", "OptimizationGuideManifestBroker", "OptimizationGuideOnDeviceModel",
 ])
-def test_extra_disabled_features_keep_the_product_network_policy(launch, monkeypatch, required):
-    monkeypatch.setenv("QAJEV_CHROME_FLAGS", "--disable-features=FixtureUiFeature,Translate --no-pings")
+@pytest.mark.parametrize("prefix", ["--", "-", " --", " -"])
+def test_extra_disabled_features_keep_the_product_network_policy(launch, monkeypatch, required, prefix):
+    flags = shlex.quote(f"{prefix}disable-features=FixtureUiFeature,Translate") + " --no-pings"
+    monkeypatch.setenv("QAJEV_CHROME_FLAGS", flags)
     chrome.start("network", headless=True)
     flags = launch["calls"][0]
     combined = [arg.split("=", 1)[1] for arg in flags if arg.startswith("--disable-features=")]
@@ -100,9 +104,11 @@ def test_extra_disabled_features_keep_the_product_network_policy(launch, monkeyp
     assert "FixtureUiFeature" in features
     assert features.count("Translate") == 1
     assert "--no-pings" in flags
+    assert not any(arg.startswith("-disable-features") for arg in flags)
 
 
-@pytest.mark.parametrize("extra", ["--disable-features", "--disable-features FixtureUiFeature"])
+@pytest.mark.parametrize("extra", ["--disable-features", "--disable-features FixtureUiFeature",
+                                  "-disable-features", "-disable-features FixtureUiFeature"])
 def test_bare_disabled_feature_switch_refuses_before_spawn(launch, monkeypatch, extra):
     monkeypatch.setenv("QAJEV_CHROME_FLAGS", extra)
     with pytest.raises(chrome.ChromeError, match="--disable-features="):

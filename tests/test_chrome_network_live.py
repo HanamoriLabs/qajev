@@ -74,7 +74,7 @@ def test_product_launcher_stops_background_requests_with_plain_and_custom_featur
              "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost",
              f"--log-net-log={netlog}"]
     if custom_feature:
-        flags.append("--disable-features=FixtureUiFeature")
+        flags.extend(["-disable-features=FixtureUiFeature", "-enable-features=OptimizationGuideOnDeviceModel"])
     env = {key: os.environ[key] for key in ("HOME", "PATH", "LANG", "PYTHONPATH") if key in os.environ}
     env.update(QAJEV_HOME=str(tmp_path / "home"), QAJEV_CHROME_FLAGS=shlex.join(flags),
                QAJEV_CHROME=os.environ.get("QAJEV_CHROME", "/usr/bin/chromium"), QAJEV_LOCK_WAIT="3600",

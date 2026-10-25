@@ -107,22 +107,29 @@ def open_visible(cdp_url, url):
         return json.load(r)
 
 
+def _switch_name(value):
+    # Chromium's POSIX parser accepts both prefixes; native Windows Chrome is not supported (use WSL).
+    prefix = 2 if value.startswith("--") else 1 if value.startswith("-") else 0
+    return value[prefix:].split("=", 1)[0] if prefix else None
+
+
 def flags():
     """QAJev's Chrome flags plus $QAJEV_CHROME_FLAGS (e.g. --no-sandbox in Docker or on CI runners that block user
     namespaces, where Chrome otherwise stops with "No usable sandbox!")."""
     import shlex
 
-    extra = shlex.split(os.environ.get("QAJEV_CHROME_FLAGS", ""))
-    if any(value.split("=", 1)[0] in {"--gcm-checkin-url", "--gcm-registration-url", "--gcm-mcs-endpoint"}
+    # Chromium trims each argument before parsing its switch prefix, including quoted arguments.
+    extra = [value.strip() for value in shlex.split(os.environ.get("QAJEV_CHROME_FLAGS", ""))]
+    if any(_switch_name(value) in {"gcm-checkin-url", "gcm-registration-url", "gcm-mcs-endpoint"}
            for value in extra):
         raise ChromeError("QAJev Chrome flags cannot override a messaging endpoint")
     combined = [*FLAGS, *extra]
     result, disabled = [], []
     feature_position = None
     for value in combined:
-        if value == "--disable-features":
-            raise ChromeError("Use --disable-features=FEATURES in QAJEV_CHROME_FLAGS")
-        if value.startswith("--disable-features="):
+        if _switch_name(value) == "disable-features":
+            if "=" not in value:
+                raise ChromeError("Use --disable-features=FEATURES in QAJEV_CHROME_FLAGS")
             if feature_position is None:
                 feature_position = len(result)
             disabled.extend(feature for feature in value.split("=", 1)[1].split(",") if feature)

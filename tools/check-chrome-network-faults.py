@@ -28,14 +28,15 @@ base.FAULTS = [
     for index, switch in enumerate(switches, 1)
 ] + [
     (f"F{index:02d}", C, feature, "",
-     U + f"test_extra_disabled_features_keep_the_product_network_policy[{feature}]")
+     U + "test_extra_disabled_features_keep_the_product_network_policy")
     for index, feature in enumerate(features, 1)
 ] + [
     ("M01-last-feature-switch", C, "    return result\n", "    return combined\n",
      U + "test_extra_disabled_features_keep_the_product_network_policy"),
     ("M02-duplicates", C, "dict.fromkeys(disabled)", "disabled",
      U + "test_extra_disabled_features_keep_the_product_network_policy"),
-    ("M03-bare-switch", C, 'if value == "--disable-features":', "if False:",
+    ("M03-bare-switch", C,
+     'raise ChromeError("Use --disable-features=FEATURES in QAJEV_CHROME_FLAGS")', "continue",
      U + "test_bare_disabled_feature_switch_refuses_before_spawn"),
     ("P01-spellcheck-enabled", C, 'data.setdefault("browser", {})["enable_spellchecking"] = False', "pass",
      U + "test_dictionary_downloads_are_disabled_before_spawn"),
@@ -70,13 +71,24 @@ base.FAULTS = [
      T + "test_repeated_nonlocal_starts_keep_their_count"),
     ("A05-headers", A, '"group_name", "host"', '"group_name", "host", "headers"',
      T + "test_a_resolver_marker_is_not_exempted_and_headers_are_not_request_hosts"),
-    ("G04-extra-endpoint-override", C, 'if any(value.split("=", 1)[0] in {"--gcm-checkin-url",',
-     'if False and any(value.split("=", 1)[0] in {"--gcm-checkin-url",',
+    ("G04-extra-endpoint-override", C, 'if any(_switch_name(value) in {"gcm-checkin-url",',
+     'if False and any(_switch_name(value) in {"gcm-checkin-url",',
      U + "test_extra_flags_cannot_restore_cloud_messaging_endpoints"),
     ("M04-extra-flag-order", C,
      'result.insert(feature_position, "--disable-features=" + ",".join(dict.fromkeys(disabled)))',
      'result.append("--disable-features=" + ",".join(dict.fromkeys(disabled)))',
      "tests/test_linux.py::test_extra_chrome_flags_come_from_the_environment"),
+] + [
+    (f"N{index:02d}-endpoint-alias", C, f'"{endpoint}"', '"unrelated-endpoint"',
+     U + "test_extra_flags_cannot_restore_cloud_messaging_endpoints")
+    for index, endpoint in enumerate(("gcm-checkin-url", "gcm-registration-url", "gcm-mcs-endpoint"), 1)
+] + [
+    ("N04-single-dash-feature", C,
+     'prefix = 2 if value.startswith("--") else 1 if value.startswith("-") else 0',
+     'prefix = 2 if value.startswith("--") else 0',
+     U + "test_extra_disabled_features_keep_the_product_network_policy"),
+    ("N05-quoted-whitespace", C, 'value.strip() for value in shlex.split', 'value for value in shlex.split',
+     U + "test_extra_flags_cannot_restore_cloud_messaging_endpoints"),
 ] + [
     (f"G{index:02d}-network-endpoint", C, f'    "--{endpoint}={url}",\n', "",
      U + f"test_cloud_messaging_endpoints_are_nonnetwork_urls_before_spawn[{endpoint}]")

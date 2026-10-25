@@ -128,11 +128,15 @@ Its raw TLS push channel uses `https://127.0.0.1:0`, an unusable loopback port, 
 Messaging retries cannot contact a remote service. Browser push messaging is unavailable in these managed
 profiles; page navigation and local form input still work normally.
 
-Extra `--disable-features=FEATURES` entries in `QAJEV_CHROME_FLAGS` are combined with the managed defaults
-into one switch. Use the equals syntax; a bare `--disable-features` is refused before Chrome starts.
-Extra flags cannot override the managed `--gcm-checkin-url`, `--gcm-registration-url` or `--gcm-mcs-endpoint`.
+Extra `--disable-features=FEATURES` or `-disable-features=FEATURES` entries in `QAJEV_CHROME_FLAGS` are combined
+with the managed defaults into one switch. Use the equals syntax; either bare form is refused before Chrome starts.
+Extra flags cannot override the managed `--gcm-checkin-url`, `--gcm-registration-url` or `--gcm-mcs-endpoint`,
+including Chromium's single-dash forms and quoted arguments with surrounding whitespace.
+Chromium gives disabled features precedence over `--enable-features`; caller enables cannot restore the managed
+disabled features. Native Windows Chrome is not supported; Windows installs use Linux Chrome inside WSL.
 
-After updating, restart an already running managed profile with `qajev browser stop --profile NAME` before
+Use `qajev browser status` to find the running profile names. After updating, restart an already running managed
+profile with `qajev browser stop --profile NAME` before
 using it again. QAJev preserves unrelated profile preferences and asks for this restart instead of reusing
 a process that started without the service policy. Externally supplied `--cdp-url` browsers keep their own
 launcher settings.
