@@ -448,6 +448,8 @@ def _concurrent_models(witness, pause_receiver=False):
     assert started.wait(1)
     call("https://typesafe.ai", "fixture", {"block": False})
     entered("fast-call-completed")
+    watchdog.complete("concurrency fixture ready")
+    entered("fixture-ready")
     watchdog.active("one model call still in flight")
     time.sleep(30)
 
@@ -461,7 +463,7 @@ def test_concurrent_model_completion_does_not_hide_another_outstanding_call(tmp_
     assert failure["scenario"] == "blocked", detail
     assert failure["identity"] == "one model call still in flight", detail
     assert [row["stage"] for row in rows] == [
-        "worker-entered", "blocked-call-entered", "fast-call-entered", "fast-call-completed"], detail
+        "worker-entered", "blocked-call-entered", "fast-call-entered", "fast-call-completed", "fixture-ready"], detail
     assert failure["cost_uncertain"] is True, detail
     assert failure["ledger"]["usd"] == .1
     assert failure["ledger"]["calls"]["typesafe"] == 1
@@ -702,11 +704,31 @@ def test_unread_ready_still_stops_only_the_owned_process_group(monkeypatch, tmp_
             state = Path(f"/proc/{child}/stat").read_text().split()[2]
         except (FileNotFoundError, ProcessLookupError):
             state = None
-        assert failure["stop"] == "no_progress" and state in {None, "Z"}, "owned descendant survived unread ready"
+        assert failure["stop"] == "no_progress", failure
+        assert state in {None, "Z"}, "owned descendant survived unread ready"
         assert sibling.poll() is None, "an unrelated process group must remain alive"
     finally:
         if child is not None:
             with contextlib.suppress(ProcessLookupError):
                 os.kill(child, signal.SIGKILL)
-        sibling.kill()
+        with contextlib.suppress(ProcessLookupError):
+            sibling.kill()
         sibling.wait(timeout=5)
+
+
+def test_unknown_runtime_bookkeeping_refuses_a_replacement_worker(monkeypatch, tmp_path):
+    attempts = []
+
+    def supervise(*_args, **_kwargs):
+        attempts.append(True)
+        if len(attempts) == 1:
+            failure = _failure()
+            failure["runtime_state_incomplete"] = True
+            return None, failure
+        return {"results": [{"name": "later", "outcome": "pass"}], "ledger": runner.Ledger(1).summary()}, None
+
+    monkeypatch.setattr(watchdog, "supervise", supervise)
+    out = runner.supervised_group(_recovery_suite().scenarios, opts=runner.Options(), cdp_url="unused",
+                                  suite_meta={}, run_dir=tmp_path, ledger=runner.Ledger(1))
+    assert len(attempts) == 1
+    assert out["results"][1]["stop"] == "runtime_uncertain"

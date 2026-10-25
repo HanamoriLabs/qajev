@@ -18,7 +18,12 @@ TIMEOUT = 300.0
 STOP_GRACE = 1.0
 CLEANUP_LIMIT = 5.0
 _sink = None
+_critical_state = None
 _send_lock = threading.Lock()
+# Each category has one writer at a time under _send_lock. The supervisor reads after stopping that process.
+CRITICAL = {"cost_pending": 0, "ledger": 0, "resource": 1, "resource_pending": 1,
+            "resource_resolved": 1, "runtime": 2}
+READY_SLOT = 3
 
 
 def recording():
@@ -26,10 +31,16 @@ def recording():
 
 
 def notify(kind, **data):
-    if _sink is not None:
-        from .config import redact_tree
+    if _sink is None and _critical_state is None:
+        return
+    from .config import redact_tree
 
-        with _send_lock:
+    with _send_lock:
+        if _critical_state is not None and kind in CRITICAL:
+            category = CRITICAL[kind]
+            _critical_state[category] += 1
+            data["_critical"] = (category, int(_critical_state[category]))
+        if _sink is not None:
             _sink.send(redact_tree({"kind": kind, "monotonic": time.monotonic(), **data}))
 
 
@@ -105,13 +116,15 @@ def _terminate(_signum, _frame):
     raise _Stopped()
 
 
-def _child(pipe, target, args, kwargs):
-    global _sink
+def _child(pipe, target, args, kwargs, critical):
+    global _sink, _critical_state
     # POSIX is explicit: never silently run without an enforceable process boundary.
     os.setsid()
+    critical[READY_SLOT] = 1  # Group ownership must not depend on receipt of the queued ready message.
     signal.signal(signal.SIGTERM, _terminate)
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # the supervisor owns operator interruption
     _sink = pipe
+    _critical_state = critical
     notify("ready", pid=os.getpid())
     try:
         result = target(*args, **kwargs)
@@ -125,11 +138,12 @@ def _child(pipe, target, args, kwargs):
         _sink = None
 
 
-def stop(process, grouped):
+def stop(process, grouped, *, ready=None):
     """TERM then KILL, including shell descendants. Every wait has a fixed bound."""
     if process.pid is None:
         return
     for sig in (signal.SIGTERM, signal.SIGKILL):
+        grouped = grouped or (ready is not None and bool(ready[READY_SLOT]))
         if grouped:
             try:
                 os.killpg(process.pid, sig)
@@ -237,7 +251,9 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
         raise RuntimeError("scenario progress watchdog requires POSIX process groups; run refused")
     ctx = multiprocessing.get_context("spawn")
     receive, send = ctx.Pipe(duplex=False)
-    process = ctx.Process(target=_child, args=(send, target, args, kwargs or {}))
+    critical = ctx.RawArray("Q", 4)
+    seen = [0, 0, 0]
+    process = ctx.Process(target=_child, args=(send, target, args, kwargs or {}, critical))
     state = Progress(timeout=timeout)
     results, targets, contexts, pending, daemon, ledger = [], set(), set(), set(), None, None
     cost_pending = set()
@@ -296,6 +312,9 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
                 elif kind == "error":
                     failure = {"stop": "worker_error", "detail": message["detail"]}
                     break
+                if "_critical" in message:
+                    category, generation = message["_critical"]
+                    seen[category] = generation
             elif not process.is_alive():
                 failure = {"stop": "worker_error", "detail": f"scenario worker exited {process.exitcode}"}
                 break
@@ -303,16 +322,19 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
         failure = {"stop": "interrupted", "detail": "stopped by the operator"}
     finally:
         ended = time.monotonic()
-        stop(process, grouped)
+        stop(process, grouped, ready=critical)
         receive.close()
     if failure is not None:
+        # Do not drain a potentially partial pipe frame. Unread critical updates are conservatively uncertain.
+        unread = [int(critical[index]) != seen[index] for index in range(3)]
         cleaned = cleanup(ctx, cdp_url, targets, contexts, daemon)
         queued = state.queue_seconds + (ended - state.queued_at if state.queued else 0)
         failure.update(scenario=state.scenario, identity=state.identity, partial=state.partial,
-                       results=results, ledger=ledger, cleanup_complete=cleaned and not pending,
-                       cost_uncertain=bool(cost_pending),
+                       results=results, ledger=ledger, cleanup_complete=cleaned and not pending and not unread[1],
+                       cost_uncertain=bool(cost_pending) or unread[0],
                        runtime=runtime,
-                       resource_ownership_uncertain=bool(pending),
+                       resource_ownership_uncertain=bool(pending) or unread[1],
+                       runtime_state_incomplete=unread[2],
                        idle_seconds=round(ended - state.last - (ended - state.queued_at if state.queued else 0), 3),
                        active_seconds=round(ended - state.started - queued, 3),
                        queue_seconds=round(queued, 3))

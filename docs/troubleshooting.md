@@ -130,6 +130,8 @@ that new chain's normal dependency rules.
 If owned cleanup cannot be confirmed, remaining work is `not run: cleanup_incomplete`. QAJev closes only
 targets/contexts it recorded as its own and stops only its worker/daemon; it never stops the shared Chrome.
 Operator cancellation, actual transport loss and a cost-cap stop do not start a replacement worker.
+An interruption raised inside a worker also preserves the completed prefix and marks the remaining scenarios
+`not run: interrupted`; it never starts a replacement worker.
 
 Load/admission queue time is separate from active scenario time. Existing goal budgets, cost caps, suite limits
 and lane limits still apply. Process supervision works on macOS/Linux from main or background threads; other
@@ -137,6 +139,8 @@ platforms are refused explicitly. The watchdog does not install timers or signal
 Recorded model cost and call totals survive replacement. An unobserved in-flight model call makes the remaining
 cost cap uncertain: later scripted checks can run, but no further paid call can use that cap. Whole-run load-wait
 time and completed same-tab sign-in metadata survive replacement too; a completed login is not replayed.
+Unread accounting or ownership updates at a stop remain explicitly uncertain. If runtime bookkeeping was not
+received, remaining work is `not run: runtime_uncertain`; the load-wait budget cannot silently restart.
 The persistent browser context stays on the same Chrome. Cookies and persistent origin storage remain; tab-local
 state, including session storage, is discarded. Sign-in metadata describes the original completed login and marks
 the watchdog continuation; it does not claim that login was repeated or that tab-local authentication survived.

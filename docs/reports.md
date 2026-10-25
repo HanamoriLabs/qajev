@@ -79,6 +79,9 @@ means a killed in-flight request may have cost that could not be observed; recor
 The next independent URL root can run in a fresh session after verified cleanup. Blocked continuations use
 `stop: session_uncertain` or `dependency` and `outcome: skipped`. Unconfirmed cleanup uses `cleanup_incomplete`
 and refuses remaining work. Cancellation and actual transport loss do not restart a worker.
+`runtime_state_incomplete: true` records unread runtime bookkeeping at the stop boundary; remaining work uses
+`runtime_uncertain`. Critical accounting and ownership updates cannot become confirmed merely because their
+queued messages were not received before cancellation.
 An action or time budget is different: Jev wandered,
 but the page was still judged in full, so its checks decide.
 

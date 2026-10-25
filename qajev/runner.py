@@ -798,6 +798,11 @@ def supervised_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, p
             _restore_runtime(opts, out.get("runtime", {}))
             for result in out["results"]:
                 keep(result)
+            if any(result.get("interrupted") for result in out["results"]):
+                for candidate in pending:
+                    if candidate.name not in results:
+                        not_run(candidate, "interrupted",
+                                "not run: interrupted by the operator; no automatic retry")
             _adopt_ledger(ledger, out["ledger"])
             last_name = out.get("bu_name")
             break
@@ -828,12 +833,15 @@ def supervised_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, p
         _emit(opts, "scenario", result=result)
         remaining = pending[pending.index(scenario) + 1:]
         resume = (failure["stop"] == "no_progress" and failure["cleanup_complete"]
+                  and not failure.get("runtime_state_incomplete", False)
                   and not (getattr(opts, "sign_in_attempted", False) and not getattr(opts, "signed_here", None)))
         eligible = []
         for candidate in remaining:
             blocked = [d for d in candidate.depends_on if outcomes.get(d) != "pass"]
             if not resume:
                 stop = "cleanup_incomplete" if not failure["cleanup_complete"] else "session_uncertain"
+                if failure.get("runtime_state_incomplete"):
+                    stop = "runtime_uncertain"
                 not_run(candidate, stop, f"not run: {stop} after {current!r}; no automatic retry")
             elif blocked:
                 not_run(candidate, "dependency", f"not run: depends on {blocked} which did not pass")

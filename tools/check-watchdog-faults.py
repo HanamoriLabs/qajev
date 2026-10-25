@@ -37,7 +37,7 @@ base.FAULTS = [
      T + "test_declared_180_second_wait_valid_and_queue_time_separate"),
     ("W07-ipc-receipt-time", W, '        now = message.get("monotonic", now)\n', '',
      T + "test_completion_uses_real_event_time_instead_of_ipc_delivery_time"),
-    ("W08-orphan-shell", W, "        stop(process, grouped)\n", "        stop(process, False)\n",
+    ("W08-orphan-shell", W, "        stop(process, grouped, ready=critical)\n", "        stop(process, False)\n",
      T + "test_process_group_cleanup_kills_descendants"),
     ("W09-corrupt-earlier-results", R, 'for result in failure.pop("results"):\n            keep(result)',
      'for result in failure.pop("results"):\n            keep({**result, "outcome": "skipped"})',
@@ -45,7 +45,7 @@ base.FAULTS = [
     ("W10-discard-measured-checks", R, 'partial = failure.pop("partial")',
      'partial = {}\n        failure.pop("partial")',
      T + "test_actual_runner_entry_retains_prior_results_and_never_replays"),
-    ("W11-incomplete-ownership-is-clean", W, 'cleanup_complete=cleaned and not pending,',
+    ("W11-incomplete-ownership-is-clean", W, 'cleanup_complete=cleaned and not pending and not unread[1],',
      'cleanup_complete=cleaned,', T + "test_unacknowledged_resource_creation_reports_cleanup_uncertainty"),
     ("W12-close-foreign-context", W, "contexts & present_contexts", "present_contexts",
      T + "test_independent_cleanup_closes_only_recorded_targets_contexts"),
@@ -104,6 +104,18 @@ base.FAULTS = [
      '# Leave the parent daemon alive in a serial run.\n                if opts.jobs > 1:\n'
      '                    session_mod.stop_daemon()',
      T + "test_serial_spawned_run_closes_the_parent_owned_signin_daemon"),
+    ("W30-child-cancellation-loses-suffix", R,
+     'if any(result.get("interrupted") for result in out["results"]):', 'if False:',
+     T + "test_child_operator_interruption_preserves_prefix_and_marks_suffix_without_recovery"),
+    ("W31-ignore-unread-critical-updates", W,
+     'unread = [int(critical[index]) != seen[index] for index in range(3)]',
+     'unread = [False, False, False]', T + "test_unread_critical_notifications_remain_uncertain_at_stop"),
+    ("W32-missed-ready-leaves-owned-descendants", W,
+     'stop(process, grouped, ready=critical)', 'stop(process, grouped)',
+     T + "test_unread_ready_still_stops_only_the_owned_process_group"),
+    ("W33-resume-with-unknown-runtime-budget", R,
+     'and not failure.get("runtime_state_incomplete", False)', 'and True',
+     T + "test_unknown_runtime_bookkeeping_refuses_a_replacement_worker"),
 ]
 
 if __name__ == "__main__":
