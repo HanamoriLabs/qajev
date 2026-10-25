@@ -69,6 +69,11 @@ Start a lane's execution watchdog at `admitted`, rather than charging queue wait
 The pool limits browser runs, not tabs, scenario workers or application server ports. Callers must isolate
 their own application state and servers. `QAJEV_LOCK_WAIT` still bounds the queue wait (default 3600 seconds).
 
+A website scenario's `exclusive: true` temporarily pauses other scenario workers in that run. Existing active
+work drains, the marked scenario keeps tab admission through setup, execution and live-view cleanup, then
+ordinary parallel work resumes. Dependency chains retain their tabs. This does not change machine admission,
+RAM limits or other runs. See [exclusive scenarios](writing-tests.md#keep-one-scenario-alone-within-a-run).
+
 ## Exit codes
 
 | Code | Means |

@@ -351,6 +351,40 @@ qajev run qajev.yaml --cost-cap 0.10                     # a lower cap for this 
 qajev run qajev.yaml --jobs 2                            # independent chains in parallel
 ```
 
+### Keep one scenario alone within a run
+
+Set `exclusive: true` on a scenario that must keep its tab in front, such as a pointer-lock check:
+
+```yaml
+scenarios:
+  - name: pointer lock stays held
+    about: the canvas keeps pointer lock until the visitor releases it
+    url: /canvas
+    exclusive: true
+    before:
+      - click: "#view"
+    expect:
+      js: document.pointerLockElement !== null
+      says: the canvas holds pointer lock
+    after:
+      - js: document.exitPointerLock()
+```
+
+With `--jobs 3`, ordinary scenarios still overlap. The marked scenario waits for active scenarios to finish,
+then holds admission from tab setup through its hooks, checks and live-view cleanup. Other workers cannot
+create, activate or close tabs during that interval. They resume at the configured job count afterward.
+The value must be the boolean `true` or `false`; the default is `false`.
+
+A dependency chain still keeps its original tab and page state. Only the marked scenario is exclusive, not its
+whole chain. The runner also admits group cleanup, so an old tab cannot close during a marked scenario.
+If a worker stops, its supervisor retains admission until owned cleanup finishes; uncertain cleanup refuses
+later admission as harness rather than letting another scenario assume the browser is idle.
+
+This coordinates QAJev's workers in this run. It does not reserve the machine or GPU, stop page scripts in idle
+tabs, or exclude a separate browser run. Keep other applications and browser runs out of a check that needs
+machine-wide isolation. Admission waiting is separate from scenario execution and does not spend the
+five-minute no-progress deadline. Reports retain it as `scheduling.queue_seconds`.
+
 ## Hooks: direct steps before or after Jev
 
 For long forms or setup, drive the page directly and let Jev do the decisions:

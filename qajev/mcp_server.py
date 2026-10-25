@@ -33,11 +33,13 @@ something on a site, and to catch errors a browser can see.
   comes from those checks.
 - qa_run_suite for many scenarios (YAML suite; see qajev init). Lint a suite with qa_plan first (free, runs
   nothing): it lists the tests that do not say what they prove, whose runs could never PASS.
+  A scenario's exclusive: true drains other scenario workers in this run, keeps its tab work alone, then
+  resumes parallel jobs. Chains keep their tabs. It does not reserve the machine or GPU.
 - qa_project_run to prove a product: a project's stored objectives (qa_projects lists them) or one ad-hoc
   objective; reports are filed per project and listed by qa_reports.
 - Long runs: pass background=true to get a job id at once, then qa_job(job) for progress and partial results,
   qa_stop(job) to stop it. qa_jobs lists every QAJev run on the machine (any agent's), queued or running.
-  Only one browser run executes at a time machine-wide; the others queue.
+  One browser run executes at a time machine-wide by default; browser_runs can admit separate isolated runs.
 - Specific tests: qa_run_suite(only=[...]) and qa_play(suite=..., only=[...]) run chosen scenarios or game steps
   (with what they depend on); qa_rerun(job) runs a finished job's failed, stuck and harness tests again.
 - Where it runs: runner="cloud" sends qa_check, qa_run_suite, qa_smoke and qa_project_run to QAJev Cloud instead of
@@ -367,7 +369,7 @@ def _trim(report, verbose):
             "stop_detail", "not_run", "seconds", "cost_usd", "end_url",
             "checks", "findings", "shot", "jev", "blocked_writes", "allowed_writes", "dialogs", "page_says",
             "needs_sign_in", "block_list_requests", "frames_not_observed", "frames_accepted", "frame_console",
-            "frame_requests", "effect", "ux")
+            "frame_requests", "effect", "ux", "scheduling")
     out = {k: v for k, v in report.items() if k not in ("scenarios", "plan")}  # the plan repeats the scenarios
     out["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [], {})} for r in report["scenarios"]]
     for r in out["scenarios"]:
@@ -559,6 +561,8 @@ async def qa_run_suite(
 ) -> dict:
     """Run a QAJev suite (YAML/JSON) from a file path or inline text. `only` limits to named scenarios
     (plus their dependencies). jobs > 1 runs independent chains in parallel; keep 1 on a busy machine.
+    A scenario's exclusive: true holds per-run tab admission through setup, execution and live cleanup;
+    ordinary work drains before it and resumes afterward. It does not reserve the machine or GPU.
     Website scenarios stop as harness after five minutes without a completed step/check. Polling and animation
     do not count. Queue time is separate. After verified cleanup the next independent URL runs in a fresh session.
     A watchdog-expired action is never replayed; work that depends on the discarded page state is not run.
@@ -989,7 +993,8 @@ async def qa_job(job: str, verbose: bool = False) -> dict:
     if st.get("report"):
         st["report"] = _trim(st["report"], verbose)
     if not verbose:
-        keep = ("name", "about", "outcome", "reason", "seconds", "findings", "shot", "needs_sign_in")
+        keep = ("name", "about", "outcome", "reason", "seconds", "findings", "shot", "needs_sign_in",
+                "scheduling")
         st["scenarios"] = [{k: r.get(k) for k in keep if r.get(k) not in (None, [])} for r in st["scenarios"]]
     return st
 

@@ -12,6 +12,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- Website scenarios can set `exclusive: true` to run alone among that run's workers, including tab setup and
+  cleanup. Ordinary scenarios drain before it and resume afterward without splitting dependency chains or
+  changing the configured job count. A stopped worker keeps admission through verified owned cleanup;
+  uncertain cleanup refuses new work. Admission time is separate in scenario scheduling results.
+
 - Website scenario groups have a five-minute no-progress watchdog, enforced from a separate process even
   during blocked native calls. Only completed steps/checks reset it; queue time is separate. A stop is harness,
   keeps earlier results and measured checks, then continues at an independent URL in a fresh worker/session

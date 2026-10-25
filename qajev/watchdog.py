@@ -11,6 +11,7 @@ import os
 import signal
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -64,6 +65,49 @@ def operation(identity):
 def call(identity, fn, *args, **kwargs):
     with operation(identity):
         return fn(*args, **kwargs)
+
+
+@contextmanager
+def admission(run_dir, exclusive=False):
+    """The supervisor keeps admission through a killed worker's owned cleanup."""
+    from . import scenario_gate
+
+    if run_dir is None:
+        yield 0.0
+        return
+    began = time.monotonic()
+    notify("queued")
+    granted = False
+    request_id = uuid.uuid4().hex
+    try:
+        if _sink is None:  # Direct runner calls, including small fixture tests.
+            with scenario_gate.admit(run_dir, exclusive) as waited:
+                notify("admitted")
+                yield waited
+        else:
+            notify("admission_request", request_id=request_id, exclusive=exclusive)
+            reply = _sink.recv()
+            if reply.get("kind") != "admission_reply" or reply.get("request_id") != request_id:
+                raise scenario_gate.AdmissionError("invalid scenario admission reply")
+            if reply.get("error"):
+                raise scenario_gate.AdmissionError(reply["error"])
+            granted = True
+            notify("admitted")
+            yield time.monotonic() - began
+    except BaseException as error:
+        if granted:
+            # An unwinding operation may still have a daemon command in flight. The supervisor must
+            # stop this worker and clean up under its existing lease, rather than admit another tab.
+            stop_reason = ("interrupted" if isinstance(error, KeyboardInterrupt) else
+                           "transport_lost" if type(error).__name__ == "TransportLost" else "worker_error")
+            notify("admission_abort", request_id=request_id, stop=stop_reason,
+                   detail=f"{type(error).__name__}: {error}")
+            granted = False
+        raise
+    finally:
+        if granted:
+            notify("admission_release", request_id=request_id)
+        notify("admitted")  # An admission error must not leave the active clock suspended.
 
 
 @dataclass
@@ -214,22 +258,26 @@ def _cleanup(cdp_url, targets, contexts, daemon):
     return cleaned
 
 
-def _cleanup_child(pipe, cdp_url, targets, contexts, daemon):
+def _cleanup_child(pipe, cdp_url, targets, contexts, daemon, admission_dir=None):
+    from . import scenario_gate
+
     os.setsid()
     try:
-        pipe.send(_cleanup(cdp_url, targets, contexts, daemon))
+        # Waiting is inside the existing bounded cleanup process, never in its supervisor.
+        with scenario_gate.admit(admission_dir):
+            pipe.send(_cleanup(cdp_url, targets, contexts, daemon))
     except Exception:
         pipe.send(False)
     finally:
         pipe.close()
 
 
-def cleanup(ctx, cdp_url, targets, contexts, daemon):
+def cleanup(ctx, cdp_url, targets, contexts, daemon, admission_dir=None):
     """Browser/daemon cleanup cannot extend a watchdog stop indefinitely."""
     if not targets and not contexts and not daemon:
         return True
     receive, send = ctx.Pipe(duplex=False)
-    child = ctx.Process(target=_cleanup_child, args=(send, cdp_url, targets, contexts, daemon))
+    child = ctx.Process(target=_cleanup_child, args=(send, cdp_url, targets, contexts, daemon, admission_dir))
     child.start()
     send.close()
     try:
@@ -242,7 +290,7 @@ def cleanup(ctx, cdp_url, targets, contexts, daemon):
         receive.close()
 
 
-def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_url=None):
+def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_url=None, admission_dir=None):
     """Return (value, failure). Stream trusted runner events; ignore them for liveness.
 
     IPC identity changes never reset the deadline. Only explicit semantic completion
@@ -250,8 +298,10 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
     """
     if os.name != "posix" or not hasattr(os, "setsid"):
         raise RuntimeError("scenario progress watchdog requires POSIX process groups; run refused")
+    from . import scenario_gate
+
     ctx = multiprocessing.get_context("spawn")
-    receive, send = ctx.Pipe(duplex=False)
+    receive, send = ctx.Pipe(duplex=True)  # Admission grants go back to the waiting scenario worker.
     critical = ctx.RawArray("Q", 4)
     seen = [0, 0, 0]
     process = ctx.Process(target=_child, args=(send, target, args, kwargs or {}, critical))
@@ -264,8 +314,21 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
     send.close()
     failure: dict[str, Any] | None = None
     value = None
+    lease = waiting_admission = None
+    admission_id = None
     try:
         while True:
+            if waiting_admission is not None:
+                try:
+                    admitted = waiting_admission.poll()
+                except (scenario_gate.AdmissionError, OSError) as error:
+                    receive.send({"kind": "admission_reply", "request_id": admission_id, "error": str(error)})
+                    waiting_admission.close()
+                    waiting_admission = None
+                else:
+                    if admitted:
+                        lease, waiting_admission = waiting_admission, None
+                        receive.send({"kind": "admission_reply", "request_id": admission_id})
             # Check before reading: an endless event/console stream cannot starve the timer.
             if state.expired():
                 failure = {"stop": "no_progress", "detail": f"no real progress for {timeout:g} s"}
@@ -280,6 +343,27 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
                 state.receive(message)
                 if kind == "ready":
                     grouped = True
+                elif kind == "admission_request":
+                    if admission_dir is None or lease is not None or waiting_admission is not None:
+                        failure = {"stop": "worker_error", "detail": "invalid nested scenario admission"}
+                        break
+                    admission_id = message["request_id"]
+                    try:
+                        waiting_admission = scenario_gate.Admission(admission_dir, message["exclusive"])
+                    except OSError as error:
+                        receive.send({"kind": "admission_reply", "request_id": admission_id, "error": str(error)})
+                elif kind == "admission_release":
+                    if lease is None or message["request_id"] != admission_id:
+                        failure = {"stop": "worker_error", "detail": "invalid scenario admission release"}
+                        break
+                    lease.close()
+                    lease = None
+                elif kind == "admission_abort":
+                    if lease is None or message["request_id"] != admission_id:
+                        failure = {"stop": "worker_error", "detail": "invalid scenario admission abort"}
+                    else:
+                        failure = {"stop": message["stop"], "detail": message["detail"]}
+                    break
                 elif kind == "resource":
                     targets.update(message.get("targets", []))
                     contexts.update(message.get("contexts", []))
@@ -308,6 +392,9 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
                     if callable(emit):
                         emit(event)
                 elif kind == "returned":
+                    if lease is not None or waiting_admission is not None:
+                        failure = {"stop": "worker_error", "detail": "worker returned before releasing admission"}
+                        break
                     value = message["result"]
                     break
                 elif kind == "error":
@@ -321,17 +408,34 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
                 break
     except KeyboardInterrupt:
         failure = {"stop": "interrupted", "detail": "stopped by the operator"}
+    except (OSError, EOFError) as error:
+        failure = {"stop": "worker_error", "detail": f"scenario worker channel lost: {type(error).__name__}"}
     finally:
         ended = time.monotonic()
         stop(process, grouped, ready=critical)
         receive.close()
+        if waiting_admission is not None:
+            waiting_admission.close()
     if failure is not None:
         # Do not drain a potentially partial pipe frame. Unread critical updates are conservatively uncertain.
         unread = [int(critical[index]) != seen[index] for index in range(3)]
-        cleaned = cleanup(ctx, cdp_url, targets, contexts, daemon)
+        # An admitted worker may leave an outstanding daemon command after death. Keep its exact lease
+        # through cleanup. Without a lease, acquire shared admission inside the bounded cleanup child.
+        cleanup_complete = False
+        try:
+            cleaned = cleanup(ctx, cdp_url, targets, contexts, daemon,
+                              admission_dir=admission_dir if lease is None else None)
+            cleanup_complete = cleaned and not pending and not unread[1]
+        finally:
+            try:
+                if admission_dir is not None and not cleanup_complete:
+                    scenario_gate.poison(admission_dir)
+            finally:
+                if lease is not None:
+                    lease.close()
         queued = state.queue_seconds + (ended - state.queued_at if state.queued else 0)
         failure.update(scenario=state.scenario, identity=state.identity, partial=state.partial,
-                       results=results, ledger=ledger, cleanup_complete=cleaned and not pending and not unread[1],
+                       results=results, ledger=ledger, cleanup_complete=cleanup_complete,
                        cost_uncertain=bool(cost_pending) or unread[0],
                        runtime=runtime,
                        resource_ownership_uncertain=bool(pending) or unread[1],

@@ -103,7 +103,11 @@ bug); `unverified` (no expectations given); `skipped`. The run's gate is PASS, F
 the gate, each non-pass outcome with its reason, the findings, the cost and the `report_html` path.
 
 Long runs: pass `background: true` (CLI `--background`), then follow with `qa_job` and stop with `qa_stop`. Runs
-take turns, one at a time per machine; never start a second copy of a queued run.
+take turns by default; `browser_runs` / `--browser-runs` can admit separate isolated runs. Never start a second
+copy of a queued run. Within one web suite, `jobs` / `--jobs` overlaps independent chains. Mark a scenario
+`exclusive: true` to drain the active scenarios, keep that scenario's tab work alone, then resume parallel work.
+Chains keep their tab state; setup and cleanup also use admission. This is per-run coordination, not a GPU or
+machine reservation. JSON/MCP results keep its admission wait in `scheduling.queue_seconds`.
 
 Where it runs: `runner: "cloud"` (CLI `--runner cloud`) sends `qa_check`, `qa_run_suite`, `qa_smoke` and
 `qa_project_run` to QAJev Cloud instead of this machine; `"auto"` uses the cloud when it can. Default: the project's

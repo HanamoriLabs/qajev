@@ -648,6 +648,7 @@ def _transport_result(scenario, error, started, result=None):
 
 
 def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=None):
+    from . import scenario_gate
     from . import session as session_mod
 
     results = []
@@ -655,6 +656,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
     name = session_mod.configure_env(cdp_url)
     watchdog.notify("resource", daemon=name)
     session = None
+    admission_dir = suite_meta.get("scenario_gate")
     lost_after = "an earlier scenario" if session_mod.transport_error() is not None else None
     try:
         for scenario in scenarios:
@@ -676,38 +678,45 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                                  "skipped", f"depends on {blocked_by} which did not pass", time.monotonic())
             else:
                 watchdog.notify("scenario", name=scenario.name)
+                waited = 0.0
                 try:
-                    if scenario.clients:  # a multiplayer scenario: its own tabs, not this session
-                        _emit(opts, "start", scenario=scenario.name)
-                        result = run_clients(scenario, opts=opts, suite_meta=suite_meta, run_dir=run_dir, ledger=ledger)
-                    else:
-                        if session is None:
-                            session = session_mod.Session(
-                                ledger, headless=suite_meta["headless"], hosts=suite_meta["hosts"],
-                                guard_opts=suite_meta["guard"], allow_commands=opts.allow_commands,
-                                cwd=suite_meta["cwd"], motion=suite_meta.get("motion", "reduce"),
-                                cpu_throttle=suite_meta.get("cpu_throttle", 1),
-                            )
-                            if getattr(opts, "sign_in_here", None) and not getattr(opts, "signed_here", None):
-                                opts.sign_in_attempted = True
-                                opts.signed_here = sign_in_here(session, opts.sign_in_here, opts)
-                        if (startup_error := session_mod.transport_error()) is not None:
-                            raise startup_error
-                        signed_here = getattr(opts, "signed_here", None)
-                        if signed_here and not signed_here["ok"]:
-                            result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
-                                              "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
-                                              "stop": "sign_in"}, "harness", f"sign-in failed: {signed_here['reason']}",
-                                             time.monotonic())
-                            result["cost_usd"] = 0.0
-                            results.append(result)
-                            outcomes[scenario.name] = result["outcome"]
-                            _emit(opts, "scenario", result=result)
-                            continue
-                        _emit(opts, "start", scenario=scenario.name)
-                        with live.frames(run_dir, session.page_socket(), managed=suite_meta.get("managed", False)):
-                            result = run_scenario(session, scenario, opts=opts, hosts=set(suite_meta["hosts"]),
-                                                  run_dir=run_dir)
+                    with watchdog.admission(admission_dir, exclusive=getattr(scenario, "exclusive", False)) as waited:
+                        started = time.monotonic()  # Admission waiting is not scenario execution.
+                        if scenario.clients:  # a multiplayer scenario: its own tabs, not this session
+                            _emit(opts, "start", scenario=scenario.name)
+                            result = run_clients(scenario, opts=opts, suite_meta=suite_meta,
+                                                 run_dir=run_dir, ledger=ledger)
+                        else:
+                            if session is None:
+                                session = session_mod.Session(
+                                    ledger, headless=suite_meta["headless"], hosts=suite_meta["hosts"],
+                                    guard_opts=suite_meta["guard"], allow_commands=opts.allow_commands,
+                                    cwd=suite_meta["cwd"], motion=suite_meta.get("motion", "reduce"),
+                                    cpu_throttle=suite_meta.get("cpu_throttle", 1),
+                                )
+                                if getattr(opts, "sign_in_here", None) and not getattr(opts, "signed_here", None):
+                                    opts.sign_in_attempted = True
+                                    opts.signed_here = sign_in_here(session, opts.sign_in_here, opts)
+                            if (startup_error := session_mod.transport_error()) is not None:
+                                raise startup_error
+                            signed_here = getattr(opts, "signed_here", None)
+                            if signed_here and not signed_here["ok"]:
+                                result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
+                                                  "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
+                                                  "stop": "sign_in"}, "harness",
+                                                 f"sign-in failed: {signed_here['reason']}", time.monotonic())
+                            else:
+                                _emit(opts, "start", scenario=scenario.name)
+                                with live.frames(run_dir, session.page_socket(),
+                                                 managed=suite_meta.get("managed", False), drain=bool(admission_dir)):
+                                    result = run_scenario(session, scenario, opts=opts, hosts=set(suite_meta["hosts"]),
+                                                          run_dir=run_dir)
+                        if admission_dir is not None and (error := session_mod.transport_error()) is not None:
+                            raise error  # Keep admission until the supervisor has stopped and cleaned this worker.
+                except scenario_gate.AdmissionError as error:
+                    result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
+                                      "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
+                                      "stop": "admission_refused"}, "harness", str(error), time.monotonic())
                 except session_mod.TransportLost as error:
                     result = _transport_result(scenario, error, started)
                     lost_after = scenario.name
@@ -719,6 +728,9 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                 if (error := session_mod.transport_error()) is not None:
                     result = _transport_result(scenario, error, started, result)
                     lost_after = scenario.name
+                if admission_dir is not None:
+                    result["scheduling"] = {"exclusive": bool(getattr(scenario, "exclusive", False)),
+                                            "queue_seconds": round(waited, 3)}
             if not blocked_by:
                 result["cost_usd"] = round(ledger.spent() - spent_before, 5)
             outcomes[scenario.name] = result["outcome"]
@@ -728,9 +740,10 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                 break
     finally:
         watchdog.active("session cleanup")
-        if session is not None:
-            session.close()
-        session_mod.stop_daemon()
+        with watchdog.admission(admission_dir):
+            if session is not None:
+                session.close()
+            session_mod.stop_daemon()
     return {"results": results, "ledger": ledger.summary(), "bu_name": name}
 
 
@@ -793,7 +806,8 @@ def supervised_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, p
         ledger_state = {k: v for k, v in vars(ledger).items() if k not in {"lock", "shared"}}
         out, failure = watchdog.supervise(_group_child,
             args=(pending, opts_dict, cdp_url, suite_meta, run_dir, ledger_state, ledger.shared,
-                  outcomes, secret_values()), emit=opts.emit, cdp_url=cdp_url)
+                  outcomes, secret_values()), emit=opts.emit, cdp_url=cdp_url,
+            **({"admission_dir": suite_meta["scenario_gate"]} if suite_meta.get("scenario_gate") else {}))
         if failure is None:
             _restore_runtime(opts, out.get("runtime", {}))
             for result in out["results"]:
@@ -827,6 +841,7 @@ def supervised_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, p
                           "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
                           **(results.get(current) or partial), "stop": failure["stop"], "watchdog": failure,
                           "session_uncertain": True, "cost_incomplete": failure["cost_uncertain"],
+                          **({"transport_lost": True} if failure["stop"] == "transport_lost" else {}),
                           **({"interrupted": True} if failure["stop"] == "interrupted" else {})},
                          "harness", detail, time.monotonic() - failure["active_seconds"])
         keep(result)
@@ -1003,6 +1018,9 @@ def run(suite, opts):
                   "cwd": str(suite.path.parent) if suite.path else None, "motion": motion,
                   "cpu_throttle": cpu_throttle,
                   "managed": bool(browser.get("managed"))}  # QAJev's own Chrome: a LIVE viewer may bring it to front
+    if any(getattr(scenario, "exclusive", False) for scenario in scenarios):
+        # Every worker participates, including a chain containing only ordinary scenarios.
+        suite_meta["scenario_gate"] = str(run_dir)
     chains = groups(scenarios)
     results_by_name, ledgers, interrupted = {}, [], False
     partial = report.Partial(run_dir, suite, browser, started_at, cap)

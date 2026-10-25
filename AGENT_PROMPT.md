@@ -64,6 +64,12 @@ never report that as a site bug.
 
 ### How to read the result
 
+For a web suite with parallel `jobs`, mark a scenario `exclusive: true` when another tab taking focus would
+invalidate it. Active scenarios drain first, other workers wait through the marked scenario's setup, hooks,
+checks and live cleanup, then parallel work resumes. Chains keep their tab state. The mark applies within
+this run only; it does not reserve the GPU or stop other runs. JSON keeps `scheduling.queue_seconds` separately
+from scenario execution time. Unconfirmed worker cleanup refuses admission as harness.
+
 Each scenario has one outcome:
 
 | Outcome | Meaning | What you do |

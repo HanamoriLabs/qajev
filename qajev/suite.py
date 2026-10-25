@@ -60,6 +60,7 @@ SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
     "persona", "speech", "vision", "about", "clients", "steps", "state", "seed", "color_scheme", "expect_fail",
+    "exclusive",
 } | set(ux_options.KEYS)
 # A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
 MAX_CLIENTS = 12
@@ -122,6 +123,7 @@ class Scenario:
     color_scheme: str | None = None  # light | dark: the page's prefers-color-scheme answers so; None: the browser's
     expect_fail: dict | None = None  # a planted fault: {check, words}, the one check it must fail on (_expect_fail)
     ux_options: dict = field(default_factory=dict)  # explicit suite/scenario options; run flags override them
+    exclusive: bool = False  # other scenarios in this run wait while this scenario uses its tab(s)
 
     @property
     def task(self):
@@ -602,6 +604,9 @@ def parse(data, path=None, devices=None):
         mode = item.get("mode", suite_mode)
         if mode not in MODES:
             raise SuiteError(f"{where}: mode must be one of {MODES}")
+        exclusive = item.get("exclusive", False)
+        if type(exclusive) is not bool:
+            raise SuiteError(f"{where}.exclusive must be true or false")
         expect = _expect(item.get("expect"), f"{where}.expect")
         goal = item.get("goal")
         clients = None
@@ -659,6 +664,7 @@ def parse(data, path=None, devices=None):
             color_scheme=color_scheme(item.get("color_scheme", data.get("color_scheme")), f"{where}.color_scheme"),
             expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where),
             ux_options=_ux_options({**suite_ux, **_ux_options(item, where)}, where),
+            exclusive=exclusive,
         ))
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")

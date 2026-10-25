@@ -123,12 +123,13 @@ class Frames(threading.Thread):
     """Saves a frame of the page at `ws_url` while the run is watched: every `interval` seconds, or at the live rate
     while it is streamed. `managed`: QAJev started this Chrome, so a viewer may bring the page to the front."""
 
-    def __init__(self, run_dir, ws_url, interval=INTERVAL, managed=False):
+    def __init__(self, run_dir, ws_url, interval=INTERVAL, managed=False, drain=False):
         super().__init__(daemon=True, name="qajev-live")
         self.run_dir, self.ws_url, self.interval, self.managed = Path(run_dir), ws_url, interval, managed
         self.halt = threading.Event()
         self.ws, self.next_id = None, 0
         self.seconds_live = 0.0
+        self.drain = drain
 
     def send(self, method, params):
         """One debugger call on the grabber's own link, from the allow-list only."""
@@ -207,7 +208,9 @@ class Frames(threading.Thread):
 
     def __exit__(self, *_exc):
         self.halt.set()
-        self.join(timeout=self.interval + 12)
+        # A marked run cannot release tab admission while a grabber can still bring this page to front.
+        # The scenario process watchdog bounds an unresponsive thread in that mode.
+        self.join(timeout=None if self.drain else self.interval + 12)
         self.close()
         if self.seconds_live:  # for the report: "watched live for N s", over every test of the run
             folder(self.run_dir).mkdir(parents=True, exist_ok=True)
@@ -223,6 +226,6 @@ def watched_seconds(run_dir):
         return 0.0
 
 
-def frames(run_dir, ws_url, managed=False):
+def frames(run_dir, ws_url, managed=False, drain=False):
     """Frames while watched; a no-op without a run folder or a page to look at."""
-    return Frames(run_dir, ws_url, managed=managed) if run_dir and ws_url else contextlib.nullcontext()
+    return Frames(run_dir, ws_url, managed=managed, drain=drain) if run_dir and ws_url else contextlib.nullcontext()

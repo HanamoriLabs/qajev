@@ -16,6 +16,11 @@ rules it was judged by.
 The CLI prints the folder when the run ends. `qajev report <folder>` prints the Markdown again, and
 `qajev report <folder> --html` rebuilds the page from `report.json`.
 
+Runs containing an `exclusive: true` scenario keep per-scenario scheduling in JSON and MCP results:
+`scheduling.exclusive` names the requested admission, and `scheduling.queue_seconds` is the time waiting for
+other scenarios in the same run. Scenario `seconds` excludes that admission wait. This is separate from the
+machine browser queue in `timing.queue_seconds`; neither admission wait counts as stalled page work.
+
 ![A report](images/report-overview.png)
 
 ## The test plan
