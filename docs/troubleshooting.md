@@ -112,6 +112,7 @@ does not by itself prove that the transport is gone.
 `Target closed` and `Session with given id not found` can describe a closed popup or a detached target on a
 usable browser connection. They keep normal command-error handling, without invalidating the whole transport
 or replaying the rejected command. Socket, EOF, browser shutdown and WebSocket-loss errors still stop reuse.
+The daemon's own `cdp_disconnected` and `Client is stopping` errors also invalidate that connection.
 
 **The MCP tools do not show up in my agent**
 Check that `qajev mcp` runs from the agent's environment (use the full path from `which qajev`), then restart the

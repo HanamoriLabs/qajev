@@ -187,6 +187,17 @@ def test_poisoned_transport_never_sends_a_second_raw_command(group):
                                   BrokenPipeError("pipe"), EOFError("daemon closed the connection"),
                                   RuntimeError("sent 1001 (going away); no close frame received"),
                                   RuntimeError("daemon is shutting down"),
+                                  pytest.param(RuntimeError("WebSocket connection closed"), id="connection-closed"),
+                                  pytest.param(RuntimeError("connection is closed"), id="connection-is-closed"),
+                                  pytest.param(RuntimeError("[Errno 104] Connection reset by peer"),
+                                               id="connection-reset"),
+                                  pytest.param(RuntimeError("websocket is not connected"), id="websocket-not-connected"),
+                                  pytest.param(RuntimeError("Browser has been closed"), id="browser-closed"),
+                                  pytest.param(RuntimeError("Target crashed"), id="target-crashed"),
+                                  pytest.param(RuntimeError("daemon not running"), id="daemon-not-running"),
+                                  pytest.param(RuntimeError("no close frame sent"), id="no-close-frame-sent"),
+                                  pytest.param(RuntimeError("cdp_disconnected"), id="cdp-disconnected"),
+                                  pytest.param(RuntimeError("Client is stopping"), id="client-is-stopping"),
                                   FileNotFoundError("daemon endpoint is gone")])
 def test_each_transport_failure_opens_the_fuse_before_a_second_command(group, error):
     _run, fail, seen, state, _scenarios, _opts, cdp = group

@@ -75,6 +75,21 @@ base.FAULTS = [
      T + "test_closed_popup_command_error_does_not_poison_a_healthy_browser_transport"),
 ]
 
+for number, name, marker, case in [
+    (21, "connection-closed", "connection closed", "connection-closed"),
+    (22, "connection-is-closed", "connection is closed", "connection-is-closed"),
+    (23, "connection-reset", "connection reset", "connection-reset"),
+    (24, "websocket-not-connected", "websocket is not connected", "websocket-not-connected"),
+    (25, "browser-closed", "browser has been closed", "browser-closed"),
+    (26, "target-crashed", "target crashed", "target-crashed"),
+    (27, "daemon-not-running", "daemon not running", "daemon-not-running"),
+    (28, "no-close-frame-sent", "no close frame sent", "no-close-frame-sent"),
+    (29, "cdp-disconnected", "cdp_disconnected", "cdp-disconnected"),
+    (30, "client-is-stopping", "client is stopping", "client-is-stopping"),
+]:
+    base.FAULTS.append((f"T{number:02d}-drop-{name}", S, f'"{marker}",', "",
+                       T + f"test_each_transport_failure_opens_the_fuse_before_a_second_command[{case}]"))
+
 if __name__ == "__main__":
     sys.argv += ["--endpoint", "http://127.0.0.1:9"]
     raise SystemExit(base.main())
