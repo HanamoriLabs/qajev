@@ -84,8 +84,9 @@ def browser(tmp_path_factory):
     cdp = None
     try:
         with (root / "chromium.log").open("w") as log:
+            started = time.monotonic()
             child = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-            deadline = time.monotonic() + 20
+            deadline = started + 60  # normal Chrome startup budget; per-frame performance is measured separately
             active = profile / "DevToolsActivePort"
             while not active.is_file():
                 assert child.poll() is None, "owned Chrome exited; see chromium.log"
@@ -94,6 +95,7 @@ def browser(tmp_path_factory):
             endpoint = "http://127.0.0.1:" + active.read_text().splitlines()[0]
             cdp = CDP(endpoint)
             (root / "browser.json").write_text(json.dumps({"endpoint": endpoint, "version": cdp.version,
+                                                          "startup_seconds": time.monotonic() - started,
                                                           "argv": argv}, indent=2) + "\n")
             yield cdp, root
     finally:
