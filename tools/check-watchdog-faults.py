@@ -122,6 +122,16 @@ base.FAULTS = [
     ("W35-invalid-daemon-recheck-helper", W, 'chrome.started(pid) not in {None, token}',
      'chrome.start_token(pid) not in {None, token}',
      T + "test_daemon_owner_capture_and_cleanup_use_real_process_start"),
+    ("W36-no-supervisor-death-guard", W,
+     'with _parent_guard():\n        notify("ready", pid=os.getpid())',
+     'with contextlib.nullcontext():\n        notify("ready", pid=os.getpid())',
+     "tests/test_watchdog_parent.py::test_sigkill_supervisor_reaps_native_worker_and_owned_shell_group"),
+    ("W37-broken-notification-skips-cleanup", W,
+     'except (OSError, EOFError):\n'
+     '                # Reporting cannot skip owned cleanup after the supervisor\'s pipe has gone away.\n'
+     '                _sink = None',
+     'except (OSError, EOFError):\n                raise',
+     "tests/test_watchdog_parent.py::test_broken_notification_pipe_does_not_skip_run_group_cleanup"),
 ]
 
 if __name__ == "__main__":

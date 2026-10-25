@@ -17,6 +17,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   keeps earlier results and measured checks, then continues at an independent URL in a fresh worker/session
   after verified cleanup. State-dependent continuations stay blocked. Queue, cost and sign-in state survive
   worker replacement; unknown in-flight model cost prevents further paid calls against that cap.
+  A supervisor-death guardian also stops native-blocked worker groups, and broken progress pipes never skip
+  owned session cleanup.
 
 - Configurable local browser-run concurrency (`--browser-runs` / `QAJEV_BROWSER_RUNS`) with FIFO queueing,
   RAM admission for N above 1, isolated throwaway Chrome resources and unique report folders. Serial N=1

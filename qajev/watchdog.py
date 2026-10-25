@@ -8,6 +8,7 @@ and its process group, with bounded termination and separately bounded browser c
 import contextlib
 import multiprocessing
 import os
+import select
 import signal
 import threading
 import time
@@ -32,6 +33,7 @@ def recording():
 
 
 def notify(kind, **data):
+    global _sink
     if _sink is None and _critical_state is None:
         return
     from .config import redact_tree
@@ -42,7 +44,11 @@ def notify(kind, **data):
             _critical_state[category] += 1
             data["_critical"] = (category, int(_critical_state[category]))
         if _sink is not None:
-            _sink.send(redact_tree({"kind": kind, "monotonic": time.monotonic(), **data}))
+            try:
+                _sink.send(redact_tree({"kind": kind, "monotonic": time.monotonic(), **data}))
+            except (OSError, EOFError):
+                # Reporting cannot skip owned cleanup after the supervisor's pipe has gone away.
+                _sink = None
 
 
 def active(identity):
@@ -117,6 +123,55 @@ def _terminate(_signum, _frame):
     raise _Stopped()
 
 
+@contextmanager
+def _parent_guard():
+    """A separate process can stop a native/GIL-blocked worker after its supervisor dies."""
+    supervisor = multiprocessing.parent_process()
+    if supervisor is None:
+        raise RuntimeError("scenario worker has no supervisor sentinel; run refused")
+    read, write = os.pipe()
+    try:
+        guardian = os.fork()  # Before the target initializes browser/model libraries or starts threads.
+    except BaseException:
+        os.close(read)
+        os.close(write)
+        raise
+    if guardian == 0:
+        os.close(write)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)  # The worker keeps its normal TERM cleanup grace.
+        try:
+            ready, _, _ = select.select([supervisor.sentinel, read], [], [])
+            if supervisor.sentinel in ready:
+                os.killpg(0, signal.SIGKILL)  # This process shares only its owned worker's process group.
+        except BaseException:
+            os.killpg(0, signal.SIGKILL)  # Losing the guard cannot silently leave an unguarded worker.
+        finally:
+            os._exit(0)
+    os.close(read)
+    try:
+        yield
+    finally:
+        os.close(write)
+        deadline = time.monotonic() + STOP_GRACE
+        reaped = False
+        while time.monotonic() < deadline:
+            try:
+                found, _ = os.waitpid(guardian, os.WNOHANG)
+            except ChildProcessError:
+                reaped = True
+                break
+            if found:
+                reaped = True
+                break
+            time.sleep(0.01)
+        if not reaped:
+            # The unreaped direct child cannot have had its PID reused.
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(guardian, signal.SIGKILL)
+            with contextlib.suppress(ChildProcessError):
+                os.waitpid(guardian, 0)
+
+
 def _child(pipe, target, args, kwargs, critical):
     global _sink, _critical_state
     # POSIX is explicit: never silently run without an enforceable process boundary.
@@ -126,17 +181,18 @@ def _child(pipe, target, args, kwargs, critical):
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # the supervisor owns operator interruption
     _sink = pipe
     _critical_state = critical
-    notify("ready", pid=os.getpid())
-    try:
-        result = target(*args, **kwargs)
-        notify("returned", result=result)
-    except _Stopped:
-        pass
-    except BaseException as error:
-        notify("error", detail=f"{type(error).__name__}: {error}")
-    finally:
-        pipe.close()
-        _sink = None
+    with _parent_guard():
+        notify("ready", pid=os.getpid())
+        try:
+            result = target(*args, **kwargs)
+            notify("returned", result=result)
+        except _Stopped:
+            pass
+        except BaseException as error:
+            notify("error", detail=f"{type(error).__name__}: {error}")
+        finally:
+            pipe.close()
+            _sink = None
 
 
 def stop(process, grouped, *, ready=None):
@@ -216,12 +272,13 @@ def _cleanup(cdp_url, targets, contexts, daemon):
 
 def _cleanup_child(pipe, cdp_url, targets, contexts, daemon):
     os.setsid()
-    try:
-        pipe.send(_cleanup(cdp_url, targets, contexts, daemon))
-    except Exception:
-        pipe.send(False)
-    finally:
-        pipe.close()
+    with _parent_guard():
+        try:
+            pipe.send(_cleanup(cdp_url, targets, contexts, daemon))
+        except Exception:
+            pipe.send(False)
+        finally:
+            pipe.close()
 
 
 def cleanup(ctx, cdp_url, targets, contexts, daemon):

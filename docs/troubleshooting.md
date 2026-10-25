@@ -135,6 +135,16 @@ Operator cancellation, actual transport loss and a cost-cap stop do not start a 
 An interruption raised inside a worker also preserves the completed prefix and marks the remaining scenarios
 `not run: interrupted`; it never starts a replacement worker.
 
+Cleanup is bounded at five seconds. The underlying daemon stop can wait up to fifteen seconds, so a daemon
+that does not exit promptly can produce `cleanup_incomplete` even after a stop request. This is a safe refusal
+to continue, not confirmation that the browser is idle. If a target/context creation call times out and is
+retried, its first request remains unresolved: a later successful reply does not prove what the first attempt
+created. That pending creation also blocks automatic continuation until ownership can be established.
+
+If the supervisor itself is killed, a separate guardian observes its process sentinel and kills only the
+owned scenario worker group, including command descendants. It works even while the worker holds Python's
+GIL in a native call. A broken progress pipe cannot skip session and daemon cleanup when the worker unwinds.
+
 Load/admission queue time is separate from active scenario time. Existing goal budgets, cost caps, suite limits
 and lane limits still apply. Process supervision works on macOS/Linux from main or background threads; other
 platforms are refused explicitly. The watchdog does not install timers or signal handlers in the caller.
