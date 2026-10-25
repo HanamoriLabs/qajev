@@ -230,7 +230,8 @@ def test_cli_retains_all_requested_frames_and_checks_with_zero_model_calls(brows
                            "for_s": 10, "every_ms": 100, "until": "window.__captureFrame===3",
                            "js": "(()=>{window.__captureFrame++;document.getElementById('frame').textContent="
                                  "'Frame '+window.__captureFrame;return {shot:'same cue'};})()"}}],
-                       "expect": {"text": "Capture fixture", "js": "window.__captureFrame===3"}}],
+                       "expect": {"text": "Capture fixture", "js": "window.__captureFrame===3",
+                                  "says": "all three requested viewport frames completed"}}],
     }))
     empty = tmp_path / "empty.env"
     empty.touch(mode=0o600)

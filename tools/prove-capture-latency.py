@@ -121,7 +121,7 @@ def main():
                   f"--basetemp={out / 'fixtures'}"]
         commands = {
             "red-unit": [*pytest, UNIT],
-            "red-live": [*pytest, LIVE, "-k", "minimized and react-jpeg"],
+            "red-live": [*pytest, LIVE, "-k", "(minimized and react-jpeg) or cli_retains"],
             "unit": [*pytest, UNIT, "tests/test_keys.py", "tests/test_linux.py", "tests/test_vision_claims.py"],
             "live": [*pytest, LIVE],
             "faults": [sys.executable, "tools/check-capture-faults.py", "--source", str(root),
@@ -162,6 +162,16 @@ def main():
                     red = actual_exit == 1 and tests and not skipped and not errors and assertion and reproduced
                     result = 0 if red else 1
                     receipt["baseline_session_sha256"] = LEGACY_SESSION_SHA256
+                    if args.mode == "red-live":
+                        for log in (out / "fixtures").glob("test_cli*/cli.stdout"):
+                            if log.parent.name.endswith("current"):
+                                continue
+                            data = json.loads(log.read_text())
+                            frames = [frame for scenario in data.get("scenarios", [])
+                                      for frame in scenario.get("react", []) if "took_s" in frame]
+                            receipt["baseline_cli"] = {
+                                "gate": data["gate"], "cost_calls": data["cost"]["calls"],
+                                "frames": frames, "seconds": data["seconds"], "timing": data["timing"]}
                 elif not tests or skipped or errors:
                     result = 1
             receipt["gate"] = "PASS" if result == 0 else "FAIL"
