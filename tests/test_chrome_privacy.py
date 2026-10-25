@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -55,6 +56,156 @@ def test_password_services_are_disabled_in_private_preferences_before_spawn(laun
     assert len(launch["calls"]) == 1
 
 
+@pytest.mark.parametrize("required", [
+    "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps",
+    "--disable-domain-reliability", "--disable-client-side-phishing-detection", "--no-pings",
+    "--metrics-recording-only", "--safebrowsing-disable-auto-update",
+    "--disable-extensions", "--disable-component-extensions-with-background-pages",
+])
+def test_background_network_switches_reach_the_managed_browser(launch, monkeypatch, required):
+    monkeypatch.delenv("QAJEV_CHROME_FLAGS", raising=False)
+    chrome.start("network", headless=True)
+    assert required in launch["calls"][0]
+
+
+@pytest.mark.parametrize("endpoint", ["gcm-checkin-url", "gcm-registration-url", "gcm-mcs-endpoint"])
+def test_cloud_messaging_endpoints_are_nonnetwork_urls_before_spawn(launch, monkeypatch, endpoint):
+    monkeypatch.delenv("QAJEV_CHROME_FLAGS", raising=False)
+    chrome.start("network", headless=True)
+    url = "https://127.0.0.1:0" if endpoint == "gcm-mcs-endpoint" else "chrome://qajev-disabled"
+    assert f"--{endpoint}={url}" in launch["calls"][0]
+
+
+@pytest.mark.parametrize("endpoint", ["gcm-checkin-url", "gcm-registration-url", "gcm-mcs-endpoint"])
+@pytest.mark.parametrize("value", ["", "=https://example.test/service"])
+@pytest.mark.parametrize("prefix", ["--", "-", " --", " -"])
+def test_extra_flags_cannot_restore_cloud_messaging_endpoints(launch, monkeypatch, endpoint, value, prefix):
+    monkeypatch.setenv("QAJEV_CHROME_FLAGS", shlex.quote(f"{prefix}{endpoint}{value}"))
+    with pytest.raises(chrome.ChromeError, match="messaging endpoint"):
+        chrome.start("network", headless=True)
+    assert launch["calls"] == []
+
+
+@pytest.mark.parametrize("required", [
+    "Translate", "MediaRouter", "OptimizationHints", "AutofillServerCommunication", "PasswordLeakDetection",
+    "OptimizationGuideModelDownloading", "NetworkTimeServiceQuerying", "AimServerEligibilityEnabled",
+    "AimServerRequestOnStartupEnabled", "OptimizationGuideManifestBroker", "OptimizationGuideOnDeviceModel",
+])
+@pytest.mark.parametrize("prefix", ["--", "-", " --", " -"])
+def test_extra_disabled_features_keep_the_product_network_policy(launch, monkeypatch, required, prefix):
+    flags = shlex.quote(f"{prefix}disable-features=FixtureUiFeature,Translate") + " --no-pings"
+    monkeypatch.setenv("QAJEV_CHROME_FLAGS", flags)
+    chrome.start("network", headless=True)
+    flags = launch["calls"][0]
+    combined = [arg.split("=", 1)[1] for arg in flags if arg.startswith("--disable-features=")]
+    assert len(combined) == 1, "Chromium uses the last repeated switch"
+    features = combined[0].split(",")
+    assert required in features
+    assert "FixtureUiFeature" in features
+    assert features.count("Translate") == 1
+    assert "--no-pings" in flags
+    assert not any(arg.startswith("-disable-features") for arg in flags)
+
+
+@pytest.mark.parametrize("extra", ["--disable-features", "--disable-features FixtureUiFeature",
+                                  "-disable-features", "-disable-features FixtureUiFeature"])
+def test_bare_disabled_feature_switch_refuses_before_spawn(launch, monkeypatch, extra):
+    monkeypatch.setenv("QAJEV_CHROME_FLAGS", extra)
+    with pytest.raises(Exception) as refused:
+        chrome.start("network", headless=True)
+    assert type(refused.value) is chrome.ChromeError
+    assert str(refused.value) == "Use --disable-features=FEATURES in QAJEV_CHROME_FLAGS"
+    assert launch["calls"] == []
+
+
+@pytest.mark.parametrize("switch,value", [
+    ("user-data-dir", "=/fixture/shared"), ("user-data-dir", ""),
+    ("remote-debugging-port", "=9222"), ("remote-debugging-port", ""),
+    ("remote-debugging-pipe", ""), ("remote-debugging-pipe", "=1"),
+])
+@pytest.mark.parametrize("prefix", ["--", "-", " --", " -"])
+def test_parallel_launch_refuses_profile_and_port_aliases_before_spawn(launch, monkeypatch, switch, value, prefix):
+    monkeypatch.setenv("QAJEV_CHROME_FLAGS", shlex.quote(f"{prefix}{switch}{value} "))
+    monkeypatch.setattr(chrome.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(chrome, "_kill", lambda _pid: None)
+    with pytest.raises(Exception) as refused:
+        chrome.start("network", headless=True, ephemeral=True, port=0, wait=0.001)
+    assert type(refused.value) is chrome.ChromeError
+    assert str(refused.value) == "parallel Chrome flags cannot override its profile or debug port"
+    assert launch["calls"] == []
+
+
+@pytest.mark.parametrize("ephemeral", [False, True])
+def test_dictionary_downloads_are_disabled_before_spawn(launch, ephemeral):
+    def before_spawn(profile, _args):
+        preferences = json.loads((profile / "Default/Preferences").read_text())
+        assert preferences.get("browser", {}).get("enable_spellchecking") is False
+        assert preferences.get("spellcheck", {}).get("dictionary") == ""
+        assert preferences.get("spellcheck", {}).get("dictionaries") == []
+        assert preferences.get("spellcheck", {}).get("use_spelling_service") is False
+
+    launch["before_spawn"] = before_spawn
+    record = chrome.start("network", headless=True, ephemeral=ephemeral)
+    assert record.get("background_services_disabled") is True
+
+
+@pytest.mark.parametrize("ephemeral", [False, True])
+def test_speculative_preconnections_are_disabled_before_spawn(launch, ephemeral):
+    def before_spawn(profile, _args):
+        preferences = json.loads((profile / "Default/Preferences").read_text())
+        # Chromium's persisted enum: kDisabled = 2, kStandard = 0, kExtended = 3.
+        assert preferences.get("net", {}).get("network_prediction_options") == 2
+
+    launch["before_spawn"] = before_spawn
+    chrome.start("network", headless=True, ephemeral=ephemeral)
+
+
+def test_existing_preconnection_setting_is_replaced_without_losing_other_network_preferences(launch):
+    path = chrome.PROFILES / "network" / "Default/Preferences"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"net": {"network_prediction_options": 3, "other": "keep"}}))
+    chrome.start("network", headless=True)
+    assert json.loads(path.read_text())["net"] == {"network_prediction_options": 2, "other": "keep"}
+
+
+def test_existing_dictionary_download_preferences_are_replaced_and_unrelated_settings_survive(launch):
+    path = chrome.PROFILES / "network" / "Default/Preferences"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"browser": {"enable_spellchecking": True, "show_bookmarks": True},
+                                "spellcheck": {"dictionary": "en-US", "dictionaries": ["en-US"],
+                                               "use_spelling_service": True, "other": "keep"}}))
+    chrome.start("network", headless=True)
+    preferences = json.loads(path.read_text())
+    assert preferences["browser"] == {"enable_spellchecking": False, "show_bookmarks": True}
+    assert preferences["spellcheck"] == {"dictionary": "", "dictionaries": [],
+                                        "use_spelling_service": False, "other": "keep"}
+
+
+@pytest.mark.parametrize("key", ["browser", "spellcheck", "net"])
+@pytest.mark.parametrize("value", [None, [], "invalid"])
+def test_invalid_network_preferences_refuse_without_spawn_or_overwrite(launch, key, value):
+    path = chrome.PROFILES / "network" / "Default/Preferences"
+    path.parent.mkdir(parents=True)
+    original = json.dumps({key: value})
+    path.write_text(original)
+    with pytest.raises(Exception) as error:
+        chrome.start("network", headless=True)
+    assert isinstance(error.value, chrome.ChromeError)
+    assert path.read_text() == original
+    assert launch["calls"] == []
+
+
+@pytest.mark.parametrize("marker", [None, False, 1, "true"])
+def test_running_browser_without_background_policy_is_not_reused(launch, monkeypatch, marker):
+    monkeypatch.setattr(chrome, "status", lambda _profile: [{
+        "alive": True, "headless": True, "password_services_disabled": True,
+        "background_services_disabled": marker,
+    }])
+    with pytest.raises(chrome.ChromeError, match="Restart.*background"):
+        chrome.start("network", headless=True)
+    assert launch["calls"] == []
+
+
 def test_unrelated_existing_preferences_survive_the_privacy_update(launch):
     path = chrome.PROFILES / "existing" / "Default" / "Preferences"
     path.parent.mkdir(parents=True)
@@ -66,6 +217,9 @@ def test_unrelated_existing_preferences_survive_the_privacy_update(launch):
         "credentials_enable_service": False,
         "credentials_enable_autosignin": False,
         "profile": {"password_manager_leak_detection": False, "name": "Fixture profile"},
+        "browser": {"enable_spellchecking": False},
+        "spellcheck": {"dictionary": "", "dictionaries": [], "use_spelling_service": False},
+        "net": {"network_prediction_options": 2},
         "other": {"theme": "dark", "labels": ["保持", chr(0xD800)]},
     }
 
@@ -135,7 +289,8 @@ def test_running_legacy_profile_is_refused_without_restart_or_preference_writes(
 
 
 def test_running_private_profile_is_reused_without_rewriting_active_preferences(launch, monkeypatch):
-    record = {"alive": True, "headless": True, "password_services_disabled": True}
+    record = {"alive": True, "headless": True, "password_services_disabled": True,
+              "background_services_disabled": True}
     monkeypatch.setattr(chrome, "status", lambda _profile: [record])
     assert chrome.start("private", headless=True) is record
     assert launch["calls"] == []
