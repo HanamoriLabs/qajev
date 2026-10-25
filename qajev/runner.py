@@ -4,6 +4,7 @@ Parallelism is one process per worker: browser_harness reads BU_NAME at import, 
 own one daemon. Every worker opens its own tab in the same QAJev Chrome and stops its own daemon.
 """
 
+import math
 import os
 import re
 import tempfile
@@ -11,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import browser_pool, chrome, live, plan, providers, ux, verdict, vision
+from . import browser_pool, chrome, live, plan, providers, ux, verdict, vision, watchdog
 from .config import redact, redact_tree, secret_values
 from .diagnostics import keep_console
 from .ledger import CostCapReached, Ledger
@@ -83,6 +84,7 @@ def wait_for_quiet(opts):
     _emit(opts, "waiting", reason=f"load1 {load:.0f} >= {opts.load_high:.0f}; waiting for < {opts.load_ok:.0f} "
                                   f"(up to {remaining:.0f} s more this run)")
     started = time.monotonic()
+    watchdog.notify("queued")
     try:
         while load >= opts.load_ok:
             if time.monotonic() - started > remaining:
@@ -91,6 +93,8 @@ def wait_for_quiet(opts):
             load = os.getloadavg()[0]
     finally:
         opts.load_waited += time.monotonic() - started
+        watchdog.notify("admitted")
+        watchdog.notify("runtime", value=_runtime_state(opts))
     return True, load
 
 
@@ -149,9 +153,9 @@ def _effect_check(session, scenario, run_dir, url):
     frames = {}
     for state in ("off", "on"):
         try:
-            for hook in spec[state]:
-                session.run_hook(hook, url)
-            frames[state] = session.capture_region_png(spec["region"])
+            for n, hook in enumerate(spec[state], 1):
+                watchdog.call(f"effect {state} hook {n} ({next(iter(hook))})", session.run_hook, hook, url)
+            frames[state] = watchdog.call(f"effect {state} capture", session.capture_region_png, spec["region"])
             if not isinstance(frames[state], bytes) or len(frames[state]) > EFFECT_MAX_BYTES:
                 raise PixelError("PNG capture is missing or exceeds the 32 MiB evidence limit")
         except (RuntimeError, ValueError, OSError, TimeoutError) as e:
@@ -177,6 +181,7 @@ def _effect_check(session, scenario, run_dir, url):
 def run_scenario(session, scenario, *, opts, hosts, run_dir):
     from .session import GuardMissing, HookFailed, LeftSite, require_transport, transport_error
 
+    quiet, load1 = wait_for_quiet(opts)
     started = time.monotonic()
     if hasattr(session, "begin_test"):  # the last test's page: its frames were named under that test
         session.begin_test()
@@ -184,7 +189,6 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     session.react_log, session.react_frames = [], 0  # frames and releases from react hooks, this scenario's own
     session.shot_dir = run_dir / "shots" if opts.shots and run_dir else None
     session.shot_prefix = slug(scenario.name)
-    quiet, load1 = wait_for_quiet(opts)
     scheme = scenario.color_scheme or getattr(opts, "color_scheme", None)
     result = {
         "name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
@@ -241,8 +245,10 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
 
     def read():
         nonlocal observed
+        watchdog.active("page checks (polling does not count as progress)")
         observed = absorb(session.probe(scenario.expect))
         require_transport()
+        watchdog.notify("checkpoint", partial={**result, "checks": verdict.page_checks(scenario.expect, observed)})
         return observed
 
     def page_ok():
@@ -250,9 +256,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
 
     try:
         if hasattr(session, "set_color_scheme"):  # a stand-in session in tests may not have it
-            session.set_color_scheme(scheme)
-        session.set_device(scenario.device)
-        session.arm(scenario.mode, scenario.speech)
+            watchdog.call("color scheme", session.set_color_scheme, scheme)
+        watchdog.call("device setup", session.set_device, scenario.device)
+        watchdog.call("guard setup", session.arm, scenario.mode, scenario.speech)
         if hasattr(session, "configure_ux"):
             ux_observer = session.configure_ux(opts, run_dir, scenario.name, getattr(scenario, "ux_options", None))
         effect = scenario.expect.get("effect") or {}
@@ -261,7 +267,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             session.use_pad()  # before the page loads: a game may read its pads only once, at load
         if scenario.url:
             session.check_host(scenario.url)
-            error = session.navigate(scenario.url)
+            error = watchdog.call("navigation", session.navigate, scenario.url)
             if error:
                 stop, detail = "unreachable", error
         if stop is None:
@@ -273,10 +279,12 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                   doing="reading the page and running its checks" if has_page_checks(scenario.expect)
                   else "reading the page")
             read()
+            watchdog.complete("initial page checks")
             findings += verdict.document_findings(observed.get("status"), scenario.expect, scenario=scenario.name,
                                                   url=observed.get("url"))
-            for hook in scenario.before:
-                session.run_hook(hook, observed.get("url") or scenario.url)
+            for n, hook in enumerate(scenario.before, 1):
+                watchdog.call(f"before hook {n} ({next(iter(hook))})", session.run_hook,
+                              hook, observed.get("url") or scenario.url)
             if scenario.before:  # the checks judge the page after its hooks (verse2, 6 Oct: a wait_for "did not
                 read()           # wait" because the checks used the page as read before it ran)
             if scenario.goal:
@@ -341,9 +349,11 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                 ran.add("effect")
                 read()  # ordinary page checks and looks judge the final, enabled state
             checks = verdict.page_checks(scenario.expect, observed)
+            watchdog.complete("final page checks", partial={**result, "checks": checks})
             if measured_effect is not None:
                 checks.append(measured_effect)
             if scenario.expect.get("looks") and stop not in verdict.HARNESS_STOPS:
+                watchdog.active("expect.looks")
                 structured = any(isinstance(entry, dict) for entry in scenario.expect["looks"])
                 image = session.screen_image_png() if structured else session.screen_image()
                 try:
@@ -351,21 +361,27 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                           {"page": {"url": observed.get("url"), "title": observed.get("title")}},
                                           folder=getattr(session, "cwd", None), evidence_dir=run_dir)
                     ran.add("looks")
+                    watchdog.complete("expect.looks", partial={**result, "checks": checks})
                 except (RuntimeError, ValueError) as e:  # Clef failed, not the browser
                     stop, detail = "model_error", f"while judging looks: {e}"
             if stop not in verdict.HARNESS_STOPS:
                 ran.add("after")  # a hook that fails is named by the stop itself, not as never run
-                for hook in scenario.after:
-                    session.run_hook(hook, observed.get("url") or scenario.url)
+                for n, hook in enumerate(scenario.after, 1):
+                    watchdog.call(f"after hook {n} ({next(iter(hook))})", session.run_hook,
+                                  hook, observed.get("url") or scenario.url)
                 says = scenario.expect.get("says") or {}  # the author's words for these checks (the test plan)
-                for probe in scenario.expect.get("fetch", []):
-                    checks.append(verdict.fetch_check(probe, session.fetch(probe) or {}))
+                for n, probe in enumerate(scenario.expect.get("fetch", []), 1):
+                    response = watchdog.call(f"fetch check {n}", session.fetch, probe)
+                    checks.append(verdict.fetch_check(probe, response or {}))
+                    watchdog.notify("checkpoint", partial={**result, "checks": checks})
                     if says.get("fetch"):
                         checks[-1]["says"] = says["fetch"]
                 ran.add("fetch")
                 if scenario.expect.get("command"):
                     spec = scenario.expect["command"]
-                    checks.append(verdict.command_check(spec, session.command(spec["run"], observed.get("url"))))
+                    response = watchdog.call("command check", session.command, spec["run"], observed.get("url"))
+                    checks.append(verdict.command_check(spec, response))
+                    watchdog.notify("checkpoint", partial={**result, "checks": checks})
                     if says.get("command"):
                         checks[-1]["says"] = says["command"]
                 ran.add("command")
@@ -375,7 +391,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if stop in {"done", "reached", "checked", "blocked"}:
                 stop, detail = "browser_error", f"while checking: {type(e).__name__}: {e}"
         if opts.shots and run_dir and transport_error() is None:
-            shot = session.screenshot(run_dir / "shots" / f"{slug(scenario.name)}.jpg")
+            shot = watchdog.call("scenario screenshot", session.screenshot,
+                                 run_dir / "shots" / f"{slug(scenario.name)}.jpg")
             result["shot"] = str(shot.relative_to(run_dir)) if shot else None
 
     state = session.agent.state if scenario.goal else None
@@ -447,6 +464,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     outcome, reason = verdict.unguarded(outcome, reason, result.get("frames_not_observed"))
     result = _finish(result, outcome, reason, started)
     if ux_observer and transport_error() is None:
+        watchdog.active("UX final checks")
         ux_observer.safe(ux_observer.finish)
         ux_observer.apply(result)
     return result
@@ -494,6 +512,15 @@ def _last_stale(session):
     """The last stale decision's reason, for a "stale" stop: "; the last: <Jev's reason> <what changed>"."""
     words = verdict.stale_words(getattr(session, "last_stale", None))
     return f"; the last: {words}" if words else ""
+
+
+def _progress_action(history):
+    # Pinned Jev appends only after Browser.act returns, then records the post-action fingerprint.
+    # Missing/unknown kinds, waits, failed/stale observations and no-op histories are not proof of progress.
+    executed = history.get("executed_ms")
+    return (history.get("kind") in {"click", "fill", "select", "scroll"}
+            and type(executed) in {int, float} and math.isfinite(executed) and executed >= 0
+            and history.get("page_changed") is True)
 
 
 def drive(session, scenario, read, page_ok, started, step=None, decided=None, held=False):
@@ -551,10 +578,13 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None, he
                 continue
             return "stale", f"{pending} decisions without an action" + _last_stale(session)
         try:
+            watchdog.active("Jev decision/action")
             session.tick()
             model_failures = 0
             for h in state["history"][told:]:
                 step(_did(h), p=h.get("probability"), n=h.get("step"))
+                if _progress_action(h):
+                    watchdog.complete(f"Jev action {h.get('step', told + 1)}")
             told = len(state["history"])
             if decided:
                 for d in state["decisions"][heard:]:
@@ -585,8 +615,8 @@ def run_clients(scenario, *, opts, suite_meta, run_dir, ledger):
     """A scenario with clients (clients.py), on a quiet machine like any other; Ctrl-C stops it as any other."""
     from . import clients
 
-    started = time.monotonic()
     quiet, load1 = wait_for_quiet(opts)
+    started = time.monotonic()
     base = {"name": scenario.name, "url": scenario.url, "goal": None, "mode": scenario.mode, "checks": [],
             "findings": [], "screens": [], "load1": round(load1, 1)}
     if not quiet:
@@ -612,7 +642,8 @@ def run_clients(scenario, *, opts, suite_meta, run_dir, ledger):
 def _transport_result(scenario, error, started, result=None):
     return _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
                     "checks": [], "findings": [], "screens": [], **(result or {}),
-                    "stop": "browser_error", "transport_lost": True, "stop_detail": str(error)},
+                    "stop": "browser_error", "transport_lost": True, "session_uncertain": True,
+                    "stop_detail": str(error)},
                    "harness", f"browser/daemon transport lost: {error}; no automatic retry", started)
 
 
@@ -622,6 +653,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
     results = []
     outcomes = dict(prior or {})
     name = session_mod.configure_env(cdp_url)
+    watchdog.notify("resource", daemon=name)
     session = None
     lost_after = "an earlier scenario" if session_mod.transport_error() is not None else None
     try:
@@ -643,6 +675,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                                   "mode": scenario.mode, "checks": [], "findings": [], "screens": []},
                                  "skipped", f"depends on {blocked_by} which did not pass", time.monotonic())
             else:
+                watchdog.notify("scenario", name=scenario.name)
                 try:
                     if scenario.clients:  # a multiplayer scenario: its own tabs, not this session
                         _emit(opts, "start", scenario=scenario.name)
@@ -655,7 +688,8 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                                 cwd=suite_meta["cwd"], motion=suite_meta.get("motion", "reduce"),
                                 cpu_throttle=suite_meta.get("cpu_throttle", 1),
                             )
-                            if getattr(opts, "sign_in_here", None):
+                            if getattr(opts, "sign_in_here", None) and not getattr(opts, "signed_here", None):
+                                opts.sign_in_attempted = True
                                 opts.signed_here = sign_in_here(session, opts.sign_in_here, opts)
                         if (startup_error := session_mod.transport_error()) is not None:
                             raise startup_error
@@ -693,10 +727,147 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
             if result.get("interrupted"):
                 break
     finally:
+        watchdog.active("session cleanup")
         if session is not None:
             session.close()
         session_mod.stop_daemon()
     return {"results": results, "ledger": ledger.summary(), "bu_name": name}
+
+
+def _group_child(scenarios, opts_dict, cdp_url, suite_meta, run_dir, ledger_state, shared, prior, redaction_values):
+    from .config import remember_secret
+
+    # Spawn does not inherit process-local vault redaction state. Never stream those values back as data.
+    for value in redaction_values:
+        remember_secret(value)
+    ledger = Ledger(ledger_state["cap_usd"], ledger_state["typesafe_usd_per_call"], shared=shared)
+    for key, value in ledger_state.items():
+        setattr(ledger, key, value)
+
+    def emit(event):
+        watchdog.notify("ledger", value=ledger.summary())
+        watchdog.notify("runtime", value=_runtime_state(opts))
+        watchdog.notify("event", value=event)
+
+    opts = Options(**{k: v for k, v in opts_dict.items() if k in Options.__dataclass_fields__})
+    # Sign-in state is a runtime option, intentionally not an extra public dataclass field.
+    for key, value in opts_dict.items():
+        setattr(opts, key, value)
+    opts.emit = emit
+    result = run_group(scenarios, opts=opts, cdp_url=cdp_url, suite_meta=suite_meta,
+                       run_dir=run_dir, ledger=ledger, prior=prior)
+    return {**result, "runtime": _runtime_state(opts)}
+
+
+def _runtime_state(opts):
+    return {key: getattr(opts, key) for key in ("load_waited", "account", "signed_here", "sign_in_attempted")
+            if hasattr(opts, key)}
+
+
+def _restore_runtime(opts, state):
+    for key, value in state.items():
+        if key in {"load_waited", "account", "signed_here", "sign_in_attempted"}:
+            setattr(opts, key, value)
+
+
+def supervised_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=None):
+    """Production adapter: isolate blocking calls while preserving the group's one-session semantics."""
+    pending = list(scenarios)
+    results, outcomes = {}, dict(prior or {})
+    last_name = None
+
+    def keep(result):
+        results[result["name"]] = result
+        outcomes[result["name"]] = result["outcome"]
+
+    def not_run(scenario, stop, reason):
+        result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
+                          "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
+                          "stop": stop, "session_uncertain": True, "cost_usd": 0.0}, "skipped",
+                         reason, time.monotonic())
+        keep(result)
+        _emit(opts, "scenario", result=result)
+
+    while pending:
+        opts_dict = {k: v for k, v in vars(opts).items() if k != "emit"}
+        ledger_state = {k: v for k, v in vars(ledger).items() if k not in {"lock", "shared"}}
+        out, failure = watchdog.supervise(_group_child,
+            args=(pending, opts_dict, cdp_url, suite_meta, run_dir, ledger_state, ledger.shared,
+                  outcomes, secret_values()), emit=opts.emit, cdp_url=cdp_url)
+        if failure is None:
+            _restore_runtime(opts, out.get("runtime", {}))
+            for result in out["results"]:
+                keep(result)
+            if any(result.get("interrupted") for result in out["results"]):
+                for candidate in pending:
+                    if candidate.name not in results:
+                        not_run(candidate, "interrupted",
+                                "not run: interrupted by the operator; no automatic retry")
+            _adopt_ledger(ledger, out["ledger"])
+            last_name = out.get("bu_name")
+            break
+        _restore_runtime(opts, failure.pop("runtime"))
+        for result in failure.pop("results"):
+            keep(result)
+        _adopt_ledger(ledger, failure.pop("ledger") or ledger.summary())
+        if failure["cost_uncertain"]:
+            ledger.uncertain = True
+            if ledger.shared is not None:
+                # Unknown in-flight cost reserves the remaining suite cap; another worker must not spend it.
+                with ledger.shared.get_lock():
+                    ledger.shared.value = max(ledger.shared.value, ledger.cap_usd)
+        current = failure.get("scenario") or next((s.name for s in pending if s.name not in results),
+                                                  pending[-1].name)
+        partial = failure.pop("partial")
+        scenario = next(s for s in pending if s.name == current)
+        detail = f"{failure['detail']} while {failure['identity']}; session state uncertain; no automatic retry"
+        if not failure["cleanup_complete"]:
+            detail += "; owned browser cleanup incomplete"
+        result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
+                          "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
+                          **(results.get(current) or partial), "stop": failure["stop"], "watchdog": failure,
+                          "session_uncertain": True, "cost_incomplete": failure["cost_uncertain"],
+                          **({"interrupted": True} if failure["stop"] == "interrupted" else {})},
+                         "harness", detail, time.monotonic() - failure["active_seconds"])
+        keep(result)
+        _emit(opts, "scenario", result=result)
+        remaining = pending[pending.index(scenario) + 1:]
+        resume = (failure["stop"] == "no_progress" and failure["cleanup_complete"]
+                  and not failure.get("runtime_state_incomplete", False)
+                  and not (getattr(opts, "sign_in_attempted", False) and not getattr(opts, "signed_here", None)))
+        eligible = []
+        for candidate in remaining:
+            blocked = [d for d in candidate.depends_on if outcomes.get(d) != "pass"]
+            if not resume:
+                stop = "cleanup_incomplete" if not failure["cleanup_complete"] else "session_uncertain"
+                if failure.get("runtime_state_incomplete"):
+                    stop = "runtime_uncertain"
+                not_run(candidate, stop, f"not run: {stop} after {current!r}; no automatic retry")
+            elif blocked:
+                not_run(candidate, "dependency", f"not run: depends on {blocked} which did not pass")
+            elif not candidate.url:
+                not_run(candidate, "session_uncertain",
+                        "not run: previous page state was discarded; declare an own URL")
+            else:
+                eligible = remaining[remaining.index(candidate):]
+                break  # The fresh URL restores a new chain; its normal dependencies/continuations run in order.
+        # Each iteration spawns a fresh worker. No tab, daemon, action or page state crosses this boundary.
+        # Keep the default browser context on the same Chrome. Persistent sign-in survives;
+        # tab-local state does not, and the report must not imply a fresh login was performed.
+        if eligible and getattr(opts, "signed_here", None):
+            opts.signed_here = {**opts.signed_here, "watchdog_continuation": {
+                "browser_context": "retained", "tab_state": "discarded", "login_replayed": False}}
+        pending = eligible
+    return {"results": [results[s.name] for s in scenarios], "ledger": ledger.summary(), "bu_name": last_name}
+
+
+def _adopt_ledger(ledger, summary):
+    """Keep one cumulative ledger when a timed-out worker is replaced."""
+    ledger.usd = {"typesafe": summary["usd_typesafe_estimated"], "text": summary["usd_text"]}
+    ledger.calls = dict(summary["calls"])
+    ledger.tokens = dict(summary["tokens"])
+    ledger.errors = summary["errors"]
+    ledger.text_cost_reported = summary["text_cost_reported"]
 
 
 _shared_cost = None
@@ -711,7 +882,8 @@ def _worker(payload):
     scenarios, opts_dict, cdp_url, suite_meta, run_dir, cap, per_call = payload
     opts = Options(**{**opts_dict, "emit": None})
     ledger = Ledger(cap, per_call, shared=_shared_cost)
-    return run_group(scenarios, opts=opts, cdp_url=cdp_url, suite_meta=suite_meta, run_dir=run_dir, ledger=ledger)
+    return supervised_group(scenarios, opts=opts, cdp_url=cdp_url, suite_meta=suite_meta,
+                            run_dir=run_dir, ledger=ledger)
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -849,11 +1021,14 @@ def run(suite, opts):
         if same_tab:
             opts.sign_in_here = suite.account  # run_group signs in in the scenarios' tab (one group: one tab)
         elif suite.account:
-            signed = sign_in_first(suite, opts=opts, cdp_url=cdp_url, headless=suite_meta["headless"], motion=motion)
-            opts.account = suite.account["name"] if signed["ok"] else None
-            if opts.jobs > 1 and len(chains) > 1:  # the workers start their own daemons; this one is done
-                from . import session as session_mod
+            from . import session as session_mod
 
+            try:
+                signed = sign_in_first(suite, opts=opts, cdp_url=cdp_url,
+                                       headless=suite_meta["headless"], motion=motion)
+                opts.account = suite.account["name"] if signed["ok"] else None
+            finally:
+                # Every scenario group now starts its own daemon, including serial runs.
                 session_mod.stop_daemon()
         if signed and not signed["ok"]:  # Jev must not meet a sign-in page it cannot pass: stop with the reason
             for s in scenarios:
@@ -889,7 +1064,7 @@ def run(suite, opts):
                         emit({"event": "scenario", "result": r})
         else:
             ledger = Ledger(cap, opts.typesafe_usd_per_call)
-            out = run_group(scenarios, opts=opts, cdp_url=cdp_url, suite_meta=suite_meta, run_dir=run_dir,
+            out = supervised_group(scenarios, opts=opts, cdp_url=cdp_url, suite_meta=suite_meta, run_dir=run_dir,
                             ledger=ledger)
             ledgers.append(out["ledger"])
             results_by_name.update({r["name"]: r for r in out["results"]})

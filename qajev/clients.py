@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
-from . import verdict
+from . import verdict, watchdog
 from .suite import page_checks as wants_page_checks
 
 SETTLE_POLL = 0.5
@@ -234,12 +234,14 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
                                                       url=observed.get("url")))
 
         failed = _first_error(together(clients, open_page), "opening")
+        watchdog.complete("clients opened")
         if failed:
             stop, detail = "unreachable" if "page did not load" in failed[1] else failed[0], failed[1]
 
         for n, s in enumerate(scenario.steps if stop == "checked" else [], 1):
             began = time.monotonic()
             where, at = _label(n, s), n
+            watchdog.active(where)
             if s["kind"] == "snapshot":
                 step(f"snapshot {s['name']}" + (f": waiting for {s['until']}" if s["until"] else ""))
                 deadline = time.monotonic() + s["settle"]
@@ -256,6 +258,7 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
                 broken = [f"{r['name']} ({r['error']})" for r in rows if r.get("error")]
                 result["steps"].append({"step": n, "snapshot": s["name"], "timed_out": late, "errors": broken,
                                         "ms": round((time.monotonic() - began) * 1000)})
+                watchdog.complete(where, partial={**result, "checks": checks})
                 continue
             targets = [c for c in clients if c.name in s["clients"]]
             starts = offsets(len(targets), s["stagger"], s["jitter"], rng) if s["kind"] == "all" else None
@@ -268,12 +271,14 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
                                     "starts_ms": [round(x * 1000) for x in starts] if starts else None,
                                     "ms": round((time.monotonic() - began) * 1000)})
             failed = _first_error(done, f"step {n} ({kind})")
+            watchdog.complete(where, partial={**result, "checks": checks})
             if failed:
                 stop, detail = failed
                 break
 
         if stop == "checked" or stop == "hook_failed":
             where = "the final checks"
+            watchdog.active(where)
             step(f"checking every client and across them (settling up to {scenario.settle:.0f} s)")
             deadline = time.monotonic() + scenario.settle
             while True:
@@ -296,12 +301,14 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
                 time.sleep(SETTLE_POLL)
             checks += final
             final_done = True
+            watchdog.complete(where, partial={**result, "checks": checks})
     except Exception as e:  # noqa: BLE001 (a client that cannot even open is the run's trouble, not the product's)
         from .session import GuardMissing
 
         stop = "guard_missing" if isinstance(e, GuardMissing) else "browser_error"
         detail = f"{where}: {type(e).__name__}: {e}"[:500]
     finally:
+        watchdog.active("client cleanup")
         if run_dir:
             for c in clients:
                 shot = c.session.screenshot(run_dir / "shots" / f"{_slug(scenario.name)}-{c.name}.jpg")

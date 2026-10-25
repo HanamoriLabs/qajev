@@ -12,6 +12,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- Website scenario groups have a five-minute no-progress watchdog, enforced from a separate process even
+  during blocked native calls. Only completed steps/checks reset it; queue time is separate. A stop is harness,
+  keeps earlier results and measured checks, then continues at an independent URL in a fresh worker/session
+  after verified cleanup. State-dependent continuations stay blocked. Queue, cost and sign-in state survive
+  worker replacement; unknown in-flight model cost prevents further paid calls against that cap.
+
 - Configurable local browser-run concurrency (`--browser-runs` / `QAJEV_BROWSER_RUNS`) with FIFO queueing,
   RAM admission for N above 1, isolated throwaway Chrome resources and unique report folders. Serial N=1
   admission stays unchanged. Job results and reports

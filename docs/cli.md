@@ -150,6 +150,13 @@ prints that error and the original cause, and still exits non-zero.
 | `--load-ok N` | resume once the load drops below N (default 100) |
 | `--load-wait SECONDS` | total waiting allowed per run (default 600) |
 
+Website scenarios have a fixed five-minute no-progress watchdog. Completed steps/checks reset it; repeated
+false polls, animation and console output do not. Load/admission queue time is separate. A stopped scenario
+is `harness`; earlier results remain. After verified cleanup, the next independent scenario with its own URL runs
+in a fresh session. Work that needs the discarded page stays blocked. No watchdog-expired action is replayed.
+The existing per-command CDP response-timeout retry policy is unchanged.
+See [troubleshooting](troubleshooting.md).
+
 ## `qajev smoke`
 
 Crawl the pages of a site (same host only) with **no model calls**, and lint each one: HTTP status, script errors,

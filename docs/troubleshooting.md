@@ -114,6 +114,42 @@ usable browser connection. They keep normal command-error handling, without inva
 or replaying the rejected command. Socket, EOF, browser shutdown and WebSocket-loss errors still stop reuse.
 The daemon's own `cdp_disconnected` and `Client is stopping` errors also invalidate that connection.
 
+**`no real progress for 300 s`**
+The website runner stops a scenario after five active minutes without a completed step or check, including
+scripted scenarios with no Jev goal. The reason names the active operation. Repeated checks of the same false
+condition, animation frames, console messages, stale decisions and changing timestamps do not reset the clock.
+A declared 180-second readiness wait remains valid; the wait's polls do not reset the timer.
+
+The result is **harness**, never pass or product failure. Earlier scenarios and measured checks remain in the
+report. After verified cleanup, the next independent scenario with its own URL runs in a fresh worker, daemon
+and tab on the same managed Chrome. The watchdog-expired action is never replayed. Scenarios that depend on that result
+stay blocked, and a URL-less continuation cannot inherit the discarded page. Later eligible URL roots can run.
+QAJev does not infer restoration from arbitrary setup hooks. Existing continuations after a fresh URL root use
+that new chain's normal dependency rules.
+
+If owned cleanup cannot be confirmed, remaining work is `not run: cleanup_incomplete`. QAJev closes only
+targets/contexts it recorded as its own and stops only its worker/daemon; it never stops the shared Chrome.
+Daemon cleanup checks its recorded PID start time before stopping it. An unknown start time or a reused PID
+leaves cleanup unconfirmed; a stop acknowledgement alone is insufficient while the process remains alive.
+Operator cancellation, actual transport loss and a cost-cap stop do not start a replacement worker.
+An interruption raised inside a worker also preserves the completed prefix and marks the remaining scenarios
+`not run: interrupted`; it never starts a replacement worker.
+
+Load/admission queue time is separate from active scenario time. Existing goal budgets, cost caps, suite limits
+and lane limits still apply. Process supervision works on macOS/Linux from main or background threads; other
+platforms are refused explicitly. The watchdog does not install timers or signal handlers in the caller.
+Recorded model cost and call totals survive replacement. An unobserved in-flight model call makes the remaining
+cost cap uncertain: later scripted checks can run, but no further paid call can use that cap. Whole-run load-wait
+time and completed same-tab sign-in metadata survive replacement too; a completed login is not replayed.
+Unread accounting or ownership updates at a stop remain explicitly uncertain. If runtime bookkeeping was not
+received, remaining work is `not run: runtime_uncertain`; the load-wait budget cannot silently restart.
+The persistent browser context stays on the same Chrome. Cookies and persistent origin storage remain; tab-local
+state, including session storage, is discarded. Sign-in metadata describes the original completed login and marks
+the watchdog continuation; it does not claim that login was repeated or that tab-local authentication survived.
+
+This watchdog leaves the existing per-command CDP response-timeout retry policy unchanged. That separate policy
+can retry a command before the five-minute watchdog expires; it is not a watchdog replay or a new scenario run.
+
 **The MCP tools do not show up in my agent**
 Check that `qajev mcp` runs from the agent's environment (use the full path from `which qajev`), then restart the
 agent's session.
