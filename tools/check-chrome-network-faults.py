@@ -49,7 +49,7 @@ base.FAULTS = [
      'for key in ("profile",)',
      U + "test_invalid_network_preferences_refuse_without_spawn_or_overwrite"),
     ("P06-policy-before-spawn", C, "    _disable_password_services(profile_dir)\n", "    pass\n",
-     U + "test_dictionary_downloads_are_disabled_before_spawn"),
+     U + "test_password_services_are_disabled_in_private_preferences_before_spawn"),
     ("P07-speculative-preconnections", C, 'data.setdefault("net", {})["network_prediction_options"] = 2',
      'data.setdefault("net", {})["network_prediction_options"] = 0',
      U + "test_speculative_preconnections_are_disabled_before_spawn"),
