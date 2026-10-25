@@ -36,6 +36,10 @@ base.FAULTS = [
      T + "test_each_process_keeps_its_own_budget_and_the_largest_active_reserve"),
     ("A10-unknown-allows-parallel", P, "return 1, None", "return requested, None",
      T + "test_unknown_first_reservation_stays_serial_until_that_process_finishes"),
+    ("A11-mixed-old-record-keyerror", P,
+     'or any(r.get("ram_envelope_bytes") is None for r in active)',
+     'or all(r.get("ram_envelope_bytes") is None for r in active)',
+     T + "test_mixed_old_and_current_active_records_keep_waiting_requests_serial"),
 ]
 
 if __name__ == "__main__":

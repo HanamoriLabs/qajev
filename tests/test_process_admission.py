@@ -247,6 +247,49 @@ def test_older_active_lease_without_ram_metadata_is_kept_exclusive():
     assert browser_pool._memory_capacity(2, 10 * 1024**3, 1024, 2048, [older]) == (1, None)
 
 
+def test_mixed_old_and_current_active_records_keep_waiting_requests_serial(processes, monkeypatch):
+    from qajev import browser_pool
+
+    p = processes
+    monkeypatch.setattr(browser_pool, 'ROOT', p.root / 'pool')
+    monkeypatch.setattr(browser_pool, 'available_memory', lambda: 10 * 1024**3)
+    first = p.start('older', '4')
+    p.wait('older')
+    second = p.start('current', '4')
+    p.wait('current')
+    with browser_pool._guard():
+        records = browser_pool._records()
+        path = p.root / 'pool' / next(name for name, row in records if row['pid'] == first.pid)
+        # Keep the live ticket inode/flock while modelling an older writer's record format.
+        with path.open('r+') as handle:
+            older = json.load(handle)
+            older.pop('ram_envelope_bytes')
+            handle.seek(0)
+            handle.truncate()
+            json.dump(older, handle)
+        records = browser_pool._records()
+        assert len(records) == 2
+        assert 'ram_envelope_bytes' not in next(row for _, row in records if row['pid'] == first.pid)
+        assert next(row for _, row in records if row['pid'] == second.pid)['ram_envelope_bytes'] == 10 * 1024**3
+    events = []
+    try:
+        with pytest.raises(browser_pool.PoolBusy, match='capacity 1/4'):
+            with browser_pool.acquire('mixed-record waiter', browser_runs=4, wait=0.05,
+                                      emit=events.append, legacy_lock=p.root / 'legacy.lock'):
+                raise AssertionError('mixed old/current records must keep new requests waiting')
+    except KeyError as error:
+        raise AssertionError('mixed old/current records must queue instead of crashing acquire()') from error
+    assert events[0]['queued'] is True
+    assert events[0]['reason'].endswith('capacity 1/4, memory capacity 1')
+    assert first.poll() is None and second.poll() is None
+    p.finish('older')
+    p.start('next', '4')
+    next_run = p.wait('next')
+    assert {row['pid'] for row in next_run['holders']} == {second.pid, next_run['pid']}
+    p.finish('next')
+    p.finish('current')
+
+
 @pytest.mark.parametrize('first_mode,second_mode', [('native', '2'), ('2', 'native')])
 def test_native_process_remains_exclusive_with_parallel_config(processes, first_mode, second_mode):
     p = processes
