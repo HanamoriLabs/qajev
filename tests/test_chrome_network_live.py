@@ -6,6 +6,7 @@ import os
 import runpy
 import shlex
 import signal
+import struct
 import subprocess
 import sys
 import threading
@@ -13,6 +14,8 @@ import time
 from pathlib import Path
 
 import pytest
+
+from qajev import chrome
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("QAJEV_CHROME_NETWORK_LIVE") != "1" or sys.platform != "linux",
@@ -109,3 +112,64 @@ def test_product_launcher_stops_background_requests_with_plain_and_custom_featur
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_seeded_messaging_registration_keeps_its_channel_confined_to_loopback(tmp_path, monkeypatch):
+    """Complete a local registration; the isolated job may keep the raw channel waiting for connectivity."""
+    assert os.getpriority(os.PRIO_PROCESS, 0) == 19
+    checked_in = threading.Event()
+    registered = threading.Event()
+
+    class Checkin(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            # Public synthetic protobuf: stats_ok=true, fixed64 android_id=1, security_token=2.
+            if self.path == "/checkin":
+                response = b"\x08\x01\x39" + struct.pack("<Q", 1) + b"\x41" + struct.pack("<Q", 2)
+                checked_in.set()
+            else:
+                response = b"token=public-synthetic-fixture-registration"
+                registered.set()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+
+        def log_message(self, *_args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Checkin)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    netlog = tmp_path / "chrome-netlog.json"
+    monkeypatch.setattr(chrome, "STATE", tmp_path / "state")
+    monkeypatch.setattr(chrome, "PROFILES", tmp_path / "profiles")
+    # Only the seed handshake is replaced. The product's channel endpoint is retained verbatim.
+    policy = [value for value in chrome.FLAGS
+              if value.split("=", 1)[0] not in {"--gcm-checkin-url", "--gcm-registration-url"}]
+    origin = f"http://127.0.0.1:{server.server_port}"
+    monkeypatch.setattr(chrome, "FLAGS", [*policy, f"--gcm-checkin-url={origin}/checkin",
+                                        f"--gcm-registration-url={origin}/register"])
+    flags = ["--disable-gpu", "--proxy-server=http://127.0.0.1:9",
+             "--proxy-bypass-list=127.0.0.1;localhost;*.localhost",
+             "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost",
+             f"--log-net-log={netlog}"]
+    monkeypatch.setenv("QAJEV_CHROME_FLAGS", shlex.join(flags))
+    owned = None
+    try:
+        owned = chrome.start("synthetic-channel", headless=True)
+        assert checked_in.wait(timeout=60), "local synthetic check-in must actually run"
+        assert registered.wait(timeout=15), "the synthetic device check-in must be accepted before registration"
+    finally:
+        if owned is not None:
+            chrome.stop(owned["state_key"])
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=5)
+    audit = runpy.run_path(str(Path(__file__).resolve().parents[1] / "tools/chrome-netlog-audit.py"))
+    bad = audit["bad_hosts"](audit["load"](netlog))
+    receipt = {"nonlocal_hosts": bad, "synthetic_checkin_completed": checked_in.is_set(),
+               "registration_requested": registered.is_set(), "online_channel_transport_proven": False,
+               "gate": "FAIL" if bad else "PASS"}
+    (tmp_path / "request-hosts.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    assert not bad, receipt

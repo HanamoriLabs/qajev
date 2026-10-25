@@ -20,7 +20,7 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 ### Fixed
 
 - Managed Chrome disables background update, network-time, search-eligibility, on-device model, dictionary
-  and speculative preconnection requests. Cloud messaging uses non-network endpoints in managed profiles.
+  and speculative preconnection requests. Cloud messaging endpoints cannot leave managed profiles' machine.
   Additional disabled features preserve the managed defaults, and older running profiles require a restart.
 - Browser diagnostics above 1 MiB become visible omission markers before CDP transfer. Normal text remains
   whole for Python privacy cleaning; oversized measured JS results keep their original boolean verdict.

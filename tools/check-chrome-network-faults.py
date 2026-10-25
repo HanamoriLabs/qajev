@@ -78,9 +78,10 @@ base.FAULTS = [
      'result.append("--disable-features=" + ",".join(dict.fromkeys(disabled)))',
      "tests/test_linux.py::test_extra_chrome_flags_come_from_the_environment"),
 ] + [
-    (f"G{index:02d}-network-endpoint", C, f'    "--{endpoint}=chrome://qajev-disabled",\n', "",
+    (f"G{index:02d}-network-endpoint", C, f'    "--{endpoint}={url}",\n', "",
      U + f"test_cloud_messaging_endpoints_are_nonnetwork_urls_before_spawn[{endpoint}]")
-    for index, endpoint in enumerate(("gcm-checkin-url", "gcm-registration-url", "gcm-mcs-endpoint"), 1)
+    for index, (endpoint, url) in enumerate((("gcm-checkin-url", "chrome://qajev-disabled"),
+        ("gcm-registration-url", "chrome://qajev-disabled"), ("gcm-mcs-endpoint", "https://127.0.0.1:0")), 1)
 ]
 
 if __name__ == "__main__":

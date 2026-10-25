@@ -71,7 +71,8 @@ def test_background_network_switches_reach_the_managed_browser(launch, monkeypat
 def test_cloud_messaging_endpoints_are_nonnetwork_urls_before_spawn(launch, monkeypatch, endpoint):
     monkeypatch.delenv("QAJEV_CHROME_FLAGS", raising=False)
     chrome.start("network", headless=True)
-    assert f"--{endpoint}=chrome://qajev-disabled" in launch["calls"][0]
+    url = "https://127.0.0.1:0" if endpoint == "gcm-mcs-endpoint" else "chrome://qajev-disabled"
+    assert f"--{endpoint}={url}" in launch["calls"][0]
 
 
 @pytest.mark.parametrize("endpoint", ["gcm-checkin-url", "gcm-registration-url", "gcm-mcs-endpoint"])

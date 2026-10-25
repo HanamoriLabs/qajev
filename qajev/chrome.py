@@ -38,11 +38,11 @@ FLAGS = [
     "--disable-default-apps",
     "--disable-extensions",
     "--disable-component-extensions-with-background-pages",
-    # Policy token uploaders start GCM even with background networking disabled. A non-network URL
-    # prevents check-in, registration, and cached push-channel connections without a local sink server.
+    # Policy token uploaders start GCM even with background networking disabled. Check-in and registration
+    # use internal URLs. The raw TLS channel ignores schemes, so pin it to loopback's unusable port zero.
     "--gcm-checkin-url=chrome://qajev-disabled",
     "--gcm-registration-url=chrome://qajev-disabled",
-    "--gcm-mcs-endpoint=chrome://qajev-disabled",
+    "--gcm-mcs-endpoint=https://127.0.0.1:0",
     "--disable-domain-reliability",
     "--disable-client-side-phishing-detection",
     "--no-pings",

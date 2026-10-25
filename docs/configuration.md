@@ -118,7 +118,8 @@ search-eligibility requests disabled. It also disables on-device model downloads
 preconnections. Its private preferences disable password services and dictionary downloads.
 
 Chromium's policy token service can still start cloud messaging with background networking disabled.
-QAJev sets the check-in, registration and push-channel endpoints to the internal URL `chrome://qajev-disabled`.
+QAJev sets the check-in and registration endpoints to the internal URL `chrome://qajev-disabled`.
+Its raw TLS push channel uses `https://127.0.0.1:0`, an unusable loopback port, with no fallback endpoint.
 Messaging retries cannot contact a remote service. Browser push messaging is unavailable in these managed
 profiles; page navigation and local form input still work normally.
 
