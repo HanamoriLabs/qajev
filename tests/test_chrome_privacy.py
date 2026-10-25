@@ -111,8 +111,27 @@ def test_extra_disabled_features_keep_the_product_network_policy(launch, monkeyp
                                   "-disable-features", "-disable-features FixtureUiFeature"])
 def test_bare_disabled_feature_switch_refuses_before_spawn(launch, monkeypatch, extra):
     monkeypatch.setenv("QAJEV_CHROME_FLAGS", extra)
-    with pytest.raises(chrome.ChromeError, match="--disable-features="):
+    with pytest.raises(Exception) as refused:
         chrome.start("network", headless=True)
+    assert type(refused.value) is chrome.ChromeError
+    assert str(refused.value) == "Use --disable-features=FEATURES in QAJEV_CHROME_FLAGS"
+    assert launch["calls"] == []
+
+
+@pytest.mark.parametrize("switch,value", [
+    ("user-data-dir", "=/fixture/shared"), ("user-data-dir", ""),
+    ("remote-debugging-port", "=9222"), ("remote-debugging-port", ""),
+    ("remote-debugging-pipe", ""), ("remote-debugging-pipe", "=1"),
+])
+@pytest.mark.parametrize("prefix", ["--", "-", " --", " -"])
+def test_parallel_launch_refuses_profile_and_port_aliases_before_spawn(launch, monkeypatch, switch, value, prefix):
+    monkeypatch.setenv("QAJEV_CHROME_FLAGS", shlex.quote(f"{prefix}{switch}{value} "))
+    monkeypatch.setattr(chrome.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(chrome, "_kill", lambda _pid: None)
+    with pytest.raises(Exception) as refused:
+        chrome.start("network", headless=True, ephemeral=True, port=0, wait=0.001)
+    assert type(refused.value) is chrome.ChromeError
+    assert str(refused.value) == "parallel Chrome flags cannot override its profile or debug port"
     assert launch["calls"] == []
 
 
