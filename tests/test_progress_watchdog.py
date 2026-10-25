@@ -158,10 +158,14 @@ def test_interrupts_blocked_io_native_and_poll_noise_with_real_process(mode, tmp
 def test_operator_interruption_is_distinct_and_owns_no_caller_timer(tmp_path):
     handler = signal.getsignal(signal.SIGALRM)
     timer = signal.getitimer(signal.ITIMER_REAL)
+    began = time.monotonic()
     _, failure = watchdog.supervise(_blocked, ("interrupt", str(tmp_path / "pid")), timeout=5)
     assert failure["stop"] == "interrupted"
     assert signal.getsignal(signal.SIGALRM) == handler
-    assert signal.getitimer(signal.ITIMER_REAL) == timer
+    remaining = signal.getitimer(signal.ITIMER_REAL)
+    assert remaining[1] == timer[1]
+    assert (abs((timer[0] - remaining[0]) - (time.monotonic() - began)) < 0.1
+            if timer[0] else remaining[0] == 0)
 
 
 def test_thread_caller_has_enforcement_and_caller_signal_state_is_unchanged(tmp_path):
@@ -199,7 +203,7 @@ def test_actual_runner_entry_retains_prior_results_and_never_replays(monkeypatch
     monkeypatch.setattr(runner, "_group_child", _fixture_group_child)
     monkeypatch.setattr(watchdog, "supervise", functools.partial(watchdog.supervise, timeout=2))
     monkeypatch.setattr(runner.providers, "resolve", lambda: {})
-    monkeypatch.setattr(runner.providers, "describe", lambda _r: {"jev": "fixture"})
+    monkeypatch.setattr(runner.providers, "describe", lambda _r: {"jev": "fixture", "text": "fixture"})
     monkeypatch.setattr(runner.chrome, "reap", lambda: [])
     monkeypatch.setattr(runner.chrome, "version", lambda _u: {"fixture": True})
     parsed = suite.parse({"base_url": "http://127.0.0.1", "scenarios": [
