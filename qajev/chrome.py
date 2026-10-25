@@ -348,8 +348,8 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, *, t
     _disable_password_services(profile_dir)
     isolated = port == 0 and ephemeral
     extra = flags()
-    if isolated and any(flag.split("=", 1)[0] in {"--user-data-dir", "--remote-debugging-port",
-                                                "--remote-debugging-pipe"} for flag in extra):
+    if isolated and any(_switch_name(flag) in {"user-data-dir", "remote-debugging-port",
+                                              "remote-debugging-pipe"} for flag in extra):
         raise ChromeError("parallel Chrome flags cannot override its profile or debug port")
     args = [binary(), f"--user-data-dir={profile_dir}", f"--remote-debugging-port={port}", *extra]
     if headless:

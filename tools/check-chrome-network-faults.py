@@ -90,6 +90,19 @@ base.FAULTS = [
     ("N05-quoted-whitespace", C, 'value.strip() for value in shlex.split', 'value for value in shlex.split',
      U + "test_extra_flags_cannot_restore_cloud_messaging_endpoints"),
 ] + [
+    (f"I{index:02d}-isolation-switch", C, f'"{switch}"', '"unrelated-launch-switch"',
+     U + "test_parallel_launch_refuses_profile_and_port_aliases_before_spawn")
+    for index, switch in enumerate(("user-data-dir", "remote-debugging-port", "remote-debugging-pipe"), 1)
+] + [
+    ("I04-single-dash-isolation", C, "_switch_name(flag)", 'flag.split("=", 1)[0].removeprefix("--")',
+     U + "test_parallel_launch_refuses_profile_and_port_aliases_before_spawn"),
+    ("B01-bare-switch-error-type", C,
+     'raise ChromeError("Use --disable-features=FEATURES in QAJEV_CHROME_FLAGS")',
+     'raise IndexError("Use --disable-features=FEATURES in QAJEV_CHROME_FLAGS")',
+     U + "test_bare_disabled_feature_switch_refuses_before_spawn"),
+    ("B02-bare-switch-parser-error", C, 'if "=" not in value:', "if False:",
+     U + "test_bare_disabled_feature_switch_refuses_before_spawn"),
+] + [
     (f"G{index:02d}-network-endpoint", C, f'    "--{endpoint}={url}",\n', "",
      U + f"test_cloud_messaging_endpoints_are_nonnetwork_urls_before_spawn[{endpoint}]")
     for index, (endpoint, url) in enumerate((("gcm-checkin-url", "chrome://qajev-disabled"),

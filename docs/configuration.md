@@ -135,6 +135,11 @@ including Chromium's single-dash forms and quoted arguments with surrounding whi
 Chromium gives disabled features precedence over `--enable-features`; caller enables cannot restore the managed
 disabled features. Native Windows Chrome is not supported; Windows installs use Linux Chrome inside WSL.
 
+Parallel managed launches refuse caller overrides of `user-data-dir`, `remote-debugging-port` and
+`remote-debugging-pipe`, including single-dash forms and quoted whitespace. Use `--profile` or `QAJEV_HOME`
+to choose profile storage. Outside parallel isolation, a caller `--user-data-dir` selects another profile
+and bypasses the preferences QAJev prepared for its owned profile.
+
 Use `qajev browser status` to find the running profile names. After updating, restart an already running managed
 profile with `qajev browser stop --profile NAME` before
 using it again. QAJev preserves unrelated profile preferences and asks for this restart instead of reusing
