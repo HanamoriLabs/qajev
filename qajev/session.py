@@ -299,7 +299,8 @@ PROBE_JS = Template("""(async () => {
   // Include diagnostics emitted by the check itself, in the same read that carries its verdict.
   if (probe && q.drainPageConsole) {
     const after = q.drainPageConsole();
-    for (const key of ['page_console', 'page_console_omitted']) probe[key] = (probe[key] || []).concat(after[key] || []);
+    for (const key of ['page_console', 'page_console_omitted'])
+      probe[key] = (probe[key] || []).concat(after[key] || []);
   }
   return { probe, url: location.href, title: document.title, status,
     text: spec.text.map(t => has(t)), guarded, absent: spec.absent.map(t => has(t)), visible: seen.map(s => s.ok),

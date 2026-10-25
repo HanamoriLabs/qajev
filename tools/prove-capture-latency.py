@@ -19,6 +19,14 @@ PREPARATION = (
     '        if method == "Page.captureScreenshot" and sys.platform == "linux":\n'
     '            self.browser.call("Page.bringToFront")\n'
 )
+WRAPPED_CONSOLE = (
+    "    for (const key of ['page_console', 'page_console_omitted'])\n"
+    "      probe[key] = (probe[key] || []).concat(after[key] || []);\n"
+)
+LEGACY_CONSOLE = (
+    "    for (const key of ['page_console', 'page_console_omitted']) "
+    "probe[key] = (probe[key] || []).concat(after[key] || []);\n"
+)
 UNIT = "tests/test_capture_latency.py"
 LIVE = "tests/test_capture_latency_live.py"
 CHANGED = ["qajev/session.py", UNIT, LIVE, "tools/check-capture-faults.py", "tools/prove-capture-latency.py"]
@@ -66,6 +74,8 @@ def legacy(root, out):
     text = path.read_text()
     assert text.count(PREPARATION) == 1, "capture preparation anchor changed"
     text = text.replace(PREPARATION, "", 1).replace("import sys\n", "", 1)
+    assert text.count(WRAPPED_CONSOLE) == 1, "formatting anchor changed"
+    text = text.replace(WRAPPED_CONSOLE, LEGACY_CONSOLE, 1)
     assert hashlib.sha256(text.encode()).hexdigest() == LEGACY_SESSION_SHA256, "baseline differs from main"
     path.write_text(text)
     return stage
