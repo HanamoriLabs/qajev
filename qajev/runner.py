@@ -810,7 +810,8 @@ def _worker(payload):
     scenarios, opts_dict, cdp_url, suite_meta, run_dir, cap, per_call = payload
     opts = Options(**{**opts_dict, "emit": None})
     ledger = Ledger(cap, per_call, shared=_shared_cost)
-    return supervised_group(scenarios, opts=opts, cdp_url=cdp_url, suite_meta=suite_meta, run_dir=run_dir, ledger=ledger)
+    return supervised_group(scenarios, opts=opts, cdp_url=cdp_url, suite_meta=suite_meta,
+                            run_dir=run_dir, ledger=ledger)
 
 
 # --------------------------------------------------------------------------------------------------------------

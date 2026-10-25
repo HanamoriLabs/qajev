@@ -137,7 +137,8 @@ def js_result(r):
     if "error" in r:
         return False, bound_text(clean_data(f"error: {r['error']}")), None
     if "type" in r:
-        return False, f"check must return true, got {r['type']}", bound_text(clean_data(str(r.get("shown") or r["type"])))
+        return (False, f"check must return true, got {r['type']}",
+                bound_text(clean_data(str(r.get("shown") or r["type"]))))
     value = r.get("value")
     if _measured_result(value):
         public = clean_data(value)
