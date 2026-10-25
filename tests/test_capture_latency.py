@@ -66,9 +66,11 @@ def test_non_linux_capture_keeps_the_existing_window_focus_policy(monkeypatch, p
     assert calls == [("Page.captureScreenshot", {"format": "png"})]
 
 
-def test_failed_activation_refuses_capture_instead_of_waiting_on_a_hidden_surface(monkeypatch):
-    session, calls = page(monkeypatch, activation_error=RuntimeError("target closed"))
-    with pytest.raises(RuntimeError, match="target closed"):
+@pytest.mark.parametrize("activation_error", [RuntimeError("target closed"), TimeoutError("activation timed out")],
+                         ids=["runtime_error", "timeout_error"])
+def test_failed_activation_refuses_capture_instead_of_waiting_on_a_hidden_surface(monkeypatch, activation_error):
+    session, calls = page(monkeypatch, activation_error=activation_error)
+    with pytest.raises(type(activation_error), match=str(activation_error)):
         session.call("Page.captureScreenshot", format="png")
     assert calls == [("Page.bringToFront", {})]
 

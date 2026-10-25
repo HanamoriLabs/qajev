@@ -44,6 +44,10 @@ base.FAULTS = [
      UNIT + "test_saved_and_data_url_screenshots_use_the_same_prepared_capture_path"),
     ("C10-hidden-preparation-time", SOURCE, 'round(time.monotonic() - start - at_s, 3)', "0.0",
      UNIT + "test_react_capture_keeps_each_frame_and_measures_preparation_and_readback"),
+    ("C11-ignored-preparation-timeout", SOURCE, ACTIVATE,
+     '            try:\n                self.browser.call("Page.bringToFront")\n'
+     "            except TimeoutError:\n                pass\n",
+     UNIT + "test_failed_activation_refuses_capture_instead_of_waiting_on_a_hidden_surface[timeout_error]"),
 ]
 
 if __name__ == "__main__":
