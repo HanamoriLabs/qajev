@@ -44,14 +44,19 @@ temporary folder, even when `--profile` is named. It never borrows the named pro
 test-account login for parallel authentication, or N=1 for a kept signed-in profile. Chrome closes and its
 private folder is deleted after the run. Each report also gets a unique output folder.
 
+The same N admits separate QAJev CLI processes; `--jobs` only controls scenario workers inside one run.
+
 RAM can lower N for new admissions when N is above 1. Serial N=1 requests keep their existing admission
 behavior and do not wait for RAM. Defaults: 1024 MiB per admitted run (`QAJEV_BROWSER_RAM_MIB`) plus
 2048 MiB kept free (`QAJEV_BROWSER_RESERVE_MIB`). Both accept positive integer MiB values in QAJev's env file
-or shell. Admission uses the smaller of the requested capacity and
-`floor((available MiB - reserve MiB) / per-run MiB)`. This is deliberately conservative: available RAM is
-sampled again as browsers consume it. Linux cgroup v2 limits also apply. Unknown memory permits at most
-one run; insufficient known memory queues even the first run requesting N above 1. Active work is never
-killed to lower N.
+or shell. Each new process needs its own budget plus the reserve in currently available RAM. RAM already
+used by active browsers is not charged a second time. Startup reservations also share the available-memory
+envelope measured when the active group began, so simultaneous launches cannot spend the same free RAM twice.
+Each run retains its declared budget; the largest active reserve applies. The envelope resets when all active
+runs finish. Memory returning within that envelope can admit a queued process while another still runs.
+Linux cgroup v2 limits also apply. Unknown memory or an older active lease with no RAM reservation permits at
+most one run; insufficient known memory queues even the first run requesting N above 1. Active work is never
+killed to lower N. External `--cdp-url` and native runs remain exclusive.
 
 `--events` emits `waiting` immediately when queued, then every 10 seconds, `admitted` before browser startup,
 and `released` on exit. Reports and `qajev jobs ID --json` carry `timing.queue_seconds` and
