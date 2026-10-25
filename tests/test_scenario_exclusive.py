@@ -1,6 +1,7 @@
 """Per-run admission and real spawned runner lifecycles; no browser or model calls."""
 
 import contextlib
+import ctypes
 import json
 import multiprocessing
 import os
@@ -741,3 +742,63 @@ def test_admission_queue_time_does_not_expire_semantic_progress(tmp_path):
         reader.close()
         thread.join(8)
     assert answers and answers[0] == ({'entered': True}, None), answers
+
+
+def _stall_after_admission_grant(run_dir, marker):
+    watchdog.notify('scenario', name='post-grant-stall')
+    notify = watchdog.notify
+
+    def stall_before_admitted(kind, **data):
+        if kind == 'admitted':
+            # admission() has received the parent's grant, but the parent must not rely on this notification.
+            _write(marker, {'pid': os.getpid()})
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            ctypes.PyDLL(None).sleep(30)
+        notify(kind, **data)
+
+    watchdog.notify = stall_before_admitted
+    with watchdog.admission(run_dir, exclusive=True):
+        _write(str(marker) + '.body', True)
+
+
+def _post_grant_owner(run_dir, marker, result):
+    os.setsid()
+    value, failure = watchdog.supervise(_stall_after_admission_grant, (run_dir, marker),
+                                        timeout=2, admission_dir=run_dir)
+    _write(result, {'value': value, 'failure': failure})
+
+
+def test_post_grant_stall_expires_without_child_admitted_notification(tmp_path):
+    run_dir = tmp_path / 'run'
+    run_dir.mkdir()
+    marker, result = tmp_path / 'granted.json', tmp_path / 'owner-result.json'
+    owner = multiprocessing.get_context('spawn').Process(target=_post_grant_owner,
+                                                         args=(run_dir, marker, result))
+    owner.start()
+    child_pid, completed = None, False
+    try:
+        child_pid = _wait(marker)['pid']
+        owner.join(6)
+        completed = not owner.is_alive()
+    finally:
+        # The regression must fail by assertion, without depending on pytest's timeout to stop the native stall.
+        if owner.is_alive() and child_pid is not None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(child_pid, signal.SIGKILL)
+            owner.join(3)
+        if owner.is_alive():
+            owner.terminate()
+            owner.join(2)
+        if owner.is_alive():
+            owner.kill()
+            owner.join(2)
+    assert completed, 'post-grant deadline did not expire without the child admitted notification'
+    assert owner.exitcode == 0
+    answer = json.loads(result.read_text())
+    assert answer['value'] is None and answer['failure']['stop'] == 'no_progress'
+    assert answer['failure']['cleanup_complete'] is True
+    assert not Path(str(marker) + '.body').exists()
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+    with scenario_gate.admit(run_dir, exclusive=True):
+        pass  # Cleanup released the original supervisor's foreground lease.

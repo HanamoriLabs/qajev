@@ -75,7 +75,6 @@ def admission(run_dir, exclusive=False):
     if run_dir is None:
         yield 0.0
         return
-    began = time.monotonic()
     notify("queued")
     granted = False
     request_id = uuid.uuid4().hex
@@ -93,7 +92,7 @@ def admission(run_dir, exclusive=False):
                 raise scenario_gate.AdmissionError(reply["error"])
             granted = True
             notify("admitted")
-            yield time.monotonic() - began
+            yield reply["queue_seconds"]
     except BaseException as error:
         if granted:
             # An unwinding operation may still have a daemon command in flight. The supervisor must
@@ -316,19 +315,31 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
     value = None
     lease = waiting_admission = None
     admission_id = None
+
+    def reply_admission(error=None):
+        now = time.monotonic()
+        waited = now - state.queued_at if state.queued else 0.0
+        # A grant/refusal ends waiting here. A child stalled before acknowledging is active work,
+        # bounded by the semantic deadline rather than an indefinitely suspended queue clock.
+        state.receive({"kind": "admitted", "monotonic": now})
+        reply = {"kind": "admission_reply", "request_id": admission_id, "queue_seconds": waited}
+        if error is not None:
+            reply["error"] = str(error)
+        receive.send(reply)
+
     try:
         while True:
             if waiting_admission is not None:
                 try:
                     admitted = waiting_admission.poll()
                 except (scenario_gate.AdmissionError, OSError) as error:
-                    receive.send({"kind": "admission_reply", "request_id": admission_id, "error": str(error)})
+                    reply_admission(error)
                     waiting_admission.close()
                     waiting_admission = None
                 else:
                     if admitted:
                         lease, waiting_admission = waiting_admission, None
-                        receive.send({"kind": "admission_reply", "request_id": admission_id})
+                        reply_admission()
             # Check before reading: an endless event/console stream cannot starve the timer.
             if state.expired():
                 failure = {"stop": "no_progress", "detail": f"no real progress for {timeout:g} s"}
@@ -351,7 +362,7 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
                     try:
                         waiting_admission = scenario_gate.Admission(admission_dir, message["exclusive"])
                     except OSError as error:
-                        receive.send({"kind": "admission_reply", "request_id": admission_id, "error": str(error)})
+                        reply_admission(error)
                 elif kind == "admission_release":
                     if lease is None or message["request_id"] != admission_id:
                         failure = {"stop": "worker_error", "detail": "invalid scenario admission release"}

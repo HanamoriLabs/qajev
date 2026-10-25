@@ -52,8 +52,8 @@ base.FAULTS = [
      T + 'test_bounded_cleanup_acquires_inside_child_before_any_cdp'),
     ('E10-uncertain-cleanup-admits-next', W, 'scenario_gate.poison(admission_dir)', 'pass',
      T + 'test_uncertain_failed_worker_cleanup_refuses_later_admission'),
-    ('E11-queue-consumes-deadline', W, 'began = time.monotonic()\n    notify("queued")',
-     'began = time.monotonic()', T + 'test_admission_queue_time_does_not_expire_semantic_progress'),
+    ('E11-queue-consumes-deadline', W, '    notify("queued")', '    pass',
+     T + 'test_admission_queue_time_does_not_expire_semantic_progress'),
     ('E12-unwind-releases-before-cleanup', W,
      'notify("admission_abort", request_id=request_id, stop=stop_reason,\n'
      '                   detail=f"{type(error).__name__}: {error}")',
@@ -75,6 +75,9 @@ base.FAULTS = [
      T + 'test_supervisor_retains_failed_child_lease_through_owned_cleanup'),
     ('E18-forced-single-worker', R, 'max_workers=min(opts.jobs, len(chains))', 'max_workers=1',
      T + 'test_jobs3_resumes_three_ordinary_workers_after_exclusive_scope'),
+    ('E19-grant-keeps-deadline-suspended', W,
+     '        state.receive({"kind": "admitted", "monotonic": now})\n', '',
+     T + 'test_post_grant_stall_expires_without_child_admitted_notification'),
 ]
 
 if __name__ == '__main__':
