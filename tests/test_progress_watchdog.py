@@ -567,3 +567,15 @@ def test_preserved_upstream_creation_retry_cannot_confirm_ownership_of_its_first
     _, failure = watchdog.supervise(_creation_retry_then_block, timeout=2)
     assert failure["resource_ownership_uncertain"] is True
     assert failure["cleanup_complete"] is False
+
+
+def test_serial_spawned_run_closes_the_parent_owned_signin_daemon(actual_runner, monkeypatch):
+    parsed = suite.parse({"base_url": "http://127.0.0.1", "scenarios": [
+        {"name": "ready", "url": "/ready", "expect": {"text": "ready"}}]})
+    parsed.account = {"name": "Fixture account", "login": {"tab": "new"}}
+    closed = []
+    monkeypatch.setattr(runner, "sign_in_first", lambda *_a, **_kw: {"account": "Fixture account", "ok": True})
+    monkeypatch.setattr(session, "stop_daemon", lambda: closed.append(os.getpid()))
+    report, _opts = actual_runner(parsed)
+    assert closed == [os.getpid()]
+    assert report["sign_in"]["ok"] is True and report["scenarios"][0]["outcome"] == "pass"

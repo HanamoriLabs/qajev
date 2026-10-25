@@ -1013,11 +1013,14 @@ def run(suite, opts):
         if same_tab:
             opts.sign_in_here = suite.account  # run_group signs in in the scenarios' tab (one group: one tab)
         elif suite.account:
-            signed = sign_in_first(suite, opts=opts, cdp_url=cdp_url, headless=suite_meta["headless"], motion=motion)
-            opts.account = suite.account["name"] if signed["ok"] else None
-            if opts.jobs > 1 and len(chains) > 1:  # the workers start their own daemons; this one is done
-                from . import session as session_mod
+            from . import session as session_mod
 
+            try:
+                signed = sign_in_first(suite, opts=opts, cdp_url=cdp_url,
+                                       headless=suite_meta["headless"], motion=motion)
+                opts.account = suite.account["name"] if signed["ok"] else None
+            finally:
+                # Every scenario group now starts its own daemon, including serial runs.
                 session_mod.stop_daemon()
         if signed and not signed["ok"]:  # Jev must not meet a sign-in page it cannot pass: stop with the reason
             for s in scenarios:

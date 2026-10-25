@@ -98,6 +98,11 @@ base.FAULTS = [
      '                    # Reuse the old request id, losing its unresolved ownership.\n'
      '                    request_id = request_id',
      T + "test_preserved_upstream_creation_retry_cannot_confirm_ownership_of_its_first_attempt"),
+    ("W29-leak-serial-parent-signin-daemon", R,
+     '# Every scenario group now starts its own daemon, including serial runs.\n                session_mod.stop_daemon()',
+     '# Leave the parent daemon alive in a serial run.\n                if opts.jobs > 1:\n'
+     '                    session_mod.stop_daemon()',
+     T + "test_serial_spawned_run_closes_the_parent_owned_signin_daemon"),
 ]
 
 if __name__ == "__main__":
