@@ -155,13 +155,7 @@ def main():
                 errors = sum(test.find("error") is not None for test in tests)
                 receipt.update(tests=len(tests), failures=len(failures), skipped=skipped, errors=errors)
                 if args.mode.startswith("red-"):
-                    assertion = any("assert " in (f.text or "") or "DID NOT RAISE" in (f.text or "") for f in failures)
-                    reproduced = args.mode == "red-unit" or any(
-                        "capture must retain a frame" in (f.text or "") or "capture took" in (f.text or "")
-                        for f in failures)
-                    red = actual_exit == 1 and tests and not skipped and not errors and assertion and reproduced
-                    result = 0 if red else 1
-                    receipt["baseline_session_sha256"] = LEGACY_SESSION_SHA256
+                    slow_cli = False
                     if args.mode == "red-live":
                         for log in (out / "fixtures").glob("test_cli*/cli.stdout"):
                             if log.parent.name.endswith("current"):
@@ -169,9 +163,24 @@ def main():
                             data = json.loads(log.read_text())
                             frames = [frame for scenario in data.get("scenarios", [])
                                       for frame in scenario.get("react", []) if "took_s" in frame]
+                            maximum = max((frame["took_s"] for frame in frames), default=0)
+                            described = all(item.get("described") is True for item in data["plan"])
+                            hook_failed = any(scenario.get("stop") == "hook_failed"
+                                              for scenario in data["scenarios"])
+                            slow_cli = (maximum >= 5 and described and hook_failed and
+                                        data["cost"]["calls"] == {"typesafe": 0, "text": 0})
                             receipt["baseline_cli"] = {
                                 "gate": data["gate"], "cost_calls": data["cost"]["calls"],
-                                "frames": frames, "seconds": data["seconds"], "timing": data["timing"]}
+                                "frames": frames, "seconds": data["seconds"], "timing": data["timing"],
+                                "max_capture_seconds": maximum, "plan_described": described,
+                                "hook_failed": hook_failed}
+                    assertion = any("assert " in (f.text or "") or "DID NOT RAISE" in (f.text or "") for f in failures)
+                    reproduced = args.mode == "red-unit" or slow_cli or any(
+                        "capture must retain a frame" in (f.text or "") or "capture took" in (f.text or "")
+                        for f in failures)
+                    red = actual_exit == 1 and tests and not skipped and not errors and assertion and reproduced
+                    result = 0 if red else 1
+                    receipt["baseline_session_sha256"] = LEGACY_SESSION_SHA256
                 elif not tests or skipped or errors:
                     result = 1
             receipt["gate"] = "PASS" if result == 0 else "FAIL"

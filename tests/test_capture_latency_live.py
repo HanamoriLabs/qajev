@@ -23,6 +23,7 @@ import pytest
 from PIL import Image
 
 from qajev import chrome
+from qajev import session as session_mod
 from qajev.session import Session
 
 pytestmark = pytest.mark.skipif(
@@ -61,6 +62,8 @@ class CDP:
 
 @pytest.fixture(autouse=True)
 def no_model_initialization(monkeypatch):
+    assert Path(session_mod.__file__).resolve() == Path(__file__).resolve().parents[1] / "qajev/session.py"
+
     def forbidden(*_args, **_kwargs):
         raise AssertionError("capture fixtures must not initialize Jev or a model")
 
@@ -181,6 +184,8 @@ def test_inactive_target_captures_fresh_native_pixels_without_a_thirty_second_wa
                 assert window["bounds"]["windowState"] == "minimized", window
             else:
                 cdp.call("Page.bringToFront", session_id=other_sid)
+            # Window-state acknowledgments precede the compositor's visibility transition.
+            time.sleep(0.25)
             # Focus emulation can report a visible document while its compositor surface is still inactive.
             visibility = session.evaluate("({hidden:document.hidden,focused:document.hasFocus()})")
             session.evaluate("document.body.style.backgroundColor=" + json.dumps(f"rgb{color}") + ";"
