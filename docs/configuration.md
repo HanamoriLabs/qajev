@@ -84,6 +84,11 @@ What is inside `~/.qajev`:
 
 ## Browser and machine
 
+Linux viewport captures activate QAJev's test tab immediately before reading its pixels. A minimized test window
+can become visible during capture, allowing Chromium to present a fresh surface. The capture keeps its requested
+format, viewport dimensions, device scale and crop. React frames retain their individual files and measured capture
+times; the existing hook and run limits still apply.
+
 | Variable | Is | Default |
 |---|---|---|
 | `QAJEV_CHROME` | the Chrome or Chromium binary | found automatically |

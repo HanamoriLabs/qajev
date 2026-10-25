@@ -13,6 +13,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -298,7 +299,8 @@ PROBE_JS = Template("""(async () => {
   // Include diagnostics emitted by the check itself, in the same read that carries its verdict.
   if (probe && q.drainPageConsole) {
     const after = q.drainPageConsole();
-    for (const key of ['page_console', 'page_console_omitted']) probe[key] = (probe[key] || []).concat(after[key] || []);
+    for (const key of ['page_console', 'page_console_omitted'])
+      probe[key] = (probe[key] || []).concat(after[key] || []);
   }
   return { probe, url: location.href, title: document.title, status,
     text: spec.text.map(t => has(t)), guarded, absent: spec.absent.map(t => has(t)), visible: seen.map(s => s.ok),
@@ -704,6 +706,9 @@ class Session:
                 observer.safe(observer.after)
 
     def call(self, method, **params):
+        # An inactive or minimized Linux surface can wait a full CDP timeout for its next frame.
+        if method == "Page.captureScreenshot" and sys.platform == "linux":
+            self.browser.call("Page.bringToFront")
         return self.browser.call(method, **params)
 
     def evaluate(self, expression, timeout_ms=15000):
