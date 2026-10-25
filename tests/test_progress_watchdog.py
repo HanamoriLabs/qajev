@@ -421,7 +421,7 @@ def test_spawn_preserves_required_runtime_options_and_redacts_both_sides(monkeyp
     assert events == [{"event": "fixture", "child": "[redacted]"}]
 
 
-def _concurrent_models(witness):
+def _concurrent_models(witness, pause_receiver=False):
     witness_lock = threading.Lock()
 
     def entered(stage):
@@ -430,6 +430,8 @@ def _concurrent_models(witness):
 
     entered("worker-entered")
     watchdog.notify("scenario", name="blocked")
+    if pause_receiver:
+        watchdog.notify("event", value={"event": "pause-receiver"})
     ledger = runner.Ledger(1, .1)
     started = threading.Event()
 
@@ -621,3 +623,90 @@ def test_child_operator_interruption_preserves_prefix_and_marks_suffix_without_r
     directory = Path(report["run_dir"])
     assert len((directory / "generations.jsonl").read_text().splitlines()) == 1
     assert (directory / "actions.txt").read_text().splitlines() == ["js"]
+
+
+def _queued_state(kind, witness):
+    watchdog.notify("scenario", name="blocked")
+    watchdog.notify("event", value={"event": "pause-receiver"})
+    if kind == "resource":
+        watchdog.notify("resource_pending", method="Target.createTarget", request_id="unacknowledged")
+    else:
+        watchdog.notify("runtime", value={"load_waited": 17})
+    Path(witness).write_text("ready")
+    time.sleep(30)
+
+
+@pytest.mark.parametrize("kind", ["cost", "resource", "runtime"])
+def test_unread_critical_notifications_remain_uncertain_at_stop(kind, tmp_path):
+    witness = tmp_path / "queued-witness.jsonl"
+
+    def pause(event):
+        if event["event"] != "pause-receiver":
+            return
+        deadline = time.monotonic() + 3
+        while True:
+            ready = witness.exists()
+            if ready and kind == "cost":
+                ready = "fast-call-completed" in witness.read_text()
+            if ready:
+                break
+            assert time.monotonic() < deadline, "fixture setup must finish before testing queued notifications"
+            time.sleep(.01)
+        time.sleep(2.1)  # Messages are queued while the supervisor misses its next receive opportunity.
+
+    target = _concurrent_models if kind == "cost" else _queued_state
+    args = (str(witness), True) if kind == "cost" else (kind, str(witness))
+    _, failure = watchdog.supervise(target, args, timeout=2, emit=pause)
+    assert witness.exists() and failure["stop"] == "no_progress", failure
+    if kind == "cost":
+        assert "blocked-call-entered" in witness.read_text() and "fast-call-completed" in witness.read_text()
+        assert failure["cost_uncertain"] is True, failure
+    elif kind == "resource":
+        assert failure["resource_ownership_uncertain"] is True, failure
+        assert failure["cleanup_complete"] is False, failure
+    else:
+        assert failure.get("runtime_state_incomplete") is True, failure
+
+
+def test_unread_ready_still_stops_only_the_owned_process_group(monkeypatch, tmp_path):
+    marker = str(tmp_path / "owned")
+    context = multiprocessing.get_context("spawn")
+
+    class Unread:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def poll(self, _timeout):
+            time.sleep(.01)
+            return False
+
+        def close(self):
+            self.connection.close()
+
+    class Context:
+        Process = context.Process
+        RawArray = context.RawArray
+
+        def Pipe(self, **kwargs):  # noqa: N802
+            receive, send = context.Pipe(**kwargs)
+            return Unread(receive), send
+
+    monkeypatch.setattr(watchdog, "multiprocessing", SimpleNamespace(get_context=lambda _kind: Context()))
+    monkeypatch.setattr(watchdog.Progress, "expired", lambda *_a, **_kw: Path(marker + ".child").exists())
+    sibling = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], start_new_session=True)
+    child = None
+    try:
+        _, failure = watchdog.supervise(_blocked, ("descendant", marker), timeout=2)
+        child = int(Path(marker + ".child").read_text())
+        try:
+            state = Path(f"/proc/{child}/stat").read_text().split()[2]
+        except (FileNotFoundError, ProcessLookupError):
+            state = None
+        assert failure["stop"] == "no_progress" and state in {None, "Z"}, "owned descendant survived unread ready"
+        assert sibling.poll() is None, "an unrelated process group must remain alive"
+    finally:
+        if child is not None:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(child, signal.SIGKILL)
+        sibling.kill()
+        sibling.wait(timeout=5)
