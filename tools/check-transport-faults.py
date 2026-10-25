@@ -63,6 +63,16 @@ base.FAULTS = [
      T + "test_a_lost_transport_prevents_shell_commands_from_starting"),
     ("T17-swallowed-probe-starts-next-hook", R, "        require_transport()\n", "",
      T + "test_swallowed_optional_probe_error_cannot_turn_transport_loss_into_pass"),
+    ("T18-meta-method-guard", S,
+     'if request.get("method") and (not isinstance(response, dict) or "result" not in response):',
+     'if not isinstance(response, dict) or "result" not in response:',
+     T + "test_meta_replies_without_cdp_result_keep_the_transport_healthy"),
+    ("T19-pass-survives-late-loss", R, 'if (error := session_mod.transport_error()) is not None:',
+     'if (error := session_mod.transport_error()) is not None and result.get("outcome") != "pass":',
+     T + "test_checks_pass_then_transport_loss_before_scenario_end_cannot_keep_pass"),
+    ("T20-popup-error-poisons-transport", S, '"browser has been closed", "target crashed",',
+     '"browser has been closed", "target closed", "target crashed",\n        "session with given id not found",',
+     T + "test_closed_popup_command_error_does_not_poison_a_healthy_browser_transport"),
 ]
 
 if __name__ == "__main__":

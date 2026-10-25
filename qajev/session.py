@@ -60,10 +60,11 @@ def _is_transport_error(error):
     if isinstance(error, (ConnectionError, EOFError, FileNotFoundError)):
         return True
     message = str(error).lower()
+    # A closed popup or detached target can reject a command while the browser transport stays usable.
     return any(marker in message for marker in (
         "no close frame received", "no close frame sent", "connection is closed", "connection closed",
-        "connection reset", "websocket is not connected", "browser has been closed", "target closed",
-        "target crashed", "session with given id not found", "daemon is shutting down", "daemon not running",
+        "connection reset", "websocket is not connected", "browser has been closed", "target crashed",
+        "daemon is shutting down", "daemon not running",
     ))
 
 

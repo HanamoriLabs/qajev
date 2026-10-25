@@ -21,6 +21,7 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 - A lost CDP or browser-daemon transport stops reuse of that connection. The affected scenario remains
   harness; remaining scenarios are explicitly not run, with no automatic replay of hooks or actions.
+  Target/session command rejections from a closed popup do not invalidate a usable browser transport.
 - Managed Chrome disables background update, network-time, search-eligibility, on-device model, dictionary
   and speculative preconnection requests. Cloud messaging endpoints cannot leave managed profiles' machine.
   Additional disabled features preserve the managed defaults, and older running profiles require a restart.

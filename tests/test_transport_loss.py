@@ -127,6 +127,30 @@ def test_swallowed_optional_probe_error_cannot_turn_transport_loss_into_pass(gro
     assert seen["hooks"] == []
 
 
+def test_checks_pass_then_transport_loss_before_scenario_end_cannot_keep_pass(group, monkeypatch):
+    run, _fail, seen, state, _scenarios, _opts, _cdp = group
+    original = runner.run_scenario
+    passed_checks = [{"kind": "text", "ok": True, "actual": "ready"}]
+
+    def pass_then_lose(page, scenario, **kwargs):
+        if scenario.name != "lost":
+            return original(page, scenario, **kwargs)
+        state.error = session.TransportLost("connection closed after the checks passed")
+        return {"name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
+                "outcome": "pass", "reason": "all checks passed", "stop": "checked", "checks": passed_checks,
+                "findings": [], "screens": []}
+
+    monkeypatch.setattr(runner, "run_scenario", pass_then_lose)
+    results = run()["results"]
+    assert [r["outcome"] for r in results] == ["pass", "harness", "skipped", "skipped"]
+    assert results[1]["checks"] == passed_checks
+    assert results[1]["transport_lost"] is True
+    assert results[1]["reason"] == (
+        "browser/daemon transport lost: connection closed after the checks passed; no automatic retry")
+    assert seen["starts"] == ["earlier", "lost"] and seen["hooks"] == []
+    assert seen["made"] == seen["closed"] == seen["daemons"] == 1
+
+
 @pytest.mark.parametrize("error", [RuntimeError("ordinary CDP command rejected"), TimeoutError("slow page")])
 def test_ordinary_command_failure_or_timeout_does_not_poison_later_scenarios(group, error):
     run, fail, seen, _state, _scenarios, _opts, _cdp = group
@@ -162,8 +186,7 @@ def test_poisoned_transport_never_sends_a_second_raw_command(group):
 @pytest.mark.parametrize("error", [ConnectionResetError("reset"), ConnectionRefusedError("refused"),
                                   BrokenPipeError("pipe"), EOFError("daemon closed the connection"),
                                   RuntimeError("sent 1001 (going away); no close frame received"),
-                                  RuntimeError("Session with given id not found"),
-                                  RuntimeError("Target closed"), RuntimeError("daemon is shutting down"),
+                                  RuntimeError("daemon is shutting down"),
                                   FileNotFoundError("daemon endpoint is gone")])
 def test_each_transport_failure_opens_the_fuse_before_a_second_command(group, error):
     _run, fail, seen, state, _scenarios, _opts, cdp = group
@@ -325,6 +348,57 @@ def test_empty_success_result_is_a_valid_daemon_acknowledgement():
     send = session._checked_send(lambda *_a, **_kw: {"result": {}}, state)
     assert send({"method": "Input.dispatchMouseEvent"}) == {"result": {}}
     assert state.error is None
+
+
+@pytest.mark.parametrize("meta_request,reply", [
+    ({"meta": "pending_dialog"}, {"dialog": None}),
+    ({"meta": "current_tab"}, {"targetId": "fixture-tab", "url": "http://localhost/", "title": "Fixture"}),
+    ({"meta": "set_session", "session_id": "fixture-session", "target_id": "fixture-tab"},
+     {"session_id": "fixture-session"}),
+    ({"meta": "session"}, {"session_id": "fixture-session"}),
+])
+def test_meta_replies_without_cdp_result_keep_the_transport_healthy(meta_request, reply):
+    state = SimpleNamespace(error=None)
+    calls = []
+    cdp_request = {"method": "Runtime.evaluate", "params": {"expression": "true"}}
+
+    def raw(sent, **_kwargs):
+        calls.append(sent)
+        return reply if sent == meta_request else {"result": {"value": True}}
+
+    send = session._checked_send(raw, state)
+    try:
+        received = send(meta_request)
+    except session.TransportLost as error:
+        raise AssertionError("a valid meta reply is not a missing CDP acknowledgement") from error
+    assert received == reply and state.error is None
+    assert send(cdp_request) == {"result": {"value": True}}
+    assert state.error is None and calls == [meta_request, cdp_request]
+
+
+@pytest.mark.parametrize("message", ["Target closed", "Session with given id not found"])
+def test_closed_popup_command_error_does_not_poison_a_healthy_browser_transport(message):
+    state = SimpleNamespace(error=None)
+    calls = []
+
+    def raw(method, session_id=None, **_kwargs):
+        calls.append((method, session_id))
+        if session_id == "closed-popup":
+            raise RuntimeError(message)
+        return {"ready": True}
+
+    call = session._patient_cdp(raw, 30, state)
+    try:
+        call("Runtime.evaluate", session_id="closed-popup", expression="true")
+    except session.TransportLost as error:
+        raise AssertionError("a target-scoped rejection does not prove the browser transport is gone") from error
+    except RuntimeError as error:
+        assert str(error) == message
+    else:
+        raise AssertionError("the rejected popup command must still fail")
+    assert state.error is None
+    assert call("Runtime.evaluate", session_id="healthy-page", expression="true") == {"ready": True}
+    assert calls == [("Runtime.evaluate", "closed-popup"), ("Runtime.evaluate", "healthy-page")]
 
 
 def test_a_lost_transport_prevents_even_non_cdp_hooks_from_starting(monkeypatch):
