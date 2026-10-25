@@ -838,7 +838,8 @@ def supervised_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, p
             elif blocked:
                 not_run(candidate, "dependency", f"not run: depends on {blocked} which did not pass")
             elif not candidate.url:
-                not_run(candidate, "session_uncertain", "not run: previous page state was discarded; declare an own URL")
+                not_run(candidate, "session_uncertain",
+                        "not run: previous page state was discarded; declare an own URL")
             else:
                 eligible = remaining[remaining.index(candidate):]
                 break  # The fresh URL restores a new chain; its normal dependencies/continuations run in order.
