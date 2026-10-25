@@ -95,6 +95,10 @@ def _patient_cdp(raw_cdp, timeout, transport):
             try:
                 response = raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
             except TimeoutError:
+                if creating:
+                    # Preserve upstream retry behavior, but an unknown first creation still needs an owner.
+                    request_id = uuid.uuid4().hex
+                    watchdog.notify("resource_pending", method=method, request_id=request_id)
                 response = raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
             if creating:
                 watchdog.notify("resource", targets=[response["targetId"]] if response.get("targetId") else [],

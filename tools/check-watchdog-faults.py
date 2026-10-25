@@ -12,6 +12,7 @@ spec.loader.exec_module(base)
 
 W = "qajev/watchdog.py"
 R = "qajev/runner.py"
+S = "qajev/session.py"
 T = "tests/test_progress_watchdog.py::"
 base.FAULTS = [
     ("W01-wall-clock", W,
@@ -89,6 +90,14 @@ base.FAULTS = [
     ("W27-trust-close-ack-without-removal", W,
      'cleaned = not (targets & {t["id"] for t in chrome.targets(cdp_url)}) and cleaned',
      'cleaned = True', T + "test_cleanup_requires_observed_target_removal_not_just_close_acknowledgement"),
+    ("W28-creation-retry-forgets-unacknowledged-request", S,
+     'except TimeoutError:\n                if creating:\n'
+     '                    # Preserve upstream retry behavior, but an unknown first creation still needs an owner.\n'
+     '                    request_id = uuid.uuid4().hex',
+     'except TimeoutError:\n                if creating:\n'
+     '                    # Reuse the old request id, losing its unresolved ownership.\n'
+     '                    request_id = request_id',
+     T + "test_preserved_upstream_creation_retry_cannot_confirm_ownership_of_its_first_attempt"),
 ]
 
 if __name__ == "__main__":

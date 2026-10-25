@@ -537,3 +537,33 @@ def test_cleanup_requires_observed_target_removal_not_just_close_acknowledgement
     monkeypatch.setattr(runner.chrome, "targets", lambda _url: [{"id": "still-owned"}])
     monkeypatch.setattr(runner.chrome, "close_target", lambda *_args: True)
     assert watchdog._cleanup("fixture", {"still-owned"}, set(), None) is False
+
+
+def _creation_retry_then_block():
+    watchdog.notify("scenario", name="blocked")
+    notify = watchdog.notify
+
+    def fixture_notify(kind, **data):
+        if kind == "resource":
+            data.pop("targets", None)  # The stand-in response owns no real browser resource.
+        notify(kind, **data)
+
+    watchdog.notify = fixture_notify
+    attempts = []
+
+    def raw(_method, **_params):
+        attempts.append(True)
+        if len(attempts) == 1:
+            raise TimeoutError("first creation acknowledgement missing")
+        return {"targetId": "acknowledged-second-target"}
+
+    call = session._patient_cdp(raw, 30, SimpleNamespace(error=None))
+    call("Target.createTarget")
+    watchdog.active("blocked check after resource creation")
+    time.sleep(30)
+
+
+def test_preserved_upstream_creation_retry_cannot_confirm_ownership_of_its_first_attempt():
+    _, failure = watchdog.supervise(_creation_retry_then_block, timeout=2)
+    assert failure["resource_ownership_uncertain"] is True
+    assert failure["cleanup_complete"] is False
