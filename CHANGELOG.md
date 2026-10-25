@@ -19,6 +19,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Headless mouse presses activate their receiving tab before input, including direct Jev actions. Background
+  canvases can acquire real pointer lock after a trusted press instead of reporting `WrongDocumentError` while
+  focus emulation says the page is focused. Permission denials and headed-window focus policy remain unchanged.
 - Parallel CLI admission charges only the next browser against remaining RAM, while retaining startup
   reservations across processes. A resident browser no longer makes an otherwise affordable second run queue.
   Declared budgets and the largest active reserve remain protected; default serial and native admission stay exclusive.

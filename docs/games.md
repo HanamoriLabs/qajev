@@ -6,6 +6,15 @@ QAJev talks to the game itself, not to its pixels.
 
 ## How it works
 
+For a web game in headless Chrome, QAJev activates the receiving tab before each mouse press, including
+Jev's direct actions and scripted clicks. Chrome otherwise rejects pointer lock in a background document
+even when focus emulation says it is focused. The game still needs a trusted input event and must acquire
+real pointer lock; QAJev does not fake a successful lock or grant extra permissions. This does not enable
+raw mouse movement where the platform does not support it. Headed Chrome keeps its existing focus policy.
+
+Pointer lock belongs to the active document. A different tab taking the foreground can release it; tests
+that require an uninterrupted lock should use their own Chrome rather than share it with other scenarios.
+
 - **Jev reads text, never pixels.** A small **bridge** inside the game describes each screen as text plus labelled
   actions ("PLAY", "Settings", "Pause the game (Esc)"), and the game's own state (score, level, health...). Jev picks
   among those actions, just as on a web page.
