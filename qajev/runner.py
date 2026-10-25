@@ -657,8 +657,8 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                             )
                             if getattr(opts, "sign_in_here", None):
                                 opts.signed_here = sign_in_here(session, opts.sign_in_here, opts)
-                        if session_mod.transport_error() is not None:
-                            raise session_mod.transport_error()
+                        if (startup_error := session_mod.transport_error()) is not None:
+                            raise startup_error
                         signed_here = getattr(opts, "signed_here", None)
                         if signed_here and not signed_here["ok"]:
                             result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
