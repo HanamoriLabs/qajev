@@ -19,6 +19,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- A lost CDP or browser-daemon transport stops reuse of that connection. The affected scenario remains
+  harness; remaining scenarios are explicitly not run, with no automatic replay of hooks or actions.
 - Linux viewport captures activate the test tab before readback to avoid long waits on inactive or minimized
   surfaces. Captures keep their native pixels, requested crops, individual frame files and measured timing.
 - Browser diagnostics above 1 MiB become visible omission markers before CDP transfer. Normal text remains

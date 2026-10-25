@@ -175,7 +175,7 @@ def _effect_check(session, scenario, run_dir, url):
 
 
 def run_scenario(session, scenario, *, opts, hosts, run_dir):
-    from .session import GuardMissing, HookFailed, LeftSite
+    from .session import GuardMissing, HookFailed, LeftSite, transport_error
 
     started = time.monotonic()
     if hasattr(session, "begin_test"):  # the last test's page: its frames were named under that test
@@ -316,7 +316,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
 
     checks = []
     ran = set()  # the expectations beyond the page's own that did run
-    if stop not in {"unreachable", "interrupted"}:
+    if stop not in {"unreachable", "interrupted"} and transport_error() is None:
         try:
             if stop != "reached" and has_page_checks(scenario.expect):
                 if not page_ok():
@@ -373,7 +373,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         except (RuntimeError, ValueError, TimeoutError, OSError) as e:
             if stop in {"done", "reached", "checked", "blocked"}:
                 stop, detail = "browser_error", f"while checking: {type(e).__name__}: {e}"
-        if opts.shots and run_dir:
+        if opts.shots and run_dir and transport_error() is None:
             shot = session.screenshot(run_dir / "shots" / f"{slug(scenario.name)}.jpg")
             result["shot"] = str(shot.relative_to(run_dir)) if shot else None
 
@@ -414,7 +414,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     if outcome not in {"pass", "skipped"} and wall:
         result["needs_sign_in"] = wall
         result = _finish(result, "harness", wall["reason"], started)
-        if ux_observer:
+        if ux_observer and transport_error() is None:
             ux_observer.safe(ux_observer.finish)
             ux_observer.apply(result)
         return result
@@ -445,7 +445,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         reason = verdict.with_guard_note(outcome, reason, hidden)
     outcome, reason = verdict.unguarded(outcome, reason, result.get("frames_not_observed"))
     result = _finish(result, outcome, reason, started)
-    if ux_observer:
+    if ux_observer and transport_error() is None:
         ux_observer.safe(ux_observer.finish)
         ux_observer.apply(result)
     return result
@@ -608,6 +608,13 @@ def run_clients(scenario, *, opts, suite_meta, run_dir, ledger):
     return result
 
 
+def _transport_result(scenario, error, started, result=None):
+    return _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
+                    "checks": [], "findings": [], "screens": [], **(result or {}),
+                    "stop": "browser_error", "transport_lost": True, "stop_detail": str(error)},
+                   "harness", f"browser/daemon transport lost: {error}; no automatic retry", started)
+
+
 def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=None):
     from . import session as session_mod
 
@@ -615,48 +622,68 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
     outcomes = dict(prior or {})
     name = session_mod.configure_env(cdp_url)
     session = None
+    lost_after = "an earlier scenario" if session_mod.transport_error() is not None else None
     try:
         for scenario in scenarios:
+            if lost_after is not None:
+                result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
+                                  "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
+                                  "stop": "transport_lost", "cost_usd": 0.0}, "skipped",
+                                 f"not run: transport lost after {lost_after!r}; no automatic retry", time.monotonic())
+                results.append(result)
+                outcomes[scenario.name] = result["outcome"]
+                _emit(opts, "scenario", result=result)
+                continue
             blocked_by = [d for d in scenario.depends_on if outcomes.get(d) != "pass"]
+            started = time.monotonic()
+            spent_before = ledger.spent()
             if blocked_by:
                 result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
                                   "mode": scenario.mode, "checks": [], "findings": [], "screens": []},
                                  "skipped", f"depends on {blocked_by} which did not pass", time.monotonic())
-            elif scenario.clients:  # a multiplayer scenario: its own clients' tabs, not this tab, and no Jev
-                _emit(opts, "start", scenario=scenario.name)
-                spent_before = ledger.spent()
-                result = run_clients(scenario, opts=opts, suite_meta=suite_meta, run_dir=run_dir, ledger=ledger)
             else:
-                if session is None:
-                    session = session_mod.Session(
-                        ledger, headless=suite_meta["headless"], hosts=suite_meta["hosts"],
-                        guard_opts=suite_meta["guard"], allow_commands=opts.allow_commands, cwd=suite_meta["cwd"],
-                        motion=suite_meta.get("motion", "reduce"), cpu_throttle=suite_meta.get("cpu_throttle", 1),
-                    )
-                    if getattr(opts, "sign_in_here", None):  # login.tab: same, before the first scenario arms the guard
-                        opts.signed_here = sign_in_here(session, opts.sign_in_here, opts)
-                signed_here = getattr(opts, "signed_here", None)
-                if signed_here and not signed_here["ok"]:
-                    result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
-                                      "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
-                                      "stop": "sign_in"}, "harness", f"sign-in failed: {signed_here['reason']}",
-                                     time.monotonic())
-                    result["cost_usd"] = 0.0
-                    results.append(result)
-                    outcomes[scenario.name] = result["outcome"]
-                    _emit(opts, "scenario", result=result)
-                    continue
-                _emit(opts, "start", scenario=scenario.name)
-                spent_before = ledger.spent()
                 try:
-                    with live.frames(run_dir, session.page_socket(), managed=suite_meta.get("managed", False)):
-                        result = run_scenario(session, scenario, opts=opts, hosts=set(suite_meta["hosts"]),
-                                              run_dir=run_dir)
+                    if scenario.clients:  # a multiplayer scenario: its own tabs, not this session
+                        _emit(opts, "start", scenario=scenario.name)
+                        result = run_clients(scenario, opts=opts, suite_meta=suite_meta, run_dir=run_dir, ledger=ledger)
+                    else:
+                        if session is None:
+                            session = session_mod.Session(
+                                ledger, headless=suite_meta["headless"], hosts=suite_meta["hosts"],
+                                guard_opts=suite_meta["guard"], allow_commands=opts.allow_commands,
+                                cwd=suite_meta["cwd"], motion=suite_meta.get("motion", "reduce"),
+                                cpu_throttle=suite_meta.get("cpu_throttle", 1),
+                            )
+                            if getattr(opts, "sign_in_here", None):
+                                opts.signed_here = sign_in_here(session, opts.sign_in_here, opts)
+                        if session_mod.transport_error() is not None:
+                            raise session_mod.transport_error()
+                        signed_here = getattr(opts, "signed_here", None)
+                        if signed_here and not signed_here["ok"]:
+                            result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
+                                              "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
+                                              "stop": "sign_in"}, "harness", f"sign-in failed: {signed_here['reason']}",
+                                             time.monotonic())
+                            result["cost_usd"] = 0.0
+                            results.append(result)
+                            outcomes[scenario.name] = result["outcome"]
+                            _emit(opts, "scenario", result=result)
+                            continue
+                        _emit(opts, "start", scenario=scenario.name)
+                        with live.frames(run_dir, session.page_socket(), managed=suite_meta.get("managed", False)):
+                            result = run_scenario(session, scenario, opts=opts, hosts=set(suite_meta["hosts"]),
+                                                  run_dir=run_dir)
+                except session_mod.TransportLost as error:
+                    result = _transport_result(scenario, error, started)
+                    lost_after = scenario.name
                 except KeyboardInterrupt:  # e.g. while waiting for the machine to calm down
                     result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
                                       "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
                                       "stop": "interrupted", "interrupted": True},
                                      "harness", "interrupted: stopped by the operator", time.monotonic())
+                if (error := session_mod.transport_error()) is not None:
+                    result = _transport_result(scenario, error, started, result)
+                    lost_after = scenario.name
             if not blocked_by:
                 result["cost_usd"] = round(ledger.spent() - spent_before, 5)
             outcomes[scenario.name] = result["outcome"]

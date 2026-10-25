@@ -43,6 +43,49 @@ class LeftSite(RuntimeError):
     pass
 
 
+class TransportLost(RuntimeError):
+    """The connection is gone; its state and unacknowledged actions cannot be replayed safely."""
+
+
+def transport_error():
+    return getattr(getattr(_jev, "transport", None), "error", None)
+
+
+def _is_transport_error(error):
+    if isinstance(error, (ConnectionError, EOFError, FileNotFoundError)):
+        return True
+    message = str(error).lower()
+    return any(marker in message for marker in (
+        "no close frame received", "no close frame sent", "connection is closed", "connection closed",
+        "connection reset", "websocket is not connected", "browser has been closed", "target closed",
+        "target crashed", "session with given id not found", "daemon is shutting down", "daemon not running",
+    ))
+
+
+def _patient_cdp(raw_cdp, timeout, transport):
+    def call(method, session_id=None, **params):
+        if transport.error is not None:
+            raise transport.error
+        params.pop("_response_timeout", None)
+        try:
+            try:
+                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+            except TimeoutError:
+                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+        except (RuntimeError, OSError, EOFError) as error:
+            lost = _is_transport_error(error)
+            # An oversized IPC request closes that request's socket, not necessarily the daemon's CDP link.
+            said = too_long(method, params, error) if not lost or isinstance(error, BrokenPipeError) else None
+            if said:
+                raise RuntimeError(said) from error
+            if lost:
+                transport.error = TransportLost(str(error))
+                raise transport.error from error
+            raise
+
+    return call
+
+
 def configure_env(cdp_url, name=None):
     """One daemon name per process: browser_harness binds BU_NAME when it is imported, so once jev is loaded
     a pooled worker that runs a second chain must keep the name it started with."""
@@ -84,22 +127,8 @@ def load(ledger):
     from jev_ultrafast import model as jev_model
 
     timeout = float(os.environ.get("QAJEV_CDP_TIMEOUT", "30"))
-    raw_cdp = jev_browser.cdp
-
-    def patient_cdp(method, session_id=None, **params):
-        # The 5 s default is bound as a default argument; under load it failed ~1 call in 8.
-        params.pop("_response_timeout", None)
-        try:
-            try:
-                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
-            except TimeoutError:
-                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
-        except (RuntimeError, OSError) as e:
-            said = too_long(method, params, e)
-            if said:
-                raise RuntimeError(said) from e
-            raise
-
+    transport = SimpleNamespace(error=None)
+    patient_cdp = _patient_cdp(jev_browser.cdp, timeout, transport)
     jev_browser.cdp = patient_cdp
 
     raw_init = jev_browser.Browser.__init__
@@ -133,7 +162,7 @@ def load(ledger):
     raw_post_json = jev_model.post_json
     jev_model.post_json = ledger.wrap(providers.route(raw_post_json, resolved))
     _jev = SimpleNamespace(admin=admin, agent=jev_agent, browser=jev_browser, model=jev_model,
-                           raw_post_json=raw_post_json, cdp=patient_cdp, providers=resolved)
+                           raw_post_json=raw_post_json, cdp=patient_cdp, providers=resolved, transport=transport)
     return _jev
 
 

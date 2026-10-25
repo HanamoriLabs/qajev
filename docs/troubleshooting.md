@@ -100,6 +100,16 @@ QAJev waits while the load is very high, then skips ("machine busy"). Tune `--lo
 **A run was killed and left a browser open**
 The next run cleans it up; or run `qajev browser reap`.
 
+**`browser/daemon transport lost`**
+The connection closed before QAJev could confirm the current action or check. That scenario is harness and
+the remaining scenarios say `not run: transport lost`; they do not use the failed session. Earlier finished
+results stay in the report. QAJev does not automatically replay the scenario, its hooks or its actions.
+
+Check the browser and system logs for a crash, a killed process or a memory limit before running again.
+A restarted GPU process can lose the page's WebGPU resources even when Chrome stays open. Restore a known
+test state, then start a new QAJev process explicitly. A response timeout or an ordinary rejected CDP command
+does not by itself prove that the transport is gone.
+
 **The MCP tools do not show up in my agent**
 Check that `qajev mcp` runs from the agent's environment (use the full path from `which qajev`), then restart the
 agent's session.
