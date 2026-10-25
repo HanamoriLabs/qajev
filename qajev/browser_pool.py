@@ -78,6 +78,22 @@ def ram_capacity(requested: int, available: int | None, budget_mib: int, reserve
     return min(requested, max(0, (available - reserve_mib * MIB) // (budget_mib * MIB)))
 
 
+def _memory_capacity(requested, available, budget_mib, reserve_mib, active):
+    """Free RAM pays for the next process, not again for browsers already resident.
+
+    Keep the initial envelope until the active cohort drains: simultaneous startups must not each spend
+    the same free RAM before their browsers have allocated it. Older/unknown reservations stay serial.
+    """
+    if available is None or any(r.get("ram_envelope_bytes") is None for r in active):
+        return 1, None
+    envelope = min((r["ram_envelope_bytes"] for r in active), default=available)
+    reserved = sum(r["ram_budget_mib"] for r in active) * MIB
+    reserve_mib = max([reserve_mib, *(r["ram_reserve_mib"] for r in active)])
+    remaining = min(available, max(0, envelope - reserved))
+    capacity = len(active) + ram_capacity(requested, remaining, budget_mib, reserve_mib)
+    return min(requested, capacity), envelope
+
+
 def _directory():
     ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     info = ROOT.lstat()
@@ -152,6 +168,7 @@ def acquire(what, *, browser_runs=None, emit=None, wait: float = 3600, job=None,
     budget = _integer(os.environ.get("QAJEV_BROWSER_RAM_MIB", "1024"), "browser RAM MiB", 1048576)
     reserve = _integer(os.environ.get("QAJEV_BROWSER_RESERVE_MIB", "2048"), "browser reserve MiB", 1048576)
     lease = {"pid": os.getpid(), "what": what, "job": job, "limit": requested, "state": "queued",
+             "ram_budget_mib": budget, "ram_reserve_mib": reserve,
              "inherit_children": browser_runs is None,
              "queued_at": time.time(), "queued_mono": time.monotonic()}
     token = _current.set(lease)
@@ -170,7 +187,8 @@ def acquire(what, *, browser_runs=None, emit=None, wait: float = 3600, job=None,
                 active = [row for _, row in rows if row["state"] == "active"]
                 first = next((name for name, row in rows if row["state"] == "queued"), None)
                 capacity = min([requested, *(r["limit"] for r in active)])
-                memory = ram_capacity(requested, available_memory(), budget, reserve) if requested > 1 else 64
+                memory, envelope = (_memory_capacity(requested, available_memory(), budget, reserve, active)
+                                    if requested > 1 else (64, None))
                 capacity = min(capacity, memory)
                 admitted = first == path.name and len(active) < capacity
                 if admitted:
@@ -184,7 +202,8 @@ def acquire(what, *, browser_runs=None, emit=None, wait: float = 3600, job=None,
                         admitted = False
                 now = time.monotonic()
                 if admitted:
-                    lease.update(state="active", since=time.time(), admitted_at=time.time(), admitted_mono=now)
+                    lease.update(state="active", since=time.time(), admitted_at=time.time(), admitted_mono=now,
+                                 ram_envelope_bytes=envelope)
                     _write(ticket, lease)
                     if requested == 1:
                         _write(legacy, lease)  # old clients still see the exclusive holder

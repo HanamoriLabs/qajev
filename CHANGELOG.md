@@ -19,6 +19,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Parallel CLI admission charges only the next browser against remaining RAM, while retaining startup
+  reservations across processes. A resident browser no longer makes an otherwise affordable second run queue.
+  Declared budgets and the largest active reserve remain protected; default serial and native admission stay exclusive.
 - Managed Chrome disables background update, network-time, search-eligibility, on-device model, dictionary
   and speculative preconnection requests. Cloud messaging endpoints cannot leave managed profiles' machine.
   Additional disabled features preserve the managed defaults, and older running profiles require a restart.

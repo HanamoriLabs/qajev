@@ -103,7 +103,7 @@ def test_linux_memory_obeys_container_limits_and_refuses_unknown_limits(
 
 def test_low_ram_queues_instead_of_starting_or_killing_active_runs(monkeypatch):
     with jobs.machine_lock("first", browser_runs=4, wait=0.1):
-        monkeypatch.setattr(browser_pool, "available_memory", lambda: 3 * 1024**3)
+        monkeypatch.setattr(browser_pool, "available_memory", lambda: int(2.5 * 1024**3))
         with pytest.raises(jobs.Busy, match="memory"):
             with jobs.machine_lock("second", browser_runs=4, wait=0.05):
                 raise AssertionError("RAM admission was bypassed")
