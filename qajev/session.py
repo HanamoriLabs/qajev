@@ -129,7 +129,7 @@ def _record_daemon_owner(transport):
     ipc = _jev.admin.ipc
     pid = ipc.identify(name, timeout=0.5)
     watchdog.notify("resource", daemon=name, daemon_pid=pid,
-                    daemon_start=chrome.start_token(pid) if pid else None)
+                    daemon_start=chrome.started(pid) if pid else None)
     # The pinned harness gives each named CDP daemon its own dedicated tab. A cloud-managed remote
     # browser has different ownership; do not claim its existing tab belongs to this worker.
     if not os.environ.get("BU_BROWSER_ID") and name != "default":

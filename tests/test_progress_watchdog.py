@@ -17,7 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from qajev import config, runner, session, suite, verdict, watchdog
+from qajev import chrome, config, runner, session, suite, verdict, watchdog
 
 
 def _blocked(mode, marker):
@@ -225,6 +225,52 @@ def test_process_group_cleanup_kills_descendants(tmp_path):
     finally:
         with contextlib.suppress(ProcessLookupError):
             os.kill(child, signal.SIGKILL)
+
+
+@pytest.mark.parametrize("owned_child", [False, True], ids=["current-process", "owned-process"])
+def test_daemon_owner_capture_and_cleanup_use_real_process_start(monkeypatch, owned_child):
+    from browser_harness import admin
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"]) if owned_child else None
+    pid = child.pid if child else os.getpid()
+    name = "qajev-watchdog-owner-fixture"
+    messages, restarted = [], []
+
+    def restart(daemon_name):
+        restarted.append(daemon_name)
+        if child:
+            child.terminate()
+            child.wait(timeout=3)
+
+    monkeypatch.setenv("BU_NAME", name)
+    monkeypatch.setenv("BU_BROWSER_ID", "fixture-remote-browser")  # No browser/tab calls in this process fixture.
+    monkeypatch.setattr(session, "_jev", SimpleNamespace(admin=SimpleNamespace(
+        ipc=SimpleNamespace(identify=lambda *_a, **_kw: pid))))
+    monkeypatch.setattr(watchdog, "notify", lambda kind, **data: messages.append({"kind": kind, **data}))
+    monkeypatch.setattr(admin, "restart_daemon", restart)
+    transport = SimpleNamespace(owner_recorded=False)
+    try:
+        expected_start = chrome.started(pid)
+        assert expected_start, "the real fixture process must have a start witness"
+        try:
+            session._record_daemon_owner(transport)
+            resource = next(message for message in messages if message.get("daemon_pid") == pid)
+            daemon = {"name": resource["daemon"], "pid": pid, "start": resource["daemon_start"]}
+            assert transport.owner_recorded and daemon["start"] == expected_start
+            assert messages[-1]["kind"] == "resource_resolved"
+            assert watchdog._cleanup(None, set(), set(), {**daemon, "start": "different-process"}) is False
+            assert restarted == []  # A live reused/mismatched PID is never stopped.
+            assert watchdog._cleanup(None, set(), set(), daemon) is owned_child
+        except AttributeError as error:
+            raise AssertionError(f"daemon ownership must use the existing PID witness API: {error}") from error
+        assert restarted == [name]
+        assert chrome.reaped(pid) is owned_child
+        if not owned_child:
+            assert chrome.started(pid) == expected_start  # A stop acknowledgement alone is insufficient.
+    finally:
+        if child and child.poll() is None:
+            child.kill()
+            child.wait(timeout=3)
 
 
 @pytest.mark.parametrize("url,hook,goal,identity", [

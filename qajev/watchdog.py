@@ -13,6 +13,7 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from typing import Any
 
 TIMEOUT = 300.0
 STOP_GRACE = 1.0
@@ -169,7 +170,7 @@ def _cleanup(cdp_url, targets, contexts, daemon):
 
         name = daemon["name"]
         pid, token = daemon.get("pid"), daemon.get("start")
-        if not pid or not token or chrome.start_token(pid) not in {None, token}:
+        if not pid or not token or chrome.started(pid) not in {None, token}:
             cleaned = False  # Unknown ownership or a reused PID: never signal it.
         else:
             admin.restart_daemon(name)
@@ -261,7 +262,7 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
     grouped = False
     process.start()
     send.close()
-    failure = None
+    failure: dict[str, Any] | None = None
     value = None
     try:
         while True:

@@ -116,6 +116,12 @@ base.FAULTS = [
     ("W33-resume-with-unknown-runtime-budget", R,
      'and not failure.get("runtime_state_incomplete", False)', 'and True',
      T + "test_unknown_runtime_bookkeeping_refuses_a_replacement_worker"),
+    ("W34-invalid-daemon-capture-helper", S, 'daemon_start=chrome.started(pid) if pid else None',
+     'daemon_start=chrome.start_token(pid) if pid else None',
+     T + "test_daemon_owner_capture_and_cleanup_use_real_process_start"),
+    ("W35-invalid-daemon-recheck-helper", W, 'chrome.started(pid) not in {None, token}',
+     'chrome.start_token(pid) not in {None, token}',
+     T + "test_daemon_owner_capture_and_cleanup_use_real_process_start"),
 ]
 
 if __name__ == "__main__":

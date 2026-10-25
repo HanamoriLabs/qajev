@@ -129,6 +129,8 @@ that new chain's normal dependency rules.
 
 If owned cleanup cannot be confirmed, remaining work is `not run: cleanup_incomplete`. QAJev closes only
 targets/contexts it recorded as its own and stops only its worker/daemon; it never stops the shared Chrome.
+Daemon cleanup checks its recorded PID start time before stopping it. An unknown start time or a reused PID
+leaves cleanup unconfirmed; a stop acknowledgement alone is insufficient while the process remains alive.
 Operator cancellation, actual transport loss and a cost-cap stop do not start a replacement worker.
 An interruption raised inside a worker also preserves the completed prefix and marks the remaining scenarios
 `not run: interrupted`; it never starts a replacement worker.
