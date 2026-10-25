@@ -94,6 +94,7 @@ def wait_for_quiet(opts):
     finally:
         opts.load_waited += time.monotonic() - started
         watchdog.notify("admitted")
+        watchdog.notify("runtime", value=_runtime_state(opts))
     return True, load
 
 
@@ -687,7 +688,8 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                                 cwd=suite_meta["cwd"], motion=suite_meta.get("motion", "reduce"),
                                 cpu_throttle=suite_meta.get("cpu_throttle", 1),
                             )
-                            if getattr(opts, "sign_in_here", None):
+                            if getattr(opts, "sign_in_here", None) and not getattr(opts, "signed_here", None):
+                                opts.sign_in_attempted = True
                                 opts.signed_here = sign_in_here(session, opts.sign_in_here, opts)
                         if (startup_error := session_mod.transport_error()) is not None:
                             raise startup_error
@@ -744,6 +746,7 @@ def _group_child(scenarios, opts_dict, cdp_url, suite_meta, run_dir, ledger_stat
 
     def emit(event):
         watchdog.notify("ledger", value=ledger.summary())
+        watchdog.notify("runtime", value=_runtime_state(opts))
         watchdog.notify("event", value=event)
 
     opts = Options(**{k: v for k, v in opts_dict.items() if k in Options.__dataclass_fields__})
@@ -751,51 +754,106 @@ def _group_child(scenarios, opts_dict, cdp_url, suite_meta, run_dir, ledger_stat
     for key, value in opts_dict.items():
         setattr(opts, key, value)
     opts.emit = emit
-    return run_group(scenarios, opts=opts, cdp_url=cdp_url, suite_meta=suite_meta,
-                     run_dir=run_dir, ledger=ledger, prior=prior)
+    result = run_group(scenarios, opts=opts, cdp_url=cdp_url, suite_meta=suite_meta,
+                       run_dir=run_dir, ledger=ledger, prior=prior)
+    return {**result, "runtime": _runtime_state(opts)}
+
+
+def _runtime_state(opts):
+    return {key: getattr(opts, key) for key in ("load_waited", "account", "signed_here", "sign_in_attempted")
+            if hasattr(opts, key)}
+
+
+def _restore_runtime(opts, state):
+    for key, value in state.items():
+        if key in {"load_waited", "account", "signed_here", "sign_in_attempted"}:
+            setattr(opts, key, value)
 
 
 def supervised_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=None):
     """Production adapter: isolate blocking calls while preserving the group's one-session semantics."""
-    opts_dict = {k: v for k, v in vars(opts).items() if k != "emit"}
-    ledger_state = {k: v for k, v in vars(ledger).items() if k not in {"lock", "shared"}}
-    out, failure = watchdog.supervise(_group_child,
-        args=(scenarios, opts_dict, cdp_url, suite_meta, run_dir, ledger_state, ledger.shared, prior, secret_values()),
-        emit=opts.emit, cdp_url=cdp_url)
-    if failure is None:
-        return out
-    results = failure.pop("results")
-    cost = failure.pop("ledger") or ledger.summary()
-    current = failure.get("scenario")
-    # Teardown can fail after the last result was streamed. Replace that result explicitly.
-    if current is None:
-        current = next((s.name for s in scenarios if s.name not in {r["name"] for r in results}),
-                       scenarios[-1].name)
-    partial = failure.pop("partial")
-    for scenario in scenarios:
-        existing = next((r for r in results if r["name"] == scenario.name), None)
-        if existing is not None and scenario.name != current:
-            continue
-        if scenario.name == current:
-            detail = f"{failure['detail']} while {failure['identity']}; session state uncertain; no automatic retry"
-            if not failure["cleanup_complete"]:
-                detail += "; owned browser cleanup incomplete"
-            result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
-                              "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
-                              **(existing or partial), "stop": failure["stop"], "watchdog": failure,
-                              "session_uncertain": True, "cost_incomplete": True,
-                              **({"interrupted": True} if failure["stop"] == "interrupted" else {})},
-                             "harness", detail, time.monotonic() - failure["active_seconds"])
-        else:
-            result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
-                              "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
-                              "stop": "session_uncertain", "session_uncertain": True, "cost_usd": 0.0}, "skipped",
-                             f"not run: session uncertain after {current!r}; no automatic retry", time.monotonic())
-        results = [r for r in results if r["name"] != scenario.name]
-        results.append(result)
+    pending = list(scenarios)
+    results, outcomes = {}, dict(prior or {})
+    last_name = None
+
+    def keep(result):
+        results[result["name"]] = result
+        outcomes[result["name"]] = result["outcome"]
+
+    def not_run(scenario, stop, reason):
+        result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
+                          "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
+                          "stop": stop, "session_uncertain": True, "cost_usd": 0.0}, "skipped",
+                         reason, time.monotonic())
+        keep(result)
         _emit(opts, "scenario", result=result)
-    by_name = {r["name"]: r for r in results}
-    return {"results": [by_name[s.name] for s in scenarios], "ledger": cost, "bu_name": None}
+
+    while pending:
+        opts_dict = {k: v for k, v in vars(opts).items() if k != "emit"}
+        ledger_state = {k: v for k, v in vars(ledger).items() if k not in {"lock", "shared"}}
+        out, failure = watchdog.supervise(_group_child,
+            args=(pending, opts_dict, cdp_url, suite_meta, run_dir, ledger_state, ledger.shared,
+                  outcomes, secret_values()), emit=opts.emit, cdp_url=cdp_url)
+        if failure is None:
+            _restore_runtime(opts, out.get("runtime", {}))
+            for result in out["results"]:
+                keep(result)
+            _adopt_ledger(ledger, out["ledger"])
+            last_name = out.get("bu_name")
+            break
+        _restore_runtime(opts, failure.pop("runtime"))
+        for result in failure.pop("results"):
+            keep(result)
+        _adopt_ledger(ledger, failure.pop("ledger") or ledger.summary())
+        if failure["cost_uncertain"]:
+            ledger.uncertain = True
+            if ledger.shared is not None:
+                # Unknown in-flight cost reserves the remaining suite cap; another worker must not spend it.
+                with ledger.shared.get_lock():
+                    ledger.shared.value = max(ledger.shared.value, ledger.cap_usd)
+        current = failure.get("scenario") or next((s.name for s in pending if s.name not in results),
+                                                  pending[-1].name)
+        partial = failure.pop("partial")
+        scenario = next(s for s in pending if s.name == current)
+        detail = f"{failure['detail']} while {failure['identity']}; session state uncertain; no automatic retry"
+        if not failure["cleanup_complete"]:
+            detail += "; owned browser cleanup incomplete"
+        result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
+                          "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
+                          **(results.get(current) or partial), "stop": failure["stop"], "watchdog": failure,
+                          "session_uncertain": True, "cost_incomplete": failure["cost_uncertain"],
+                          **({"interrupted": True} if failure["stop"] == "interrupted" else {})},
+                         "harness", detail, time.monotonic() - failure["active_seconds"])
+        keep(result)
+        _emit(opts, "scenario", result=result)
+        remaining = pending[pending.index(scenario) + 1:]
+        resume = (failure["stop"] == "no_progress" and failure["cleanup_complete"]
+                  and not (getattr(opts, "sign_in_attempted", False) and not getattr(opts, "signed_here", None)))
+        eligible = []
+        for candidate in remaining:
+            blocked = [d for d in candidate.depends_on if outcomes.get(d) != "pass"]
+            if not resume:
+                stop = "cleanup_incomplete" if not failure["cleanup_complete"] else "session_uncertain"
+                not_run(candidate, stop, f"not run: {stop} after {current!r}; no automatic retry")
+            elif blocked:
+                not_run(candidate, "dependency", f"not run: depends on {blocked} which did not pass")
+            elif not candidate.url:
+                not_run(candidate, "session_uncertain", "not run: previous page state was discarded; declare an own URL")
+            else:
+                eligible = remaining[remaining.index(candidate):]
+                break  # The fresh URL restores a new chain; its normal dependencies/continuations run in order.
+        # Each iteration spawns a fresh worker. No tab, daemon, action or page state crosses this boundary.
+        pending = eligible
+    return {"results": [results[s.name] for s in scenarios], "ledger": ledger.summary(), "bu_name": last_name}
+
+
+def _adopt_ledger(ledger, summary):
+    """Keep one cumulative ledger when a timed-out worker is replaced."""
+    ledger.usd = {"typesafe": summary["usd_typesafe_estimated"], "text": summary["usd_text"]}
+    ledger.calls = dict(summary["calls"])
+    ledger.tokens = dict(summary["tokens"])
+    ledger.errors = summary["errors"]
+    ledger.text_cost_reported = summary["text_cost_reported"]
 
 
 _shared_cost = None

@@ -5,6 +5,7 @@ $0.0005 per decision). OpenRouter is asked to include the real cost in each resp
 """
 
 import threading
+import uuid
 
 from . import watchdog
 
@@ -36,6 +37,8 @@ class Ledger:
         return self.usd["typesafe"] + self.usd["text"]
 
     def before(self, url, body):
+        if getattr(self, "uncertain", False):
+            raise CostCapReached("a prior model call has unobserved cost; no further paid call is allowed")
         if self.spent() >= self.cap_usd:
             raise CostCapReached(f"cost cap ${self.cap_usd:.2f} reached; no call made")
         if "openrouter.ai" in url and url.endswith("/chat/completions") and isinstance(body, dict):
@@ -74,12 +77,16 @@ class Ledger:
     def wrap(self, post_json):
         def ledgered(url, key, body):
             self.before(url, body)
+            call_id = uuid.uuid4().hex
+            watchdog.notify("cost_pending", call_id=call_id, pending=True)
             try:
                 result = post_json(url, key, body)
             except Exception:
                 self.failed()
+                watchdog.notify("cost_pending", call_id=call_id, pending=False)
                 raise
             self.after(url, result)
+            watchdog.notify("cost_pending", call_id=call_id, pending=False)
             return result
 
         return ledgered

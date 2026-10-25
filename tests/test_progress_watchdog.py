@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -42,7 +43,9 @@ def _blocked(mode, marker):
     elif mode == "success":
         return {"ok": True}
     elif mode == "pending":
-        watchdog.notify("resource_pending", method="Target.createTarget")
+        watchdog.notify("resource_pending", method="Target.createTarget", request_id="first")
+        watchdog.notify("resource_pending", method="Target.createTarget", request_id="second")
+        watchdog.notify("resource_resolved", method="Target.createTarget", request_id="first")
         time.sleep(30)
     else:
         time.sleep(30)
@@ -51,14 +54,37 @@ def _blocked(mode, marker):
 def _fixture_group_child(*args):
     """Only replace browser/model dependencies inside the spawned worker, never the runner path."""
     real = runner._group_child
-    session.configure_env = lambda _url: ""
     session.stop_daemon = lambda: None
     runner.live.frames = lambda *_a, **_kw: contextlib.nullcontext()
+    notify = watchdog.notify
+
+    def fixture_notify(kind, **data):
+        if kind == "resource":
+            data.pop("daemon", None)  # The fixture has no real daemon to own or stop.
+        notify(kind, **data)
+
+    watchdog.notify = fixture_notify
+    from qajev import signin
+
+    def sign_in(_page, account):
+        with (args[4] / "signins.txt").open("a") as out:
+            out.write(account["name"] + "\n")
+        return {"account": account["name"], "ok": True}
+
+    signin.sign_in = sign_in
+    if args[1]["profile"] == "fixture-load":
+        loads = iter([2, 0])
+        runner.os.getloadavg = lambda: (next(loads, 2), 2, 2)
+        sleep = time.sleep
+        runner.time.sleep = lambda seconds: sleep(.02 if seconds == 5 else seconds)
 
     class Page:
         def __init__(self, ledger, **_kw):
             self.ledger = ledger
             self.url = "http://127.0.0.1/"
+            with (args[4] / "generations.jsonl").open("a") as out:
+                out.write(json.dumps({"pid": os.getpid(), "daemon": os.environ["BU_NAME"],
+                                      "tab": uuid.uuid4().hex}) + "\n")
 
         def page_socket(self):
             return None
@@ -84,7 +110,7 @@ def _fixture_group_child(*args):
             marker = args[4] / "actions.txt"
             with marker.open("a") as out:
                 out.write(next(iter(hook)) + "\n")
-            if "js" in hook:
+            if "js" in hook and hook["js"] == "blocked()":
                 ctypes.PyDLL(None).sleep(30)
             if "sleep" in hook:
                 time.sleep(hook["sleep"])
@@ -203,34 +229,51 @@ def test_process_group_cleanup_kills_descendants(tmp_path):
     ("/blocked-probe", [], None, "page checks"),
     ("/jev", [], "find the button", "Jev decision/action"),
 ])
-def test_actual_runner_entry_retains_prior_results_and_never_replays(monkeypatch, tmp_path, url, hook, goal, identity):
+def test_actual_runner_entry_retains_prior_results_and_never_replays(actual_runner, url, hook, goal, identity):
+    parsed = suite.parse({"base_url": "http://127.0.0.1", "scenarios": [
+        {"name": "earlier", "url": "/earlier", "expect": {"text": "ready"}, "settle": 0},
+        {"name": "blocked", "url": url, "before": hook, "goal": goal,
+         "expect": {"text": "ready"}, "settle": 0},
+        {"name": "dependent", "url": "/dependent", "depends_on": ["blocked"], "expect": {"text": "ready"}},
+        {"name": "lost-page", "depends_on": ["earlier"], "expect": {"text": "ready"}},
+        {"name": "later", "url": "/later", "before": [{"sleep": .01}], "expect": {"text": "ready"}},
+        {"name": "after-dependent", "url": "/dependent", "depends_on": ["blocked"], "expect": {"text": "ready"}},
+    ]})
+    report, _opts = actual_runner(parsed)
+    results = report["scenarios"]
+    expected = ["pass", "harness", "skipped", "skipped", "pass", "skipped"]
+    assert [r["outcome"] for r in results] == expected
+    assert results[1]["stop"] == "no_progress" and results[1]["session_uncertain"]
+    assert identity in results[1]["watchdog"]["identity"]
+    assert "no automatic retry" in results[1]["reason"]
+    assert results[2]["stop"] == "dependency"
+    assert results[3]["stop"] == "session_uncertain"
+    saved = json.loads((Path(report["run_dir"]) / "report.json").read_text())
+    assert [r["outcome"] for r in saved["scenarios"]] == expected
+    assert report["gate"] != "PASS"
+    action_file = Path(report["run_dir"]) / "actions.txt"
+    assert action_file.read_text().splitlines() == (["js", "sleep"] if hook else ["sleep"])
+    generations = [json.loads(row) for row in (Path(report["run_dir"]) / "generations.jsonl").read_text().splitlines()]
+    assert len(generations) == 2
+    assert all(len({row[key] for row in generations}) == 2 for key in ("pid", "daemon", "tab"))
+    if hook:
+        assert results[1]["checks"] and results[1]["checks"][0]["ok"] is True
+
+
+@pytest.fixture
+def actual_runner(monkeypatch, tmp_path):
     monkeypatch.setattr(runner, "_group_child", _fixture_group_child)
     monkeypatch.setattr(watchdog, "supervise", functools.partial(watchdog.supervise, timeout=2))
     monkeypatch.setattr(runner.providers, "resolve", lambda: {})
     monkeypatch.setattr(runner.providers, "describe", lambda _r: {"jev": "fixture", "text": "fixture"})
     monkeypatch.setattr(runner.chrome, "reap", lambda: [])
     monkeypatch.setattr(runner.chrome, "version", lambda _u: {"fixture": True})
-    parsed = suite.parse({"base_url": "http://127.0.0.1", "scenarios": [
-        {"name": "earlier", "url": "/earlier", "expect": {"text": "ready"}, "settle": 0},
-        {"name": "blocked", "url": url, "before": hook, "goal": goal,
-         "expect": {"text": "ready"}, "settle": 0},
-        {"name": "later", "url": "/later", "before": [{"js": "mustNotRun()"}], "expect": {"text": "ready"}},
-    ]})
-    opts = runner.Options(cdp_url="http://127.0.0.1:9", out_dir=tmp_path, shots=False, ux="off", load_high=None)
-    report = runner.run(parsed, opts)
-    results = report["scenarios"]
-    assert [r["outcome"] for r in results] == ["pass", "harness", "skipped"]
-    assert results[1]["stop"] == "no_progress" and results[1]["session_uncertain"]
-    assert identity in results[1]["watchdog"]["identity"]
-    assert "no automatic retry" in results[1]["reason"]
-    assert results[2]["stop"] == "session_uncertain"
-    saved = json.loads((Path(report["run_dir"]) / "report.json").read_text())
-    assert [r["outcome"] for r in saved["scenarios"]] == ["pass", "harness", "skipped"]
-    assert report["gate"] != "PASS"
-    action_file = Path(report["run_dir"]) / "actions.txt"
-    assert (action_file.read_text().splitlines() if action_file.exists() else []) == (["js"] if hook else [])
-    if hook:
-        assert results[1]["checks"] and results[1]["checks"][0]["ok"] is True
+    def run(parsed, **kwargs):
+        opts = runner.Options(**{"cdp_url": "http://127.0.0.1:9", "out_dir": tmp_path,
+                                 "shots": False, "ux": "off", "load_high": None, **kwargs})
+        return runner.run(parsed, opts), opts
+
+    return run
 
 
 def test_unsupported_platform_refuses_instead_of_disabling_enforcement(monkeypatch):
@@ -324,16 +367,20 @@ def test_browser_cleanup_is_bounded_even_when_native_cleanup_blocks(monkeypatch)
 
 def test_independent_cleanup_closes_only_recorded_targets_contexts(monkeypatch):
     requests, closed = [], []
+    contexts = {"mine", "other-chain"}
 
     class Socket:
         def send(self, request):
             requests.append(json.loads(request))
+            if "params" in requests[-1]:
+                contexts.discard(requests[-1]["params"]["browserContextId"])
 
         def recv(self, timeout):
             request = requests[-1]
-            return json.dumps({"id": request["id"], "result": {"browserContextIds": ["mine", "other-chain"]}})
+            return json.dumps({"id": request["id"], "result": {"browserContextIds": list(contexts)}})
 
-    monkeypatch.setattr(runner.chrome, "targets", lambda _u: [{"id": "my-tab"}, {"id": "other-tab"}])
+    monkeypatch.setattr(runner.chrome, "targets", lambda _u: [
+        {"id": t} for t in ("my-tab", "other-tab") if t not in closed])
     monkeypatch.setattr(runner.chrome, "close_target", lambda _u, target: closed.append(target) or True)
     monkeypatch.setattr(runner.chrome, "version", lambda _u: {"webSocketDebuggerUrl": "fixture"})
     monkeypatch.setitem(sys.modules, "websockets.sync.client", SimpleNamespace(
@@ -348,7 +395,8 @@ def _echo_options(*args):
     def group(_scenarios, *, opts, **_kwargs):
         config.remember_secret("child-private-seed-value")
         watchdog.notify("event", value={"event": "fixture", "child": "child-private-seed-value"})
-        return {"account": opts.sign_in_here, "parent": "parent-private-seed-value"}
+        return {"results": [{"name": _scenarios[0].name, "outcome": "pass", "account": opts.sign_in_here,
+                             "parent": "parent-private-seed-value"}], "ledger": _kwargs["ledger"].summary()}
 
     runner.run_group = group
     return runner._group_child(*args)
@@ -360,8 +408,127 @@ def test_spawn_preserves_required_runtime_options_and_redacts_both_sides(monkeyp
     events = []
     opts = runner.Options(emit=events.append)
     opts.sign_in_here = {"name": "seeded-account", "password": "seed:fixture.json#password"}
-    out = runner.supervised_group([], opts=opts, cdp_url="unused", suite_meta={}, run_dir=tmp_path,
+    scenarios = [SimpleNamespace(name="fixture")]
+    out = runner.supervised_group(scenarios, opts=opts, cdp_url="unused", suite_meta={}, run_dir=tmp_path,
                                   ledger=runner.Ledger(1))
-    assert out["account"] == opts.sign_in_here
-    assert out["parent"] == "[redacted]"
+    assert out["results"][0]["account"] == opts.sign_in_here
+    assert out["results"][0]["parent"] == "[redacted]"
     assert events == [{"event": "fixture", "child": "[redacted]"}]
+
+
+def _concurrent_models():
+    watchdog.notify("scenario", name="blocked")
+    ledger = runner.Ledger(1, .1)
+    started = threading.Event()
+
+    def model(_url, _key, body):
+        if body["block"]:
+            started.set()
+            time.sleep(30)
+        return {"usage": {"cost": .1}}
+
+    call = ledger.wrap(model)
+    thread = threading.Thread(target=lambda: call("https://typesafe.ai", "fixture", {"block": True}))
+    thread.start()
+    assert started.wait(1)
+    call("https://typesafe.ai", "fixture", {"block": False})
+    watchdog.active("one model call still in flight")
+    time.sleep(30)
+
+
+def test_concurrent_model_completion_does_not_hide_another_outstanding_call():
+    _, failure = watchdog.supervise(_concurrent_models, timeout=2)
+    assert failure["cost_uncertain"] is True
+    assert failure["ledger"]["usd"] == .1
+    assert failure["ledger"]["calls"]["typesafe"] == 1
+
+
+def _recovery_suite():
+    return suite.parse({"base_url": "http://127.0.0.1", "scenarios": [
+        {"name": "blocked", "url": "/blocked", "before": [{"js": "blocked()"}], "expect": {"text": "ready"}},
+        {"name": "later", "url": "/later", "expect": {"text": "ready"}},
+    ]})
+
+
+def _failure(stop="no_progress", cleaned=True, cost=None, uncertain=False):
+    return {"stop": stop, "scenario": "blocked", "detail": "stopped", "identity": "before hook 1 (js)",
+            "active_seconds": 2, "cleanup_complete": cleaned, "cost_uncertain": uncertain,
+            "results": [], "partial": {}, "ledger": cost, "runtime": {}}
+
+
+@pytest.mark.parametrize("stop,cleaned", [("no_progress", False), ("interrupted", True),
+                                         ("worker_error", True), ("cost_cap", True)])
+def test_recovery_is_refused_after_unverified_cleanup_operator_or_other_stops(monkeypatch, tmp_path, stop, cleaned):
+    attempts = []
+
+    def supervise(*_args, **_kwargs):
+        attempts.append(True)
+        if len(attempts) > 1:
+            return {"results": [{"name": "later", "outcome": "pass"}], "ledger": runner.Ledger(1).summary()}, None
+        return None, _failure(stop, cleaned)
+
+    monkeypatch.setattr(watchdog, "supervise", supervise)
+    out = runner.supervised_group(_recovery_suite().scenarios, opts=runner.Options(), cdp_url="unused",
+                                  suite_meta={}, run_dir=tmp_path, ledger=runner.Ledger(1))
+    assert len(attempts) == 1
+    assert [r["outcome"] for r in out["results"]] == ["harness", "skipped"]
+    assert out["results"][1]["stop"] == ("cleanup_incomplete" if not cleaned else "session_uncertain")
+
+
+@pytest.mark.parametrize("uncertain", [False, True])
+def test_recovery_keeps_cumulative_cap_cost_and_refuses_unknown_paid_cost(monkeypatch, tmp_path, uncertain):
+    attempts = []
+    ledger = runner.Ledger(1, .1, shared=multiprocessing.get_context("spawn").Value("d", .25))
+    ledger.usd["typesafe"] = .25
+    ledger.calls["typesafe"] = 1
+
+    def supervise(_target, *, args, **_kwargs):
+        attempts.append(args)
+        if len(attempts) == 1:
+            return None, _failure(cost=ledger.summary(), uncertain=uncertain)
+        state = args[5]
+        assert state["cap_usd"] == 1 and state["usd"]["typesafe"] == .25
+        assert state["calls"]["typesafe"] == 1
+        resumed = runner.Ledger(state["cap_usd"])
+        resumed.__dict__.update(state)
+        if uncertain:
+            assert state["uncertain"] is True and args[6].value == 1
+            with pytest.raises(runner.CostCapReached, match="unobserved cost"):
+                resumed.before("https://typesafe.ai", {})
+        else:
+            resumed.before("https://typesafe.ai", {})
+            resumed.usd["typesafe"] += .1
+        return {"results": [{"name": "later", "outcome": "pass"}], "ledger": resumed.summary()}, None
+
+    monkeypatch.setattr(watchdog, "supervise", supervise)
+    out = runner.supervised_group(_recovery_suite().scenarios, opts=runner.Options(), cdp_url="unused",
+                                  suite_meta={}, run_dir=tmp_path, ledger=ledger)
+    assert len(attempts) == 2
+    assert out["ledger"]["usd"] == (.25 if uncertain else .35)
+    assert out["results"][0]["cost_incomplete"] is uncertain
+
+
+def test_same_tab_signin_runtime_reaches_parent_report_without_replaying_login(actual_runner):
+    parsed = _recovery_suite()
+    parsed.account = {"name": "Fixture account", "login": {"tab": "same"}}
+    report, opts = actual_runner(parsed)
+    assert "sign_in" in report and report["sign_in"] == {"account": "Fixture account", "ok": True, "tab": "same"}
+    assert opts.account == "Fixture account" and opts.signed_here["ok"] is True
+    assert (Path(report["run_dir"]) / "signins.txt").read_text().splitlines() == ["Fixture account"]
+    assert [r["outcome"] for r in report["scenarios"]] == ["harness", "pass"]
+
+
+def test_whole_run_load_wait_budget_is_not_restarted_after_watchdog(actual_runner):
+    events = []
+    report, opts = actual_runner(_recovery_suite(), profile="fixture-load", load_high=1, load_ok=.5,
+                                 load_wait=.01, emit=events.append)
+    assert len([e for e in events if e["event"] == "waiting"]) == 1
+    assert opts.load_waited >= .01
+    assert [r["outcome"] for r in report["scenarios"]] == ["harness", "skipped"]
+    assert "machine busy" in report["scenarios"][1]["reason"]
+
+
+def test_cleanup_requires_observed_target_removal_not_just_close_acknowledgement(monkeypatch):
+    monkeypatch.setattr(runner.chrome, "targets", lambda _url: [{"id": "still-owned"}])
+    monkeypatch.setattr(runner.chrome, "close_target", lambda *_args: True)
+    assert watchdog._cleanup("fixture", {"still-owned"}, set(), None) is False

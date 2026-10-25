@@ -21,6 +21,10 @@ _sink = None
 _send_lock = threading.Lock()
 
 
+def recording():
+    return _sink is not None
+
+
 def notify(kind, **data):
     if _sink is not None:
         from .config import redact_tree
@@ -146,9 +150,22 @@ def _cleanup(cdp_url, targets, contexts, daemon):
     from . import chrome
 
     cleaned = True
+    if daemon:
+        from browser_harness import admin
+
+        name = daemon["name"]
+        pid, token = daemon.get("pid"), daemon.get("start")
+        if not pid or not token or chrome.start_token(pid) not in {None, token}:
+            cleaned = False  # Unknown ownership or a reused PID: never signal it.
+        else:
+            admin.restart_daemon(name)
+            cleaned = chrome.reaped(pid)
+        # Stop the daemon before closing its tabs: its recovery code must not create a replacement tab.
     present = {t["id"] for t in chrome.targets(cdp_url)} if targets else set()
     for target in targets & present:
         cleaned = chrome.close_target(cdp_url, target) and cleaned
+    if targets:
+        cleaned = not (targets & {t["id"] for t in chrome.targets(cdp_url)}) and cleaned
     if contexts:
         import json
 
@@ -173,10 +190,12 @@ def _cleanup(cdp_url, targets, contexts, daemon):
                     if reply.get("id") == n:
                         cleaned = "error" not in reply and cleaned
                         break
-    if daemon:
-        from browser_harness import admin
-
-        admin.restart_daemon(daemon)
+            socket.send(json.dumps({"id": 1000000, "method": "Target.getBrowserContexts"}))
+            while True:
+                reply = json.loads(socket.recv(timeout=1))
+                if reply.get("id") == 1000000:
+                    cleaned = not (contexts & set(reply["result"]["browserContextIds"])) and cleaned
+                    break
     return cleaned
 
 
@@ -221,6 +240,8 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
     process = ctx.Process(target=_child, args=(send, target, args, kwargs or {}))
     state = Progress(timeout=timeout)
     results, targets, contexts, pending, daemon, ledger = [], set(), set(), set(), None, None
+    cost_pending = set()
+    runtime = {}
     grouped = False
     process.start()
     send.close()
@@ -245,13 +266,24 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
                 elif kind == "resource":
                     targets.update(message.get("targets", []))
                     contexts.update(message.get("contexts", []))
-                    daemon = message.get("daemon", daemon)
+                    if message.get("daemon"):
+                        daemon = {**(daemon or {}), "name": message["daemon"]}
+                    if message.get("daemon_pid"):
+                        daemon = {**(daemon or {}), "pid": message["daemon_pid"],
+                                  "start": message["daemon_start"]}
                 elif kind == "resource_pending":
-                    pending.add(message["method"])
+                    pending.add(message["request_id"])
                 elif kind == "resource_resolved":
-                    pending.discard(message["method"])
+                    pending.discard(message["request_id"])
                 elif kind == "ledger":
                     ledger = message["value"]
+                elif kind == "cost_pending":
+                    if message["pending"]:
+                        cost_pending.add(message["call_id"])
+                    else:
+                        cost_pending.discard(message["call_id"])
+                elif kind == "runtime":
+                    runtime = message["value"]
                 elif kind == "event":
                     event = message["value"]
                     if event.get("event") == "scenario":
@@ -278,6 +310,8 @@ def supervise(target, args=(), kwargs=None, *, emit=None, timeout=TIMEOUT, cdp_u
         queued = state.queue_seconds + (ended - state.queued_at if state.queued else 0)
         failure.update(scenario=state.scenario, identity=state.identity, partial=state.partial,
                        results=results, ledger=ledger, cleanup_complete=cleaned and not pending,
+                       cost_uncertain=bool(cost_pending),
+                       runtime=runtime,
                        resource_ownership_uncertain=bool(pending),
                        idle_seconds=round(ended - state.last - (ended - state.queued_at if state.queued else 0), 3),
                        active_seconds=round(ended - state.started - queued, 3),

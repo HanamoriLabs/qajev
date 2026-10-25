@@ -85,15 +85,18 @@ def _patient_cdp(raw_cdp, timeout, transport):
         if transport.error is not None:
             raise transport.error
         params.pop("_response_timeout", None)
+        if watchdog.recording() and not getattr(transport, "owner_recorded", False):
+            _record_daemon_owner(transport)
         creating = method in {"Target.createTarget", "Target.createBrowserContext"}
+        request_id = uuid.uuid4().hex if creating else None
         if creating:
-            watchdog.notify("resource_pending", method=method)
+            watchdog.notify("resource_pending", method=method, request_id=request_id)
         try:
             response = raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
             if creating:
                 watchdog.notify("resource", targets=[response["targetId"]] if response.get("targetId") else [],
                                 contexts=[response["browserContextId"]] if response.get("browserContextId") else [])
-                watchdog.notify("resource_resolved", method=method)
+                watchdog.notify("resource_resolved", method=method, request_id=request_id)
             return response
         except TimeoutError as error:
             transport.error = TransportLost(
@@ -111,6 +114,33 @@ def _patient_cdp(raw_cdp, timeout, transport):
             raise
 
     return call
+
+
+def _record_daemon_owner(transport):
+    """Record the pinned named daemon's dedicated tab before the first user tab is created."""
+    if _jev is None:
+        return
+    name = os.environ["BU_NAME"]
+    request_id = uuid.uuid4().hex
+    watchdog.notify("resource_pending", method="daemon initialization", request_id=request_id)
+    ipc = _jev.admin.ipc
+    pid = ipc.identify(name, timeout=0.5)
+    watchdog.notify("resource", daemon=name, daemon_pid=pid,
+                    daemon_start=chrome.start_token(pid) if pid else None)
+    # The pinned harness gives each named CDP daemon its own dedicated tab. A cloud-managed remote
+    # browser has different ownership; do not claim its existing tab belongs to this worker.
+    if not os.environ.get("BU_BROWSER_ID") and name != "default":
+        connection, token = ipc.connect(name, timeout=0.5)
+        try:
+            tab = ipc.request(connection, token, {"meta": "current_tab"})
+        finally:
+            connection.close()
+        if tab.get("targetId"):
+            watchdog.notify("resource", targets=[tab["targetId"]])
+        else:
+            raise RuntimeError("daemon dedicated tab ownership could not be confirmed")
+    transport.owner_recorded = True
+    watchdog.notify("resource_resolved", method="daemon initialization", request_id=request_id)
 
 
 def _checked_send(raw_send, transport):

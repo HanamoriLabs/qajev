@@ -76,7 +76,9 @@ ran. It is **harness**, and the reason says where it stopped and what never ran:
 `outcome: harness` and `session_uncertain: true`. Its `watchdog` object records the active operation, monotonic
 idle/active/queue seconds, cleanup status and any unconfirmed resource ownership. `cost_incomplete: true`
 means a killed in-flight request may have cost that could not be observed; recorded costs remain intact.
-Remaining same-session scenarios use `stop: session_uncertain` and `outcome: skipped`.
+The next independent URL root can run in a fresh session after verified cleanup. Blocked continuations use
+`stop: session_uncertain` or `dependency` and `outcome: skipped`. Unconfirmed cleanup uses `cleanup_incomplete`
+and refuses remaining work. Cancellation and actual transport loss do not restart a worker.
 An action or time budget is different: Jev wandered,
 but the page was still judged in full, so its checks decide.
 
