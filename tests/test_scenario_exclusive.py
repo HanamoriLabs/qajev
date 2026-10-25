@@ -369,21 +369,24 @@ def test_spawned_runner_drains_setup_live_and_close_then_preserves_chain_tab(spa
     r = spawned_runner
     r.start([_scenario('left'), _scenario('right'), _scenario('lead'),
              _scenario('solo', exclusive=True, depends_on=['lead']),
-             _scenario('tail', url=None, depends_on=['solo']), _scenario('late')], barriers={
+             _scenario('tail', url=None, depends_on=['solo']), _scenario('late')], jobs=4, barriers={
                  'left': ['setup', 'action', 'live_exit', 'close'], 'right': ['action'],
-                 'lead': ['action'], 'solo': ['action', 'live_exit'], 'late': ['action']})
+                 'lead': ['action'], 'solo': ['action', 'live_exit'], 'late': ['worker', 'action']})
     r.phase('left', 'setup')
     r.phase('right', 'action')
     r.phase('lead', 'action')
     r.release('lead', 'action')
     r.phase('solo', 'queued')
+    _await_writer_intent(r.phase('lead', 'group')['run_dir'])
+    r.phase('late', 'worker')
+    r.release('late', 'worker')
+    r.phase('late', 'queued')
     r.absent('solo', 'navigate')
     r.release('left', 'setup')
     r.phase('left', 'action')
     r.release('left', 'action')
     r.release('right', 'action')
     r.phase('left', 'live_exit')
-    r.phase('late', 'worker')  # A real pool worker is trying the later ordinary chain.
     r.absent('solo', 'navigate')
     r.absent('late', 'setup')
     r.release('left', 'live_exit')
@@ -409,6 +412,30 @@ def test_spawned_runner_drains_setup_live_and_close_then_preserves_chain_tab(spa
         assert r.phase(name, 'worker')['enabled'] is True
     for name in ('left', 'right', 'lead', 'solo', 'tail', 'late'):
         assert r.phase(name, 'live_enter')['drain'] is True
+
+
+def test_jobs3_resumes_three_ordinary_workers_after_exclusive_scope(spawned_runner):
+    r = spawned_runner
+    r.start([_scenario('solo', exclusive=True), _scenario('left'), _scenario('right'), _scenario('third')],
+            jobs=3, barriers={'solo': ['action'], 'left': ['worker', 'action'],
+                              'right': ['worker', 'action'], 'third': ['action']})
+    r.phase('solo', 'action')
+    for name in ('left', 'right'):
+        r.phase(name, 'worker')
+        r.release(name, 'worker')
+        r.phase(name, 'queued')
+        r.absent(name, 'setup')
+    r.absent('third', 'worker')
+    r.release('solo', 'action')
+    actions = [r.phase(name, 'action') for name in ('left', 'right', 'third')]
+    workers = [r.phase(name, 'worker') for name in ('left', 'right', 'third')]
+    assert len({row['pid'] for row in workers}) == 3
+    assert len({row['pid'] for row in actions}) == 3
+    assert len({row['tab'] for row in actions}) == 3
+    for name in ('left', 'right', 'third'):
+        r.absent(name, 'result')
+        r.release(name, 'action')
+    assert [row['outcome'] for row in r.finish()['scenarios']] == ['pass'] * 4
 
 
 def test_unmarked_runner_keeps_parallel_ordinary_work_and_disables_gate(spawned_runner):

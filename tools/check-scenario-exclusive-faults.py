@@ -73,6 +73,8 @@ base.FAULTS = [
     ('E17-failed-owner-reacquires-own-lease', W, 'admission_dir=admission_dir if lease is None else None',
      'admission_dir=admission_dir',
      T + 'test_supervisor_retains_failed_child_lease_through_owned_cleanup'),
+    ('E18-forced-single-worker', R, 'max_workers=min(opts.jobs, len(chains))', 'max_workers=1',
+     T + 'test_jobs3_resumes_three_ordinary_workers_after_exclusive_scope'),
 ]
 
 if __name__ == '__main__':
