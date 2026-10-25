@@ -54,6 +54,15 @@ base.FAULTS = [
     ("T14-load-misses-reply-validation", S,
      "helpers._send = _checked_send(helpers._send, transport)", "pass",
      T + "test_load_wires_the_same_fuse_into_jev_and_the_runner"),
+    ("T15-non-cdp-hook-after-loss", S,
+     "def run_hook(self, hook, current_url):\n        require_transport()",
+     "def run_hook(self, hook, current_url):\n        pass",
+     T + "test_a_lost_transport_prevents_even_non_cdp_hooks_from_starting"),
+    ("T16-shell-after-loss", S, "def command(self, run, current_url):\n        require_transport()",
+     "def command(self, run, current_url):\n        pass",
+     T + "test_a_lost_transport_prevents_shell_commands_from_starting"),
+    ("T17-swallowed-probe-starts-next-hook", R, "        require_transport()\n", "",
+     T + "test_swallowed_optional_probe_error_cannot_turn_transport_loss_into_pass"),
 ]
 
 if __name__ == "__main__":

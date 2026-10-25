@@ -175,7 +175,7 @@ def _effect_check(session, scenario, run_dir, url):
 
 
 def run_scenario(session, scenario, *, opts, hosts, run_dir):
-    from .session import GuardMissing, HookFailed, LeftSite, transport_error
+    from .session import GuardMissing, HookFailed, LeftSite, require_transport, transport_error
 
     started = time.monotonic()
     if hasattr(session, "begin_test"):  # the last test's page: its frames were named under that test
@@ -242,6 +242,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     def read():
         nonlocal observed
         observed = absorb(session.probe(scenario.expect))
+        require_transport()
         return observed
 
     def page_ok():

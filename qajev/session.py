@@ -51,6 +51,11 @@ def transport_error():
     return getattr(getattr(_jev, "transport", None), "error", None)
 
 
+def require_transport() -> None:
+    if (error := transport_error()) is not None:
+        raise error
+
+
 def _is_transport_error(error):
     if isinstance(error, (ConnectionError, EOFError, FileNotFoundError)):
         return True
@@ -1496,6 +1501,7 @@ class Session:
             raise HookFailed(f"fill {selector!r}: the field still holds {what}; the typing did not reach it")
 
     def run_hook(self, hook, current_url):
+        require_transport()
         kind, value = next(iter(hook.items()))
         if kind in {"key", "js", "navigate", "reload"}:
             with self.ux_action(None, action=f"{kind} {value}" if kind == "key" else kind):
@@ -1553,6 +1559,7 @@ class Session:
         self.observe()
 
     def command(self, run, current_url):
+        require_transport()
         if not self.allow_commands:
             raise HookFailed("command hooks need --allow-commands (they run shell on this machine)")
         env = {k: v for k, v in os.environ.items() if v != providers.PLACEHOLDER}

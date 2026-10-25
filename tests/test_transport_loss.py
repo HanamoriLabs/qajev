@@ -124,6 +124,7 @@ def test_swallowed_optional_probe_error_cannot_turn_transport_loss_into_pass(gro
     assert [r["outcome"] for r in results] == ["pass", "harness", "skipped", "skipped"]
     assert results[1].get("transport_lost") is True
     assert seen["starts"] == ["earlier", "lost"]
+    assert seen["hooks"] == []
 
 
 @pytest.mark.parametrize("error", [RuntimeError("ordinary CDP command rejected"), TimeoutError("slow page")])
@@ -235,6 +236,7 @@ def test_load_wires_the_same_fuse_into_jev_and_the_runner(monkeypatch, lost_repl
     why = "acknowledgement missing" if lost_reply else "no close frame"
     with pytest.raises(RuntimeError, match=why):
         loaded.cdp("Input.dispatchMouseEvent")
+    assert isinstance(loaded.transport.error, session.TransportLost)
     assert session.transport_error() is loaded.transport.error
     with pytest.raises(RuntimeError, match=why):
         browser.cdp("Input.dispatchMouseEvent")
@@ -323,3 +325,27 @@ def test_empty_success_result_is_a_valid_daemon_acknowledgement():
     send = session._checked_send(lambda *_a, **_kw: {"result": {}}, state)
     assert send({"method": "Input.dispatchMouseEvent"}) == {"result": {}}
     assert state.error is None
+
+
+def test_a_lost_transport_prevents_even_non_cdp_hooks_from_starting(monkeypatch):
+    state = SimpleNamespace(error=session.TransportLost("connection closed"))
+    monkeypatch.setattr(session, "_jev", SimpleNamespace(transport=state))
+    page = session.Session.__new__(session.Session)
+    calls = []
+    monkeypatch.setattr(page, "_run_hook", lambda *_a: calls.append(True), raising=False)
+    with pytest.raises(RuntimeError, match="connection closed"):
+        page.run_hook({"command": "fixture command"}, "http://127.0.0.1/")
+    assert calls == []
+
+
+def test_a_lost_transport_prevents_shell_commands_from_starting(monkeypatch, tmp_path):
+    state = SimpleNamespace(error=session.TransportLost("connection closed"))
+    monkeypatch.setattr(session, "_jev", SimpleNamespace(transport=state))
+    page = session.Session.__new__(session.Session)
+    page.allow_commands, page.cwd = True, tmp_path
+    calls = []
+    monkeypatch.setattr(session.subprocess, "run", lambda *_a, **_kw: calls.append(True) or
+                        SimpleNamespace(returncode=0, stdout="", stderr=""))
+    with pytest.raises(RuntimeError, match="connection closed"):
+        page.command("fixture command", "http://127.0.0.1/")
+    assert calls == []
