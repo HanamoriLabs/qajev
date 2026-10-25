@@ -188,7 +188,11 @@ def test_process_group_cleanup_kills_descendants(tmp_path):
     # A reparented process can briefly remain a zombie; it must no longer execute.
     proc = Path(f"/proc/{child}/stat")
     try:
-        assert not proc.exists() or proc.read_text().split()[2] == "Z"
+        try:
+            state = proc.read_text().split()[2]
+        except (FileNotFoundError, ProcessLookupError):
+            state = None
+        assert state in {None, "Z"}
     finally:
         with contextlib.suppress(ProcessLookupError):
             os.kill(child, signal.SIGKILL)
