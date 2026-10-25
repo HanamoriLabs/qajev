@@ -111,6 +111,8 @@ def _fixture_group_child(*args):
             marker = args[4] / "actions.txt"
             with marker.open("a") as out:
                 out.write(next(iter(hook)) + "\n")
+            if hook.get("js") == "interrupt()":
+                raise KeyboardInterrupt
             if "js" in hook and hook["js"] == "blocked()":
                 ctypes.PyDLL(None).sleep(30)
             if "sleep" in hook:
@@ -419,12 +421,20 @@ def test_spawn_preserves_required_runtime_options_and_redacts_both_sides(monkeyp
     assert events == [{"event": "fixture", "child": "[redacted]"}]
 
 
-def _concurrent_models():
+def _concurrent_models(witness):
+    witness_lock = threading.Lock()
+
+    def entered(stage):
+        with witness_lock, Path(witness).open("a") as out:
+            out.write(json.dumps({"stage": stage, "at": time.monotonic()}) + "\n")
+
+    entered("worker-entered")
     watchdog.notify("scenario", name="blocked")
     ledger = runner.Ledger(1, .1)
     started = threading.Event()
 
     def model(_url, _key, body):
+        entered("blocked-call-entered" if body["block"] else "fast-call-entered")
         if body["block"]:
             started.set()
             time.sleep(30)
@@ -435,13 +445,22 @@ def _concurrent_models():
     thread.start()
     assert started.wait(1)
     call("https://typesafe.ai", "fixture", {"block": False})
+    entered("fast-call-completed")
     watchdog.active("one model call still in flight")
     time.sleep(30)
 
 
-def test_concurrent_model_completion_does_not_hide_another_outstanding_call():
-    _, failure = watchdog.supervise(_concurrent_models, timeout=2)
-    assert failure["cost_uncertain"] is True
+def test_concurrent_model_completion_does_not_hide_another_outstanding_call(tmp_path):
+    witness = tmp_path / "concurrent-model-witness.jsonl"
+    _, failure = watchdog.supervise(_concurrent_models, (str(witness),), timeout=2)
+    rows = [json.loads(row) for row in witness.read_text().splitlines()] if witness.exists() else []
+    detail = {"failure": failure, "witness": rows}
+    assert failure["stop"] == "no_progress", detail
+    assert failure["scenario"] == "blocked", detail
+    assert failure["identity"] == "one model call still in flight", detail
+    assert [row["stage"] for row in rows] == [
+        "worker-entered", "blocked-call-entered", "fast-call-entered", "fast-call-completed"], detail
+    assert failure["cost_uncertain"] is True, detail
     assert failure["ledger"]["usd"] == .1
     assert failure["ledger"]["calls"]["typesafe"] == 1
 
@@ -579,3 +598,26 @@ def test_serial_spawned_run_closes_the_parent_owned_signin_daemon(actual_runner,
     report, _opts = actual_runner(parsed)
     assert closed == [os.getpid()]
     assert report["sign_in"]["ok"] is True and report["scenarios"][0]["outcome"] == "pass"
+
+
+def test_child_operator_interruption_preserves_prefix_and_marks_suffix_without_recovery(actual_runner):
+    parsed = suite.parse({"base_url": "http://127.0.0.1", "scenarios": [
+        {"name": "earlier", "url": "/earlier", "expect": {"text": "ready"}},
+        {"name": "interrupted", "url": "/interrupted", "before": [{"js": "interrupt()"}],
+         "expect": {"text": "ready"}},
+        {"name": "later", "url": "/later", "before": [{"js": "mustNotRun()"}], "expect": {"text": "ready"}},
+        {"name": "dependent", "url": "/dependent", "depends_on": ["interrupted"], "expect": {"text": "ready"}},
+    ]})
+    try:
+        report, _opts = actual_runner(parsed)
+    except KeyError as error:
+        raise AssertionError(
+            "child interruption must classify the unrun suffix instead of losing its results") from error
+    assert report["interrupted"] is True
+    assert [r["outcome"] for r in report["scenarios"]] == ["pass", "harness", "skipped", "skipped"]
+    assert report["scenarios"][1]["stop"] == "interrupted" and report["scenarios"][1]["interrupted"] is True
+    assert all(r["stop"] == "interrupted" and "not run: interrupted" in r["reason"]
+               for r in report["scenarios"][2:])
+    directory = Path(report["run_dir"])
+    assert len((directory / "generations.jsonl").read_text().splitlines()) == 1
+    assert (directory / "actions.txt").read_text().splitlines() == ["js"]
