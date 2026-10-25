@@ -92,7 +92,7 @@ times; the existing hook and run limits still apply.
 | Variable | Is | Default |
 |---|---|---|
 | `QAJEV_CHROME` | the Chrome or Chromium binary | found automatically |
-| `QAJEV_CHROME_FLAGS` | extra Chrome flags, e.g. `--no-sandbox` in Docker or on CI runners that block user namespaces | none |
+| `QAJEV_CHROME_FLAGS` | extra Chrome flags, e.g. `--no-sandbox` in Docker or on CI runners that block user namespaces; disabled features are combined with the managed service policy | none |
 | `QAJEV_CHROME_START_WAIT` | seconds Chrome may take to start | `60` |
 | `QAJEV_OUTLIVE_PARENT` | `1`: a run keeps going after the process that started it ends. By default `check`, `run`, `smoke` and `play` stop, like Ctrl-C, and close their browser or game | unset |
 | `QAJEV_CDP_TIMEOUT` | seconds per browser command | `30` |
@@ -115,6 +115,36 @@ The load gate only matters on shared or busy machines; set `QAJEV_LOAD_HIGH=0` t
 
 `qajev doctor` has a `cloud` line: whether the key is found (never its value), the default runner and where it came
 from, and whether the dashboard answers.
+
+### Managed Chrome services
+
+QAJev starts its managed Chrome with background updating, sync, extensions, network-time checks and
+search-eligibility requests disabled. It also disables on-device model downloads and speculative browser
+preconnections. Its private preferences disable password services and dictionary downloads.
+
+Chromium's policy token service can still start cloud messaging with background networking disabled.
+QAJev sets the check-in and registration endpoints to the internal URL `chrome://qajev-disabled`.
+Its raw TLS push channel uses `https://127.0.0.1:0`, an unusable loopback port, with no fallback endpoint.
+Messaging retries cannot contact a remote service. Browser push messaging is unavailable in these managed
+profiles; page navigation and local form input still work normally.
+
+Extra `--disable-features=FEATURES` or `-disable-features=FEATURES` entries in `QAJEV_CHROME_FLAGS` are combined
+with the managed defaults into one switch. Use the equals syntax; either bare form is refused before Chrome starts.
+Extra flags cannot override the managed `--gcm-checkin-url`, `--gcm-registration-url` or `--gcm-mcs-endpoint`,
+including Chromium's single-dash forms and quoted arguments with surrounding whitespace.
+Chromium gives disabled features precedence over `--enable-features`; caller enables cannot restore the managed
+disabled features. Native Windows Chrome is not supported; Windows installs use Linux Chrome inside WSL.
+
+Parallel managed launches refuse caller overrides of `user-data-dir`, `remote-debugging-port` and
+`remote-debugging-pipe`, including single-dash forms and quoted whitespace. Use `--profile` or `QAJEV_HOME`
+to choose profile storage. Outside parallel isolation, a caller `--user-data-dir` selects another profile
+and bypasses the preferences QAJev prepared for its owned profile.
+
+Use `qajev browser status` to find the running profile names. After updating, restart an already running managed
+profile with `qajev browser stop --profile NAME` before
+using it again. QAJev preserves unrelated profile preferences and asks for this restart instead of reusing
+a process that started without the service policy. Externally supplied `--cdp-url` browsers keep their own
+launcher settings.
 
 ## Games
 
