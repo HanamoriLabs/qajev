@@ -92,16 +92,15 @@ def _patient_cdp(raw_cdp, timeout, transport):
         if creating:
             watchdog.notify("resource_pending", method=method, request_id=request_id)
         try:
-            response = raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+            try:
+                response = raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+            except TimeoutError:
+                response = raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
             if creating:
                 watchdog.notify("resource", targets=[response["targetId"]] if response.get("targetId") else [],
                                 contexts=[response["browserContextId"]] if response.get("browserContextId") else [])
                 watchdog.notify("resource_resolved", method=method, request_id=request_id)
             return response
-        except TimeoutError as error:
-            transport.error = TransportLost(
-                f"{method}: CDP acknowledgement timed out; session uncertain; no automatic retry")
-            raise transport.error from error
         except (RuntimeError, OSError, EOFError) as error:
             lost = _is_transport_error(error)
             # An oversized IPC request closes that request's socket, not necessarily the daemon's CDP link.

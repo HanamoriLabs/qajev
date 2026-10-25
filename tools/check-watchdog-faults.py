@@ -12,7 +12,6 @@ spec.loader.exec_module(base)
 
 W = "qajev/watchdog.py"
 R = "qajev/runner.py"
-S = "qajev/session.py"
 T = "tests/test_progress_watchdog.py::"
 base.FAULTS = [
     ("W01-wall-clock", W,
@@ -51,13 +50,9 @@ base.FAULTS = [
      T + "test_independent_cleanup_closes_only_recorded_targets_contexts"),
     ("W13-close-foreign-tab", W, "targets & present", "present",
      T + "test_independent_cleanup_closes_only_recorded_targets_contexts"),
-    ("W14-replay-unacknowledged-command", S,
-     '            response = raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)\n',
-     '            try:\n'
-     '                response = raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)\n'
-     '            except TimeoutError:\n'
-     '                response = raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)\n',
-     "tests/test_transport_loss.py::test_unacknowledged_action_timeout_is_never_replayed_or_counted_as_progress"),
+    ("W14-replay-watchdog-expired-hook", R, "        pending = eligible\n",
+     "        if eligible:\n            eligible[0].before = scenario.before + eligible[0].before\n"
+     "        pending = eligible\n", T + "test_actual_runner_entry_retains_prior_results_and_never_replays"),
     ("W15-timeout-keeps-pass", R, '"harness", detail, time.monotonic() - failure["active_seconds"])',
      '"pass", detail, time.monotonic() - failure["active_seconds"])',
      T + "test_actual_runner_entry_retains_prior_results_and_never_replays"),

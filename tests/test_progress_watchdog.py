@@ -84,7 +84,8 @@ def _fixture_group_child(*args):
             self.url = "http://127.0.0.1/"
             with (args[4] / "generations.jsonl").open("a") as out:
                 out.write(json.dumps({"pid": os.getpid(), "daemon": os.environ["BU_NAME"],
-                                      "tab": uuid.uuid4().hex}) + "\n")
+                                      "tab": uuid.uuid4().hex, "cdp_url": os.environ["BU_CDP_URL"],
+                                      "isolated": _kw.get("isolated", False)}) + "\n")
 
         def page_socket(self):
             return None
@@ -256,6 +257,8 @@ def test_actual_runner_entry_retains_prior_results_and_never_replays(actual_runn
     generations = [json.loads(row) for row in (Path(report["run_dir"]) / "generations.jsonl").read_text().splitlines()]
     assert len(generations) == 2
     assert all(len({row[key] for row in generations}) == 2 for key in ("pid", "daemon", "tab"))
+    assert len({row["cdp_url"] for row in generations}) == 1
+    assert not any(row["isolated"] for row in generations)
     if hook:
         assert results[1]["checks"] and results[1]["checks"][0]["ok"] is True
 
@@ -512,7 +515,9 @@ def test_same_tab_signin_runtime_reaches_parent_report_without_replaying_login(a
     parsed = _recovery_suite()
     parsed.account = {"name": "Fixture account", "login": {"tab": "same"}}
     report, opts = actual_runner(parsed)
-    assert "sign_in" in report and report["sign_in"] == {"account": "Fixture account", "ok": True, "tab": "same"}
+    assert "sign_in" in report and report["sign_in"] == {
+        "account": "Fixture account", "ok": True, "tab": "same", "watchdog_continuation": {
+            "browser_context": "retained", "tab_state": "discarded", "login_replayed": False}}
     assert opts.account == "Fixture account" and opts.signed_here["ok"] is True
     assert (Path(report["run_dir"]) / "signins.txt").read_text().splitlines() == ["Fixture account"]
     assert [r["outcome"] for r in report["scenarios"]] == ["harness", "pass"]

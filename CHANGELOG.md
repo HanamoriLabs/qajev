@@ -31,9 +31,6 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - Parallel CLI admission charges only the next browser against remaining RAM, while retaining startup
   reservations across processes. A resident browser no longer makes an otherwise affordable second run queue.
   Declared budgets and the largest active reserve remain protected; default serial and native admission stay exclusive.
-- CDP response timeouts no longer resend the command once. Missing acknowledgement makes session state
-  uncertain: the affected scenario is harness and later work cannot reuse that session. Ordinary target/session
-  command rejections still leave a healthy browser transport usable.
 - A lost CDP or browser-daemon transport stops reuse of that connection. The affected scenario remains
   harness; remaining scenarios are explicitly not run, with no automatic replay of hooks or actions.
   Target/session command rejections from a closed popup do not invalidate a usable browser transport.

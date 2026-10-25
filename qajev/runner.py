@@ -843,6 +843,11 @@ def supervised_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, p
                 eligible = remaining[remaining.index(candidate):]
                 break  # The fresh URL restores a new chain; its normal dependencies/continuations run in order.
         # Each iteration spawns a fresh worker. No tab, daemon, action or page state crosses this boundary.
+        # Keep the default browser context on the same Chrome. Persistent sign-in survives;
+        # tab-local state does not, and the report must not imply a fresh login was performed.
+        if eligible and getattr(opts, "signed_here", None):
+            opts.signed_here = {**opts.signed_here, "watchdog_continuation": {
+                "browser_context": "retained", "tab_state": "discarded", "login_replayed": False}}
         pending = eligible
     return {"results": [results[s.name] for s in scenarios], "ledger": ledger.summary(), "bu_name": last_name}
 

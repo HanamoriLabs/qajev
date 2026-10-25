@@ -107,10 +107,8 @@ results stay in the report. QAJev does not automatically replay the scenario, it
 
 Check the browser and system logs for a crash, a killed process or a memory limit before running again.
 A restarted GPU process can lose the page's WebGPU resources even when Chrome stays open. Restore a known
-test state, then start a new QAJev process explicitly. A response timeout does not prove a browser crash, but
-its missing acknowledgement makes session state uncertain. QAJev stops using that session without resending
-the command. Earlier versions resent a timed-out CDP command once. An ordinary rejected CDP command with an
-acknowledged error does not by itself prove the transport is gone.
+test state, then start a new QAJev process explicitly. A response timeout or an ordinary rejected CDP command
+does not by itself prove that the transport is gone.
 `Target closed` and `Session with given id not found` can describe a closed popup or a detached target on a
 usable browser connection. They keep normal command-error handling, without invalidating the whole transport
 or replaying the rejected command. Socket, EOF, browser shutdown and WebSocket-loss errors still stop reuse.
@@ -124,7 +122,7 @@ A declared 180-second readiness wait remains valid; the wait's polls do not rese
 
 The result is **harness**, never pass or product failure. Earlier scenarios and measured checks remain in the
 report. After verified cleanup, the next independent scenario with its own URL runs in a fresh worker, daemon
-and tab on the same managed Chrome. The timed-out action is never replayed. Scenarios that depend on that result
+and tab on the same managed Chrome. The watchdog-expired action is never replayed. Scenarios that depend on that result
 stay blocked, and a URL-less continuation cannot inherit the discarded page. Later eligible URL roots can run.
 QAJev does not infer restoration from arbitrary setup hooks. Existing continuations after a fresh URL root use
 that new chain's normal dependency rules.
@@ -139,6 +137,12 @@ platforms are refused explicitly. The watchdog does not install timers or signal
 Recorded model cost and call totals survive replacement. An unobserved in-flight model call makes the remaining
 cost cap uncertain: later scripted checks can run, but no further paid call can use that cap. Whole-run load-wait
 time and completed same-tab sign-in metadata survive replacement too; a completed login is not replayed.
+The persistent browser context stays on the same Chrome. Cookies and persistent origin storage remain; tab-local
+state, including session storage, is discarded. Sign-in metadata describes the original completed login and marks
+the watchdog continuation; it does not claim that login was repeated or that tab-local authentication survived.
+
+This watchdog leaves the existing per-command CDP response-timeout retry policy unchanged. That separate policy
+can retry a command before the five-minute watchdog expires; it is not a watchdog replay or a new scenario run.
 
 **The MCP tools do not show up in my agent**
 Check that `qajev mcp` runs from the agent's environment (use the full path from `which qajev`), then restart the

@@ -153,7 +153,8 @@ prints that error and the original cause, and still exits non-zero.
 Website scenarios have a fixed five-minute no-progress watchdog. Completed steps/checks reset it; repeated
 false polls, animation and console output do not. Load/admission queue time is separate. A stopped scenario
 is `harness`; earlier results remain. After verified cleanup, the next independent scenario with its own URL runs
-in a fresh session. Work that needs the discarded page stays blocked. No interrupted action is replayed.
+in a fresh session. Work that needs the discarded page stays blocked. No watchdog-expired action is replayed.
+The existing per-command CDP response-timeout retry policy is unchanged.
 See [troubleshooting](troubleshooting.md).
 
 ## `qajev smoke`

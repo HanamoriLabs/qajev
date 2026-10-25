@@ -561,7 +561,7 @@ async def qa_run_suite(
     (plus their dependencies). jobs > 1 runs independent chains in parallel; keep 1 on a busy machine.
     Website scenarios stop as harness after five minutes without a completed step/check. Polling and animation
     do not count. Queue time is separate. After verified cleanup the next independent URL runs in a fresh session.
-    A timed-out action is never replayed; work that depends on the discarded page state is not run.
+    A watchdog-expired action is never replayed; work that depends on the discarded page state is not run.
     allow_destructive: show delete/remove/refund/cancel... controls (every host a local dev host, or refused).
     ux: advisory (default), strict (UX findings fail), or off. Explicit ux_* options override suite values;
     omitted options keep them. Deterministic checks use no model calls.
