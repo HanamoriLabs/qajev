@@ -43,6 +43,73 @@ class LeftSite(RuntimeError):
     pass
 
 
+class TransportLost(RuntimeError):
+    """The connection is gone; its state and unacknowledged actions cannot be replayed safely."""
+
+
+def transport_error():
+    return getattr(getattr(_jev, "transport", None), "error", None)
+
+
+def require_transport() -> None:
+    if (error := transport_error()) is not None:
+        raise error
+
+
+def _is_transport_error(error):
+    if isinstance(error, (ConnectionError, EOFError, FileNotFoundError)):
+        return True
+    message = str(error).lower()
+    # A closed popup or detached target can reject a command while the browser transport stays usable.
+    return any(marker in message for marker in (
+        "no close frame received", "no close frame sent", "connection is closed", "connection closed",
+        "connection reset", "websocket is not connected", "browser has been closed", "target crashed",
+        "daemon is shutting down", "daemon not running", "cdp_disconnected", "client is stopping",
+    ))
+
+
+def _patient_cdp(raw_cdp, timeout, transport):
+    def call(method, session_id=None, **params):
+        if transport.error is not None:
+            raise transport.error
+        params.pop("_response_timeout", None)
+        try:
+            try:
+                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+            except TimeoutError:
+                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+        except (RuntimeError, OSError, EOFError) as error:
+            lost = _is_transport_error(error)
+            # An oversized IPC request closes that request's socket, not necessarily the daemon's CDP link.
+            said = too_long(method, params, error) if not lost or isinstance(error, BrokenPipeError) else None
+            if said:
+                raise RuntimeError(said) from error
+            if lost:
+                transport.error = TransportLost(str(error))
+                raise transport.error from error
+            raise
+
+    return call
+
+
+def _checked_send(raw_send, transport):
+    def send(request, **kwargs):
+        if transport.error is not None:
+            raise transport.error
+        try:
+            response = raw_send(request, **kwargs)
+        except json.JSONDecodeError as error:
+            transport.error = TransportLost("daemon reply was cut or invalid; action acknowledgement missing")
+            raise transport.error from error
+        # The helper maps EOF to {}. A real successful CDP response always has a result envelope, even when empty.
+        if request.get("method") and (not isinstance(response, dict) or "result" not in response):
+            transport.error = TransportLost("daemon closed without a CDP reply; action acknowledgement missing")
+            raise transport.error
+        return response
+
+    return send
+
+
 def configure_env(cdp_url, name=None):
     """One daemon name per process: browser_harness binds BU_NAME when it is imported, so once jev is loaded
     a pooled worker that runs a second chain must keep the name it started with."""
@@ -78,28 +145,15 @@ def load(ledger):
         return _jev
     if "BU_NAME" not in os.environ:
         raise RuntimeError("configure_env() must run before load()")
-    from browser_harness import admin
+    from browser_harness import admin, helpers
     from jev_ultrafast import agent as jev_agent
     from jev_ultrafast import browser as jev_browser
     from jev_ultrafast import model as jev_model
 
     timeout = float(os.environ.get("QAJEV_CDP_TIMEOUT", "30"))
-    raw_cdp = jev_browser.cdp
-
-    def patient_cdp(method, session_id=None, **params):
-        # The 5 s default is bound as a default argument; under load it failed ~1 call in 8.
-        params.pop("_response_timeout", None)
-        try:
-            try:
-                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
-            except TimeoutError:
-                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
-        except (RuntimeError, OSError) as e:
-            said = too_long(method, params, e)
-            if said:
-                raise RuntimeError(said) from e
-            raise
-
+    transport = SimpleNamespace(error=None)
+    helpers._send = _checked_send(helpers._send, transport)
+    patient_cdp = _patient_cdp(jev_browser.cdp, timeout, transport)
     jev_browser.cdp = patient_cdp
 
     raw_init = jev_browser.Browser.__init__
@@ -133,7 +187,7 @@ def load(ledger):
     raw_post_json = jev_model.post_json
     jev_model.post_json = ledger.wrap(providers.route(raw_post_json, resolved))
     _jev = SimpleNamespace(admin=admin, agent=jev_agent, browser=jev_browser, model=jev_model,
-                           raw_post_json=raw_post_json, cdp=patient_cdp, providers=resolved)
+                           raw_post_json=raw_post_json, cdp=patient_cdp, providers=resolved, transport=transport)
     return _jev
 
 
@@ -1448,6 +1502,7 @@ class Session:
             raise HookFailed(f"fill {selector!r}: the field still holds {what}; the typing did not reach it")
 
     def run_hook(self, hook, current_url):
+        require_transport()
         kind, value = next(iter(hook.items()))
         if kind in {"key", "js", "navigate", "reload"}:
             with self.ux_action(None, action=f"{kind} {value}" if kind == "key" else kind):
@@ -1505,6 +1560,7 @@ class Session:
         self.observe()
 
     def command(self, run, current_url):
+        require_transport()
         if not self.allow_commands:
             raise HookFailed("command hooks need --allow-commands (they run shell on this machine)")
         env = {k: v for k, v in os.environ.items() if v != providers.PLACEHOLDER}
