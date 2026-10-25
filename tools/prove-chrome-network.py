@@ -42,7 +42,7 @@ def main():
              "tests/test_chrome_network_audit.py", "tools/chrome-netlog-audit.py", "tools/prove-chrome-network.py",
              "tools/check-chrome-network-faults.py"]
     commands = {
-        "unit": [*pytest, "tests/test_chrome_privacy.py", "tests/test_chrome_network_audit.py"],
+        "unit": [*pytest, "tests/test_chrome_privacy.py", "tests/test_chrome_network_audit.py", "tests/test_linux.py"],
         "live": [*pytest, "tests/test_chrome_network_live.py"],
         "full": pytest,
         "lint": [sys.executable, "-m", "ruff", "check", *(p for p in paths if Path(p).exists())],

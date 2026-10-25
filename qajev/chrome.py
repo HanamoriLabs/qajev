@@ -38,6 +38,11 @@ FLAGS = [
     "--disable-default-apps",
     "--disable-extensions",
     "--disable-component-extensions-with-background-pages",
+    # Policy token uploaders start GCM even with background networking disabled. A non-network URL
+    # prevents check-in, registration, and cached push-channel connections without a local sink server.
+    "--gcm-checkin-url=chrome://qajev-disabled",
+    "--gcm-registration-url=chrome://qajev-disabled",
+    "--gcm-mcs-endpoint=chrome://qajev-disabled",
     "--disable-domain-reliability",
     "--disable-client-side-phishing-detection",
     "--no-pings",
@@ -45,7 +50,8 @@ FLAGS = [
     "--safebrowsing-disable-auto-update",
     "--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication,"
     "PasswordLeakDetection,OptimizationGuideModelDownloading,NetworkTimeServiceQuerying,"
-    "AimServerEligibilityEnabled,AimServerRequestOnStartupEnabled",
+    "AimServerEligibilityEnabled,AimServerRequestOnStartupEnabled,OptimizationGuideManifestBroker,"
+    "OptimizationGuideOnDeviceModel",
     "--deny-permission-prompts",
     "--password-store=basic",
     # Defence in depth for the mic: synthetic devices, and never --use-fake-ui-for-media-stream
@@ -106,18 +112,25 @@ def flags():
     namespaces, where Chrome otherwise stops with "No usable sandbox!")."""
     import shlex
 
-    combined = [*FLAGS, *shlex.split(os.environ.get("QAJEV_CHROME_FLAGS", ""))]
+    extra = shlex.split(os.environ.get("QAJEV_CHROME_FLAGS", ""))
+    if any(value.split("=", 1)[0] in {"--gcm-checkin-url", "--gcm-registration-url", "--gcm-mcs-endpoint"}
+           for value in extra):
+        raise ChromeError("QAJev Chrome flags cannot override a messaging endpoint")
+    combined = [*FLAGS, *extra]
     result, disabled = [], []
+    feature_position = None
     for value in combined:
         if value == "--disable-features":
             raise ChromeError("Use --disable-features=FEATURES in QAJEV_CHROME_FLAGS")
         if value.startswith("--disable-features="):
+            if feature_position is None:
+                feature_position = len(result)
             disabled.extend(feature for feature in value.split("=", 1)[1].split(",") if feature)
         else:
             result.append(value)
     # Chromium keeps the last occurrence of a switch. An extra UI feature must not erase the service policy.
-    if disabled:
-        result.append("--disable-features=" + ",".join(dict.fromkeys(disabled)))
+    if disabled and feature_position is not None:
+        result.insert(feature_position, "--disable-features=" + ",".join(dict.fromkeys(disabled)))
     return result
 
 
@@ -299,7 +312,7 @@ def _disable_password_services(profile_dir: Path) -> None:
         except ValueError:
             raise ChromeError("QAJev Chrome preferences are not valid JSON") from None
         if not isinstance(data, dict) or any(
-            not isinstance(data.get(key, {}), dict) for key in ("profile", "browser", "spellcheck")
+            not isinstance(data.get(key, {}), dict) for key in ("profile", "browser", "spellcheck", "net")
         ):
             raise ChromeError("QAJev Chrome preferences must contain JSON objects")
         data["credentials_enable_service"] = False
@@ -307,6 +320,7 @@ def _disable_password_services(profile_dir: Path) -> None:
         data.setdefault("profile", {})["password_manager_leak_detection"] = False
         data.setdefault("browser", {})["enable_spellchecking"] = False
         data.setdefault("spellcheck", {}).update(dictionary="", dictionaries=[], use_spelling_service=False)
+        data.setdefault("net", {})["network_prediction_options"] = 2  # Chromium: no speculative preloads/preconnects.
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=default,
                                          prefix=".qajev-preferences-", delete=False) as output:
             temporary = Path(output.name)

@@ -114,11 +114,17 @@ from, and whether the dashboard answers.
 ### Managed Chrome services
 
 QAJev starts its managed Chrome with background updating, sync, extensions, network-time checks and
-search-eligibility requests disabled. Its private preferences also disable password services and dictionary downloads.
-Page navigation and local form input still work normally.
+search-eligibility requests disabled. It also disables on-device model downloads and speculative browser
+preconnections. Its private preferences disable password services and dictionary downloads.
+
+Chromium's policy token service can still start cloud messaging with background networking disabled.
+QAJev sets the check-in, registration and push-channel endpoints to the internal URL `chrome://qajev-disabled`.
+Messaging retries cannot contact a remote service. Browser push messaging is unavailable in these managed
+profiles; page navigation and local form input still work normally.
 
 Extra `--disable-features=FEATURES` entries in `QAJEV_CHROME_FLAGS` are combined with the managed defaults
 into one switch. Use the equals syntax; a bare `--disable-features` is refused before Chrome starts.
+Extra flags cannot override the managed `--gcm-checkin-url`, `--gcm-registration-url` or `--gcm-mcs-endpoint`.
 
 After updating, restart an already running managed profile with `qajev browser stop --profile NAME` before
 using it again. QAJev preserves unrelated profile preferences and asks for this restart instead of reusing

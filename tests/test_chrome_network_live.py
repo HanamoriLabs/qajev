@@ -24,7 +24,18 @@ pytestmark = pytest.mark.skipif(
 def test_product_launcher_stops_background_requests_with_plain_and_custom_features(tmp_path, custom_feature):
     assert os.getpriority(os.PRIO_PROCESS, 0) == 19
     assert os.environ.get("QAJEV_CHROME_FLAGS") is None, "proof must not supply service-suppression flags"
-    body = b'<!doctype html><title>Local launcher fixture</title><h1>Installed QAJev is ready</h1>'
+    body = b'''<!doctype html><title>Local launcher fixture</title><h1>Installed QAJev is ready</h1>
+    <form id="login"><label>Fixture password<input id="password" name="password" type="password"
+    autocomplete="current-password"></label><button id="submit" type="submit">Sign in</button></form>
+    <script>
+    window.passwordFixture = {inputEvents:0, characters:0, submitted:false};
+    document.querySelector('#password').addEventListener('input', event => {
+      passwordFixture.inputEvents++; passwordFixture.characters = event.target.value.length;
+    });
+    document.querySelector('#login').addEventListener('submit', event => {
+      event.preventDefault(); passwordFixture.submitted = true; event.target.remove();
+    });
+    </script>'''
 
     class Page(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
@@ -43,9 +54,14 @@ def test_product_launcher_stops_background_requests_with_plain_and_custom_featur
     suite = tmp_path / "fixture.json"
     suite.write_text(json.dumps({
         "name": "Managed Chrome background networking", "base_url": f"http://127.0.0.1:{server.server_port}",
-        "devices": ["desktop"], "scenarios": [{"name": "local page", "url": "/fixture",
+        "devices": ["desktop"], "mode": "mutate", "guard": {"allow_secret_fields": True},
+        "scenarios": [{"name": "local page", "url": "/fixture",
             "about": "The product launcher renders a local page without starting nonlocal requests.",
-            "before": [{"sleep": 30}, {"sleep": 30}], "expect": {"text": "Installed QAJev is ready"}}],
+            "before": [{"fill": {"#password": "NOT-A-REAL-PASSWORD-Fixture123!"}}, {"click": "#submit"},
+                       {"sleep": 30}, {"sleep": 30}],
+            "expect": {"text": "Installed QAJev is ready", "js": "passwordFixture.inputEvents > 0 && "
+                       "passwordFixture.characters === 31 && passwordFixture.submitted",
+                       "says": {"js": "Real password input and submit reached the synthetic page."}}}],
     }))
     empty = tmp_path / "empty.env"
     empty.touch(mode=0o600)
@@ -78,7 +94,8 @@ def test_product_launcher_stops_background_requests_with_plain_and_custom_featur
         bad = audit["bad_hosts"](data)
         receipt = {"nonlocal_hosts": bad, "gate": "FAIL" if bad else "PASS",
                    "models": report["cost"]["calls"], "elapsed_seconds": time.monotonic() - started,
-                   "custom_feature": custom_feature, "product_flags_only": True}
+                   "custom_feature": custom_feature, "product_flags_only": True,
+                   "password_input_and_submit_checked": True}
         (tmp_path / "request-hosts.json").write_text(json.dumps(receipt, indent=2) + "\n")
         assert not bad, receipt
     finally:

@@ -20,7 +20,8 @@ switches = ("--disable-background-networking", "--disable-component-update", "--
             "--metrics-recording-only", "--safebrowsing-disable-auto-update", "--disable-extensions",
             "--disable-component-extensions-with-background-pages")
 features = ("AutofillServerCommunication", "PasswordLeakDetection", "OptimizationGuideModelDownloading",
-            "NetworkTimeServiceQuerying", "AimServerEligibilityEnabled", "AimServerRequestOnStartupEnabled")
+            "NetworkTimeServiceQuerying", "AimServerEligibilityEnabled", "AimServerRequestOnStartupEnabled",
+            "OptimizationGuideManifestBroker", "OptimizationGuideOnDeviceModel")
 base.FAULTS = [
     (f"S{index:02d}", C, f'    "{switch}",\n', "",
      U + f"test_background_network_switches_reach_the_managed_browser[{switch}]")
@@ -44,10 +45,14 @@ base.FAULTS = [
      U + "test_dictionary_downloads_are_disabled_before_spawn"),
     ("P04-online-spelling", C, "use_spelling_service=False", "use_spelling_service=True",
      U + "test_dictionary_downloads_are_disabled_before_spawn"),
-    ("P05-preference-validation", C, 'for key in ("profile", "browser", "spellcheck")', 'for key in ("profile",)',
+    ("P05-preference-validation", C, 'for key in ("profile", "browser", "spellcheck", "net")',
+     'for key in ("profile",)',
      U + "test_invalid_network_preferences_refuse_without_spawn_or_overwrite"),
     ("P06-policy-before-spawn", C, "    _disable_password_services(profile_dir)\n", "    pass\n",
      U + "test_dictionary_downloads_are_disabled_before_spawn"),
+    ("P07-speculative-preconnections", C, 'data.setdefault("net", {})["network_prediction_options"] = 2',
+     'data.setdefault("net", {})["network_prediction_options"] = 0',
+     U + "test_speculative_preconnections_are_disabled_before_spawn"),
     ("R01-reuse-old-process", C, 'if running[0].get("background_services_disabled") is not True:', "if False:",
      U + "test_running_browser_without_background_policy_is_not_reused"),
     ("R02-missing-marker", C, '        "background_services_disabled": True,\n', "",
@@ -65,6 +70,17 @@ base.FAULTS = [
      T + "test_repeated_nonlocal_starts_keep_their_count"),
     ("A05-headers", A, '"group_name", "host"', '"group_name", "host", "headers"',
      T + "test_a_resolver_marker_is_not_exempted_and_headers_are_not_request_hosts"),
+    ("G04-extra-endpoint-override", C, 'if any(value.split("=", 1)[0] in {"--gcm-checkin-url",',
+     'if False and any(value.split("=", 1)[0] in {"--gcm-checkin-url",',
+     U + "test_extra_flags_cannot_restore_cloud_messaging_endpoints"),
+    ("M04-extra-flag-order", C,
+     'result.insert(feature_position, "--disable-features=" + ",".join(dict.fromkeys(disabled)))',
+     'result.append("--disable-features=" + ",".join(dict.fromkeys(disabled)))',
+     "tests/test_linux.py::test_extra_chrome_flags_come_from_the_environment"),
+] + [
+    (f"G{index:02d}-network-endpoint", C, f'    "--{endpoint}=chrome://qajev-disabled",\n', "",
+     U + f"test_cloud_messaging_endpoints_are_nonnetwork_urls_before_spawn[{endpoint}]")
+    for index, endpoint in enumerate(("gcm-checkin-url", "gcm-registration-url", "gcm-mcs-endpoint"), 1)
 ]
 
 if __name__ == "__main__":

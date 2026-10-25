@@ -67,10 +67,26 @@ def test_background_network_switches_reach_the_managed_browser(launch, monkeypat
     assert required in launch["calls"][0]
 
 
+@pytest.mark.parametrize("endpoint", ["gcm-checkin-url", "gcm-registration-url", "gcm-mcs-endpoint"])
+def test_cloud_messaging_endpoints_are_nonnetwork_urls_before_spawn(launch, monkeypatch, endpoint):
+    monkeypatch.delenv("QAJEV_CHROME_FLAGS", raising=False)
+    chrome.start("network", headless=True)
+    assert f"--{endpoint}=chrome://qajev-disabled" in launch["calls"][0]
+
+
+@pytest.mark.parametrize("endpoint", ["gcm-checkin-url", "gcm-registration-url", "gcm-mcs-endpoint"])
+@pytest.mark.parametrize("value", ["", "=https://example.test/service"])
+def test_extra_flags_cannot_restore_cloud_messaging_endpoints(launch, monkeypatch, endpoint, value):
+    monkeypatch.setenv("QAJEV_CHROME_FLAGS", f"--{endpoint}{value}")
+    with pytest.raises(chrome.ChromeError, match="messaging endpoint"):
+        chrome.start("network", headless=True)
+    assert launch["calls"] == []
+
+
 @pytest.mark.parametrize("required", [
     "Translate", "MediaRouter", "OptimizationHints", "AutofillServerCommunication", "PasswordLeakDetection",
     "OptimizationGuideModelDownloading", "NetworkTimeServiceQuerying", "AimServerEligibilityEnabled",
-    "AimServerRequestOnStartupEnabled",
+    "AimServerRequestOnStartupEnabled", "OptimizationGuideManifestBroker", "OptimizationGuideOnDeviceModel",
 ])
 def test_extra_disabled_features_keep_the_product_network_policy(launch, monkeypatch, required):
     monkeypatch.setenv("QAJEV_CHROME_FLAGS", "--disable-features=FixtureUiFeature,Translate --no-pings")
@@ -107,6 +123,25 @@ def test_dictionary_downloads_are_disabled_before_spawn(launch, ephemeral):
     assert record.get("background_services_disabled") is True
 
 
+@pytest.mark.parametrize("ephemeral", [False, True])
+def test_speculative_preconnections_are_disabled_before_spawn(launch, ephemeral):
+    def before_spawn(profile, _args):
+        preferences = json.loads((profile / "Default/Preferences").read_text())
+        # Chromium's persisted enum: kDisabled = 2, kStandard = 0, kExtended = 3.
+        assert preferences.get("net", {}).get("network_prediction_options") == 2
+
+    launch["before_spawn"] = before_spawn
+    chrome.start("network", headless=True, ephemeral=ephemeral)
+
+
+def test_existing_preconnection_setting_is_replaced_without_losing_other_network_preferences(launch):
+    path = chrome.PROFILES / "network" / "Default/Preferences"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"net": {"network_prediction_options": 3, "other": "keep"}}))
+    chrome.start("network", headless=True)
+    assert json.loads(path.read_text())["net"] == {"network_prediction_options": 2, "other": "keep"}
+
+
 def test_existing_dictionary_download_preferences_are_replaced_and_unrelated_settings_survive(launch):
     path = chrome.PROFILES / "network" / "Default/Preferences"
     path.parent.mkdir(parents=True)
@@ -120,7 +155,7 @@ def test_existing_dictionary_download_preferences_are_replaced_and_unrelated_set
                                         "use_spelling_service": False, "other": "keep"}
 
 
-@pytest.mark.parametrize("key", ["browser", "spellcheck"])
+@pytest.mark.parametrize("key", ["browser", "spellcheck", "net"])
 @pytest.mark.parametrize("value", [None, [], "invalid"])
 def test_invalid_network_preferences_refuse_without_spawn_or_overwrite(launch, key, value):
     path = chrome.PROFILES / "network" / "Default/Preferences"
@@ -158,6 +193,7 @@ def test_unrelated_existing_preferences_survive_the_privacy_update(launch):
         "profile": {"password_manager_leak_detection": False, "name": "Fixture profile"},
         "browser": {"enable_spellchecking": False},
         "spellcheck": {"dictionary": "", "dictionaries": [], "use_spelling_service": False},
+        "net": {"network_prediction_options": 2},
         "other": {"theme": "dark", "labels": ["保持", chr(0xD800)]},
     }
 
