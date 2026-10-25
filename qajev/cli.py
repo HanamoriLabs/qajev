@@ -82,7 +82,8 @@ def _runner_flags(p, website=True):
 
 
 def _common(p):
-    g = p.add_argument_group("browser and run")
+    g = p.add_argument_group("browser and run", "Website scenarios stop as harness after five minutes without "
+                             "a completed step/check; polling and animation do not count. Queue time is separate.")
     g.add_argument("--cdp-url", help="attach to an existing Chrome DevTools endpoint instead of QAJev's own Chrome")
     g.add_argument("--profile", default=os.environ.get("QAJEV_PROFILE", "default"),
                    help="QAJev Chrome profile (sign in once with `qajev browser login`)")

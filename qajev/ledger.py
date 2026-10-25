@@ -6,6 +6,8 @@ $0.0005 per decision). OpenRouter is asked to include the real cost in each resp
 
 import threading
 
+from . import watchdog
+
 
 class CostCapReached(RuntimeError):
     pass
@@ -62,10 +64,12 @@ class Ledger:
             if self.shared is not None:
                 with self.shared.get_lock():
                     self.shared.value += cost
+        watchdog.notify("ledger", value=self.summary())
 
     def failed(self):
         with self.lock:
             self.errors += 1
+        watchdog.notify("ledger", value=self.summary())
 
     def wrap(self, post_json):
         def ledgered(url, key, body):

@@ -31,6 +31,7 @@ class Partial:
 
     def add(self, result):
         with PUBLISH_LOCK:
+            self.results = [r for r in self.results if r["name"] != result["name"]]
             self.results.append(result)
             try:
                 if not json.loads((self.run_dir / "report.json").read_text()).get("partial"):

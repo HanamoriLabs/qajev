@@ -151,7 +151,7 @@ def test_checks_pass_then_transport_loss_before_scenario_end_cannot_keep_pass(gr
     assert seen["made"] == seen["closed"] == seen["daemons"] == 1
 
 
-@pytest.mark.parametrize("error", [RuntimeError("ordinary CDP command rejected"), TimeoutError("slow page")])
+@pytest.mark.parametrize("error", [RuntimeError("ordinary CDP command rejected")])
 def test_ordinary_command_failure_or_timeout_does_not_poison_later_scenarios(group, error):
     run, fail, seen, _state, _scenarios, _opts, _cdp = group
     fail["error"] = error
@@ -159,6 +159,20 @@ def test_ordinary_command_failure_or_timeout_does_not_poison_later_scenarios(gro
     assert [r["outcome"] for r in results] == ["pass", "harness", "pass", "skipped"]
     assert results[1].get("transport_lost") is not True
     assert seen["starts"] == ["earlier", "lost", "later"]
+
+
+def test_unacknowledged_action_timeout_is_never_replayed_or_counted_as_progress(group, monkeypatch):
+    run, fail, seen, _state, _scenarios, _opts, _cdp = group
+    progress = []
+    monkeypatch.setattr(runner.watchdog, "complete", lambda identity, **_data: progress.append(identity))
+    fail.update(at="hook", error=TimeoutError("no action acknowledgement"))
+    results = run()["results"]
+    assert [r["outcome"] for r in results] == ["pass", "harness", "skipped", "skipped"]
+    assert results[1]["session_uncertain"] is True
+    assert "acknowledgement timed out" in results[1]["reason"]
+    assert len([1 for name, method in seen["raw"] if name == "lost" and method == "hook"]) == 1
+    assert "before hook 1 (js)" not in progress
+    assert seen["starts"] == ["earlier", "lost"]
 
 
 def test_later_multiplayer_scenario_does_not_start_after_lost_transport(group, monkeypatch):
@@ -303,7 +317,7 @@ def test_a_typed_transport_loss_stops_the_group_even_without_a_shared_fuse(group
     assert [r["outcome"] for r in results] == ["harness", "skipped", "skipped", "skipped"]
 
 
-def test_a_response_timeout_keeps_the_existing_single_retry_without_opening_the_fuse(monkeypatch):
+def test_a_response_timeout_latches_uncertainty_without_a_single_replay(monkeypatch):
     state = SimpleNamespace(error=None)
     calls = []
 
@@ -314,10 +328,13 @@ def test_a_response_timeout_keeps_the_existing_single_retry_without_opening_the_
         return {"ready": True}
 
     call = session._patient_cdp(raw, 45, state)
-    assert call("Runtime.evaluate", _response_timeout=1, expression="true") == {"ready": True}
-    assert len(calls) == 2
+    with pytest.raises(session.TransportLost, match="acknowledgement timed out"):
+        call("Runtime.evaluate", _response_timeout=1, expression="true")
+    with pytest.raises(session.TransportLost):
+        call("Runtime.evaluate", expression="mustNotReplay()")
+    assert len(calls) == 1
     assert all(params["_response_timeout"] == 45 for _method, params in calls)
-    assert state.error is None
+    assert isinstance(state.error, session.TransportLost)
 
 
 @pytest.mark.parametrize("reply", [b"", b'{"result":', b"[]\n"])

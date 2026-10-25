@@ -23,7 +23,7 @@ from typing import Any
 
 from qajev_upload_privacy import sanitize_text
 
-from . import __version__, chrome, keys, live, netlog, providers
+from . import __version__, chrome, keys, live, netlog, providers, watchdog
 from . import guard as guard_mod
 from . import pad as pad_mod
 from .config import is_loopback, redact
@@ -85,11 +85,20 @@ def _patient_cdp(raw_cdp, timeout, transport):
         if transport.error is not None:
             raise transport.error
         params.pop("_response_timeout", None)
+        creating = method in {"Target.createTarget", "Target.createBrowserContext"}
+        if creating:
+            watchdog.notify("resource_pending", method=method)
         try:
-            try:
-                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
-            except TimeoutError:
-                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+            response = raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+            if creating:
+                watchdog.notify("resource", targets=[response["targetId"]] if response.get("targetId") else [],
+                                contexts=[response["browserContextId"]] if response.get("browserContextId") else [])
+                watchdog.notify("resource_resolved", method=method)
+            return response
+        except TimeoutError as error:
+            transport.error = TransportLost(
+                f"{method}: CDP acknowledgement timed out; session uncertain; no automatic retry")
+            raise transport.error from error
         except (RuntimeError, OSError, EOFError) as error:
             lost = _is_transport_error(error)
             # An oversized IPC request closes that request's socket, not necessarily the daemon's CDP link.

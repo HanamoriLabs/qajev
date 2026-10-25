@@ -72,7 +72,12 @@ A run that broke before it finished (a browser error, a failed hook, a guard tha
 **pass**, even when every check that ran passed, and neither is a run that stopped before some of its checks or steps
 ran. It is **harness**, and the reason says where it stopped and what never ran: "browser/daemon error: step 4
 (snapshot walking): RuntimeError: ...; 2 check(s) ran and passed; not run: step 5 (js), the final checks".
-`report.json` has the same as `stop_detail` and `not_run`. An action or time budget is different: Jev wandered,
+`report.json` has the same as `stop_detail` and `not_run`. A website watchdog stop uses `stop: no_progress`,
+`outcome: harness` and `session_uncertain: true`. Its `watchdog` object records the active operation, monotonic
+idle/active/queue seconds, cleanup status and any unconfirmed resource ownership. `cost_incomplete: true`
+means a killed in-flight request may have cost that could not be observed; recorded costs remain intact.
+Remaining same-session scenarios use `stop: session_uncertain` and `outcome: skipped`.
+An action or time budget is different: Jev wandered,
 but the page was still judged in full, so its checks decide.
 
 A run with a seeded test account says who signed in, under **Run** ("Sign-in: as seeded test user

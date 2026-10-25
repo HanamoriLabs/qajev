@@ -107,12 +107,29 @@ results stay in the report. QAJev does not automatically replay the scenario, it
 
 Check the browser and system logs for a crash, a killed process or a memory limit before running again.
 A restarted GPU process can lose the page's WebGPU resources even when Chrome stays open. Restore a known
-test state, then start a new QAJev process explicitly. A response timeout or an ordinary rejected CDP command
-does not by itself prove that the transport is gone.
+test state, then start a new QAJev process explicitly. A response timeout does not prove a browser crash, but
+its missing acknowledgement makes session state uncertain. QAJev stops using that session without resending
+the command. Earlier versions resent a timed-out CDP command once. An ordinary rejected CDP command with an
+acknowledged error does not by itself prove the transport is gone.
 `Target closed` and `Session with given id not found` can describe a closed popup or a detached target on a
 usable browser connection. They keep normal command-error handling, without invalidating the whole transport
 or replaying the rejected command. Socket, EOF, browser shutdown and WebSocket-loss errors still stop reuse.
 The daemon's own `cdp_disconnected` and `Client is stopping` errors also invalidate that connection.
+
+**`no real progress for 300 s`**
+The website runner stops a scenario after five active minutes without a completed step or check, including
+scripted scenarios with no Jev goal. The reason names the active operation. Repeated checks of the same false
+condition, animation frames, console messages, stale decisions and changing timestamps do not reset the clock.
+A declared 180-second readiness wait remains valid; the wait's polls do not reset the timer.
+
+The result is **harness**, never pass or product failure. Earlier scenarios and measured checks remain in the
+report. The remaining scenarios say `not run: session uncertain`; no action is automatically retried. Restore a
+known test state before starting a new run. The report says when cleanup of an owned browser resource could not
+be confirmed. QAJev closes only targets/contexts it recorded as its own and stops only its worker/daemon.
+
+Load/admission queue time is separate from active scenario time. Existing goal budgets, cost caps, suite limits
+and lane limits still apply. Process supervision works on macOS/Linux from main or background threads; other
+platforms are refused explicitly. The watchdog does not install timers or signal handlers in the caller.
 
 **The MCP tools do not show up in my agent**
 Check that `qajev mcp` runs from the agent's environment (use the full path from `which qajev`), then restart the

@@ -725,7 +725,7 @@ def test_runner_isolates_chrome_and_report_folders_and_persists_timings(monkeypa
         time.sleep(0.01)
         return {"results": [], "ledger": _kw["ledger"].summary()}
 
-    monkeypatch.setattr(runner, "run_group", run_group)
+    monkeypatch.setattr(runner, "supervised_group", run_group)
     monkeypatch.setattr(runner.time, "strftime", lambda *_a, **_kw: "20261024-120000")
     spec = suite.parse({"name": "same", "base_url": "http://localhost", "scenarios": [
         {"name": "fixture", "about": "Fixture", "expect": {"text": "fixture"}}]})
