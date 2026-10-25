@@ -29,6 +29,18 @@ from . import pad as pad_mod
 from .config import is_loopback, redact
 
 _jev = None
+_HEADLESS_INPUT_SESSIONS: set[str] = set()
+
+
+def _headless_mouse_cdp(raw_cdp, sessions):
+    def call(method, session_id=None, **params):
+        # Focus emulation reports a background document as focused, but Chromium still rejects its pointer lock
+        # with WrongDocumentError. Activate only the receiving headless tab, including Jev's direct input path.
+        if method == "Input.dispatchMouseEvent" and params.get("type") == "mousePressed" and session_id in sessions:
+            raw_cdp("Page.bringToFront", session_id=session_id)
+        return raw_cdp(method, session_id=session_id, **params)
+
+    return call
 
 
 class GuardMissing(RuntimeError):
@@ -153,7 +165,7 @@ def load(ledger):
     timeout = float(os.environ.get("QAJEV_CDP_TIMEOUT", "30"))
     transport = SimpleNamespace(error=None)
     helpers._send = _checked_send(helpers._send, transport)
-    patient_cdp = _patient_cdp(jev_browser.cdp, timeout, transport)
+    patient_cdp = _headless_mouse_cdp(_patient_cdp(jev_browser.cdp, timeout, transport), _HEADLESS_INPUT_SESSIONS)
     jev_browser.cdp = patient_cdp
 
     raw_init = jev_browser.Browser.__init__
@@ -729,6 +741,8 @@ class Session:
                 version = {}
             if not self.headless:  # attached over --cdp-url: ask the browser itself
                 self.headless = "Headless" in version.get("product", "")
+            if self.headless and (input_session := getattr(self.browser, "session", None)):
+                _HEADLESS_INPUT_SESSIONS.add(input_session)
             self._own_user_agent(version.get("userAgent", ""))
             self._keep_safe()
             for name in ("microphone", "camera"):
@@ -1577,6 +1591,8 @@ class Session:
 
     # ---- teardown ----
     def close(self):
+        if input_session := getattr(getattr(self, "browser", None), "session", None):
+            _HEADLESS_INPUT_SESSIONS.discard(input_session)
         target = getattr(self.browser, "target", None) if hasattr(self, "browser") else None
         net, self.net = getattr(self, "net", None), None
         if net:
