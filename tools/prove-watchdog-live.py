@@ -212,9 +212,10 @@ def runtime_attestation(source: Path, declared_sha: str) -> dict:
 
 
 def cli_child(argv: list[str]) -> int:
-    from qajev import chrome, cli, runner, watchdog
     from websockets.exceptions import ConnectionClosed
     from websockets.sync.client import connect
+
+    from qajev import chrome, cli, runner, watchdog
 
     if os.environ.get("BU_BROWSER_ID"):
         raise RuntimeError("BU_BROWSER_ID would bypass the local daemon ownership path")
