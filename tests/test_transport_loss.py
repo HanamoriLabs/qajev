@@ -206,11 +206,15 @@ def test_a_second_group_on_the_same_lost_transport_never_constructs_a_session(gr
     assert seen["starts"] == starts and seen["made"] == 1
 
 
-def test_load_wires_the_same_fuse_into_jev_and_the_runner(monkeypatch):
+@pytest.mark.parametrize("lost_reply", [False, True])
+def test_load_wires_the_same_fuse_into_jev_and_the_runner(monkeypatch, lost_reply):
     calls = []
+    helpers = SimpleNamespace(_send=lambda *_a, **_kw: {})
 
-    def raw(*_args, **_kwargs):
+    def raw(method, **_kwargs):
         calls.append(True)
+        if lost_reply:
+            return helpers._send({"method": method}).get("result", {})
         raise RuntimeError("no close frame received or sent")
 
     class Browser:
@@ -220,7 +224,7 @@ def test_load_wires_the_same_fuse_into_jev_and_the_runner(monkeypatch):
     browser = SimpleNamespace(cdp=raw, Browser=Browser)
     agent = SimpleNamespace()
     model = SimpleNamespace(field_text=lambda _: None, post_json=lambda *_a, **_kw: None)
-    monkeypatch.setitem(sys.modules, "browser_harness", SimpleNamespace(admin=SimpleNamespace()))
+    monkeypatch.setitem(sys.modules, "browser_harness", SimpleNamespace(admin=SimpleNamespace(), helpers=helpers))
     monkeypatch.setitem(sys.modules, "jev_ultrafast", SimpleNamespace(browser=browser, agent=agent, model=model))
     monkeypatch.setattr(session, "_jev", None)
     monkeypatch.setenv("BU_NAME", "fixture")
@@ -228,10 +232,11 @@ def test_load_wires_the_same_fuse_into_jev_and_the_runner(monkeypatch):
     monkeypatch.setattr(session.providers, "route", lambda raw, _resolved: raw)
     loaded = session.load(runner.Ledger(0.0))
     assert loaded.cdp is browser.cdp
-    with pytest.raises(RuntimeError, match="no close frame"):
+    why = "acknowledgement missing" if lost_reply else "no close frame"
+    with pytest.raises(RuntimeError, match=why):
         loaded.cdp("Input.dispatchMouseEvent")
     assert session.transport_error() is loaded.transport.error
-    with pytest.raises(RuntimeError, match="no close frame"):
+    with pytest.raises(RuntimeError, match=why):
         browser.cdp("Input.dispatchMouseEvent")
     assert calls == [True]
 
@@ -275,4 +280,46 @@ def test_a_response_timeout_keeps_the_existing_single_retry_without_opening_the_
     assert call("Runtime.evaluate", _response_timeout=1, expression="true") == {"ready": True}
     assert len(calls) == 2
     assert all(params["_response_timeout"] == 45 for _method, params in calls)
+    assert state.error is None
+
+
+@pytest.mark.parametrize("reply", [b"", b'{"result":', b"[]\n"])
+def test_empty_cut_or_invalid_daemon_reply_never_acknowledges_an_action_or_reconnects(monkeypatch, reply):
+    from browser_harness import helpers
+
+    state = SimpleNamespace(error=None)
+    seen = {"connects": 0, "sends": 0, "closes": 0}
+
+    class Socket:
+        chunks = [reply, b""]
+
+        def settimeout(self, _timeout):
+            pass
+
+        def sendall(self, _data):
+            seen["sends"] += 1
+
+        def recv(self, _size):
+            return self.chunks.pop(0)
+
+        def close(self):
+            seen["closes"] += 1
+
+    def connect(*_a, **_kw):
+        seen["connects"] += 1
+        return Socket(), None
+
+    monkeypatch.setattr(helpers.ipc, "connect", connect)
+    send = session._checked_send(helpers._send, state)
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="acknowledgement missing"):
+            send({"method": "Input.dispatchMouseEvent", "params": {"type": "mousePressed"}})
+    assert state.error is not None
+    assert seen == {"connects": 1, "sends": 1, "closes": 1}
+
+
+def test_empty_success_result_is_a_valid_daemon_acknowledgement():
+    state = SimpleNamespace(error=None)
+    send = session._checked_send(lambda *_a, **_kw: {"result": {}}, state)
+    assert send({"method": "Input.dispatchMouseEvent"}) == {"result": {}}
     assert state.error is None

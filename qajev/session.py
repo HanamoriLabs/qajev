@@ -86,6 +86,24 @@ def _patient_cdp(raw_cdp, timeout, transport):
     return call
 
 
+def _checked_send(raw_send, transport):
+    def send(request, **kwargs):
+        if transport.error is not None:
+            raise transport.error
+        try:
+            response = raw_send(request, **kwargs)
+        except json.JSONDecodeError as error:
+            transport.error = TransportLost("daemon reply was cut or invalid; action acknowledgement missing")
+            raise transport.error from error
+        # The helper maps EOF to {}. A real successful CDP response always has a result envelope, even when empty.
+        if request.get("method") and (not isinstance(response, dict) or "result" not in response):
+            transport.error = TransportLost("daemon closed without a CDP reply; action acknowledgement missing")
+            raise transport.error
+        return response
+
+    return send
+
+
 def configure_env(cdp_url, name=None):
     """One daemon name per process: browser_harness binds BU_NAME when it is imported, so once jev is loaded
     a pooled worker that runs a second chain must keep the name it started with."""
@@ -121,13 +139,14 @@ def load(ledger):
         return _jev
     if "BU_NAME" not in os.environ:
         raise RuntimeError("configure_env() must run before load()")
-    from browser_harness import admin
+    from browser_harness import admin, helpers
     from jev_ultrafast import agent as jev_agent
     from jev_ultrafast import browser as jev_browser
     from jev_ultrafast import model as jev_model
 
     timeout = float(os.environ.get("QAJEV_CDP_TIMEOUT", "30"))
     transport = SimpleNamespace(error=None)
+    helpers._send = _checked_send(helpers._send, transport)
     patient_cdp = _patient_cdp(jev_browser.cdp, timeout, transport)
     jev_browser.cdp = patient_cdp
 

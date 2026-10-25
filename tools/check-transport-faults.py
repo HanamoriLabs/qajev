@@ -14,7 +14,9 @@ S = "qajev/session.py"
 R = "qajev/runner.py"
 T = "tests/test_transport_loss.py::"
 base.FAULTS = [
-    ("T01-resend-after-loss", S, "if transport.error is not None:", "if False:",
+    ("T01-resend-after-loss", S,
+     "def call(method, session_id=None, **params):\n        if transport.error is not None:",
+     "def call(method, session_id=None, **params):\n        if False:",
      T + "test_poisoned_transport_never_sends_a_second_raw_command"),
     ("T02-forget-lost-transport", S, "if lost:", "if False:",
      T + "test_each_transport_failure_opens_the_fuse_before_a_second_command"),
@@ -46,6 +48,12 @@ base.FAULTS = [
     ("T12-next-chain-reuses-transport", R,
      'lost_after = "an earlier scenario" if session_mod.transport_error() is not None else None',
      'lost_after = None', T + "test_a_second_group_on_the_same_lost_transport_never_constructs_a_session"),
+    ("T13-empty-daemon-reply-is-success", S,
+     'if request.get("method") and (not isinstance(response, dict) or "result" not in response):', "if False:",
+     T + "test_empty_cut_or_invalid_daemon_reply_never_acknowledges_an_action_or_reconnects"),
+    ("T14-load-misses-reply-validation", S,
+     "helpers._send = _checked_send(helpers._send, transport)", "pass",
+     T + "test_load_wires_the_same_fuse_into_jev_and_the_runner"),
 ]
 
 if __name__ == "__main__":
