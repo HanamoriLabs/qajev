@@ -10,7 +10,7 @@ from PIL import Image
 from qajev import clients, runner, session, suite, verdict, viewport
 
 
-def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scale=1, zoom=1, measured=None):
+def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scale=1, zoom: float = 1, measured=None):
     stream = io.BytesIO()
     Image.new("RGB", image_size, (19, 47, 83)).save(stream, format="PNG")
     encoded = base64.b64encode(stream.getvalue()).decode()
@@ -140,7 +140,7 @@ def png(size=(1280, 900)):
     return output.getvalue()
 
 
-def geometry(width=1280, height=900, dpr=1, zoom=1):
+def geometry(width=1280, height=900, dpr=1, zoom: float = 1):
     return {"innerWidth": width, "innerHeight": height, "devicePixelRatio": dpr,
             "clientWidth": width, "clientHeight": height,
             "layoutViewport": {"clientWidth": width, "clientHeight": height},
