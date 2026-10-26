@@ -19,6 +19,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Planted-fault guidance names the actual `graded: "pass"` and `graded: "fail"` values in CLI help, MCP,
+  reports and documentation. Evaluation and report grades are unchanged.
 - Headless mouse presses activate their receiving tab before input, including direct Jev actions. Background
   canvases can acquire real pointer lock after a trusted press instead of reporting `WrongDocumentError` while
   focus emulation says the page is focused. Permission denials and headed-window focus policy remain unchanged.
