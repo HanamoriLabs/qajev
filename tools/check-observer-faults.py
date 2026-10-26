@@ -49,9 +49,9 @@ def main():
                     proc = subprocess.run([sys.executable, "-m", "pytest", "tests/test_observer.py", "-q", "-k", test,
                                            f"--junitxml={junit}"], stdout=log, stderr=subprocess.STDOUT, timeout=60)
                 failures = [case.find("failure") for case in ET.parse(junit).iter("testcase")
-                            if case.find("failure") is not None]
-                caught = proc.returncode == 1 and any("AssertionError" in failure.get("message", "")
-                         or "Failed: DID NOT RAISE" in failure.get("message", "") for failure in failures)
+                            if case.find("failure") is not None and case.get("name", "").startswith(test)]
+                caught = proc.returncode == 1 and any("AssertionError" in (failure.text or "")
+                         or "Failed: DID NOT RAISE" in (failure.text or "") for failure in failures)
                 results.append({"fault": slug, "test": test, "exit": proc.returncode, "caught": caught})
                 assert caught, f"{slug} did not cause a named assertion failure"
             finally:
