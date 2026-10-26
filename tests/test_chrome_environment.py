@@ -21,6 +21,9 @@ FORBIDDEN = (
     "CLOUDFLARE_API_TOKEN", "QAJEV_CLOUD_JOB_TOKEN", "AWS_SECRET_ACCESS_KEY", "fixture_password",
     "AUTHORIZATION", "COOKIE", "FIXTURE_OPAQUE_VALUE", "LC_FIXTURE_TOKEN", "XDG_FIXTURE_SECRET",
     "MESA_FIXTURE_KEY", "PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES",
+    "all_proxy", "ALL_PROXY",
+)
+PROXY_NAMES = (
     "http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "no_proxy", "NO_PROXY", "all_proxy", "ALL_PROXY",
 )
 _barrier = None
@@ -111,12 +114,12 @@ def test_runtime_allowlist_is_exact_and_does_not_mutate_the_parent(monkeypatch, 
                "FONTCONFIG_PATH": "/fixture/fonts", "LIBGL_DRIVERS_PATH": "/fixture/drivers", "TZ": "UTC"}
     for name, value in allowed.items():
         monkeypatch.setenv(name, value)
-    for name in FORBIDDEN:
+    for name in (*FORBIDDEN, *PROXY_NAMES):
         monkeypatch.setenv(name, "fixture-value")
     before = dict(os.environ)
     env = chrome.child_env(temporary=tmp_path / "owned-temp")
     assert all(env.get(name) == value for name, value in allowed.items())
-    assert not set(env).intersection(FORBIDDEN)
+    assert not set(env).intersection((*FORBIDDEN, *PROXY_NAMES))
     assert all(env.get(name) == str(tmp_path / "owned-temp") for name in ("TMPDIR", "TMP", "TEMP"))
     parent_unchanged = dict(os.environ) == before
     assert parent_unchanged, "Chrome environment construction changed the parent"
