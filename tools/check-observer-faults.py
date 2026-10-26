@@ -3,10 +3,10 @@
 import argparse
 import hashlib
 import json
-from pathlib import Path
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 FAULTS = [
     ("O01", 'self.home = Path(home).absolute()', 'self.home = Path(home).absolute().parent / "ignored-home"',
