@@ -9,6 +9,7 @@ import shutil
 import signal
 import sys
 import threading
+import time
 from pathlib import Path
 
 from . import __version__, config, lowprio
@@ -168,6 +169,18 @@ def build_parser():
     )
     parser.add_argument("--version", action="version", version=f"qajev {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    observe = sub.add_parser("observe", help="publish registered-machine reports through a durable outbox; never run tests")
+    observe.add_argument("--home", type=Path, default=config.HOME, help="QAJev home whose jobs are observed")
+    observe.add_argument("--report-root", type=Path, action="append", required=True,
+                         help="approved report root, including external --out folders (repeatable)")
+    observe.add_argument("--state-dir", type=Path, required=True, help="private durable observer state, mode 0700")
+    observe.add_argument("--project", required=True, help="registered machine's approved project name")
+    observe.add_argument("--url", default="https://cloud.qajev.com", help="Cloud control-plane origin")
+    observe.add_argument("--credential-file", type=Path, help="operator-placed machine credential file, mode 0600")
+    observe.add_argument("--inventory", action="store_true", help="snapshot backlog locally and print counts, without a credential or network")
+    observe.add_argument("--once", action="store_true", help="one inventory/upload cycle, then exit")
+    observe.add_argument("--every", type=int, default=60, help="seconds between inventory/upload cycles, minimum 5")
 
     check = sub.add_parser("check", help="one scenario from flags: a goal and/or expectations on a URL")
     check.add_argument("url")
@@ -1782,6 +1795,39 @@ def _lower_priority():
     lowprio.lower_self()  # shared machine: the driver, its daemon and its Chrome all run below interactive work
 
 
+def cmd_observe(args):
+    from .observer import Client, Observer, ObserverError
+
+    _lower_priority()
+    if args.every < 5:
+        print("qajev: observer interval must be at least 5 seconds", file=sys.stderr)
+        return EXIT_CONFIG
+    if not args.inventory and not args.credential_file:
+        print("qajev: observe needs --credential-file (or --inventory for a local-only snapshot)", file=sys.stderr)
+        return EXIT_CONFIG
+    if args.credential_file and any(args.credential_file.resolve().is_relative_to(root.resolve()) for root in args.report_root):
+        print("qajev: keep the machine credential outside approved report roots", file=sys.stderr)
+        return EXIT_CONFIG
+    try:
+        with Observer(args.home, args.report_root, args.state_dir, args.project, args.url) as observer:
+            client = None
+            while True:
+                inventory = observer.inventory()
+                if args.inventory:
+                    print(json.dumps(inventory))
+                    return 0
+                if client is None:
+                    client = Client(args.url, args.credential_file)
+                print(json.dumps({**inventory, **observer.flush(client)}), flush=True)
+                if args.once:
+                    return 0
+                time.sleep(args.every)
+    except (ObserverError, OSError) as failure:
+        # Network failures have a fixed, credential-free message; no endpoint response body is printed.
+        print(f"qajev: observation stopped: {failure}", file=sys.stderr)
+        return EXIT_CONFIG
+
+
 def _provider_flag(args):
     if getattr(args, "jev_provider", None):
         os.environ["QAJEV_JEV_PROVIDER"] = args.jev_provider
@@ -2106,7 +2152,7 @@ def main(argv=None):
             from . import jobs
 
             _job_dir = jobs.register(args.argv, rerun=_rerun)
-    handlers = {"check": cmd_run, "run": cmd_run, "smoke": cmd_smoke, "browser": cmd_browser, "doctor": cmd_doctor,
+    handlers = {"observe": cmd_observe, "check": cmd_run, "run": cmd_run, "smoke": cmd_smoke, "browser": cmd_browser, "doctor": cmd_doctor,
                 "secret": cmd_secret, "account": cmd_account,
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
                 "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
