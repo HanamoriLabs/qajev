@@ -536,9 +536,9 @@ PLANTED_MISSED = "expected to fail, but every check passed: the planted fault wa
 
 
 def planted(result, check):
-    """A planted fault's grade for the gate (suite.expect_fail; the Orchestrator, 13 Oct). It is met only when it
-    failed on `check` (the check it names) and every other check passed. A pass means the fault was not caught; a
-    failure anywhere else, or before the check ran (a page that did not load), is no catch either. A crash or a
+    """A planted fault's grade for the gate (`suite.expect_fail`). It is graded `pass` only when the test
+    failed on `check` (the check it names) and every other check passed. A passing test leaves the fault uncaught.
+    A failure elsewhere, or before the check ran (a page that did not load), is no catch either. A crash or a
     time-out is never a catch: stuck and harness stay as they are. The test's own outcome is not changed.
     -> (the outcome the gate counts, its reason)"""
     outcome, reason = result.get("outcome"), result.get("reason") or ""
