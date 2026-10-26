@@ -155,8 +155,12 @@ LATE_CAPTURE_CLI = r'''
 import base64,io,json,sys
 from pathlib import Path
 from PIL import Image
-from qajev import cli,session
+from qajev import cli,session,vision
 out=Path(sys.argv[1])
+def forbidden_judge(*args,**kwargs):
+    raise AssertionError('the capture must be rejected before any vision judge call')
+vision.require_clef=lambda what:None
+vision.look=forbidden_judge
 normal_hook=session.Session.run_hook
 normal_call=session.Session.call
 def measure(page):
