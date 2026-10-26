@@ -19,12 +19,14 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def viewport_site():
-    body = (b'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
-            b'<title>Viewport fixture</title><body style="margin:0;background:rgb(19,47,83)">'
+    content = (b'<title>Viewport fixture</title><body style="margin:0;background:rgb(19,47,83)">'
             b'<p>Viewport ready</p>')
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802
+            meta = b'' if self.path == '/legacy' else (
+                b'<meta name="viewport" content="width=device-width,initial-scale=1">')
+            body = b'<!doctype html>' + meta + content
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.send_header("Content-Length", str(len(body)))
@@ -106,21 +108,25 @@ def test_real_narrow_window_cli_is_harness_even_when_its_scripted_checks_hold(
     assert json.loads((tmp_path / "capture-pixels.json").read_text()) == [1280, 900]
 
 
-@pytest.mark.parametrize("device,width,height,scale", [
-    ("desktop", 1280, 900, 1), ("phone", 390, 844, 3),
-])
+@pytest.mark.parametrize("device,width,height,scale,legacy", [
+    ("desktop", 1280, 900, 1, False), ("phone", 390, 844, 3, False),
+    ("phone", 390, 844, 3, True),
+], ids=["desktop", "scaled-phone", "phone-without-viewport-meta"])
 def test_real_cli_keeps_matching_desktop_and_scaled_phone_passing(
-        browser, viewport_site, tmp_path, device, width, height, scale):
+        browser, viewport_site, tmp_path, device, width, height, scale, legacy):
     cdp, _ = browser
     empty = tmp_path / "empty.env"
     empty.touch(mode=0o600)
     spec = tmp_path / "suite.json"
     spec.write_text(json.dumps({"name": "Viewport positive control", "base_url": viewport_site,
                                "devices": [device], "scenarios": [
-        {"name": "matching native viewport", "url": "/", "settle": 0,
+        {"name": "matching native viewport", "url": "/legacy" if legacy else "/", "settle": 0,
          "about": "A matching viewport remains valid at its declared device scale.",
          "expect": {"text": "Viewport ready",
-                    "js": f"innerWidth==={width} && innerHeight==={height} && devicePixelRatio==={scale}"}}]}))
+                    "js": (f"Math.abs(innerWidth*visualViewport.scale-{width})<1 && "
+                           f"Math.abs(innerHeight*visualViewport.scale-{height})<1 && "
+                           f"devicePixelRatio==={scale}"),
+                    "says": "the page geometry matches its device scale and visual zoom"}}]}))
     env = {key: os.environ[key] for key in ("HOME", "PATH", "LANG", "PYTHONPATH") if key in os.environ}
     env.update(QAJEV_HOME=str(tmp_path / "home"), QAJEV_OUTLIVE_PARENT="1", PYTHONDONTWRITEBYTECODE="1")
     argv = [sys.executable, "-P", "-m", "qajev", "run", str(spec), "--runner", "local", "--headless",
