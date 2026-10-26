@@ -583,18 +583,26 @@ def test_cleanup_failure_does_not_replace_the_local_run_error(tmp_path, monkeypa
         assert watch.pending() == 1
 
 
-def test_missing_pending_blob_is_restaged_from_unchanged_source(tmp_path):
+@pytest.mark.parametrize("restart", [False, True])
+def test_missing_pending_blob_is_restaged_from_unchanged_source(tmp_path, restart):
     report(tmp_path / "home", tmp_path / "reports")
+
+    def verify_repair(watch, missing):
+        assert watch.inventory()["pending"] == 1
+        assert missing.is_file(), "An unchanged pending snapshot did not repair its missing blob"
+        assert watch._blob_bytes == sum(path.stat().st_size for path in watch.blob_dir.iterdir())
+        assert watch.flush(Server())["acknowledged"] == 1
+        assert watch._blob_bytes == 0
+
     with observer(tmp_path) as watch:
         watch.inventory()
         missing = next(watch.blob_dir.iterdir())
-    missing.unlink()
-    with observer(tmp_path) as reopened:
-        assert reopened.inventory()["pending"] == 1
-        assert missing.is_file(), "An unchanged pending snapshot did not repair its missing blob"
-        assert reopened._blob_bytes == sum(path.stat().st_size for path in reopened.blob_dir.iterdir())
-        assert reopened.flush(Server())["acknowledged"] == 1
-        assert reopened._blob_bytes == 0
+        missing.unlink()
+        if not restart:
+            verify_repair(watch, missing)
+    if restart:
+        with observer(tmp_path) as reopened:
+            verify_repair(reopened, missing)
 
 
 def test_missing_pending_blob_without_source_has_safe_local_run_error(tmp_path):
@@ -623,3 +631,25 @@ def test_second_observer_cannot_prune_an_owners_uncheckpointed_blob(tmp_path):
             with observer(tmp_path):
                 pass
         assert (watch.blob_dir / sha).read_bytes() == b"in-flight synthetic snapshot"
+
+
+@pytest.mark.parametrize("kind", ["hash", "symlink"])
+def test_pruning_refuses_invalid_hashes_and_symlinks(tmp_path, kind):
+    report(tmp_path / "home", tmp_path / "reports")
+    outside = tmp_path / "state/outside.txt"
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        outside.write_bytes(b"outside the blob directory")
+        row = watch.db.execute("SELECT record FROM outbox WHERE id='job-1'").fetchone()
+        record = json.loads(row[0])
+        if kind == "hash":
+            record["files"][0]["sha256"] = "../outside.txt"
+        else:
+            blob = watch.blob_dir / record["files"][0]["sha256"]
+            blob.unlink()
+            blob.symlink_to(outside)
+        with watch._write():
+            watch.db.execute("UPDATE outbox SET record=?,acknowledged=1 WHERE id='job-1'", [json.dumps(record)])
+        with pytest.raises(ObserverError):
+            watch._prune_confirmed()
+        assert outside.read_bytes() == b"outside the blob directory"

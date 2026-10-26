@@ -266,13 +266,14 @@ class Observer:
         return (file.read_bytes() for file in self.blob_dir.iterdir())
 
     def _prune_confirmed(self) -> None:
-        """Release confirmed bytes only after the checkpoint commits; pending references always win."""
+        """Under the outbox lock, release confirmed and unreferenced blobs; pending references always win."""
         confirmed, pending = set(), set()
         for acknowledged, raw in self.db.execute("SELECT acknowledged,record FROM outbox"):
             hashes = {file["sha256"] for file in json.loads(raw)["files"]}
             (confirmed if acknowledged else pending).update(hashes)
+        stored = {path.name for path in self.blob_dir.iterdir() if re.fullmatch(r"[0-9a-f]{64}", path.name)}
         removed = False
-        for sha in confirmed - pending:
+        for sha in (confirmed | stored) - pending:
             if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
                 raise ObserverError("The outbox contains an invalid evidence identity.")
             path = self.blob_dir / sha
@@ -360,11 +361,16 @@ class Observer:
                    "reason": sanitize_text(str(data.get("error") or data.get("reason") or ""), 4000)}}
         raw = json.dumps(rec, ensure_ascii=False, sort_keys=True)
         digest = hashlib.sha256(raw.encode()).hexdigest()
-        previous = self.db.execute("SELECT record,digest FROM outbox WHERE id=?", [local]).fetchone()
+        previous = self.db.execute("SELECT record,digest,acknowledged FROM outbox WHERE id=?", [local]).fetchone()
         if previous and json.loads(previous[0])["gate"] in ENDED and rec["gate"] not in ENDED:
             return len(missing)
         if previous and previous[1] == digest:
-            return len(missing)
+            if previous[2] or all((self.blob_dir / file["sha256"]).is_file() for file in files):
+                return len(missing)
+            retained = list(self.blob_dir.rglob("*"))
+            if any(path.is_symlink() for path in retained):
+                raise ObserverError("The outbox must not contain symlinks.")
+            self._blob_bytes = sum(path.stat().st_size for path in retained if path.is_file())
         # Compare the full snapshot before writing bytes. An unchanged acknowledged report must
         # not recreate its pruned blobs on every poll. Only one file is held in memory at a time.
         for file in files:
@@ -444,8 +450,12 @@ class Observer:
                 except ObserverError as failure:
                     raise ObserverError(f"Local run {local!r}: {failure}") from None
                 acknowledged += 1
-        finally:
-            self._prune_confirmed()
+        except BaseException:
+            # Cleanup must still run after a failed upload, without hiding that run's original error.
+            with contextlib.suppress(Exception):
+                self._prune_confirmed()
+            raise
+        self._prune_confirmed()
         return {"acknowledged": acknowledged, "pending": self.pending()}
 
     def _flush_record(self, client, local: str, digest: str, raw: str) -> None:
@@ -462,7 +472,10 @@ class Observer:
             if item.get("run") != cloud or item.get("path") not in files:
                 raise ObserverError("The endpoint requested foreign evidence.")
             file = files[item["path"]]
-            content = (self.blob_dir / file["sha256"]).read_bytes()
+            try:
+                content = (self.blob_dir / file["sha256"]).read_bytes()
+            except OSError:
+                raise ObserverError("Durable evidence is unreadable or missing; the run remains pending.") from None
             if hashlib.sha256(content).hexdigest() != file["sha256"]:
                 raise ObserverError("Durable evidence changed; the run remains pending.")
             client.upload(cloud, item["path"], content, file["sha256"])
