@@ -29,6 +29,9 @@ Local browser runs can overlap with `--browser-runs N` or `QAJEV_BROWSER_RUNS=N`
 Each parallel run owns a fresh Chrome profile, debug port and temporary directory. Extra runs queue;
 available RAM can reduce admission. [Limits, timing and examples](docs/cli.md#parallel-browser-runs).
 
+Registered-machine observation is opt-in and requires the companion Cloud registration API. It publishes local
+results without starting suites or model calls. [Inventory, credential placement and durable uploads](docs/manual/registered-observer.md).
+
 - **Plain-language tests.** No selectors to maintain. "Find the refund policy. Stop when the number of days is
   visible." still works after a redesign.
 - **Verdicts you can trust.** Jev saying "done" is never proof: your expectations decide. And a problem with the

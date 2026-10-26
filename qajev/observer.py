@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib import error, parse, request
 
-from qajev_upload_privacy import sanitize_text, sanitize_upload
+from qajev_upload_privacy import sanitize_request, sanitize_text, sanitize_upload
 
 from .report_files import image_paths, relative
 
@@ -62,6 +62,7 @@ class Client:
         self._opener = request.build_opener(request.ProxyHandler({}), _NoRedirect())
 
     def _send(self, method: str, path: str, body: bytes, headers=None) -> dict:
+        body = sanitize_request(method, path, body)
         req = request.Request(self.base + path, data=body, method=method, headers={
             "authorization": "Bearer " + self._credential, **(headers or {}),
         })
