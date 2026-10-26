@@ -75,7 +75,7 @@ def python_routes(source, filename):
                 name = item.func.attr if isinstance(item.func, ast.Attribute) else getattr(item.func, 'id', '')
                 if name in METHODS and item.args:
                     register(METHODS[name], item.args[0], bindings)
-                elif name in ('_call', '_once', 'sanitize_request') and len(item.args) >= 2:
+                elif name in ('_call', '_once', '_send', 'sanitize_request') and len(item.args) >= 2:
                     register(shape(item.args[0], bindings), item.args[1], bindings)
                 elif name == 'Request':
                     keywords = {kw.arg: kw.value for kw in item.keywords}
@@ -221,6 +221,7 @@ class RoutePrivacyInventoryTest(unittest.TestCase):
         samples = [
             'def send(client):\n client.post("/api/v1/future/status", {})\n',
             'def send(alias):\n path = f"/api/v1/future/{1}/status"\n alias._call("POST", path, body={})\n',
+            'def send(alias):\n alias._send("POST", "/api/v1/future/status", b"{}")\n',
         ]
         for source in samples:
             with self.subTest(source=source), self.assertRaisesRegex(AssertionError, 'unclassified'):
