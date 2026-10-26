@@ -230,3 +230,26 @@ def test_http_redirect_never_forwards_machine_credential(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_observation_transport_sanitizes_metadata_before_outbound_request(tmp_path):
+    import io
+
+    from qajev.observer import Client
+
+    credential = tmp_path / "machine.credential"
+    credential.write_text("qjm_" + "fake-fixture-credential" * 2)
+    credential.chmod(0o600)
+    client = Client("https://cloud.example.test", credential)
+    captured = []
+
+    class Endpoint:
+        def open(self, outgoing, **_kwargs):
+            captured.append(outgoing.data)
+            return io.BytesIO(b"{}")
+
+    client._opener = Endpoint()
+    client.observe({"report": {"source": "/Users/private-observer-fixture/reports/run.json"}})
+    assert len(captured) == 1
+    assert b"private-observer-fixture" not in captured[0]
+    assert b"qjm_" not in captured[0]

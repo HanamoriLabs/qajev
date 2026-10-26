@@ -28,6 +28,8 @@ FAULTS = [
      "test_machine_credential_must_be_private_owned_regular_and_not_a_symlink"),
     ("O10", 'request.ProxyHandler({}), _NoRedirect()', 'request.ProxyHandler({})',
      "test_http_redirect_never_forwards_machine_credential"),
+    ("O11", 'body = sanitize_request(method, path, body)', 'body = body',
+     "test_observation_transport_sanitizes_metadata_before_outbound_request"),
 ]
 
 

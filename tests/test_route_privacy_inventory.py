@@ -221,6 +221,7 @@ class RoutePrivacyInventoryTest(unittest.TestCase):
         samples = [
             'def send(client):\n client.post("/api/v1/future/status", {})\n',
             'def send(alias):\n path = f"/api/v1/future/{1}/status"\n alias._call("POST", path, body={})\n',
+            'def send(alias):\n alias._send("POST", "/api/v1/future/status", b"{}")\n',
         ]
         for source in samples:
             with self.subTest(source=source), self.assertRaisesRegex(AssertionError, 'unclassified'):
