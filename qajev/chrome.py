@@ -7,6 +7,7 @@ and stopping kills that exact pid only. Chrome runs at low priority because the 
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -139,8 +140,6 @@ def _switch_name(value):
 def flags():
     """QAJev's Chrome flags plus $QAJEV_CHROME_FLAGS (e.g. --no-sandbox in Docker or on CI runners that block user
     namespaces, where Chrome otherwise stops with "No usable sandbox!")."""
-    import shlex
-
     # Chromium trims each argument before parsing its switch prefix, including quoted arguments.
     extra = [value.strip() for value in shlex.split(os.environ.get("QAJEV_CHROME_FLAGS", ""))]
     if any(_switch_name(value) in {"gcm-checkin-url", "gcm-registration-url", "gcm-mcs-endpoint"}
@@ -291,7 +290,8 @@ def start(profile="default", *, headless=False, port=None, ephemeral=False, visi
             if running[0].get("background_services_disabled") is not True:
                 raise ChromeError("Restart this QAJev Chrome profile to disable its background services")
             if running[0].get("environment_isolated") is not True:
-                raise ChromeError("Restart this QAJev Chrome profile to isolate its environment")
+                command = shlex.join(["qajev", "browser", "stop", "--profile", profile])
+                raise ChromeError(f"Restart this QAJev Chrome profile to isolate its environment: run {command}")
             return running[0]
     # A loaded machine (load 300+) has taken over 30 s to open the debugging port.
     wait = wait or float(os.environ.get("QAJEV_CHROME_START_WAIT", "60"))
