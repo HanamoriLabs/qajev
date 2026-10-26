@@ -28,6 +28,7 @@ class Server:
     def __init__(self):
         self.rows = {}
         self.files = {}
+        self.contents = {}
         self.uploads = 0
         self.disconnect = False
 
@@ -46,6 +47,7 @@ class Server:
         if self.disconnect:
             raise ObserverError("synthetic disconnect")
         self.files[(run, name)] = sha
+        self.contents[(run, name)] = content
 
 
 def observer(tmp_path, home=None, roots=None):
@@ -122,7 +124,7 @@ def test_evidence_never_reads_a_symlink_or_unapproved_report_root(tmp_path, esca
         watch.flush(server)
         row = next(iter(server.rows.values()))
         assert row["report"]["missing_evidence"]
-        assert all(b"DO-NOT-UPLOAD" not in blob for blob in watch.blobs())
+        assert all(b"DO-NOT-UPLOAD" not in blob for blob in server.contents.values())
 
 
 def test_backfill_reports_without_jobs_and_missing_images_are_explicit(tmp_path):
@@ -282,7 +284,7 @@ def test_early_harness_without_output_directory_keeps_full_selected_job_result(t
         row = server.rows["qms_early"]
         assert row["report"]["reason"].startswith("failure detail")
         assert [file["path"] for file in row["files"]] == ["report.json"]
-        assert any(json.loads(blob) == data for blob in watch.blobs())
+        assert json.loads(server.contents[("qms_early", "report.json")]) == data
 
 
 def test_outbox_cap_refuses_next_blob_before_any_bytes_are_written(tmp_path):
@@ -381,3 +383,89 @@ def test_invalid_effect_metadata_becomes_missing_evidence_without_a_traceback(tm
         server = Server()
         watch.flush(server)
         assert server.rows["qms_job-1"]["report"]["missing_evidence"] == ["invalid image evidence metadata"]
+
+
+def test_confirmed_upload_prunes_blobs_without_restaging_unchanged_inventory(tmp_path, monkeypatch):
+    report(tmp_path / "home", tmp_path / "reports")
+    server = Server()
+    with observer(tmp_path) as watch:
+        before = watch.inventory()
+        assert before["blob_bytes"] > 0
+        assert watch.flush(server)["acknowledged"] == 1
+        assert list(watch.blob_dir.iterdir()) == [], "Confirmed evidence still occupies the outbox"
+
+        def no_restage(_content):
+            pytest.fail("Unchanged confirmed evidence was copied back into the outbox")
+
+        monkeypatch.setattr(watch, "_blob", no_restage)
+        after = watch.inventory()
+        assert after["blob_bytes"] == 0 and after["pending"] == 0
+        assert after["outbox_bytes"] < before["outbox_bytes"]
+        assert watch.flush(server)["acknowledged"] == 0
+    with observer(tmp_path) as reopened:
+        assert reopened.inventory()["blob_bytes"] == 0
+        assert reopened.pending() == 0
+
+
+def test_unconfirmed_manifest_keeps_every_blob_for_retry(tmp_path):
+    report(tmp_path / "home", tmp_path / "reports")
+    server = Server()
+    server.upload = lambda *_: None
+    with observer(tmp_path) as watch:
+        before = watch.inventory()
+        hashes = {path.name for path in watch.blob_dir.iterdir()}
+        with pytest.raises(ObserverError, match="missing"):
+            watch.flush(server)
+        assert {path.name for path in watch.blob_dir.iterdir()} == hashes
+        assert watch._blob_bytes == before["blob_bytes"] and watch.pending() == 1
+        assert watch.flush(Server())["acknowledged"] == 1
+        assert watch._blob_bytes == 0
+
+
+def test_confirmed_pruning_preserves_blobs_shared_with_pending_runs(tmp_path):
+    report(tmp_path / "home", tmp_path / "reports", "a-confirmed")
+    job, run, _ = report(tmp_path / "home", tmp_path / "reports", "b-pending")
+    # Both reports use the same HTML/Markdown content-addressed blob.
+    server = Server()
+    observe = server.observe
+
+    def refuse_second(record):
+        if record["id"] == "b-pending":
+            raise ObserverError("synthetic refusal")
+        return observe(record)
+
+    server.observe = refuse_second
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        raw = watch.db.execute("SELECT record FROM outbox WHERE id='b-pending'").fetchone()[0]
+        pending_hashes = {file["sha256"] for file in json.loads(raw)["files"]}
+        with pytest.raises(ObserverError, match="b-pending"):
+            watch.flush(server)
+        assert watch.pending() == 1
+        assert {path.name for path in watch.blob_dir.iterdir()} == pending_hashes
+        assert watch._blob_bytes == sum(path.stat().st_size for path in watch.blob_dir.iterdir())
+    import shutil
+    shutil.rmtree(job)
+    shutil.rmtree(run)
+    server.observe = observe
+    with observer(tmp_path) as reopened:
+        assert reopened.flush(server)["acknowledged"] == 1
+        assert reopened.pending() == 0 and reopened._blob_bytes == 0
+
+
+def test_restart_reclaims_confirmed_blobs_after_interrupted_cleanup(tmp_path, monkeypatch):
+    report(tmp_path / "home", tmp_path / "reports")
+    with observer(tmp_path) as watch:
+        watch.inventory()
+
+        def interrupted_cleanup():
+            raise OSError("synthetic cleanup interruption")
+
+        monkeypatch.setattr(watch, "_prune_confirmed", interrupted_cleanup, raising=False)
+        with pytest.raises(OSError, match="cleanup interruption"):
+            watch.flush(Server())
+        assert watch.pending() == 0
+        assert watch._blob_bytes > 0
+    with observer(tmp_path) as reopened:
+        assert list(reopened.blob_dir.iterdir()) == []
+        assert reopened.inventory()["blob_bytes"] == 0 and reopened.pending() == 0
