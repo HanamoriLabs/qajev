@@ -115,8 +115,9 @@ def test_runtime_allowlist_is_exact_and_does_not_mutate_the_parent(monkeypatch, 
     env = chrome.child_env(temporary=tmp_path / "owned-temp")
     assert all(env.get(name) == value for name, value in allowed.items())
     assert not set(env).intersection(FORBIDDEN)
-    assert env["TMPDIR"] == env["TMP"] == env["TEMP"] == str(tmp_path / "owned-temp")
-    assert dict(os.environ) == before
+    assert all(env.get(name) == str(tmp_path / "owned-temp") for name in ("TMPDIR", "TMP", "TEMP"))
+    parent_unchanged = dict(os.environ) == before
+    assert parent_unchanged, "Chrome environment construction changed the parent"
 
 
 @pytest.mark.parametrize("marker", [None, False, "true"])
