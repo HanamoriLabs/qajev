@@ -22,6 +22,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Spawned scenario workers can restore a trusted provider integration before executing checks. The companion
+  Cloud runner uses this to preserve dashboard model routing with `--jobs` above one, without putting a job token
+  in worker arguments or reports.
 - Planted-fault guidance names the actual `graded: "pass"` and `graded: "fail"` values in CLI help, MCP,
   reports and documentation. Evaluation and report grades are unchanged.
 - Chrome web scenarios measure page geometry and an actual capture before checks or hooks, including when

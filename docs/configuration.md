@@ -1,5 +1,11 @@
 # Configuration
 
+Parallel scenario workers use fresh Python processes. Trusted provider integrations can register an importable
+worker bootstrap to restore their model route before any scenario executes. It carries routing metadata only;
+authorization is read inside the worker. This preserves dashboard routing for Cloud runs with `--jobs` above one
+when the companion Cloud runner supports the bootstrap. Local provider selection, flags and report fields are
+unchanged.
+
 Most people only set one API key. Everything else has a sensible default.
 
 ## Where settings are read from

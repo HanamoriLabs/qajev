@@ -723,9 +723,11 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
 _shared_cost = None
 
 
-def _init_worker(shared):
+def _init_worker(shared, provider_bootstrap=None):
     global _shared_cost
     _shared_cost = shared
+    if provider_bootstrap is not None:
+        provider_bootstrap()
 
 
 def _worker(payload):
@@ -893,7 +895,7 @@ def run(suite, opts):
             payloads = [(chain, opts_dict, cdp_url, suite_meta, run_dir, cap, opts.typesafe_usd_per_call)
                         for chain in chains]
             with ProcessPoolExecutor(max_workers=min(opts.jobs, len(chains)), mp_context=ctx,
-                                     initializer=_init_worker, initargs=(shared,)) as pool:
+                                     initializer=_init_worker, initargs=(shared, providers.WORKER_BOOTSTRAP)) as pool:
                 futures = {pool.submit(_worker, p): p[0] for p in payloads}
                 for future in as_completed(futures):
                     try:
