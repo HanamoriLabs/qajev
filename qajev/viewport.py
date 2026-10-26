@@ -6,6 +6,7 @@ import math
 from PIL import Image
 
 MEASURE = """({innerWidth,innerHeight,devicePixelRatio,
+  clientWidth:document.documentElement.clientWidth,clientHeight:document.documentElement.clientHeight,
   visualViewport:visualViewport?{width:visualViewport.width,height:visualViewport.height,
     scale:visualViewport.scale}:null})"""
 
@@ -33,7 +34,8 @@ def verify(before, after, raw, device, *, target=None, session=None):
         refuse("viewport geometry unavailable: no valid requested device")
     for view in (before, after):
         if (not isinstance(view, dict)
-                or not all(_positive(view.get(k)) for k in ("innerWidth", "innerHeight", "devicePixelRatio"))
+                or not all(_positive(view.get(k)) for k in (
+                    "innerWidth", "innerHeight", "clientWidth", "clientHeight", "devicePixelRatio"))
                 or not isinstance(view.get("visualViewport"), dict)
                 or not all(_positive(view["visualViewport"].get(k)) for k in ("width", "height", "scale"))):
             refuse("viewport geometry unavailable: page dimensions or visual scale could not be measured")
@@ -45,18 +47,24 @@ def verify(before, after, raw, device, *, target=None, session=None):
         raise ViewportMismatch("viewport geometry unavailable: no valid captured image", evidence) from error
     evidence["capture_pixels"] = list(pixels)
     scale = after["visualViewport"]["scale"]
-    effective = (after["innerWidth"] * scale, after["innerHeight"] * scale)
+    # The visual viewport excludes classic scrollbars. Root client dimensions measure their CSS gutters.
+    gutters = (max(0, after["innerWidth"] - after["clientWidth"]),
+               max(0, after["innerHeight"] - after["clientHeight"]))
+    effective = (after["visualViewport"]["width"] * scale + gutters[0],
+                 after["visualViewport"]["height"] * scale + gutters[1])
+    evidence["scrollbar_css"] = list(gutters)
     evidence["effective_css"] = list(effective)
     expected = tuple(int(math.floor(device[k] * device.get("scale", 1) + .5)) for k in ("width", "height"))
     changed = before != after
-    # Chrome rounds layout innerHeight to an integer when a mobile page without a viewport meta tag is scaled.
-    tolerance = scale if scale < 1 else 0
+    # Fractional CSS dimensions and visual scale can round by less than half a native capture pixel.
+    tolerance = .5 / device.get("scale", 1)
     matches = (all(abs(got - device[key]) <= tolerance for got, key in zip(effective, ("width", "height")))
                and math.isclose(after["devicePixelRatio"], device.get("scale", 1), rel_tol=0, abs_tol=1e-6)
                and pixels == expected)
     if changed or not matches:
         reason = (f"viewport mismatch: page {after['innerWidth']:g} x {after['innerHeight']:g} CSS px, "
-                  f"visual scale {scale:g}, DPR {after['devicePixelRatio']:g}; "
+                  f"visual {after['visualViewport']['width']:g} x {after['visualViewport']['height']:g} "
+                  f"at scale {scale:g}, DPR {after['devicePixelRatio']:g}; "
                   f"capture {pixels[0]} x {pixels[1]} px; requested {device['width']:g} x {device['height']:g} "
                   f"CSS px at {device.get('scale', 1):g}x")
         if changed:

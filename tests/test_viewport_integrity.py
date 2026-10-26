@@ -10,7 +10,7 @@ from PIL import Image
 from qajev import clients, runner, session, suite, verdict, viewport
 
 
-def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scale=1, zoom=1):
+def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scale=1, zoom=1, measured=None):
     stream = io.BytesIO()
     Image.new("RGB", image_size, (19, 47, 83)).save(stream, format="PNG")
     encoded = base64.b64encode(stream.getvalue()).decode()
@@ -19,10 +19,10 @@ def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scal
     def cdp(method, **params):
         seen["calls"].append((method, params))
         if method == "Runtime.evaluate":
-            return {"result": {"value": {"width": inner[0], "height": inner[1], "scale": scale,
-                                           "innerWidth": inner[0], "innerHeight": inner[1],
-                                           "devicePixelRatio": scale,
-                                           "visualViewport": {"width": inner[0], "height": inner[1], "scale": zoom}}}}
+            return {"result": {"value": measured if measured is not None else {
+                "innerWidth": inner[0], "innerHeight": inner[1],
+                "clientWidth": inner[0], "clientHeight": inner[1], "devicePixelRatio": scale,
+                "visualViewport": {"width": inner[0], "height": inner[1], "scale": zoom}}}}
         if method == "Page.captureScreenshot":
             return {"data": encoded}
         return {}
@@ -142,6 +142,7 @@ def png(size=(1280, 900)):
 
 def geometry(width=1280, height=900, dpr=1, zoom=1):
     return {"innerWidth": width, "innerHeight": height, "devicePixelRatio": dpr,
+            "clientWidth": width, "clientHeight": height,
             "visualViewport": {"width": width, "height": height, "scale": zoom}}
 
 
@@ -180,6 +181,26 @@ def test_mobile_layout_zoom_is_normalized_without_changing_the_image_or_device(m
     assert result["outcome"] == "pass", result["reason"]
     assert result["viewport"]["capture_pixels"] == [1170, 2532]
     assert result["viewport"]["after"]["innerWidth"] == 980
+
+
+def test_a_narrow_visual_viewport_cannot_hide_behind_correct_layout_dimensions(monkeypatch):
+    measured = geometry()
+    measured["visualViewport"]["width"] = 205
+    page, seen = scenario_page(monkeypatch, measured=measured)
+    result = run(page)
+    assert result["outcome"] == "harness", result["reason"]
+    assert seen["checks"] == seen["hooks"] == 0
+
+
+@pytest.mark.parametrize("zoom,gutter", [(1, 15), (2, 0)])
+def test_scrollbars_and_pinch_zoom_keep_matching_native_captures_valid(monkeypatch, zoom, gutter):
+    measured = geometry(zoom=zoom)
+    measured["clientWidth"] -= gutter
+    measured["visualViewport"] = {"width": (1280 - gutter) / zoom, "height": 900 / zoom, "scale": zoom}
+    page, _ = scenario_page(monkeypatch, inner=(1280, 900), measured=measured)
+    result = run(page)
+    assert result["outcome"] == "pass", result["reason"]
+    assert result["viewport"]["scrollbar_css"] == [gutter, 0]
 
 
 def test_a_client_with_wrong_geometry_stops_the_scenario_before_any_client_action(monkeypatch):

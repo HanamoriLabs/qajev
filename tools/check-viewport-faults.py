@@ -28,7 +28,7 @@ FAULTS = [
     ("V06-ignore-resize", V, 'changed = before != after', 'changed = False',
      "test_a_resize_during_capture_and_a_broken_image_are_refused"),
     ("V07-ignore-visual-zoom", V, 'scale = after["visualViewport"]["scale"]', 'scale = 1', MOBILE),
-    ("V08-no-layout-rounding", V, 'tolerance = scale if scale < 1 else 0', 'tolerance = 0', MOBILE),
+    ("V08-no-layout-rounding", V, 'tolerance = .5 / device.get("scale", 1)', 'tolerance = 0', MOBILE),
     ("V09-boolean-metrics", V, 'not isinstance(value, bool) and ', '',
      "test_boolean_dpr_is_invalid_even_when_true_equals_one"),
     ("V10-default-target", S,
@@ -48,6 +48,11 @@ FAULTS = [
      '"interrupted", "viewport_mismatch"}',
      'BROKEN_STOPS = {"browser_error", "hook_failed", "guard_missing", "left_site", "interrupted"}',
      "test_viewport_stop_is_harness_even_if_a_check_has_already_passed"),
+    ("V15-ignore-visual-width", V, 'after["visualViewport"]["width"] * scale + gutters[0]',
+     'after["innerWidth"]', "test_a_narrow_visual_viewport_cannot_hide_behind_correct_layout_dimensions"),
+    ("V16-ignore-scrollbar", V, 'after["visualViewport"]["width"] * scale + gutters[0]',
+     'after["visualViewport"]["width"] * scale',
+     "test_scrollbars_and_pinch_zoom_keep_matching_native_captures_valid"),
 ]
 
 
