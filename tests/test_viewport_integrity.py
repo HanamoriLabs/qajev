@@ -1,6 +1,7 @@
 """A passing script cannot validate evidence from a differently sized page viewport."""
 
 import base64
+import copy
 import io
 from types import SimpleNamespace
 
@@ -20,7 +21,7 @@ def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scal
     def cdp(method, **params):
         seen["calls"].append((method, params))
         if method == "Runtime.evaluate":
-            return {"result": {"value": view}}
+            return {"result": {"value": copy.deepcopy(view)}}
         if method == "Page.getLayoutMetrics":
             return {"cssLayoutViewport": view.get("layoutViewport")}
         if method == "Page.captureScreenshot":
@@ -66,13 +67,14 @@ def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scal
     return Page(), seen
 
 
-def run(page, *, device="desktop"):
+def run(page, *, device="desktop", shots=False, run_dir=None, looks=False):
     parsed = suite.parse({"base_url": "http://127.0.0.1", "device": device, "scenarios": [
         {"name": "viewport evidence", "url": "/fixture", "settle": 0,
-         "before": [{"js": "window.fixtureAction=true"}], "expect": {"text": "ready"}}]})
+         "before": [{"js": "window.fixtureAction=true"}],
+         "expect": {"text": "ready", **({"looks": ["the viewport is valid"]} if looks else {})}}]})
     return runner.run_scenario(page, parsed.scenarios[0],
-                               opts=runner.Options(shots=False, ux="off", load_high=None),
-                               hosts={"127.0.0.1"}, run_dir=None)
+                               opts=runner.Options(shots=shots, ux="off", load_high=None),
+                               hosts={"127.0.0.1"}, run_dir=run_dir)
 
 
 @pytest.mark.parametrize("inner", [(205, 900), (190, 900), (1280, 205)],
@@ -233,3 +235,66 @@ def test_a_client_with_wrong_geometry_stops_the_scenario_before_any_client_actio
     assert wrong_seen["hooks"] == good_seen["hooks"] == 0
     assert wrong_seen["checks"] == 0
     assert result["clients"][0]["viewport"]["capture_pixels"] == [1280, 900]
+
+
+def drift(measured):
+    measured.update(geometry(205, 900))
+
+
+def test_a_later_saved_capture_mismatch_overrides_passing_checks(monkeypatch, tmp_path):
+    measured = geometry()
+    page, seen = scenario_page(monkeypatch, inner=(1280, 900), measured=measured)
+    page.run_hook = lambda *_a: drift(measured)
+    result = run(page, shots=True, run_dir=tmp_path)
+    assert result["outcome"] == "harness" and result["stop"] == "viewport_mismatch", result["reason"]
+    assert seen["checks"] > 0, "the passing checks must actually have run before the bad capture"
+    assert result["viewport"]["before"]["innerWidth"] == 1280
+    assert result["capture_viewport"]["before"]["innerWidth"] == 205
+    assert result["shot"] is None and not list(tmp_path.glob("shots/*"))
+
+
+@pytest.mark.parametrize("kind", ["saved", "vision-jpeg", "vision-png"])
+def test_each_full_capture_refuses_drift_without_accepting_an_image(monkeypatch, tmp_path, kind):
+    page, _ = scenario_page(monkeypatch)
+    page.set_device(suite.DEVICES["desktop"])
+    with pytest.raises(viewport.ViewportMismatch, match="viewport mismatch"):
+        if kind == "saved":
+            page.screenshot(tmp_path / "bad.jpg")
+        elif kind == "vision-jpeg":
+            page.screen_image()
+        else:
+            page.screen_image_png()
+    assert not (tmp_path / "bad.jpg").exists()
+
+
+def test_a_rejected_vision_capture_is_not_retried_for_the_report(monkeypatch, tmp_path):
+    measured = geometry()
+    page, seen = scenario_page(monkeypatch, inner=(1280, 900), measured=measured)
+    page.run_hook = lambda *_a: drift(measured)
+    result = run(page, shots=True, run_dir=tmp_path, looks=True)
+    assert result["outcome"] == "harness" and result["stop"] == "viewport_mismatch", result["reason"]
+    assert sum(method == "Page.captureScreenshot" for method, _ in seen["calls"]) == 2
+    assert not list(tmp_path.glob("shots/*"))
+
+
+def test_one_clients_late_capture_fault_keeps_both_clients_cleanup(monkeypatch, tmp_path):
+    measured = geometry()
+    first, _ = scenario_page(monkeypatch, inner=(1280, 900), measured=measured)
+    second, _ = scenario_page(monkeypatch, inner=(1280, 900))
+    first.run_hook = lambda *_a: drift(measured)
+    closed = []
+    for index, page in enumerate((first, second)):
+        page.close = lambda index=index: closed.append(index)
+    pages = iter((first, second))
+    monkeypatch.setattr(session, "Session", lambda *_a, **_kw: next(pages))
+    monkeypatch.setattr(session, "Tab", lambda *_a: SimpleNamespace(close=lambda: None))
+    parsed = suite.parse({"base_url": "http://127.0.0.1", "device": "desktop", "scenarios": [
+        {"name": "late client frame", "url": "/fixture", "clients": 2, "settle": 0,
+         "steps": [{"all": {"js": "void 0"}}], "expect": {"text": "ready"}}]})
+    result = clients.run(parsed.scenarios[0], ledger=None, hosts={"127.0.0.1"}, run_dir=tmp_path,
+                         suite_meta={"headless": True, "guard": {}})
+    assert result["outcome"] == "harness" and result["stop"] == "viewport_mismatch", result["reason"]
+    assert result["clients"][0]["shot"] is None
+    assert result["clients"][0]["capture_viewport"]["before"]["innerWidth"] == 205
+    assert result["clients"][1]["shot"]
+    assert sorted(closed) == [0, 1]

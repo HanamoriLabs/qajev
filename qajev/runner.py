@@ -183,6 +183,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         session.begin_test()
     session.assists = []  # this scenario's own; a hook failing before Jev's loop must not inherit the last one's
     session.react_log, session.react_frames = [], 0  # frames and releases from react hooks, this scenario's own
+    session.last_capture_viewport = None
     session.shot_dir = run_dir / "shots" if opts.shots and run_dir else None
     session.shot_prefix = slug(scenario.name)
     quiet, load1 = wait_for_quiet(opts)
@@ -305,8 +306,11 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             else:
                 stop = "checked"
     except ViewportMismatch as e:
-        return _finish({**result, "stop": "viewport_mismatch", "viewport": e.evidence},
-                       "harness", str(e), started)
+        if "viewport" not in result:  # preflight failed before any scenario work
+            return _finish({**result, "stop": "viewport_mismatch", "viewport": e.evidence},
+                           "harness", str(e), started)
+        stop, detail = "viewport_mismatch", str(e)
+        result["capture_viewport"] = e.evidence
     except HookFailed as e:
         stop, detail = "hook_failed", str(e)
     except LeftSite as e:
@@ -323,7 +327,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
 
     checks = []
     ran = set()  # the expectations beyond the page's own that did run
-    if stop not in {"unreachable", "interrupted"} and transport_error() is None:
+    if stop not in {"unreachable", "interrupted", "viewport_mismatch"} and transport_error() is None:
         try:
             if stop != "reached" and has_page_checks(scenario.expect):
                 if not page_ok():
@@ -377,12 +381,23 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                 ran.add("command")
         except HookFailed as e:
             stop, detail = "hook_failed", str(e)
+        except ViewportMismatch as e:
+            stop, detail = "viewport_mismatch", str(e)
+            result["capture_viewport"] = e.evidence
         except (RuntimeError, ValueError, TimeoutError, OSError) as e:
             if stop in {"done", "reached", "checked", "blocked"}:
                 stop, detail = "browser_error", f"while checking: {type(e).__name__}: {e}"
-        if opts.shots and run_dir and transport_error() is None:
-            shot = session.screenshot(run_dir / "shots" / f"{slug(scenario.name)}.jpg")
-            result["shot"] = str(shot.relative_to(run_dir)) if shot else None
+        if opts.shots and run_dir and transport_error() is None and stop != "viewport_mismatch":
+            try:
+                shot = session.screenshot(run_dir / "shots" / f"{slug(scenario.name)}.jpg")
+                result["shot"] = str(shot.relative_to(run_dir)) if shot else None
+            except ViewportMismatch as e:
+                stop, detail = "viewport_mismatch", str(e)
+                result["capture_viewport"] = e.evidence
+
+    capture = getattr(session, "last_capture_viewport", None)
+    if "capture_viewport" not in result and isinstance(capture, dict):
+        result["capture_viewport"] = capture
 
     state = session.agent.state if scenario.goal else None
     if state:

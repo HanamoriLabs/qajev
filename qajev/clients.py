@@ -309,16 +309,30 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
     except Exception as e:  # noqa: BLE001 (a client that cannot even open is the run's trouble, not the product's)
         from .session import GuardMissing
 
-        stop = "guard_missing" if isinstance(e, GuardMissing) else "browser_error"
+        stop = ("guard_missing" if isinstance(e, GuardMissing) else
+                "viewport_mismatch" if isinstance(e, ViewportMismatch) else "browser_error")
         detail = f"{where}: {type(e).__name__}: {e}"[:500]
     finally:
-        if run_dir:
+        if run_dir and stop != "viewport_mismatch":
             for c in clients:
-                shot = c.session.screenshot(run_dir / "shots" / f"{_slug(scenario.name)}-{c.name}.jpg")
                 entry = next(r for r in result["clients"] if r["name"] == c.name)
-                entry["shot"] = str(shot.relative_to(run_dir)) if shot else None
+                try:
+                    shot = c.session.screenshot(run_dir / "shots" / f"{_slug(scenario.name)}-{c.name}.jpg")
+                    entry["shot"] = str(shot.relative_to(run_dir)) if shot else None
+                    capture = getattr(c.session, "last_capture_viewport", None)
+                    if isinstance(capture, dict):
+                        entry["capture_viewport"] = capture
+                except ViewportMismatch as error:
+                    stop, detail = "viewport_mismatch", f"[{c.name}] capture: {error}"
+                    entry["capture_viewport"] = error.evidence
+                    entry["shot"] = None
             result["shot"] = next((r.get("shot") for r in result["clients"] if r.get("shot")), None)
         for c in clients:
+            entry = next(r for r in result["clients"] if r["name"] == c.name)
+            entry.setdefault("shot", None)
+            capture = getattr(c.session, "last_capture_viewport", None)
+            if "capture_viewport" not in entry and isinstance(capture, dict):
+                entry["capture_viewport"] = capture
             observer = getattr(c.session, "ux_observer", None)
             if observer:
                 observer.safe(observer.finish)
