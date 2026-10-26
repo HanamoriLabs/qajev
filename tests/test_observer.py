@@ -317,7 +317,8 @@ def test_database_metadata_cannot_grow_beyond_total_outbox_cap(tmp_path):
 
     cap = 256 * 1024
     job, _, data = report(tmp_path / "home", tmp_path / "reports")
-    data["scenarios"][0]["checks"] = [{"check": "x" * 50_000, "ok": True}]
+    data["scenarios"][0]["checks"] = [{"check": "x" * 20_000, "ok": True}]
+    data["source_detail"] = "p" * 100_000  # Full artifact bytes deduplicate; each database row still costs space.
     (job / "result.json").write_text(json.dumps(data))
     with Observer(tmp_path / "home", [tmp_path / "reports"], tmp_path / "state", "fixture",
                   max_outbox_bytes=cap) as watch:
@@ -369,11 +370,13 @@ def test_invalid_effect_metadata_becomes_missing_evidence_without_a_traceback(tm
     (run / "report.json").write_text(json.dumps(data))
     with observer(tmp_path) as watch:
         failure = None
+        summary = None
         try:
             summary = watch.inventory()
         except ValueError as error:
             failure = error
         assert failure is None, "Malformed evidence stopped the whole observation cycle"
+        assert summary is not None
         assert summary["missing_evidence"] == 1
         server = Server()
         watch.flush(server)

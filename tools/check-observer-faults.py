@@ -14,7 +14,7 @@ FAULTS = [
     ("O02", 'for root in self.roots:\n            for path', 'for root in []:\n            for path',
      "test_backfill_reports_without_jobs_and_missing_images_are_explicit"),
     ("O03", 'self._set("configuration", config)',
-     'self._set("configuration", config)\n        self.db.execute("DELETE FROM outbox")\n        self.db.commit()',
+     'self._set("configuration", config)\n            self.db.execute("DELETE FROM outbox")\n            self.db.commit()',
      "test_disconnect_restart_and_source_pruning_preserve_unsent_artifacts"),
     ("O04", 'if previous and json.loads(previous[0])["gate"] in ENDED and rec["gate"] not in ENDED:', 'if False:',
      "test_live_queued_running_then_final_state_is_not_acknowledged_early"),
