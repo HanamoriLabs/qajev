@@ -8,8 +8,9 @@ import sys
 import threading
 
 import pytest
+import test_capture_latency_live as capture_fixture
 
-from test_capture_latency_live import browser  # noqa: F401
+browser = capture_fixture.browser
 
 pytestmark = pytest.mark.skipif(
     sys.platform != "linux" or os.environ.get("QAJEV_VIEWPORT_LIVE") != "1",
@@ -56,12 +57,11 @@ from qajev import cli,session
 output=Path(sys.argv[1]);width,height=map(int,sys.argv[2:4])
 normal_device=session.Session.set_device
 normal_call=session.Session.call
+normal_navigate=session.Session.navigate
 def device(self,value):
     normal_device(self,value)
     normal_call(self,'Emulation.setDeviceMetricsOverride',width=width,height=height,
                 deviceScaleFactor=1,mobile=False)
-    metrics=self.evaluate('({width:innerWidth,height:innerHeight,scale:devicePixelRatio})')
-    (output/'planted-metrics.json').write_text(json.dumps(metrics))
 def call(self,method,**params):
     if method=='Page.captureScreenshot':
         params={**params,'captureBeyondViewport':True,
@@ -71,8 +71,17 @@ def call(self,method,**params):
         pixels=Image.open(io.BytesIO(base64.b64decode(result['data']))).size
         (output/'capture-pixels.json').write_text(json.dumps(pixels))
     return result
+def navigate(self,*args,**kwargs):
+    result=normal_navigate(self,*args,**kwargs)
+    measure='({width:innerWidth,height:innerHeight,scale:devicePixelRatio})'
+    before=self.evaluate(measure)
+    self.call('Page.captureScreenshot',format='png',fromSurface=True)
+    after=self.evaluate(measure)
+    (output/'planted-metrics.json').write_text(json.dumps({'before':before,'after':after}))
+    return result
 session.Session.set_device=device
 session.Session.call=call
+session.Session.navigate=navigate
 raise SystemExit(cli.main(sys.argv[4:]))
 '''
 
@@ -99,13 +108,14 @@ def test_real_narrow_window_cli_is_harness_even_when_its_scripted_checks_hold(
         result = subprocess.run(argv, env=env, stdout=stdout, stderr=stderr, timeout=90)
     report = json.loads((tmp_path / "cli.stdout").read_text())
     metrics = json.loads((tmp_path / "planted-metrics.json").read_text())
-    assert (metrics["width"], metrics["height"]) == (width, height)
+    for view in (metrics["before"], metrics["after"]):
+        assert (view["width"], view["height"], view["scale"]) == (width, height, 1)
+    assert json.loads((tmp_path / "capture-pixels.json").read_text()) == [1280, 900]
     assert report["cost"]["calls"] == {"typesafe": 0, "text": 0}
     assert result.returncode != 0 and report["gate"] == "INCOMPLETE", "wrong viewport must not yield CLI PASS"
     row = report["scenarios"][0]
     assert row["outcome"] == "harness" and "viewport" in row["reason"].lower()
     assert str(width if width != 1280 else height) in row["reason"]
-    assert json.loads((tmp_path / "capture-pixels.json").read_text()) == [1280, 900]
 
 
 @pytest.mark.parametrize("device,width,height,scale,legacy", [
