@@ -395,7 +395,7 @@ def test_confirmed_upload_prunes_blobs_without_restaging_unchanged_inventory(tmp
         assert list(watch.blob_dir.iterdir()) == [], "Confirmed evidence still occupies the outbox"
 
         def no_restage(_content):
-            pytest.fail("Unchanged confirmed evidence was copied back into the outbox")
+            raise AssertionError("Unchanged confirmed evidence was copied back into the outbox")
 
         monkeypatch.setattr(watch, "_blob", no_restage)
         after = watch.inventory()
@@ -469,3 +469,49 @@ def test_restart_reclaims_confirmed_blobs_after_interrupted_cleanup(tmp_path, mo
     with observer(tmp_path) as reopened:
         assert list(reopened.blob_dir.iterdir()) == []
         assert reopened.inventory()["blob_bytes"] == 0 and reopened.pending() == 0
+
+
+def test_changed_confirmed_report_snapshots_new_evidence_before_upload(tmp_path):
+    job, run, data = report(tmp_path / "home", tmp_path / "reports")
+    (run / "shots").mkdir()
+    image = run / "shots/fixture.jpg"
+    image.write_bytes(b"first synthetic frame")
+    data["scenarios"][0]["shot"] = "shots/fixture.jpg"
+    (job / "result.json").write_text(json.dumps(data))
+    server = Server()
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        watch.flush(server)
+        assert watch._blob_bytes == 0
+        image.write_bytes(b"second synthetic frame")
+        watch.inventory()
+        assert watch.pending() == 1 and watch._blob_bytes > 0
+        server.disconnect = True
+        with pytest.raises(ObserverError, match="disconnect"):
+            watch.flush(server)
+        assert watch.pending() == 1 and watch._blob_bytes > 0
+        server.disconnect = False
+        assert watch.flush(server)["acknowledged"] == 1
+        assert server.contents[("qms_job-1", "shots/fixture.jpg")] == b"second synthetic frame"
+        assert watch._blob_bytes == 0
+
+
+def test_changing_evidence_during_inventory_is_not_checkpointed(tmp_path, monkeypatch):
+    _, run, _ = report(tmp_path / "home", tmp_path / "reports")
+    source = run / "report.html"
+    read_bytes = type(source).read_bytes
+    reads = []
+
+    def changing_read(path):
+        content = read_bytes(path)
+        if path == source:
+            reads.append(path)
+            if len(reads) == 1:
+                path.write_text("changed synthetic report")
+        return content
+
+    monkeypatch.setattr(type(source), "read_bytes", changing_read)
+    with observer(tmp_path) as watch:
+        with pytest.raises(ObserverError, match="evidence changed"):
+            watch.inventory()
+        assert watch.pending() == 0

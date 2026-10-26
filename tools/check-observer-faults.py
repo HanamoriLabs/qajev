@@ -43,6 +43,22 @@ FAULTS = [
      "test_permanent_refusal_identifies_the_pending_local_run"),
     ("O16", '        except ValueError:\n            images = []', '        except TypeError:\n            images = []',
      "test_invalid_effect_metadata_becomes_missing_evidence_without_a_traceback"),
+    ("O17", '    def _prune_confirmed(self) -> None:\n',
+     '    def _prune_confirmed(self) -> None:\n        return\n',
+     "test_confirmed_upload_prunes_blobs_without_restaging_unchanged_inventory"),
+    ("O18", 'for sha in confirmed - pending:', 'for sha in confirmed:',
+     "test_confirmed_pruning_preserves_blobs_shared_with_pending_runs"),
+    ("O19", 'if previous and previous[1] == digest:', 'if False:',
+     "test_confirmed_upload_prunes_blobs_without_restaging_unchanged_inventory"),
+    ("O20", 'self._set("configuration", config)\n            self._prune_confirmed()',
+     'self._set("configuration", config)',
+     "test_restart_reclaims_confirmed_blobs_after_interrupted_cleanup"),
+    ("O21", 'if hashlib.sha256(content).hexdigest() != file["sha256"]:\n'
+     '                raise ObserverError("Run evidence changed during inventory; work stays pending.")',
+     'if False:\n                raise ObserverError("Run evidence changed during inventory; work stays pending.")',
+     "test_changing_evidence_during_inventory_is_not_checkpointed"),
+    ("O22", 'if previous and previous[1] == digest:', 'if previous:',
+     "test_changed_confirmed_report_snapshots_new_evidence_before_upload"),
 ]
 
 

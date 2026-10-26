@@ -203,6 +203,7 @@ class Observer:
                 raise ObserverError("This outbox belongs to another observation configuration; "
                                     "use a new state directory.")
             self._set("configuration", config)
+            self._prune_confirmed()
         except BaseException:
             self.close()
             raise
@@ -264,6 +265,36 @@ class Observer:
     def blobs(self):
         return (file.read_bytes() for file in self.blob_dir.iterdir())
 
+    def _prune_confirmed(self) -> None:
+        """Release confirmed bytes only after the checkpoint commits; pending references always win."""
+        confirmed, pending = set(), set()
+        for acknowledged, raw in self.db.execute("SELECT acknowledged,record FROM outbox"):
+            hashes = {file["sha256"] for file in json.loads(raw)["files"]}
+            (confirmed if acknowledged else pending).update(hashes)
+        removed = False
+        for sha in confirmed - pending:
+            if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
+                raise ObserverError("The outbox contains an invalid evidence identity.")
+            path = self.blob_dir / sha
+            if path.is_symlink():
+                raise ObserverError("The outbox must not contain symlinks.")
+            try:
+                size = path.stat().st_size
+                path.unlink()
+            except FileNotFoundError:
+                continue
+            self._blob_bytes -= size
+            removed = True
+        if removed:
+            self._sync_blobs()
+
+    def _sync_blobs(self) -> None:
+        directory_fd = os.open(self.blob_dir, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
     def _blob(self, data: bytes) -> str:
         sha = hashlib.sha256(data).hexdigest()
         path = self.blob_dir / sha
@@ -282,15 +313,12 @@ class Observer:
             finally:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)
-            directory_fd = os.open(self.blob_dir, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            self._sync_blobs()
         return sha
 
     def _enqueue(self, local: str, data: dict, run: Path | None, job: dict) -> int:
         missing, files = [], []
+        sources: dict[str, Path | bytes] = {}
         try:
             images = image_paths(data)
         except ValueError:
@@ -312,7 +340,8 @@ class Observer:
             total += len(content)
             if total > MAX_RUN:
                 raise ObserverError("Run evidence exceeds the upload budget; it was not acknowledged.")
-            files.append({"path": name, "sha256": self._blob(content), "size": len(content)})
+            files.append({"path": name, "sha256": hashlib.sha256(content).hexdigest(), "size": len(content)})
+            sources[name] = path
         gate = str(data.get("gate", "harness")).lower()
         if gate in ENDED and not any(file["path"] == "report.json" for file in files):
             # A foreground configuration/harness error can have a job result but no output directory.
@@ -320,7 +349,8 @@ class Observer:
             content = sanitize_upload(json.dumps(data, ensure_ascii=False).encode())
             if len(content) > MAX_FILE:
                 raise ObserverError("The source result exceeds the report upload budget.")
-            files.append({"path": "report.json", "sha256": self._blob(content), "size": len(content)})
+            files.append({"path": "report.json", "sha256": hashlib.sha256(content).hexdigest(), "size": len(content)})
+            sources["report.json"] = content
         rec = {"id": local, "kind": "run", "project": self.project,
                "title": sanitize_text(str(data.get("suite") or job.get("title") or local), 160),
                "gate": gate if gate in ENDED | {"queued", "running"} else "harness",
@@ -330,9 +360,27 @@ class Observer:
                    "reason": sanitize_text(str(data.get("error") or data.get("reason") or ""), 4000)}}
         raw = json.dumps(rec, ensure_ascii=False, sort_keys=True)
         digest = hashlib.sha256(raw.encode()).hexdigest()
-        previous = self.db.execute("SELECT record FROM outbox WHERE id=?", [local]).fetchone()
+        previous = self.db.execute("SELECT record,digest FROM outbox WHERE id=?", [local]).fetchone()
         if previous and json.loads(previous[0])["gate"] in ENDED and rec["gate"] not in ENDED:
             return len(missing)
+        if previous and previous[1] == digest:
+            return len(missing)
+        # Compare the full snapshot before writing bytes. An unchanged acknowledged report must
+        # not recreate its pruned blobs on every poll. Only one file is held in memory at a time.
+        for file in files:
+            source = sources[file["path"]]
+            if isinstance(source, Path):
+                if not _safe_file(source, allowed) or source.stat().st_size > MAX_FILE:
+                    raise ObserverError("Run evidence changed during inventory; work stays pending.")
+                try:
+                    content = sanitize_upload(source.read_bytes())
+                except OSError:
+                    raise ObserverError("Run evidence changed during inventory; work stays pending.") from None
+            else:
+                content = source
+            if hashlib.sha256(content).hexdigest() != file["sha256"]:
+                raise ObserverError("Run evidence changed during inventory; work stays pending.")
+            self._blob(content)
         with self._write():
             self.db.execute("INSERT INTO outbox VALUES (?, ?, ?, 0) ON CONFLICT(id) DO UPDATE "
                             "SET digest=excluded.digest, record=excluded.record, acknowledged=0 "
@@ -389,12 +437,15 @@ class Observer:
         self._set("machine", identity)
         acknowledged = 0
         pending = self.db.execute("SELECT id,digest,record FROM outbox WHERE acknowledged=0 ORDER BY id").fetchall()
-        for local, digest, raw in pending:
-            try:
-                self._flush_record(client, local, digest, raw)
-            except ObserverError as failure:
-                raise ObserverError(f"Local run {local!r}: {failure}") from None
-            acknowledged += 1
+        try:
+            for local, digest, raw in pending:
+                try:
+                    self._flush_record(client, local, digest, raw)
+                except ObserverError as failure:
+                    raise ObserverError(f"Local run {local!r}: {failure}") from None
+                acknowledged += 1
+        finally:
+            self._prune_confirmed()
         return {"acknowledged": acknowledged, "pending": self.pending()}
 
     def _flush_record(self, client, local: str, digest: str, raw: str) -> None:
