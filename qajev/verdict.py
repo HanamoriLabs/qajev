@@ -15,12 +15,12 @@ OUTCOMES = ("pass", "fail", "stuck", "harness", "unverified", "skipped")
 # Stop reasons that mean the harness, not the product, ended the scenario.
 HARNESS_STOPS = {
     "budget_actions", "budget_seconds", "stale", "cost_cap", "guard_missing", "model_error", "browser_error",
-    "left_site", "hook_failed", "interrupted", "machine_busy",
+    "left_site", "hook_failed", "interrupted", "machine_busy", "viewport_mismatch",
 }
 PRODUCT_STOPS = {"done", "reached", "checked", "unreachable"}
 # Stops that mean the run broke before it finished: the checks that did run can never make it a pass. A budget or a
 # stale page is different: Jev wandered, but the page was then judged in full, so its checks still decide.
-BROKEN_STOPS = {"browser_error", "hook_failed", "guard_missing", "left_site", "interrupted"}
+BROKEN_STOPS = {"browser_error", "hook_failed", "guard_missing", "left_site", "interrupted", "viewport_mismatch"}
 SEVERITY_ORDER = {"S1": 0, "S2": 1, "S3": 2}
 BLANK_MS = 10_000
 # Chrome's errors for a server it never reached: nothing listens (a local app not started), the name does not

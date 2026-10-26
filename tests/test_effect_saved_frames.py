@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image, ImageChops, ImageStat
 
@@ -21,11 +22,13 @@ class SavedFramesPage(Session):
     def __init__(self, off, on):
         self.frames = {"off": off, "on": on}
         self.state, self.hooks, self.clips = "off", [], []
+        self.browser = SimpleNamespace(target="saved-frame", session="fixture-session")
 
     def begin_test(self): pass
     def set_color_scheme(self, scheme): pass
     def set_device(self, device):
         assert device["width"] == VIEWPORT["width"] and device["height"] == VIEWPORT["height"]
+        self.device = device
     def arm(self, mode, speech=None): pass
     def check_host(self, url): pass
     def navigate(self, url, timeout=30.0): self.url = url
@@ -34,9 +37,18 @@ class SavedFramesPage(Session):
         self.state = hook["js"]
         self.hooks.append(self.state)
     def evaluate(self, expression, timeout_ms=15000):
-        return {**VIEWPORT, "scrollX": 0, "scrollY": 0}
+        return {**VIEWPORT, "scrollX": 0, "scrollY": 0,
+                "innerWidth": VIEWPORT["width"], "innerHeight": VIEWPORT["height"], "devicePixelRatio": 1,
+                "clientWidth": VIEWPORT["width"], "clientHeight": VIEWPORT["height"],
+                "visualViewport": {**VIEWPORT, "scale": 1}}
     def call(self, method, **params):
+        if method == "Page.getLayoutMetrics":
+            return {"cssLayoutViewport": {"clientWidth": VIEWPORT["width"], "clientHeight": VIEWPORT["height"]}}
         assert method == "Page.captureScreenshot" and params["format"] == "png"
+        if "clip" not in params:
+            output = io.BytesIO()
+            self.frames[self.state].save(output, format="PNG")
+            return {"data": base64.b64encode(output.getvalue()).decode()}
         clip = params["clip"]
         self.clips.append(clip)
         x, y, width, height = (clip[key] for key in ("x", "y", "width", "height"))

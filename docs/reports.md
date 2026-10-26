@@ -51,6 +51,18 @@ dismissed. A run with `allow_destructive` opens with a red banner saying destruc
 
 ## Outcomes
 
+Chrome web scenarios keep a `viewport` record before their checks and hooks, even with `--no-shots`.
+`requested` is the device profile; `before` and `after` contain actual page layout dimensions, DPR and the
+visual viewport and Chrome layout metrics around an actual capture. `capture_pixels` is the decoded image size. Device scale and
+mobile visual zoom are accounted for before comparison. Missing geometry, disagreement or a resize during
+capture is **harness**, with no scenario actions or checks accepted. A clients scenario keeps this record
+under each client. This validates page/capture geometry; it does not judge a canvas or container's layout.
+
+Later saved or vision frames retain their own `capture_viewport` measurement. A mismatch at that capture
+ends the scenario as **harness**, even when its scripted checks have passed, and no rejected image is saved
+or judged. Reactive frame entries keep their capture-time page dimensions and image pixels under `viewport`.
+The initial preflight measurement stays in the scenario's original `viewport` object.
+
 Each scenario ends with one outcome. The most important idea in QAJev: **a failure of the product and a failure of
 the test tool are kept apart.**
 
