@@ -7,10 +7,10 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from qajev import runner, session, suite
+from qajev import clients, runner, session, suite, viewport
 
 
-def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scale=1):
+def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scale=1, zoom=1):
     stream = io.BytesIO()
     Image.new("RGB", image_size, (19, 47, 83)).save(stream, format="PNG")
     encoded = base64.b64encode(stream.getvalue()).decode()
@@ -21,7 +21,8 @@ def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scal
         if method == "Runtime.evaluate":
             return {"result": {"value": {"width": inner[0], "height": inner[1], "scale": scale,
                                            "innerWidth": inner[0], "innerHeight": inner[1],
-                                           "devicePixelRatio": scale}}}
+                                           "devicePixelRatio": scale,
+                                           "visualViewport": {"width": inner[0], "height": inner[1], "scale": zoom}}}}
         if method == "Page.captureScreenshot":
             return {"data": encoded}
         return {}
@@ -82,6 +83,9 @@ def test_mismatched_window_cannot_pass_even_when_every_scripted_check_would_pass
     assert "viewport" in result["reason"].lower()
     assert str(inner[0] if inner[0] != 1280 else inner[1]) in result["reason"]
     assert seen["checks"] == seen["hooks"] == 0, "geometry must be checked before scenario work"
+    assert result["viewport"]["capture_pixels"] == [1280, 900]
+    assert result["viewport"]["after"]["innerWidth"] == inner[0]
+    assert result["viewport"]["after"]["innerHeight"] == inner[1]
 
 
 @pytest.mark.parametrize("device,inner,scale", [
@@ -93,3 +97,74 @@ def test_native_capture_and_declared_device_scale_keep_valid_scenarios_passing(m
     result = run(page, device=device)
     assert result["outcome"] == "pass"
     assert seen["checks"] > 0 and seen["hooks"] == 1
+    assert result["viewport"]["capture_pixels"] == [inner[0] * scale, inner[1] * scale]
+
+
+@pytest.mark.parametrize("image_size,scale", [((205, 900), 1), ((1280, 205), 1), ((1280, 900), 2)])
+def test_matching_layout_cannot_hide_wrong_capture_size_or_dpr(monkeypatch, image_size, scale):
+    page, seen = scenario_page(monkeypatch, inner=(1280, 900), image_size=image_size, scale=scale)
+    result = run(page)
+    assert result["outcome"] == "harness" and "viewport" in result["reason"]
+    assert seen["checks"] == seen["hooks"] == 0
+
+
+def test_each_scenario_measures_even_when_the_device_profile_is_cached(monkeypatch):
+    page, seen = scenario_page(monkeypatch, inner=(1280, 900))
+    assert run(page)["outcome"] == run(page)["outcome"] == "pass"
+    assert sum(method == "Page.captureScreenshot" for method, _ in seen["calls"]) == 2
+
+
+def png(size=(1280, 900)):
+    output = io.BytesIO()
+    Image.new("RGB", size, (19, 47, 83)).save(output, format="PNG")
+    return output.getvalue()
+
+
+def geometry(width=1280, height=900, dpr=1, zoom=1):
+    return {"innerWidth": width, "innerHeight": height, "devicePixelRatio": dpr,
+            "visualViewport": {"width": width, "height": height, "scale": zoom}}
+
+
+@pytest.mark.parametrize("field,value", [
+    ("innerWidth", None), ("innerHeight", 0), ("devicePixelRatio", True), ("innerWidth", float("nan")),
+    ("visualViewport", None), ("visualViewport", {"width": 1280, "height": 900, "scale": 0}),
+])
+def test_missing_or_invalid_page_geometry_is_not_a_pass(field, value):
+    measured = {**geometry(), field: value}
+    with pytest.raises(viewport.ViewportMismatch, match="could not be measured"):
+        viewport.verify(measured, measured, png(), suite.DEVICES["desktop"])
+
+
+def test_a_resize_during_capture_and_a_broken_image_are_refused():
+    with pytest.raises(viewport.ViewportMismatch, match="changed during capture"):
+        viewport.verify(geometry(width=205), geometry(), png(), suite.DEVICES["desktop"])
+    with pytest.raises(viewport.ViewportMismatch, match="no valid captured image"):
+        viewport.verify(geometry(), geometry(), b"not an image", suite.DEVICES["desktop"])
+
+
+def test_mobile_layout_zoom_is_normalized_without_changing_the_image_or_device(monkeypatch):
+    page, _ = scenario_page(monkeypatch, inner=(980, 2121), image_size=(1170, 2532), scale=3, zoom=390 / 980)
+    result = run(page, device="phone")
+    assert result["outcome"] == "pass", result["reason"]
+    assert result["viewport"]["capture_pixels"] == [1170, 2532]
+    assert result["viewport"]["after"]["innerWidth"] == 980
+
+
+def test_a_client_with_wrong_geometry_stops_the_scenario_before_any_client_action(monkeypatch):
+    wrong, wrong_seen = scenario_page(monkeypatch)
+    good, good_seen = scenario_page(monkeypatch, inner=(1280, 900))
+    for page in (wrong, good):
+        page.close = lambda: None
+    pages = iter((wrong, good))
+    monkeypatch.setattr(session, "Session", lambda *_a, **_kw: next(pages))
+    monkeypatch.setattr(session, "Tab", lambda *_a: SimpleNamespace(close=lambda: None))
+    parsed = suite.parse({"base_url": "http://127.0.0.1", "device": "desktop", "scenarios": [
+        {"name": "two viewport clients", "url": "/fixture", "clients": 2, "settle": 0,
+         "steps": [{"all": {"js": "window.fixtureAction=true"}}], "expect": {"text": "ready"}}]})
+    result = clients.run(parsed.scenarios[0], ledger=None, hosts={"127.0.0.1"}, run_dir=None,
+                         suite_meta={"headless": True, "guard": {}})
+    assert result["outcome"] == "harness" and result["stop"] == "viewport_mismatch"
+    assert "[p1]" in result["reason"] and "205" in result["reason"]
+    assert wrong_seen["hooks"] == good_seen["hooks"] == 0
+    assert wrong_seen["checks"] == 0
+    assert result["clients"][0]["viewport"]["capture_pixels"] == [1280, 900]

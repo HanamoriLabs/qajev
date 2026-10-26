@@ -26,6 +26,7 @@ from qajev_upload_privacy import sanitize_text
 from . import __version__, chrome, keys, live, netlog, providers
 from . import guard as guard_mod
 from . import pad as pad_mod
+from . import viewport
 from .config import is_loopback, redact
 
 _jev = None
@@ -909,6 +910,21 @@ class Session:
         else:
             self.call("Emulation.setUserAgentOverride", userAgent="")
         self.device = device
+
+    def verify_viewport(self):
+        """Measure this target and its actual capture; a successful metrics request proves neither."""
+        import base64
+
+        before = self.evaluate(viewport.MEASURE)
+        data = self.call("Page.captureScreenshot", format="png", fromSurface=True, captureBeyondViewport=False)
+        after = self.evaluate(viewport.MEASURE)
+        try:
+            raw = base64.b64decode(data["data"], validate=True)
+        except (KeyError, TypeError, ValueError) as error:
+            raise viewport.ViewportMismatch("viewport geometry unavailable: capture returned no image",
+                                            {"before": before, "after": after}) from error
+        return viewport.verify(before, after, raw, self.device, target=getattr(self.browser, "target", None),
+                               session=getattr(self.browser, "session", None))
 
     def _own_user_agent(self, user_agent):
         """Every page says QAJev drove it: the browser's own user agent with "QAJev/<version>" on the end, so a site,

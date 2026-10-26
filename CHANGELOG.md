@@ -19,6 +19,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Chrome web scenarios measure page geometry and an actual capture before checks or hooks, including when
+  screenshots are not retained. A mismatch is harness rather than a scripted pass. Reports keep layout size,
+  visual viewport, DPR and capture pixels; mobile layout zoom and declared device scale are accounted for.
 - Headless mouse presses activate their receiving tab before input, including direct Jev actions. Background
   canvases can acquire real pointer lock after a trusted press instead of reporting `WrongDocumentError` while
   focus emulation says the page is focused. Permission denials and headed-window focus policy remain unchanged.

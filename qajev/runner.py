@@ -176,6 +176,7 @@ def _effect_check(session, scenario, run_dir, url):
 
 def run_scenario(session, scenario, *, opts, hosts, run_dir):
     from .session import GuardMissing, HookFailed, LeftSite, require_transport, transport_error
+    from .viewport import ViewportMismatch
 
     started = time.monotonic()
     if hasattr(session, "begin_test"):  # the last test's page: its frames were named under that test
@@ -265,6 +266,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if error:
                 stop, detail = "unreachable", error
         if stop is None:
+            if hasattr(session, "verify_viewport"):
+                result["viewport"] = session.verify_viewport()
             if ux_observer:
                 ux_observer.safe(ux_observer.start)
             # What it is doing, for the dashboard and qajev top, while a slow check runs in the page (a script that
@@ -301,6 +304,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                     stop, detail = drive(session, scenario, read, page_ok, started, step, decided, held=held)
             else:
                 stop = "checked"
+    except ViewportMismatch as e:
+        return _finish({**result, "stop": "viewport_mismatch", "viewport": e.evidence},
+                       "harness", str(e), started)
     except HookFailed as e:
         stop, detail = "hook_failed", str(e)
     except LeftSite as e:

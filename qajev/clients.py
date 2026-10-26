@@ -146,11 +146,13 @@ def _trim(snaps):
 def _first_error(results, where):
     """The first client error in a together() round, as (stop, detail), or None."""
     from .session import GuardMissing, HookFailed, LeftSite
+    from .viewport import ViewportMismatch
 
     for name, _value, error in results:
         if error is None:
             continue
-        stop = {HookFailed: "hook_failed", GuardMissing: "guard_missing", LeftSite: "left_site"}.get(
+        stop = {HookFailed: "hook_failed", GuardMissing: "guard_missing", LeftSite: "left_site",
+                ViewportMismatch: "viewport_mismatch"}.get(
             type(error), "browser_error")
         text = str(error) if stop != "browser_error" else f"{type(error).__name__}: {error}"
         return stop, f"[{name}] {where}: {text}"[:500]
@@ -160,6 +162,7 @@ def _first_error(results, where):
 def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
     """Run a scenario with clients. -> its result (outcome, reason, checks, findings, per-client shots and states)."""
     from . import session as session_mod
+    from .viewport import ViewportMismatch
 
     step = step or (lambda doing: None)
     started = time.monotonic()
@@ -226,6 +229,13 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
             error = c.session.navigate(c.url)
             if error:
                 raise RuntimeError(f"page did not load: {error}")
+            if hasattr(c.session, "verify_viewport"):
+                entry = next(row for row in result["clients"] if row["name"] == c.name)
+                try:
+                    entry["viewport"] = c.session.verify_viewport()
+                except ViewportMismatch as error:
+                    entry["viewport"] = error.evidence
+                    raise
             if observer:
                 observer.safe(observer.start)
             observed = absorb(c, c.session.probe(page_expect))
