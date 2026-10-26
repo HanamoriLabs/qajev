@@ -13,6 +13,7 @@ from pathlib import Path
 UNIT = "tests/test_chrome_environment.py::"
 REGRESSION = UNIT + "test_local_jobs_keep_credentials_out_of_the_launched_chrome"
 RUNTIME = UNIT + "test_runtime_allowlist_is_exact_and_does_not_mutate_the_parent"
+SHELL = UNIT + "test_restart_command_reaches_the_real_parser_without_shell_expansion"
 C, S = "qajev/chrome.py", "qajev/session.py"
 FAULTS = [
     ("E01-inherit-default", C, '    env = child_env(temporary=temporary)',
@@ -44,9 +45,19 @@ FAULTS = [
      '                raise ChromeError("Restart this QAJev Chrome profile to isolate its environment")',
      UNIT + 'test_legacy_browser_names_a_shell_safe_stop_command[fixture]'),
     ("E12-unquoted-profile", C,
-     '                command = shlex.join(["qajev", "browser", "stop", "--profile", profile])',
-     '                command = "qajev browser stop --profile " + profile',
+     '                command = shlex.join(["qajev", "browser", "stop", f"--profile={profile}"])',
+     '                command = "qajev browser stop --profile=" + profile',
      UNIT + "test_legacy_browser_names_a_shell_safe_stop_command[fixture's browser]"),
+    ("E13-separate-profile-value", C,
+     '                command = shlex.join(["qajev", "browser", "stop", f"--profile={profile}"])',
+     '                command = shlex.join(["qajev", "browser", "stop", "--profile", profile])',
+     SHELL + '[-x]'),
+    ("E14-double-quote-profile", C,
+     '                command = shlex.join(["qajev", "browser", "stop", f"--profile={profile}"])',
+     '                command = "qajev browser stop " + json.dumps(f"--profile={profile}")',
+     SHELL + '[a $(b)]'),
+    ("E15-allow-all-proxy", C, '"PATH", "HOME", "USER", "LOGNAME",',
+     '"ALL_PROXY", "PATH", "HOME", "USER", "LOGNAME",', REGRESSION + '[False-2]'),
 ]
 
 
@@ -91,9 +102,16 @@ def main():
             assert control["exit"] == 0 and control["failures"] == 0, control
             try:
                 target.write_text(original.decode().replace(before, after, 1))
+                tokenizer = None
+                if name == "E14-double-quote-profile":
+                    tokenizer = run(name + "-tokenizer",
+                                    UNIT + "test_legacy_browser_names_a_shell_safe_stop_command")
+                    assert tokenizer["exit"] == 0 and tokenizer["failures"] == 0, tokenizer
                 fault = run(name + "-fault", test)
                 assert fault["exit"] == 1 and fault["assertion"], fault
                 rows.append({"fault": name, "test": test, "control": control, "fault_result": fault})
+                if tokenizer is not None:
+                    rows[-1]["tokenizer_test_blind_to_expansion"] = tokenizer
             finally:
                 target.write_bytes(original)
     finally:

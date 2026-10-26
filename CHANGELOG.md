@@ -25,8 +25,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - Managed Chrome now starts with a fixed runtime environment allowlist, excluding model credentials and arbitrary
   application variables in serial and parallel jobs. Existing profiles without the isolation marker require a
   browser restart. Command-hook behavior and its `--allow-commands` gate are unchanged.
-  The restart refusal names the profile's `qajev browser stop --profile NAME` command.
-  On Linux, `http_proxy`, `https_proxy`, `no_proxy` and `LD_LIBRARY_PATH` no longer reach managed Chrome;
+  The restart refusal names the profile's `qajev browser stop --profile=NAME` command. The whole option is
+  shell-quoted when needed, preserving leading dashes and shell syntax in the profile name.
+  On Linux, `http_proxy`, `HTTP_PROXY`, `https_proxy`, `HTTPS_PROXY`, `no_proxy`, `NO_PROXY`, `all_proxy`,
+  `ALL_PROXY` and `LD_LIBRARY_PATH` no longer reach managed Chrome;
   proxy URLs can contain passwords. Use `QAJEV_CHROME_FLAGS=--proxy-server=http://127.0.0.1:8080` for a
   proxy without credentials.
 - Spawned scenario workers can restore a trusted provider integration before executing checks. The companion
