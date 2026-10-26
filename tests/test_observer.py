@@ -515,3 +515,111 @@ def test_changing_evidence_during_inventory_is_not_checkpointed(tmp_path, monkey
         with pytest.raises(ObserverError, match="evidence changed"):
             watch.inventory()
         assert watch.pending() == 0
+
+
+def test_superseded_pending_snapshot_releases_its_old_blob(tmp_path):
+    job, run, data = report(tmp_path / "home", tmp_path / "reports")
+    (run / "shots").mkdir()
+    image = run / "shots/fixture.jpg"
+    image.write_bytes(b"first synthetic frame")
+    data["scenarios"][0]["shot"] = "shots/fixture.jpg"
+    (job / "result.json").write_text(json.dumps(data))
+    server = Server()
+    with observer(tmp_path) as watch:
+        watch.inventory()                     # v1 pending, never uploaded (offline)
+        image.write_bytes(b"second synthetic frame")
+        watch.inventory()                     # v2 replaces v1 while still pending
+        assert watch.flush(server)["acknowledged"] == 1
+        assert server.contents[("qms_job-1", "shots/fixture.jpg")] == b"second synthetic frame"
+        left = sorted(p.name for p in watch.blob_dir.iterdir())
+        assert left == [], f"superseded blobs left in the outbox: {len(left)}, {watch._blob_bytes} bytes"
+    with observer(tmp_path) as reopened:
+        assert list(reopened.blob_dir.iterdir()) == [], "restart did not reclaim the superseded blob"
+
+
+def test_restart_reclaims_unreferenced_blob_but_keeps_pending_snapshot(tmp_path):
+    import hashlib
+
+    job, run, data = report(tmp_path / "home", tmp_path / "reports")
+    (run / "shots").mkdir()
+    image = run / "shots/fixture.jpg"
+    image.write_bytes(b"first synthetic frame")
+    data["scenarios"][0]["shot"] = "shots/fixture.jpg"
+    (job / "result.json").write_text(json.dumps(data))
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        image.write_bytes(b"second synthetic frame")
+        watch.inventory()
+    with observer(tmp_path) as reopened:
+        assert not (reopened.blob_dir / hashlib.sha256(b"first synthetic frame").hexdigest()).exists()
+        assert (reopened.blob_dir / hashlib.sha256(b"second synthetic frame").hexdigest()).exists()
+        assert reopened.pending() == 1
+        assert reopened._blob_bytes == sum(path.stat().st_size for path in reopened.blob_dir.iterdir())
+        assert reopened.flush(Server())["acknowledged"] == 1
+        assert reopened._blob_bytes == 0
+
+
+def test_cleanup_failure_does_not_replace_the_local_run_error(tmp_path, monkeypatch):
+    report(tmp_path / "home", tmp_path / "reports")
+    server = Server()
+    server.disconnect = True
+    cleanup_calls = []
+
+    def failed_cleanup():
+        cleanup_calls.append(True)
+        raise OSError("synthetic cleanup error")
+
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        monkeypatch.setattr(watch, "_prune_confirmed", failed_cleanup)
+        failure = None
+        try:
+            watch.flush(server)
+        except Exception as caught:
+            failure = caught
+        assert cleanup_calls == [True]
+        assert isinstance(failure, ObserverError), "Cleanup replaced the primary upload failure"
+        assert "Local run 'job-1'" in str(failure) and "disconnect" in str(failure)
+        assert watch.pending() == 1
+
+
+def test_missing_pending_blob_is_restaged_from_unchanged_source(tmp_path):
+    report(tmp_path / "home", tmp_path / "reports")
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        missing = next(watch.blob_dir.iterdir())
+    missing.unlink()
+    with observer(tmp_path) as reopened:
+        assert reopened.inventory()["pending"] == 1
+        assert missing.is_file(), "An unchanged pending snapshot did not repair its missing blob"
+        assert reopened._blob_bytes == sum(path.stat().st_size for path in reopened.blob_dir.iterdir())
+        assert reopened.flush(Server())["acknowledged"] == 1
+        assert reopened._blob_bytes == 0
+
+
+def test_missing_pending_blob_without_source_has_safe_local_run_error(tmp_path):
+    import shutil
+
+    job, run, _ = report(tmp_path / "home", tmp_path / "reports")
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        next(watch.blob_dir.iterdir()).unlink()
+        shutil.rmtree(job)
+        shutil.rmtree(run)
+        failure = None
+        try:
+            watch.flush(Server())
+        except Exception as caught:
+            failure = caught
+        assert isinstance(failure, ObserverError), "Missing pending evidence escaped as a filesystem exception"
+        assert "Local run 'job-1'" in str(failure) and "missing" in str(failure)
+        assert watch.pending() == 1
+
+
+def test_second_observer_cannot_prune_an_owners_uncheckpointed_blob(tmp_path):
+    with observer(tmp_path) as watch:
+        sha = watch._blob(b"in-flight synthetic snapshot")
+        with pytest.raises(ObserverError, match="already owns"):
+            with observer(tmp_path):
+                pass
+        assert (watch.blob_dir / sha).read_bytes() == b"in-flight synthetic snapshot"
