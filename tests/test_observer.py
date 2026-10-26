@@ -253,3 +253,19 @@ def test_observation_transport_sanitizes_metadata_before_outbound_request(tmp_pa
     assert len(captured) == 1
     assert b"private-observer-fixture" not in captured[0]
     assert b"qjm_" not in captured[0]
+
+
+def test_early_harness_without_output_directory_keeps_full_selected_job_result(tmp_path):
+    job = tmp_path / "home/jobs/early"
+    job.mkdir(parents=True)
+    data = {"gate": "HARNESS", "started_at": 1_792_972_800, "error": "failure detail " * 1000, "scenarios": []}
+    (job / "job.json").write_text(json.dumps({"id": "early", "started_at": data["started_at"]}))
+    (job / "result.json").write_text(json.dumps(data))
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        server = Server()
+        watch.flush(server)
+        row = server.rows["qms_early"]
+        assert row["report"]["reason"].startswith("failure detail")
+        assert [file["path"] for file in row["files"]] == ["report.json"]
+        assert any(json.loads(blob) == data for blob in watch.blobs())

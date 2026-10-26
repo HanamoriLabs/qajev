@@ -236,12 +236,20 @@ class Observer:
                 raise ObserverError("Run evidence exceeds the upload budget; it was not acknowledged.")
             files.append({"path": name, "sha256": self._blob(content), "size": len(content)})
         gate = str(data.get("gate", "harness")).lower()
+        if gate in ENDED and not any(file["path"] == "report.json" for file in files):
+            # A foreground configuration/harness error can have a job result but no output directory.
+            # Preserve that full selected-home result instead of acknowledging only a shortened summary.
+            content = sanitize_upload(json.dumps(data, ensure_ascii=False).encode())
+            if len(content) > MAX_FILE:
+                raise ObserverError("The source result exceeds the report upload budget.")
+            files.append({"path": "report.json", "sha256": self._blob(content), "size": len(content)})
         rec = {"id": local, "kind": "run", "project": self.project,
                "title": sanitize_text(str(data.get("suite") or job.get("title") or local), 160),
                "gate": gate if gate in ENDED | {"queued", "running"} else "harness",
                "started_at": _iso(data.get("started_at") or job.get("started_at")),
                "seconds": data.get("seconds", 0), "tests": _tests(data), "cost_usd": data.get("cost", {}).get("usd", 0),
-               "files": files, "report": {"qajev_version": data.get("qajev"), "missing_evidence": missing}}
+               "files": files, "report": {"qajev_version": data.get("qajev"), "missing_evidence": missing,
+                   "reason": sanitize_text(str(data.get("error") or data.get("reason") or ""), 4000)}}
         raw = json.dumps(rec, ensure_ascii=False, sort_keys=True)
         digest = hashlib.sha256(raw.encode()).hexdigest()
         previous = self.db.execute("SELECT record FROM outbox WHERE id=?", [local]).fetchone()

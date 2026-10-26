@@ -30,6 +30,8 @@ FAULTS = [
      "test_http_redirect_never_forwards_machine_credential"),
     ("O11", 'body = sanitize_request(method, path, body)', 'body = body',
      "test_observation_transport_sanitizes_metadata_before_outbound_request"),
+    ("O12", 'if gate in ENDED and not any(file["path"] == "report.json" for file in files):', 'if False:',
+     "test_early_harness_without_output_directory_keeps_full_selected_job_result"),
 ]
 
 
