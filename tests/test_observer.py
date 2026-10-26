@@ -98,10 +98,10 @@ def test_upload_ack_is_confirmed_by_another_manifest_read(tmp_path):
         assert watch.pending() == 1
 
 
-@pytest.mark.parametrize("escape", ["file", "ancestor", "outside"])
+@pytest.mark.parametrize("escape", ["file", "ancestor", "inside", "outside"])
 def test_evidence_never_reads_a_symlink_or_unapproved_report_root(tmp_path, escape):
     job, run, data = report(tmp_path / "home", tmp_path / "reports")
-    private = tmp_path / "private"
+    private = run / ".private" if escape == "inside" else tmp_path / "private"
     private.mkdir()
     (private / "secret.jpg").write_bytes(b"DO-NOT-UPLOAD")
     if escape == "outside":
