@@ -23,10 +23,9 @@ from typing import Any
 
 from qajev_upload_privacy import sanitize_text
 
-from . import __version__, chrome, keys, live, netlog, providers
+from . import __version__, chrome, keys, live, netlog, providers, viewport
 from . import guard as guard_mod
 from . import pad as pad_mod
-from . import viewport
 from .config import is_loopback, redact
 
 _jev = None
@@ -915,14 +914,19 @@ class Session:
         """Measure this target and its actual capture; a successful metrics request proves neither."""
         import base64
 
-        before = self.evaluate(viewport.MEASURE)
-        data = self.call("Page.captureScreenshot", format="png", fromSurface=True, captureBeyondViewport=False)
-        after = self.evaluate(viewport.MEASURE)
+        before = after = None
         try:
+            before = self.evaluate(viewport.MEASURE)
+            data = self.call("Page.captureScreenshot", format="png", fromSurface=True, captureBeyondViewport=False)
+            after = self.evaluate(viewport.MEASURE)
             raw = base64.b64decode(data["data"], validate=True)
-        except (KeyError, TypeError, ValueError) as error:
-            raise viewport.ViewportMismatch("viewport geometry unavailable: capture returned no image",
-                                            {"before": before, "after": after}) from error
+        except TransportLost:
+            raise
+        except (RuntimeError, TimeoutError, OSError, KeyError, TypeError, ValueError) as error:
+            raise viewport.ViewportMismatch(f"viewport geometry unavailable: {type(error).__name__}: {error}",
+                                            {"before": before, "after": after, "capture_pixels": None,
+                                             "requested": self.device, "target": getattr(self.browser, "target", None),
+                                             "session": getattr(self.browser, "session", None)}) from error
         return viewport.verify(before, after, raw, self.device, target=getattr(self.browser, "target", None),
                                session=getattr(self.browser, "session", None))
 

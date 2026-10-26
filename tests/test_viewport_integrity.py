@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from qajev import clients, runner, session, suite, viewport
+from qajev import clients, runner, session, suite, verdict, viewport
 
 
 def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scale=1, zoom=1):
@@ -31,7 +31,8 @@ def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scal
         def __init__(self):
             self.browser = SimpleNamespace(call=cdp, target="fixture-target", session="fixture-session")
             self.jev = SimpleNamespace(cdp=lambda *_a, **_k: (_ for _ in ()).throw(
-                AssertionError("viewport checks must use their own target")))
+                AssertionError("viewport checks must use their own target")),
+                admin=SimpleNamespace(ensure_daemon=lambda: None))
             self.device = self.user_agent = self.net = self.agent = None
             self.headless, self.ux_observer = True, None
             self.url = "http://127.0.0.1/fixture"
@@ -114,6 +115,25 @@ def test_each_scenario_measures_even_when_the_device_profile_is_cached(monkeypat
     assert sum(method == "Page.captureScreenshot" for method, _ in seen["calls"]) == 2
 
 
+@pytest.mark.parametrize("reply", [None, {}, {"data": "invalid base64"}, TimeoutError("capture timed out")])
+def test_failed_capture_is_harness_and_keeps_the_available_measurement(monkeypatch, reply):
+    page, seen = scenario_page(monkeypatch, inner=(1280, 900))
+    original = page.browser.call
+
+    def call(method, **params):
+        if method == "Page.captureScreenshot":
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+        return original(method, **params)
+
+    page.browser.call = call
+    result = run(page)
+    assert result["outcome"] == "harness" and "viewport geometry unavailable" in result["reason"]
+    assert result["viewport"]["before"]["innerWidth"] == 1280
+    assert seen["hooks"] == seen["checks"] == 0
+
+
 def png(size=(1280, 900)):
     output = io.BytesIO()
     Image.new("RGB", size, (19, 47, 83)).save(output, format="PNG")
@@ -133,6 +153,18 @@ def test_missing_or_invalid_page_geometry_is_not_a_pass(field, value):
     measured = {**geometry(), field: value}
     with pytest.raises(viewport.ViewportMismatch, match="could not be measured"):
         viewport.verify(measured, measured, png(), suite.DEVICES["desktop"])
+
+
+def test_boolean_dpr_is_invalid_even_when_true_equals_one():
+    measured = geometry(dpr=True)
+    with pytest.raises(viewport.ViewportMismatch, match="could not be measured"):
+        viewport.verify(measured, measured, png(), suite.DEVICES["desktop"])
+
+
+@pytest.mark.parametrize("checks", [[], [{"check": "otherwise true", "ok": True}]])
+def test_viewport_stop_is_harness_even_if_a_check_has_already_passed(checks):
+    outcome, _ = verdict.classify("viewport_mismatch", checks, has_checks=True, stop_detail="viewport mismatch")
+    assert outcome == "harness"
 
 
 def test_a_resize_during_capture_and_a_broken_image_are_refused():
