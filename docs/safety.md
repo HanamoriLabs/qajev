@@ -16,8 +16,11 @@ receive the full environment, including model keys.
 
 Restart a kept QAJev Chrome profile once after this update: a browser started without environment isolation is
 refused for reuse. Custom environment variables outside the runtime allowlist no longer reach managed Chrome.
-On Linux this includes `http_proxy`, `https_proxy`, `no_proxy` and `LD_LIBRARY_PATH`; a proxy URL can contain a
-password. For a proxy without credentials, use `QAJEV_CHROME_FLAGS=--proxy-server=http://127.0.0.1:8080`.
+The refusal gives `qajev browser stop --profile=NAME`, quoting the whole option when needed so a leading dash
+or shell syntax in the profile name stays literal.
+On Linux, excluded variables include `http_proxy`, `HTTP_PROXY`, `https_proxy`, `HTTPS_PROXY`, `no_proxy`,
+`NO_PROXY`, `all_proxy`, `ALL_PROXY` and `LD_LIBRARY_PATH`; a proxy URL can contain a password.
+For a proxy without credentials, use `QAJEV_CHROME_FLAGS=--proxy-server=http://127.0.0.1:8080`.
 
 ## What QAJev never does
 

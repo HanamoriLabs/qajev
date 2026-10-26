@@ -290,7 +290,7 @@ def start(profile="default", *, headless=False, port=None, ephemeral=False, visi
             if running[0].get("background_services_disabled") is not True:
                 raise ChromeError("Restart this QAJev Chrome profile to disable its background services")
             if running[0].get("environment_isolated") is not True:
-                command = shlex.join(["qajev", "browser", "stop", "--profile", profile])
+                command = shlex.join(["qajev", "browser", "stop", f"--profile={profile}"])
                 raise ChromeError(f"Restart this QAJev Chrome profile to isolate its environment: run {command}")
             return running[0]
     # A loaded machine (load 300+) has taken over 30 s to open the debugging port.

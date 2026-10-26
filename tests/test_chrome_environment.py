@@ -6,6 +6,7 @@ import json
 import multiprocessing
 import os
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,6 +21,10 @@ FORBIDDEN = (
     "CLOUDFLARE_API_TOKEN", "QAJEV_CLOUD_JOB_TOKEN", "AWS_SECRET_ACCESS_KEY", "fixture_password",
     "AUTHORIZATION", "COOKIE", "FIXTURE_OPAQUE_VALUE", "LC_FIXTURE_TOKEN", "XDG_FIXTURE_SECRET",
     "MESA_FIXTURE_KEY", "PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES",
+    "all_proxy", "ALL_PROXY",
+)
+PROXY_NAMES = (
+    "http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "no_proxy", "NO_PROXY", "all_proxy", "ALL_PROXY",
 )
 _barrier = None
 
@@ -109,12 +114,12 @@ def test_runtime_allowlist_is_exact_and_does_not_mutate_the_parent(monkeypatch, 
                "FONTCONFIG_PATH": "/fixture/fonts", "LIBGL_DRIVERS_PATH": "/fixture/drivers", "TZ": "UTC"}
     for name, value in allowed.items():
         monkeypatch.setenv(name, value)
-    for name in FORBIDDEN:
+    for name in (*FORBIDDEN, *PROXY_NAMES):
         monkeypatch.setenv(name, "fixture-value")
     before = dict(os.environ)
     env = chrome.child_env(temporary=tmp_path / "owned-temp")
     assert all(env.get(name) == value for name, value in allowed.items())
-    assert not set(env).intersection(FORBIDDEN)
+    assert not set(env).intersection((*FORBIDDEN, *PROXY_NAMES))
     assert all(env.get(name) == str(tmp_path / "owned-temp") for name in ("TMPDIR", "TMP", "TEMP"))
     parent_unchanged = dict(os.environ) == before
     assert parent_unchanged, "Chrome environment construction changed the parent"
@@ -141,7 +146,44 @@ def test_legacy_browser_names_a_shell_safe_stop_command(monkeypatch, profile):
         argv = shlex.split(command)
     except ValueError:
         argv = []
-    assert argv == ["qajev", "browser", "stop", "--profile", profile]
+    assert argv == ["qajev", "browser", "stop", f"--profile={profile}"]
+
+
+@pytest.mark.parametrize("profile", ["-x", "fixture's browser", "a $(b)", "a `b`", "a $HOME"])
+def test_restart_command_reaches_the_real_parser_without_shell_expansion(monkeypatch, tmp_path, profile):
+    record = {"alive": True, "headless": True, "password_services_disabled": True,
+              "background_services_disabled": True}
+    monkeypatch.setattr(chrome, "status", lambda _: [record])
+    with pytest.raises(chrome.ChromeError) as error:
+        chrome.start(profile, headless=True)
+    command = str(error.value).partition(": run ")[2]
+    programs = tmp_path / "bin"
+    programs.mkdir()
+    arguments, expanded = tmp_path / "arguments.json", tmp_path / "expanded"
+    script = tmp_path / "parser.py"
+    script.write_text(
+        "import json,os,sys\n"
+        "from qajev.cli import build_parser\n"
+        "args=build_parser().parse_args(sys.argv[1:])\n"
+        "assert args.command == 'browser' and args.action == 'stop'\n"
+        "with open(os.environ['FIXTURE_ARGUMENTS'], 'w') as f: json.dump({'profile':args.profile}, f)\n"
+    )
+    fake_qajev = programs / "qajev"
+    fake_qajev.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} {shlex.quote(str(script))} "$@"\n')
+    fake_qajev.chmod(0o700)
+    # A faulty quote can invoke only this inert, local substitution marker.
+    substitution = programs / "b"
+    substitution.write_text('#!/bin/sh\nprintf expanded > "$FIXTURE_EXPANDED"\nprintf replaced\n')
+    substitution.chmod(0o700)
+    env = {"PATH": str(programs), "HOME": str(tmp_path / "home"),
+           "PYTHONPATH": str(Path(chrome.__file__).resolve().parent.parent),
+           "QAJEV_HOME": str(tmp_path / "qajev-home"), "FIXTURE_ARGUMENTS": str(arguments),
+           "FIXTURE_EXPANDED": str(expanded)}
+    result = subprocess.run(["/bin/sh", "-c", command], cwd=tmp_path, env=env,
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert not expanded.exists(), "Restart guidance executed a shell substitution"
+    assert json.loads(arguments.read_text())["profile"] == profile
 
 
 def test_command_hooks_keep_their_existing_authorized_environment(monkeypatch, tmp_path):
