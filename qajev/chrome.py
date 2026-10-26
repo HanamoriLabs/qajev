@@ -60,6 +60,29 @@ FLAGS = [
     "--window-size=1400,1000",
 ]
 
+# Chrome needs the host's runtime, display, locale, fonts and selected graphics driver, never model/application
+# authorization or Python/loader injection. Keep exact names: LC_*, XDG_* and driver prefixes can hide credentials.
+CHROME_ENV_NAMES = frozenset({
+    "PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP", "TZ", "LANG", "LANGUAGE",
+    "LC_ALL", "LC_CTYPE", "LC_COLLATE", "LC_MESSAGES", "LC_MONETARY", "LC_NUMERIC", "LC_TIME", "LC_PAPER",
+    "LC_NAME", "LC_ADDRESS", "LC_TELEPHONE", "LC_MEASUREMENT", "LC_IDENTIFICATION", "__CF_USER_TEXT_ENCODING",
+    "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR",
+    "XDG_SESSION_TYPE", "XDG_CURRENT_DESKTOP", "DESKTOP_SESSION", "XDG_CONFIG_HOME", "XDG_CONFIG_DIRS",
+    "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_DATA_DIRS", "GDK_BACKEND", "GDK_SCALE", "GDK_DPI_SCALE",
+    "FONTCONFIG_FILE", "FONTCONFIG_PATH", "LIBGL_DRIVERS_PATH", "LIBGL_ALWAYS_SOFTWARE",
+    "MESA_LOADER_DRIVER_OVERRIDE", "__GLX_VENDOR_LIBRARY_NAME", "DRI_PRIME", "__NV_PRIME_RENDER_OFFLOAD",
+    "__NV_PRIME_RENDER_OFFLOAD_PROVIDER", "__VK_LAYER_NV_optimus", "VK_ICD_FILENAMES", "VK_DRIVER_FILES",
+    "GBM_BACKEND",
+})
+
+
+def child_env(*, temporary=None):
+    """The managed browser's exact runtime allowlist; never modify the parent or command-hook environment."""
+    env = {name: value for name, value in os.environ.items() if name in CHROME_ENV_NAMES}
+    if temporary is not None:
+        env.update(TMPDIR=str(temporary), TMP=str(temporary), TEMP=str(temporary))
+    return env
+
 
 class ChromeError(RuntimeError):
     pass
@@ -267,6 +290,8 @@ def start(profile="default", *, headless=False, port=None, ephemeral=False, visi
                 raise ChromeError("Restart this QAJev Chrome profile to disable its password services")
             if running[0].get("background_services_disabled") is not True:
                 raise ChromeError("Restart this QAJev Chrome profile to disable its background services")
+            if running[0].get("environment_isolated") is not True:
+                raise ChromeError("Restart this QAJev Chrome profile to isolate its environment")
             return running[0]
     # A loaded machine (load 300+) has taken over 30 s to open the debugging port.
     wait = wait or float(os.environ.get("QAJEV_CHROME_START_WAIT", "60"))
@@ -361,9 +386,7 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, *, t
     STATE.mkdir(parents=True, exist_ok=True)
     state_key = f"{profile}.ephemeral-{os.getpid()}-{profile_dir.name.rsplit('-', 1)[-1]}" if ephemeral else profile
     launch_port = port
-    env = None
-    if temporary is not None:
-        env = {**os.environ, "TMPDIR": str(temporary), "TMP": str(temporary), "TEMP": str(temporary)}
+    env = child_env(temporary=temporary)
     with open(STATE / f"{state_key}.log", "ab") as log:
         proc = subprocess.Popen(
             niced(args), stdout=subprocess.DEVNULL, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True,
@@ -396,6 +419,7 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, *, t
         "started_at": time.time(),
         "password_services_disabled": True,
         "background_services_disabled": True,
+        "environment_isolated": True,
         "launch_port": launch_port, "temp_dir": str(temporary) if temporary else None,
     }
     try:

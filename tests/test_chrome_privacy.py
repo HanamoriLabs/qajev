@@ -290,7 +290,7 @@ def test_running_legacy_profile_is_refused_without_restart_or_preference_writes(
 
 def test_running_private_profile_is_reused_without_rewriting_active_preferences(launch, monkeypatch):
     record = {"alive": True, "headless": True, "password_services_disabled": True,
-              "background_services_disabled": True}
+              "background_services_disabled": True, "environment_isolated": True}
     monkeypatch.setattr(chrome, "status", lambda _profile: [record])
     assert chrome.start("private", headless=True) is record
     assert launch["calls"] == []

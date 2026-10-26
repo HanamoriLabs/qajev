@@ -3,6 +3,17 @@
 QAJev lets a model click around real websites, so safety is built in and on by default. None of this depends on
 the model behaving well: the rules are enforced in the page and in QAJev itself.
 
+## Browser process environment
+
+Managed Chrome receives a fixed allowlist of runtime, display, locale, font and graphics-driver settings, with
+private temporary-directory overrides when needed. Model credentials, arbitrary application settings and Python
+or loader-injection variables stay out of the browser and its helpers. This applies to serial and parallel jobs.
+QAJev keeps its parent environment for model calls. Command hooks retain their existing environment and still
+require `--allow-commands`.
+
+Restart a kept QAJev Chrome profile once after this update: a browser started without environment isolation is
+refused for reuse. Custom environment variables outside the runtime allowlist no longer reach managed Chrome.
+
 ## What QAJev never does
 
 - **Let Jev type passwords, one-time codes or payment details.** Those fields are disabled in the page. Hooks
