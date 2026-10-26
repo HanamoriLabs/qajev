@@ -92,7 +92,9 @@ def main():
             (stage / path).write_bytes(data)
         (args.out / "RESULT.json").write_text(json.dumps({"caught": len(rows), "total": len(FAULTS),
             "sources_restored": all((stage / path).read_bytes() == data for path, data in originals.items()),
-            "matrix": rows, "source_sha256": {path: hashlib.sha256(data).hexdigest() for path, data in originals.items()}}, indent=2) + "\n")
+            "matrix": rows,
+            "source_sha256": {path: hashlib.sha256(data).hexdigest() for path, data in originals.items()},
+        }, indent=2) + "\n")
 
 
 if __name__ == "__main__":
