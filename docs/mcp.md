@@ -118,8 +118,10 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 - `says` (`qa_check`): what `expect_js` proves, in plain words, for the test plan. Without it the check is NOT
   DESCRIBED and the gate INCOMPLETE ([Reports](reports.md#the-test-plan)).
 - `expect_fail` (`qa_check`; `expect_fail:` on a suite's scenario): a planted fault, the says text of the one check
-  it must fail on (`true`: the test's only check). It counts as met only when it fails there; a pass, or a failure on
-  another check, turns the gate FAIL. A result shows `expected`, `expected_check`, `graded` and `graded_reason`
+  it must fail on (`true`: the test's only check). A caught fault keeps `outcome: "fail"` and gets `graded: "pass"`
+  when only that check fails. A passing test, or a failure on another check, gets `graded: "fail"` (gate FAIL).
+  Stuck and harness keep their grade (gate INCOMPLETE). A result shows `expected`, `expected_check`, `graded`
+  and `graded_reason`
   ([Planted faults](writing-tests.md#planted-faults-a-test-meant-to-fail)).
 
 ## How a call runs

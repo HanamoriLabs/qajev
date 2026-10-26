@@ -19,6 +19,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Planted-fault guidance names the actual `graded: "pass"` and `graded: "fail"` values in CLI help, MCP,
+  reports and documentation. Evaluation and report grades are unchanged.
 - Chrome web scenarios measure page geometry and an actual capture before checks or hooks, including when
   screenshots are not retained. A mismatch is harness rather than a scripted pass. Reports keep layout size,
   visual viewport, DPR and capture pixels; mobile layout zoom and declared device scale are accounted for.

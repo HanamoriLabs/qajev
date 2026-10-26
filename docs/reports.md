@@ -36,8 +36,9 @@ At the top: the verdict for the whole run.
 | **FAIL** | at least one scenario failed: the product is wrong somewhere | `1` |
 | **INCOMPLETE** | nothing failed, but something could not be judged (stuck, harness, skipped...), or a test is NOT DESCRIBED | `2` |
 
-A planted fault (`expect_fail`) counts as passed only when it failed on the check it names; a planted fault that
-passed, or failed on another check, makes the gate FAIL ([Planted faults](writing-tests.md#planted-faults-a-test-meant-to-fail)).
+A caught planted fault (`expect_fail`) keeps `outcome: "fail"` and records `graded: "pass"` when only its named
+check failed. The gate uses `graded`. A passing test, or a failure on another check, records `graded: "fail"` and
+makes the gate FAIL ([Planted faults](writing-tests.md#planted-faults-a-test-meant-to-fail)).
 Its own outcome stays as it was. report.json adds `expected: "fail"`, `expected_check`, `graded` (the outcome the
 gate counted) and `graded_reason` to the test, and `expected_fail` (how many) to the run.
 

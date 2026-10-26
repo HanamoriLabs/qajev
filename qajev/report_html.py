@@ -274,8 +274,9 @@ def planted_tag(r):
 
 def planted_count(n):
     """The count at the top of a report, so no real failure hides under the tag unseen."""
-    return (f"{n} test(s) expected to fail (planted faults). Each counts as met only when it fails on its planted "
-            "check; a pass, or a failure anywhere else, turns the gate FAIL.")
+    return (f"{n} test(s) expected to fail (planted faults). Each has graded=pass only when its planted check fails "
+            "and every other check passes; a passing test, or a failure on another check, has graded=fail "
+            "and turns the gate FAIL.")
 
 
 def _scenario(i, r, who="Jev"):

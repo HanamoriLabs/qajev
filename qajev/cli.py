@@ -200,8 +200,9 @@ def build_parser():
     check.add_argument("--about", help="what this test proves and why, in plain words (shown with its result)")
     check.add_argument("--expect-fail", nargs="?", const=True, metavar="SAYS",
                        help="a planted fault: the test must fail on the check SAYS names (its --says text or its "
-                            "words in the plan; bare: the test's only check). Failing there counts as met; a pass, "
-                            "or a failure on another check, turns the gate FAIL. Needs --about")
+                            "words in the plan; bare: the test's only check). Failing only there gives graded=pass; "
+                            "a passing test, or a failure on another check, gives graded=fail (gate FAIL). "
+                            "Needs --about")
     check.add_argument("--speech", help="what the fake microphone 'hears' if the page listens")
     check.add_argument("--host", action="append", default=[], help="extra host Jev may visit (repeatable)")
     check.add_argument("--max-actions", type=int, default=20)

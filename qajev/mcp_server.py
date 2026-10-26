@@ -55,7 +55,8 @@ harness (budget/stale/model/browser trouble, Jev said DONE without a single acti
 Jev moved and Jev took no action, a local server not answering, or a js check whose own code broke: says nothing
 about the product); unverified (no checks);
 skipped. Gate: PASS, FAIL or INCOMPLETE. A planted fault (expect_fail: the says text of the check it must fail on)
-keeps its outcome; the gate counts its `graded`: met only when it failed on that check, else FAIL.
+keeps its outcome; the gate uses `graded`: "pass" when only the named check failed, "fail" when the test passed
+or failed on another check. Stuck and harness keep their grade and make the gate INCOMPLETE.
 
 Safety built in: production is read-only and destructive is never. Any host that is not a local dev host
 (localhost, 127.0.0.1, [::1], *.localhost, *.test) is production: mode="mutate" or allow_destructive there is
@@ -466,7 +467,8 @@ async def qa_check(
     ux: advisory (default), strict (UX findings fail), or off. Deterministic checks use no model calls.
     ux_checks: cover, keyboard, shift, input-kind, tap and clip; omitted options inherit suite/default values.
     expect_fail: a planted fault: the says text of the one check it must fail on (true: the test's only check). It
-    counts as met only when it fails there; a pass, or a failure on another check, turns the gate FAIL.
+    keeps outcome="fail" and gets graded="pass" when only that check fails; a passing test, or a failure on another
+    check, gets graded="fail" and turns the gate FAIL. Stuck and harness keep their grade (gate INCOMPLETE).
     Returns the report with a gate and findings.
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
     runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot go,

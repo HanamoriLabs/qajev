@@ -227,14 +227,15 @@ plants.
 On the command line: `qajev check URL ... --says "the Pro plan costs £10" --expect-fail "the Pro plan costs £10"`
 (a bare `--expect-fail` names the test's only check).
 
-The test keeps its real outcome: a planted fault that fails is still **fail**. The gate counts it this way:
+The test keeps its real outcome: a caught planted fault has `outcome: "fail"` and `graded: "pass"`.
+The gate uses `graded` this way:
 
-| The planted test | Gate counts it as | Reason |
+| The planted test | Grade used by the gate | Reason |
 |---|---|---|
-| fails on the named check, and every other check passes | met (like a pass) | "failed as expected on the planted check: ..." |
-| passes | **FAIL** | "expected to fail, but every check passed: the planted fault was not caught" |
-| fails on another check, or before the named check ran (a page that did not load) | **FAIL** | "failed, but not on the planted check: ..." |
-| stuck or harness, or the run broke off (a crash, a time-out) | as today: INCOMPLETE | never a catch |
+| fails on the named check, and every other check passes | `"pass"` | "failed as expected on the planted check: ..." |
+| passes | `"fail"` (gate FAIL) | "expected to fail, but every check passed: the planted fault was not caught" |
+| fails on another check, or before the named check ran (a page that did not load) | `"fail"` (gate FAIL) | "failed, but not on the planted check: ..." |
+| stuck or harness, or the run broke off (a crash, a time-out) | `"stuck"` or `"harness"` (gate INCOMPLETE) | never a catch |
 
 So a planted fault that stops being caught, or breaks somewhere else, turns the gate red. The report counts the
 planted tests at the top ("N test(s) expected to fail") and tags each one with the check it names, so no real
