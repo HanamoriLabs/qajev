@@ -11,8 +11,13 @@ or loader-injection variables stay out of the browser and its helpers. This appl
 QAJev keeps its parent environment for model calls. Command hooks retain their existing environment and still
 require `--allow-commands`.
 
+Electron apps (`electron.py`), native and mobile apps, and app development servers remain apps under test and
+receive the full environment, including model keys.
+
 Restart a kept QAJev Chrome profile once after this update: a browser started without environment isolation is
 refused for reuse. Custom environment variables outside the runtime allowlist no longer reach managed Chrome.
+On Linux this includes `http_proxy`, `https_proxy`, `no_proxy` and `LD_LIBRARY_PATH`; a proxy URL can contain a
+password. For a proxy without credentials, use `QAJEV_CHROME_FLAGS=--proxy-server=http://127.0.0.1:8080`.
 
 ## What QAJev never does
 

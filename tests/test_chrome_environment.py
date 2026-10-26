@@ -129,6 +129,21 @@ def test_legacy_browser_requires_restart_without_spawning_or_reading_its_environ
         chrome.start("fixture", headless=True)
 
 
+@pytest.mark.parametrize("profile", ["fixture", "fixture's browser"])
+def test_legacy_browser_names_a_shell_safe_stop_command(monkeypatch, profile):
+    record = {"alive": True, "headless": True, "password_services_disabled": True,
+              "background_services_disabled": True}
+    monkeypatch.setattr(chrome, "status", lambda _: [record])
+    with pytest.raises(chrome.ChromeError) as error:
+        chrome.start(profile, headless=True)
+    command = str(error.value).partition(": run ")[2]
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        argv = []
+    assert argv == ["qajev", "browser", "stop", "--profile", profile]
+
+
 def test_command_hooks_keep_their_existing_authorized_environment(monkeypatch, tmp_path):
     monkeypatch.setattr(session, "_jev", None)
     monkeypatch.setenv("FIXTURE_HOOK_KEY", base64.b64encode(bytes(range(32))).decode())

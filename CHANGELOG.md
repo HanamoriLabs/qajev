@@ -25,6 +25,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - Managed Chrome now starts with a fixed runtime environment allowlist, excluding model credentials and arbitrary
   application variables in serial and parallel jobs. Existing profiles without the isolation marker require a
   browser restart. Command-hook behavior and its `--allow-commands` gate are unchanged.
+  The restart refusal names the profile's `qajev browser stop --profile NAME` command.
+  On Linux, `http_proxy`, `https_proxy`, `no_proxy` and `LD_LIBRARY_PATH` no longer reach managed Chrome;
+  proxy URLs can contain passwords. Use `QAJEV_CHROME_FLAGS=--proxy-server=http://127.0.0.1:8080` for a
+  proxy without credentials.
 - Spawned scenario workers can restore a trusted provider integration before executing checks. The companion
   Cloud runner uses this to preserve dashboard model routing with `--jobs` above one, without putting a job token
   in worker arguments or reports.
