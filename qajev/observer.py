@@ -111,9 +111,9 @@ def _iso(value: object) -> str:
     raise ObserverError("Run start time is missing.")
 
 
-def _safe_file(path: Path, root: Path) -> bool:
+def _safe_file(path: Path, root: Path | None) -> bool:
     """Reject every symlink component, including a directory that resolves back inside its allowed root."""
-    if not path.is_relative_to(root) or not path.resolve().is_relative_to(root):
+    if root is None or not path.is_relative_to(root) or not path.resolve().is_relative_to(root):
         return False
     current = path
     while current != root:
@@ -223,7 +223,8 @@ class Observer:
         total = 0
         if run and not allowed:
             missing.append("report root outside approved roots")
-        for name in names if allowed else []:
+        for name in names if allowed and run is not None else []:
+            assert run is not None
             path = run / name
             if not _safe_file(path, allowed) or path.stat().st_size > MAX_FILE:
                 missing.append(name)

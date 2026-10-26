@@ -170,7 +170,8 @@ def build_parser():
     parser.add_argument("--version", action="version", version=f"qajev {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    observe = sub.add_parser("observe", help="publish registered-machine reports through a durable outbox; never run tests")
+    observe = sub.add_parser("observe", help="publish registered-machine reports through a durable outbox; "
+                                            "never run tests")
     observe.add_argument("--home", type=Path, default=config.HOME, help="QAJev home whose jobs are observed")
     observe.add_argument("--report-root", type=Path, action="append", required=True,
                          help="approved report root, including external --out folders (repeatable)")
@@ -178,7 +179,8 @@ def build_parser():
     observe.add_argument("--project", required=True, help="registered machine's approved project name")
     observe.add_argument("--url", default="https://cloud.qajev.com", help="Cloud control-plane origin")
     observe.add_argument("--credential-file", type=Path, help="operator-placed machine credential file, mode 0600")
-    observe.add_argument("--inventory", action="store_true", help="snapshot backlog locally and print counts, without a credential or network")
+    observe.add_argument("--inventory", action="store_true", help="snapshot backlog locally and print counts, "
+                                                                "without a credential or network")
     observe.add_argument("--once", action="store_true", help="one inventory/upload cycle, then exit")
     observe.add_argument("--every", type=int, default=60, help="seconds between inventory/upload cycles, minimum 5")
 
@@ -1805,7 +1807,8 @@ def cmd_observe(args):
     if not args.inventory and not args.credential_file:
         print("qajev: observe needs --credential-file (or --inventory for a local-only snapshot)", file=sys.stderr)
         return EXIT_CONFIG
-    if args.credential_file and any(args.credential_file.resolve().is_relative_to(root.resolve()) for root in args.report_root):
+    if args.credential_file and any(args.credential_file.resolve().is_relative_to(root.resolve())
+                                    for root in args.report_root):
         print("qajev: keep the machine credential outside approved report roots", file=sys.stderr)
         return EXIT_CONFIG
     try:
@@ -2152,7 +2155,8 @@ def main(argv=None):
             from . import jobs
 
             _job_dir = jobs.register(args.argv, rerun=_rerun)
-    handlers = {"observe": cmd_observe, "check": cmd_run, "run": cmd_run, "smoke": cmd_smoke, "browser": cmd_browser, "doctor": cmd_doctor,
+    handlers = {"observe": cmd_observe, "check": cmd_run, "run": cmd_run, "smoke": cmd_smoke,
+                "browser": cmd_browser, "doctor": cmd_doctor,
                 "secret": cmd_secret, "account": cmd_account,
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
                 "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
