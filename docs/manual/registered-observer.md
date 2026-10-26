@@ -1,0 +1,38 @@
+# Observe local runs from a registered machine
+
+The observer publishes existing CLI jobs and surviving reports. It starts no browser, model call or suite. It does not change local browser slots, RAM admission, queue timing or scenario limits. Registered visibility requires the separately reviewed Cloud registry API; ordinary Mac sync remains supported.
+
+## Human operator setup
+
+After server deployment and client installation are approved, register a machine in the Cloud Runners page. Choose a machine label and project allowlist. Save its one-time observation credential yourself in an owned regular file, mode 0600, outside repositories and report roots. No agent reads, copies, prints or transfers this credential. Do not put it in shell profiles, arguments or service environment values.
+
+First take a local inventory with explicit roots. This command needs no credential and sends nothing:
+
+```sh
+qajev observe --home /data/qa-home --project example-project \
+  --report-root /data/qa-reports --state-dir /data/qa-observer --inventory
+```
+
+The report root is an allowlist. Include each directory in which the selected CLI jobs write external `--out` results. The observer reads only the selected home's job metadata and named report evidence under these roots. It rejects symlink evidence and paths outside the roots. Backfill includes surviving `report.json` folders even if the old job index was pruned. Missing historical evidence is listed explicitly; vanished reports cannot be recreated by observation. Review the inventory before upload.
+
+Then upload one cycle:
+
+```sh
+qajev observe --home /data/qa-home --project example-project \
+  --report-root /data/qa-reports --state-dir /data/qa-observer \
+  --url https://cloud.qajev.com --credential-file /data/qa-machine.credential --once
+```
+
+Omit `--once` to observe every 60 seconds. `--every` changes the interval, with a minimum of 5 seconds. Every run is attributed to the authenticated machine; local provenance cannot impersonate another machine. The configured project must be on its registered allowlist. The observer uses its machine credential only for control-plane HTTPS, refuses redirects, and never passes it to Chrome, hooks, model providers or subprocesses.
+
+An owner-user service can run this command with `Nice=19`, `UMask=0077` and a private persistent state directory. Its `ExecStart` contains only the credential file path. No service is installed automatically. This control-plane connection is separate from the application browser's host allowlist. It does not widen browser networking or grant permission for screenshots to be judged by a model.
+
+## Durable publication
+
+The outbox snapshots sanitized report and evidence bytes locally before attempting transport. Its SQLite checkpoint and content-addressed blobs survive restart, source pruning and a lost upload reply. A run is acknowledged only after the server confirms its local ID mapping and an empty missing-file manifest following all uploads. Repeating an observation updates one Cloud run; a changed live/final snapshot remains pending until its own acknowledgment. An outbox is bound to its home, roots, project, endpoint and registered machine identity.
+
+Keep the state directory until publication and retention are settled. This version deliberately does not prune outbox blobs automatically. Back it up and monitor its disk use. Stop the observer before moving it. Use a separate state directory for a different home, endpoint or registration. An expired/revoked credential or failed request leaves work pending and exits with the configuration failure code; operator action is explicit. Never rerun a suite to repair an upload.
+
+The dashboard shows every scenario, reported model cost and evidence completeness. External machine cost is **not tracked**, rather than a measured zero. Unknown scenario outcomes become an explicit harness row with the original outcome named; the full source report is retained. The server supports 10000 tests and 2000 declared files per observation, up to 50 MiB per file and 500 MiB per run. Oversized or unreadable input is refused, never silently acknowledged.
+
+Global change: registered CLI runs have durable, idempotent publication with explicit evidence completeness.
