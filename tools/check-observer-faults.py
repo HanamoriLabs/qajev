@@ -16,6 +16,8 @@ FAULTS = [
     ("O03", 'self._set("configuration", config)',
      'self._set("configuration", config)\n        self.db.execute("DELETE FROM outbox")\n        self.db.commit()',
      "test_disconnect_restart_and_source_pruning_preserve_unsent_artifacts"),
+    ("O04", 'if previous and json.loads(previous[0])["gate"] in ENDED and rec["gate"] not in ENDED:', 'if False:',
+     "test_live_queued_running_then_final_state_is_not_acknowledged_early"),
     ("O05", 'if current.is_symlink():', 'if False:',
      "test_evidence_never_reads_a_symlink_or_unapproved_report_root"),
     ("O06", 'for scenario in data.get("scenarios", []):', 'for scenario in data.get("scenarios", [])[:500]:',
@@ -32,6 +34,14 @@ FAULTS = [
      "test_observation_transport_sanitizes_metadata_before_outbound_request"),
     ("O12", 'if gate in ENDED and not any(file["path"] == "report.json" for file in files):', 'if False:',
      "test_early_harness_without_output_directory_keeps_full_selected_job_result"),
+    ("O13", 'self._reserve(len(data))', 'pass',
+     "test_outbox_cap_refuses_next_blob_before_any_bytes_are_written"),
+    ("O14", '    def _write(self):\n        self._limit_database()', '    def _write(self):\n        pass',
+     "test_database_metadata_cannot_grow_beyond_total_outbox_cap"),
+    ("O15", 'raise ObserverError(f"Local run {local!r}: {failure}") from None', 'raise failure',
+     "test_permanent_refusal_identifies_the_pending_local_run"),
+    ("O16", '        except ValueError:\n            images = []', '        except TypeError:\n            images = []',
+     "test_invalid_effect_metadata_becomes_missing_evidence_without_a_traceback"),
 ]
 
 

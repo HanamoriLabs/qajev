@@ -13,6 +13,8 @@ qajev observe --home /data/qa-home --project example-project \
   --report-root /data/qa-reports --state-dir /data/qa-observer --inventory
 ```
 
+The first inventory snapshots report/evidence bytes locally even though it sends nothing. It is not a size-only dry run. The default total outbox cap is **512 MiB**. `--max-outbox-mib` sets another positive MiB budget after checking free disk. The cap includes retained blobs and the SQLite database; database writes also reserve rollback-journal headroom. Inventory prints `blob_bytes`, `outbox_bytes` and `max_outbox_bytes`. At the cap, observation stops before the next blob or database growth, prints the retained byte counts, exits with a configuration failure and keeps pending work. A large first backfill needs enough approved budget for its retained history.
+
 The report root is an allowlist. Include each directory in which the selected CLI jobs write external `--out` results. The observer reads only the selected home's job metadata and named report evidence under these roots. It rejects symlink evidence and paths outside the roots. Backfill includes surviving `report.json` folders even if the old job index was pruned. Missing historical evidence is listed explicitly; vanished reports cannot be recreated by observation. Review the inventory before upload.
 
 Then upload one cycle:
@@ -31,8 +33,7 @@ An owner-user service can run this command with `Nice=19`, `UMask=0077` and a pr
 
 The outbox snapshots sanitized report and evidence bytes locally before attempting transport. Its SQLite checkpoint and content-addressed blobs survive restart, source pruning and a lost upload reply. A run is acknowledged only after the server confirms its local ID mapping and an empty missing-file manifest following all uploads. Repeating an observation updates one Cloud run; a changed live/final snapshot remains pending until its own acknowledgment. An outbox is bound to its home, roots, project, endpoint and registered machine identity.
 
-Keep the state directory until publication and retention are settled. This version deliberately does not prune outbox blobs automatically. Back it up and monitor its disk use. Stop the observer before moving it. Use a separate state directory for a different home, endpoint or registration. An expired/revoked credential or failed request leaves work pending and exits with the configuration failure code; operator action is explicit. Never rerun a suite to repair an upload.
+Keep the state directory until publication and retention are settled. This version deliberately does not prune outbox blobs automatically. Back it up and monitor its disk use. Stop the observer before moving it. Use a separate state directory for a different home, endpoint or registration. A permanent per-run refusal names its local ID so the operator can find the blocked item. Malformed image metadata is recorded as missing evidence while the readable report still publishes. An expired/revoked credential or failed request leaves work pending and exits with the configuration failure code; operator action is explicit. Never rerun a suite to repair an upload.
 
 The dashboard shows every scenario, reported model cost and evidence completeness. External machine cost is **not tracked**, rather than a measured zero. Unknown scenario outcomes become an explicit harness row with the original outcome named; the full source report is retained. The server supports 10000 tests and 2000 declared files per observation, up to 50 MiB per file and 500 MiB per run. Oversized or unreadable input is refused, never silently acknowledged.
 
-Global change: registered CLI runs have durable, idempotent publication with explicit evidence completeness.

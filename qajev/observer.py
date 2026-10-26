@@ -10,6 +10,7 @@ import os
 import re
 import sqlite3
 import stat
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib import error, parse, request
@@ -20,11 +21,20 @@ from .report_files import image_paths, relative
 
 MAX_FILE = 50 * 1024**2
 MAX_RUN = 500 * 1024**2
+DEFAULT_OUTBOX_BYTES = 512 * 1024**2
 ENDED = {"pass", "fail", "stuck", "harness", "incomplete", "stopped"}
 
 
 class ObserverError(RuntimeError):
     """Safe operator-facing failure. It never includes a credential or response body."""
+
+
+class OutboxFull(ObserverError):
+    def __init__(self, used: int, limit: int, needed: int, blobs: int):
+        self.used, self.limit, self.needed, self.blob_bytes = used, limit, needed, blobs
+        super().__init__(f"outbox byte cap reached: {used} bytes retained, {blobs} in blobs; "
+                         f"the next write needs {needed} bytes with a {limit}-byte cap. "
+                         "Work stays pending. Check free disk before increasing --max-outbox-mib.")
 
 
 def read_credential(path: Path) -> str:
@@ -145,7 +155,11 @@ def _tests(data: dict) -> list[dict]:
 class Observer:
     """Own one configured outbox. Its durable blobs survive source/report pruning and interrupted uploads."""
 
-    def __init__(self, home: Path, report_roots: list[Path], state: Path, project: str, endpoint: str | None = None):
+    def __init__(self, home: Path, report_roots: list[Path], state: Path, project: str, endpoint: str | None = None,
+                 *, max_outbox_bytes: int = DEFAULT_OUTBOX_BYTES):
+        if type(max_outbox_bytes) is not int or max_outbox_bytes < 256 * 1024:
+            raise ObserverError("The outbox byte cap must be an integer of at least 256 KiB.")
+        self.max_outbox_bytes = max_outbox_bytes
         self.home = Path(home).absolute()
         self.roots = [Path(root).absolute() for root in report_roots]
         if any(root.is_symlink() for root in [self.home, *self.roots]):
@@ -156,6 +170,20 @@ class Observer:
         self.state.mkdir(parents=True, mode=0o700, exist_ok=True)
         if self.state.stat().st_uid != os.getuid() or stat.S_IMODE(self.state.stat().st_mode) != 0o700:
             raise ObserverError("The observation state directory must be owned and mode 0700.")
+        self.blob_dir = self.state / "blobs"
+        self.blob_dir.mkdir(mode=0o700, exist_ok=True)
+        self._blob_bytes = 0
+        self._other_bytes = 0
+        self._database_files = {"outbox.sqlite", "outbox.sqlite-journal", "outbox.sqlite-wal", "outbox.sqlite-shm"}
+        for path in self.state.rglob("*"):
+            if path.is_symlink():
+                raise ObserverError("The outbox must not contain symlinks.")
+            if path.is_file():
+                if path.is_relative_to(self.blob_dir):
+                    self._blob_bytes += path.stat().st_size
+                elif path.parent != self.state or path.name not in self._database_files:
+                    self._other_bytes += path.stat().st_size
+        self._reserve(0)
         self.project = project
         self.lock = (self.state / "observer.lock").open("a+")
         try:
@@ -165,23 +193,59 @@ class Observer:
             raise ObserverError("An observer already owns this state directory.") from None
         self.db = sqlite3.connect(self.state / "outbox.sqlite")
         self.db.execute("PRAGMA synchronous=FULL")
-        self.db.executescript("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
-                             "CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, digest TEXT NOT NULL, "
-                             "record TEXT NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0);")
-        self.blob_dir = self.state / "blobs"
-        self.blob_dir.mkdir(mode=0o700, exist_ok=True)
-        config = json.dumps([str(self.home), [str(root) for root in self.roots], project, endpoint])
-        if self._setting("configuration") not in {None, config}:
+        try:
+            self._limit_database()
+            self.db.executescript("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
+                                 "CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, digest TEXT NOT NULL, "
+                                 "record TEXT NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0);")
+            config = json.dumps([str(self.home), [str(root) for root in self.roots], project, endpoint])
+            if self._setting("configuration") not in {None, config}:
+                raise ObserverError("This outbox belongs to another observation configuration; "
+                                    "use a new state directory.")
+            self._set("configuration", config)
+        except BaseException:
             self.close()
-            raise ObserverError("This outbox belongs to another observation configuration; use a new state directory.")
-        self._set("configuration", config)
+            raise
+
+    def outbox_bytes(self) -> int:
+        return self._blob_bytes + self._other_bytes + sum(
+            path.stat().st_size for name in self._database_files if (path := self.state / name).exists())
+
+    def _reserve(self, needed: int) -> None:
+        used = self.outbox_bytes()
+        if used + needed > self.max_outbox_bytes:
+            raise OutboxFull(used, self.max_outbox_bytes, needed, self._blob_bytes)
+
+    def _limit_database(self) -> None:
+        page_size = self.db.execute("PRAGMA page_size").fetchone()[0]
+        current = (self.state / "outbox.sqlite").stat().st_size
+        # Reserve a rollback journal, including page headers and sector padding, before any DB write.
+        journal = current + (current // page_size + 1) * 8 + 64 * 1024
+        remaining = self.max_outbox_bytes - (self.outbox_bytes() - current) - journal
+        pages = remaining // page_size
+        if pages < max(1, current // page_size):
+            raise OutboxFull(self.outbox_bytes(), self.max_outbox_bytes, journal, self._blob_bytes)
+        actual = self.db.execute(f"PRAGMA max_page_count={pages}").fetchone()[0]
+        if actual > pages:
+            raise OutboxFull(self.outbox_bytes(), self.max_outbox_bytes, journal, self._blob_bytes)
+
+    @contextlib.contextmanager
+    def _write(self):
+        self._limit_database()
+        try:
+            with self.db:
+                yield
+        except sqlite3.OperationalError as failure:
+            if getattr(failure, "sqlite_errorcode", None) == sqlite3.SQLITE_FULL:
+                raise OutboxFull(self.outbox_bytes(), self.max_outbox_bytes, 0, self._blob_bytes) from None
+            raise
 
     def _setting(self, key: str):
         row = self.db.execute("SELECT value FROM settings WHERE key=?", [key]).fetchone()
         return row[0] if row else None
 
     def _set(self, key: str, value: str):
-        with self.db:
+        with self._write():
             self.db.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", [key, value])
 
     def close(self):
@@ -204,11 +268,20 @@ class Observer:
         sha = hashlib.sha256(data).hexdigest()
         path = self.blob_dir / sha
         if not path.exists():
-            with path.open("xb") as output:
-                os.chmod(path, 0o600)
-                output.write(data)
-                output.flush()
-                os.fsync(output.fileno())
+            self._reserve(len(data))
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(dir=self.blob_dir, prefix=".staged-", delete=False) as output:
+                    temporary = Path(output.name)
+                    os.chmod(temporary, 0o600)
+                    output.write(data)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary, path)
+                self._blob_bytes += len(data)
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
             directory_fd = os.open(self.blob_dir, os.O_RDONLY | os.O_DIRECTORY)
             try:
                 os.fsync(directory_fd)
@@ -218,7 +291,12 @@ class Observer:
 
     def _enqueue(self, local: str, data: dict, run: Path | None, job: dict) -> int:
         missing, files = [], []
-        names = [*image_paths(data), "report.html", "report.md", "report.json"] if run else []
+        try:
+            images = image_paths(data)
+        except ValueError:
+            images = []
+            missing.append("invalid image evidence metadata")
+        names = [*images, "report.html", "report.md", "report.json"] if run else []
         allowed = next((root for root in self.roots if run and run.is_relative_to(root)
                         and run.resolve().is_relative_to(root)), None)
         total = 0
@@ -255,7 +333,7 @@ class Observer:
         previous = self.db.execute("SELECT record FROM outbox WHERE id=?", [local]).fetchone()
         if previous and json.loads(previous[0])["gate"] in ENDED and rec["gate"] not in ENDED:
             return len(missing)
-        with self.db:
+        with self._write():
             self.db.execute("INSERT INTO outbox VALUES (?, ?, ?, 0) ON CONFLICT(id) DO UPDATE "
                             "SET digest=excluded.digest, record=excluded.record, acknowledged=0 "
                             "WHERE outbox.digest!=excluded.digest", [local, digest, raw])
@@ -297,6 +375,9 @@ class Observer:
                 counts["missing_evidence"] += self._enqueue(local, data, path.parent, {})
                 counts["historical_reports"] += 1
         counts["pending"] = self.pending()
+        counts["blob_bytes"] = self._blob_bytes
+        counts["outbox_bytes"] = self.outbox_bytes()
+        counts["max_outbox_bytes"] = self.max_outbox_bytes
         return counts
 
     def flush(self, client) -> dict[str, int]:
@@ -309,27 +390,33 @@ class Observer:
         acknowledged = 0
         pending = self.db.execute("SELECT id,digest,record FROM outbox WHERE acknowledged=0 ORDER BY id").fetchall()
         for local, digest, raw in pending:
-            rec = json.loads(raw)
-            reply = client.observe(rec)
-            matches = reply.get("synced", [])
-            if len(matches) != 1 or matches[0].get("local_id") != local:
-                raise ObserverError("The endpoint did not acknowledge this local run.")
-            cloud = matches[0].get("id")
-            if not isinstance(cloud, str) or not re.fullmatch(r"qms_[A-Za-z0-9_.-]+", cloud):
-                raise ObserverError("The endpoint returned an invalid run identity.")
-            files = {file["path"]: file for file in rec["files"]}
-            for item in reply.get("missing", []):
-                if item.get("run") != cloud or item.get("path") not in files:
-                    raise ObserverError("The endpoint requested foreign evidence.")
-                file = files[item["path"]]
-                content = (self.blob_dir / file["sha256"]).read_bytes()
-                if hashlib.sha256(content).hexdigest() != file["sha256"]:
-                    raise ObserverError("Durable evidence changed; the run remains pending.")
-                client.upload(cloud, item["path"], content, file["sha256"])
-            confirm = client.observe(rec)
-            if confirm.get("synced") != matches or confirm.get("missing") != []:
-                raise ObserverError("The endpoint still reports missing evidence; work stays pending.")
-            with self.db:
-                self.db.execute("UPDATE outbox SET acknowledged=1 WHERE id=? AND digest=?", [local, digest])
+            try:
+                self._flush_record(client, local, digest, raw)
+            except ObserverError as failure:
+                raise ObserverError(f"Local run {local!r}: {failure}") from None
             acknowledged += 1
         return {"acknowledged": acknowledged, "pending": self.pending()}
+
+    def _flush_record(self, client, local: str, digest: str, raw: str) -> None:
+        rec = json.loads(raw)
+        reply = client.observe(rec)
+        matches = reply.get("synced", [])
+        if len(matches) != 1 or matches[0].get("local_id") != local:
+            raise ObserverError("The endpoint did not acknowledge this local run.")
+        cloud = matches[0].get("id")
+        if not isinstance(cloud, str) or not re.fullmatch(r"qms_[A-Za-z0-9_.-]+", cloud):
+            raise ObserverError("The endpoint returned an invalid run identity.")
+        files = {file["path"]: file for file in rec["files"]}
+        for item in reply.get("missing", []):
+            if item.get("run") != cloud or item.get("path") not in files:
+                raise ObserverError("The endpoint requested foreign evidence.")
+            file = files[item["path"]]
+            content = (self.blob_dir / file["sha256"]).read_bytes()
+            if hashlib.sha256(content).hexdigest() != file["sha256"]:
+                raise ObserverError("Durable evidence changed; the run remains pending.")
+            client.upload(cloud, item["path"], content, file["sha256"])
+        confirm = client.observe(rec)
+        if confirm.get("synced") != matches or confirm.get("missing") != []:
+            raise ObserverError("The endpoint still reports missing evidence; work stays pending.")
+        with self._write():
+            self.db.execute("UPDATE outbox SET acknowledged=1 WHERE id=? AND digest=?", [local, digest])

@@ -298,3 +298,83 @@ def test_outbox_cap_refuses_next_blob_before_any_bytes_are_written(tmp_path):
             watch.inventory()
         assert sorted(p.name for p in watch.blob_dir.iterdir()) == before
         assert watch.pending() == 0
+
+
+def test_inventory_reports_deduplicated_blob_bytes_and_cap_survives_restart(tmp_path):
+    report(tmp_path / "home", tmp_path / "reports")
+    with observer(tmp_path) as watch:
+        first = watch.inventory()
+        assert first["blob_bytes"] == sum(len(blob) for blob in watch.blobs()) > 0
+        assert first["outbox_bytes"] >= first["blob_bytes"]
+        assert first["max_outbox_bytes"] == 512 * 1024**2
+        assert watch.inventory()["blob_bytes"] == first["blob_bytes"]
+    with observer(tmp_path) as reopened:
+        assert reopened.inventory()["blob_bytes"] == first["blob_bytes"]
+
+
+def test_database_metadata_cannot_grow_beyond_total_outbox_cap(tmp_path):
+    from qajev.observer import Observer
+
+    cap = 256 * 1024
+    job, _, data = report(tmp_path / "home", tmp_path / "reports")
+    data["scenarios"][0]["checks"] = [{"check": "x" * 50_000, "ok": True}]
+    (job / "result.json").write_text(json.dumps(data))
+    with Observer(tmp_path / "home", [tmp_path / "reports"], tmp_path / "state", "fixture",
+                  max_outbox_bytes=cap) as watch:
+        with pytest.raises(ObserverError, match="outbox"):
+            for number in range(20):
+                watch._enqueue(f"metadata-{number}", data, None, {})
+        assert sum(p.stat().st_size for p in (tmp_path / "state").rglob("*") if p.is_file()) <= cap
+        assert watch.pending() < 20
+
+
+def test_cli_inventory_cap_is_explicit_and_prints_retained_byte_counts(tmp_path, capsys):
+    from qajev.cli import main
+
+    job, run, data = report(tmp_path / "home", tmp_path / "reports")
+    (run / "shots").mkdir()
+    (run / "shots/large.jpg").write_bytes(b"x" * (2 * 1024**2))
+    data["scenarios"][0]["shot"] = "shots/large.jpg"
+    (job / "result.json").write_text(json.dumps(data))
+    code = main(["observe", "--home", str(tmp_path / "home"), "--report-root", str(tmp_path / "reports"),
+                 "--state-dir", str(tmp_path / "state"), "--project", "fixture", "--inventory",
+                 "--max-outbox-mib", "1"])
+    captured = capsys.readouterr()
+    assert code == 3
+    counters = json.loads(captured.out)
+    assert counters["error"] == "outbox_full" and counters["blob_bytes"] == 0
+    assert counters["max_outbox_bytes"] == 1024**2 and counters["outbox_bytes"] <= 1024**2
+    assert "--max-outbox-mib" in captured.err
+
+
+def test_permanent_refusal_identifies_the_pending_local_run(tmp_path):
+    report(tmp_path / "home", tmp_path / "reports", "a-refused")
+    server = Server()
+
+    def refuse(_record):
+        raise ObserverError("HTTP 400; work stays pending")
+
+    server.observe = refuse
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        with pytest.raises(ObserverError, match="a-refused"):
+            watch.flush(server)
+        assert watch.pending() == 1
+
+
+def test_invalid_effect_metadata_becomes_missing_evidence_without_a_traceback(tmp_path):
+    job, run, data = report(tmp_path / "home", tmp_path / "reports")
+    data["scenarios"][0]["effect"] = "not an effect mapping"
+    (job / "result.json").write_text(json.dumps(data))
+    (run / "report.json").write_text(json.dumps(data))
+    with observer(tmp_path) as watch:
+        failure = None
+        try:
+            summary = watch.inventory()
+        except ValueError as error:
+            failure = error
+        assert failure is None, "Malformed evidence stopped the whole observation cycle"
+        assert summary["missing_evidence"] == 1
+        server = Server()
+        watch.flush(server)
+        assert server.rows["qms_job-1"]["report"]["missing_evidence"] == ["invalid image evidence metadata"]

@@ -183,6 +183,8 @@ def build_parser():
                                                                 "without a credential or network")
     observe.add_argument("--once", action="store_true", help="one inventory/upload cycle, then exit")
     observe.add_argument("--every", type=int, default=60, help="seconds between inventory/upload cycles, minimum 5")
+    observe.add_argument("--max-outbox-mib", type=int, default=512,
+                         help="total outbox byte budget in MiB, including database and journal headroom (default 512)")
 
     check = sub.add_parser("check", help="one scenario from flags: a goal and/or expectations on a URL")
     check.add_argument("url")
@@ -1798,11 +1800,14 @@ def _lower_priority():
 
 
 def cmd_observe(args):
-    from .observer import Client, Observer, ObserverError
+    from .observer import Client, Observer, ObserverError, OutboxFull
 
     _lower_priority()
     if args.every < 5:
         print("qajev: observer interval must be at least 5 seconds", file=sys.stderr)
+        return EXIT_CONFIG
+    if args.max_outbox_mib < 1:
+        print("qajev: --max-outbox-mib must be at least 1", file=sys.stderr)
         return EXIT_CONFIG
     if not args.inventory and not args.credential_file:
         print("qajev: observe needs --credential-file (or --inventory for a local-only snapshot)", file=sys.stderr)
@@ -1812,7 +1817,8 @@ def cmd_observe(args):
         print("qajev: keep the machine credential outside approved report roots", file=sys.stderr)
         return EXIT_CONFIG
     try:
-        with Observer(args.home, args.report_root, args.state_dir, args.project, args.url) as observer:
+        with Observer(args.home, args.report_root, args.state_dir, args.project, args.url,
+                      max_outbox_bytes=args.max_outbox_mib * 1024**2) as observer:
             client = None
             while True:
                 inventory = observer.inventory()
@@ -1825,6 +1831,12 @@ def cmd_observe(args):
                 if args.once:
                     return 0
                 time.sleep(args.every)
+    except OutboxFull as failure:
+        print(json.dumps({"error": "outbox_full", "blob_bytes": failure.blob_bytes,
+                          "outbox_bytes": failure.used, "max_outbox_bytes": failure.limit,
+                          "next_write_bytes": failure.needed}), flush=True)
+        print(f"qajev: observation stopped: {failure}", file=sys.stderr)
+        return EXIT_CONFIG
     except (ObserverError, OSError) as failure:
         # Network failures have a fixed, credential-free message; no endpoint response body is printed.
         print(f"qajev: observation stopped: {failure}", file=sys.stderr)
