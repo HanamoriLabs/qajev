@@ -37,9 +37,9 @@ FAULTS = [
      "test_native_capture_and_declared_device_scale_keep_valid_scenarios_passing"),
     ("V11-clients-bypass", C, '                    entry["viewport"] = c.session.verify_viewport()',
      '                    pass', "test_a_client_with_wrong_geometry_stops_the_scenario_before_any_client_action"),
-    ("V12-device-cache", S, '            before = self.evaluate(viewport.MEASURE)',
+    ("V12-device-cache", S, '            before = measure()',
      '            if getattr(self, "_viewport_verified", False):\n                return {}\n'
-     '            self._viewport_verified = True\n            before = self.evaluate(viewport.MEASURE)',
+     '            self._viewport_verified = True\n            before = measure()',
      "test_each_scenario_measures_even_when_the_device_profile_is_cached"),
     ("V13-mismatch-pass", R, '                       "harness", str(e), started)',
      '                       "pass", str(e), started)', NEGATIVE),
@@ -53,6 +53,8 @@ FAULTS = [
     ("V16-ignore-scrollbar", V, 'after["visualViewport"]["width"] * scale + gutters[0]',
      'after["visualViewport"]["width"] * scale',
      "test_scrollbars_and_pinch_zoom_keep_matching_native_captures_valid"),
+    ("V17-dom-rounding-is-scrollbar", V, 'after["layoutViewport"]["clientHeight"]', 'after["clientHeight"]',
+     "test_dom_rounding_is_not_a_scrollbar_on_scaled_mobile_pages"),
 ]
 
 

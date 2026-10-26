@@ -37,7 +37,9 @@ def verify(before, after, raw, device, *, target=None, session=None):
                 or not all(_positive(view.get(k)) for k in (
                     "innerWidth", "innerHeight", "clientWidth", "clientHeight", "devicePixelRatio"))
                 or not isinstance(view.get("visualViewport"), dict)
-                or not all(_positive(view["visualViewport"].get(k)) for k in ("width", "height", "scale"))):
+                or not all(_positive(view["visualViewport"].get(k)) for k in ("width", "height", "scale"))
+                or not isinstance(view.get("layoutViewport"), dict)
+                or not all(_positive(view["layoutViewport"].get(k)) for k in ("clientWidth", "clientHeight"))):
             refuse("viewport geometry unavailable: page dimensions or visual scale could not be measured")
     try:
         with Image.open(io.BytesIO(raw)) as image:
@@ -47,9 +49,9 @@ def verify(before, after, raw, device, *, target=None, session=None):
         raise ViewportMismatch("viewport geometry unavailable: no valid captured image", evidence) from error
     evidence["capture_pixels"] = list(pixels)
     scale = after["visualViewport"]["scale"]
-    # The visual viewport excludes classic scrollbars. Root client dimensions measure their CSS gutters.
-    gutters = (max(0, after["innerWidth"] - after["clientWidth"]),
-               max(0, after["innerHeight"] - after["clientHeight"]))
+    # CDP layout dimensions avoid the DOM's floor/ceil disagreement on scaled mobile pages.
+    gutters = (max(0, after["innerWidth"] - after["layoutViewport"]["clientWidth"]),
+               max(0, after["innerHeight"] - after["layoutViewport"]["clientHeight"]))
     effective = (after["visualViewport"]["width"] * scale + gutters[0],
                  after["visualViewport"]["height"] * scale + gutters[1])
     evidence["scrollbar_css"] = list(gutters)

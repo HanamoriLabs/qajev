@@ -914,11 +914,20 @@ class Session:
         """Measure this target and its actual capture; a successful metrics request proves neither."""
         import base64
 
+        def measure():
+            view = self.evaluate(viewport.MEASURE)
+            metrics = self.call("Page.getLayoutMetrics")
+            layout = metrics.get("cssLayoutViewport") if isinstance(metrics, dict) else None
+            if isinstance(view, dict):
+                return {**view, "layoutViewport": {key: layout.get(key) for key in ("clientWidth", "clientHeight")}
+                        if isinstance(layout, dict) else None}
+            return view
+
         before = after = None
         try:
-            before = self.evaluate(viewport.MEASURE)
+            before = measure()
             data = self.call("Page.captureScreenshot", format="png", fromSurface=True, captureBeyondViewport=False)
-            after = self.evaluate(viewport.MEASURE)
+            after = measure()
             raw = base64.b64decode(data["data"], validate=True)
         except TransportLost:
             raise

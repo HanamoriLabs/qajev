@@ -52,7 +52,7 @@ dismissed. A run with `allow_destructive` opens with a red banner saying destruc
 
 Chrome web scenarios keep a `viewport` record before their checks and hooks, even with `--no-shots`.
 `requested` is the device profile; `before` and `after` contain actual page layout dimensions, DPR and the
-visual viewport around an actual capture. `capture_pixels` is the decoded image size. Device scale and
+visual viewport and Chrome layout metrics around an actual capture. `capture_pixels` is the decoded image size. Device scale and
 mobile visual zoom are accounted for before comparison. Missing geometry, disagreement or a resize during
 capture is **harness**, with no scenario actions or checks accepted. A clients scenario keeps this record
 under each client. This validates page/capture geometry; it does not judge a canvas or container's layout.

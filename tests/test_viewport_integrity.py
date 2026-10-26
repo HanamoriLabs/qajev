@@ -15,14 +15,14 @@ def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scal
     Image.new("RGB", image_size, (19, 47, 83)).save(stream, format="PNG")
     encoded = base64.b64encode(stream.getvalue()).decode()
     seen = {"calls": [], "checks": 0, "hooks": 0}
+    view = measured if measured is not None else geometry(*inner, dpr=scale, zoom=zoom)
 
     def cdp(method, **params):
         seen["calls"].append((method, params))
         if method == "Runtime.evaluate":
-            return {"result": {"value": measured if measured is not None else {
-                "innerWidth": inner[0], "innerHeight": inner[1],
-                "clientWidth": inner[0], "clientHeight": inner[1], "devicePixelRatio": scale,
-                "visualViewport": {"width": inner[0], "height": inner[1], "scale": zoom}}}}
+            return {"result": {"value": view}}
+        if method == "Page.getLayoutMetrics":
+            return {"cssLayoutViewport": view.get("layoutViewport")}
         if method == "Page.captureScreenshot":
             return {"data": encoded}
         return {}
@@ -143,6 +143,7 @@ def png(size=(1280, 900)):
 def geometry(width=1280, height=900, dpr=1, zoom=1):
     return {"innerWidth": width, "innerHeight": height, "devicePixelRatio": dpr,
             "clientWidth": width, "clientHeight": height,
+            "layoutViewport": {"clientWidth": width, "clientHeight": height},
             "visualViewport": {"width": width, "height": height, "scale": zoom}}
 
 
@@ -196,11 +197,22 @@ def test_a_narrow_visual_viewport_cannot_hide_behind_correct_layout_dimensions(m
 def test_scrollbars_and_pinch_zoom_keep_matching_native_captures_valid(monkeypatch, zoom, gutter):
     measured = geometry(zoom=zoom)
     measured["clientWidth"] -= gutter
+    measured["layoutViewport"]["clientWidth"] -= gutter
     measured["visualViewport"] = {"width": (1280 - gutter) / zoom, "height": 900 / zoom, "scale": zoom}
     page, _ = scenario_page(monkeypatch, inner=(1280, 900), measured=measured)
     result = run(page)
     assert result["outcome"] == "pass", result["reason"]
     assert result["viewport"]["scrollbar_css"] == [gutter, 0]
+
+
+def test_dom_rounding_is_not_a_scrollbar_on_scaled_mobile_pages(monkeypatch):
+    measured = geometry(980, 2121, dpr=3, zoom=390 / 980)
+    measured["clientHeight"] = 2120
+    measured["visualViewport"]["height"] = 844 / (390 / 980)
+    page, _ = scenario_page(monkeypatch, measured=measured, image_size=(1170, 2532))
+    result = run(page, device="phone")
+    assert result["outcome"] == "pass", result["reason"]
+    assert result["viewport"]["scrollbar_css"] == [0, 0]
 
 
 def test_a_client_with_wrong_geometry_stops_the_scenario_before_any_client_action(monkeypatch):
