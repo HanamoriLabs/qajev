@@ -62,7 +62,8 @@ def test_each_worker_uses_the_parent_provider_route(monkeypatch, tmp_path, jobs)
     monkeypatch.setattr(chrome, "reap", lambda: [])
     monkeypatch.setattr(chrome, "version", lambda _: {"Browser": "fixture"})
     parsed = suite.parse({"name": "routing", "base_url": "http://localhost", "scenarios": [
-        {"name": f"check-{i}", "about": "Fixture routing", "expect": {"text": "fixture"}} for i in range(4)]})
+        {"name": f"check-{i}", "url": "/", "about": "Fixture routing", "expect": {"text": "fixture"}}
+        for i in range(4)]})
     built = runner.run(parsed, runner.Options(jobs=jobs, cdp_url="http://127.0.0.1:9", out_dir=tmp_path))
     assert len(built["scenarios"]) == 4
     observations = [row["routing"] for row in built["scenarios"]]
