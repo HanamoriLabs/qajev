@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import contextlib
-from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import sqlite3
 import stat
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib import error, parse, request
 
 from qajev_upload_privacy import sanitize_text, sanitize_upload
@@ -208,6 +208,11 @@ class Observer:
                 output.write(data)
                 output.flush()
                 os.fsync(output.fileno())
+            directory_fd = os.open(self.blob_dir, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
         return sha
 
     def _enqueue(self, local: str, data: dict, run: Path | None, job: dict) -> int:
@@ -264,8 +269,10 @@ class Observer:
                         with contextlib.suppress(ValueError):
                             events.append(json.loads(line))
                 started = any(e.get("event") == "run" for e in events)
+                scenarios = [e["result"] for e in events
+                             if e.get("event") == "scenario" and isinstance(e.get("result"), dict)]
                 data = {"gate": "running" if started else "queued", "started_at": job.get("started_at"),
-                        "scenarios": [e["result"] for e in events if e.get("event") == "scenario" and isinstance(e.get("result"), dict)]}
+                        "scenarios": scenarios}
             run = Path(data["run_dir"]).absolute() if isinstance(data.get("run_dir"), str) else None
             if run:
                 seen.add(run)
@@ -290,7 +297,8 @@ class Observer:
             raise ObserverError("This outbox belongs to another registered machine.")
         self._set("machine", identity)
         acknowledged = 0
-        for local, digest, raw in self.db.execute("SELECT id,digest,record FROM outbox WHERE acknowledged=0 ORDER BY id").fetchall():
+        pending = self.db.execute("SELECT id,digest,record FROM outbox WHERE acknowledged=0 ORDER BY id").fetchall()
+        for local, digest, raw in pending:
             rec = json.loads(raw)
             reply = client.observe(rec)
             matches = reply.get("synced", [])

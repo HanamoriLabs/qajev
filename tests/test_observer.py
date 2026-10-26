@@ -16,7 +16,8 @@ def report(home, reports, local="job-1", count=2):
             "run_dir": str(run), "cost": {"usd": 0},
             "scenarios": [{"name": f"test-{i}", "about": "Static marker", "outcome": "pass",
                            "checks": [{"check": "marker", "ok": True}]} for i in range(count)]}
-    (job / "job.json").write_text(json.dumps({"id": local, "argv": ["run", "fixture.yaml"], "started_at": data["started_at"]}))
+    meta = {"id": local, "argv": ["run", "fixture.yaml"], "started_at": data["started_at"]}
+    (job / "job.json").write_text(json.dumps(meta))
     (job / "result.json").write_text(json.dumps(data))
     for name in ["report.json", "report.html", "report.md"]:
         (run / name).write_text(json.dumps(data) if name == "report.json" else "Synthetic report")
@@ -188,3 +189,44 @@ def test_cli_inventory_uses_explicit_home_without_credential_or_browser(tmp_path
     assert main(["observe", "--home", str(tmp_path / "home"), "--report-root", str(tmp_path / "reports"),
                  "--state-dir", str(tmp_path / "state"), "--project", "fixture", "--inventory"]) == 0
     assert json.loads(capsys.readouterr().out)["jobs"] == 1
+
+
+def test_http_redirect_never_forwards_machine_credential(tmp_path):
+    import http.server
+    import threading
+
+    from qajev.observer import Client
+
+    requests = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            requests.append(self.path)
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/stolen")
+            self.end_headers()
+
+        def do_GET(self):
+            requests.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *_):
+            pass
+
+    credential = tmp_path / "machine.credential"
+    credential.write_text("qjm_" + "fake-fixture-credential" * 2)
+    credential.chmod(0o600)
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = Client(f"http://127.0.0.1:{server.server_port}", credential)
+        with pytest.raises(ObserverError, match="redirected"):
+            client.heartbeat()
+        assert requests == ["/api/v1/observer/heartbeat"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
