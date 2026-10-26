@@ -152,6 +152,20 @@ def test_live_queued_running_then_final_state_is_not_acknowledged_early(tmp_path
         watch.inventory()
         watch.flush(server)
         assert server.rows["qms_job-1"]["gate"] == "running"
+        final = {"gate": "PASS", "started_at": 1_792_972_800, "seconds": 4, "scenarios": [
+            {"name": "visible", "outcome": "pass", "checks": [{"check": "marker", "ok": True}]}]}
+        (job / "result.json").write_text(json.dumps(final))
+        watch.inventory()
+        watch.flush(server)
+        assert server.rows["qms_job-1"]["gate"] == "pass"
+        final_record = json.dumps(server.rows["qms_job-1"], sort_keys=True)
+        (job / "result.json").unlink()
+        for old_events in ["", json.dumps({"event": "run", "suite": "Fixture"}) + "\n"]:
+            (job / "events.jsonl").write_text(old_events)
+            watch.inventory()
+            assert watch.pending() == 0, "A stale queued/running snapshot replaced the final record"
+            assert watch.flush(server)["acknowledged"] == 0
+            assert json.dumps(server.rows["qms_job-1"], sort_keys=True) == final_record
 
 
 def test_state_cannot_be_reused_for_a_different_home_or_machine(tmp_path):
@@ -269,3 +283,18 @@ def test_early_harness_without_output_directory_keeps_full_selected_job_result(t
         assert row["report"]["reason"].startswith("failure detail")
         assert [file["path"] for file in row["files"]] == ["report.json"]
         assert any(json.loads(blob) == data for blob in watch.blobs())
+
+
+def test_outbox_cap_refuses_next_blob_before_any_bytes_are_written(tmp_path):
+    job, run, data = report(tmp_path / "home", tmp_path / "reports")
+    (run / "shots").mkdir()
+    (run / "shots/large.jpg").write_bytes(b"x" * (256 * 1024))
+    data["scenarios"][0]["shot"] = "shots/large.jpg"
+    (job / "result.json").write_text(json.dumps(data))
+    with observer(tmp_path) as watch:
+        watch.max_outbox_bytes = 128 * 1024
+        before = sorted(p.name for p in watch.blob_dir.iterdir())
+        with pytest.raises(ObserverError, match="outbox"):
+            watch.inventory()
+        assert sorted(p.name for p in watch.blob_dir.iterdir()) == before
+        assert watch.pending() == 0
