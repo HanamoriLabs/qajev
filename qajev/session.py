@@ -23,7 +23,7 @@ from typing import Any
 
 from qajev_upload_privacy import sanitize_text
 
-from . import __version__, chrome, keys, live, netlog, providers
+from . import __version__, chrome, keys, live, netlog, providers, viewport
 from . import guard as guard_mod
 from . import pad as pad_mod
 from .config import is_loopback, redact
@@ -910,6 +910,52 @@ class Session:
             self.call("Emulation.setUserAgentOverride", userAgent="")
         self.device = device
 
+    def _measure_viewport(self):
+        view = self.evaluate(viewport.MEASURE)
+        metrics = self.call("Page.getLayoutMetrics")
+        layout = metrics.get("cssLayoutViewport") if isinstance(metrics, dict) else None
+        if isinstance(view, dict):
+            return {**view, "layoutViewport": {key: layout.get(key) for key in ("clientWidth", "clientHeight")}
+                    if isinstance(layout, dict) else None}
+        return view
+
+    def _checked_capture(self, **params):
+        """Validate the actual image being returned, including captures made after scenario hooks."""
+        import base64
+
+        before = after = None
+        try:
+            before = self._measure_viewport()
+            data = self.call("Page.captureScreenshot", **params)
+            after = self._measure_viewport()
+            raw = base64.b64decode(data["data"], validate=True)
+        except TransportLost:
+            raise
+        except (RuntimeError, TimeoutError, OSError, KeyError, TypeError, ValueError) as error:
+            raise viewport.ViewportMismatch(f"viewport geometry unavailable: {type(error).__name__}: {error}",
+                                            {"before": before, "after": after, "capture_pixels": None,
+                                             "requested": self.device, "target": getattr(self.browser, "target", None),
+                                             "session": getattr(self.browser, "session", None)}) from error
+        try:
+            evidence = viewport.verify(before, after, raw, self.device, target=getattr(self.browser, "target", None),
+                                       session=getattr(self.browser, "session", None))
+        except viewport.ViewportMismatch as error:
+            self.last_capture_viewport = error.evidence
+            raise
+        self.last_capture_viewport = evidence
+        return data["data"], evidence
+
+    def verify_viewport(self):
+        """Measure this target and its actual capture; a successful metrics request proves neither."""
+        return self._checked_capture(format="png", fromSurface=True, captureBeyondViewport=False)[1]
+
+    def _viewport_data(self, **params):
+        # Before a profile is selected, internal callers have no declared geometry to compare. Scenarios always
+        # select a profile and call verify_viewport before work; all their later full captures take this path.
+        if getattr(self, "device", None) is None:
+            return self.call("Page.captureScreenshot", **params)["data"]
+        return self._checked_capture(**params)[0]
+
     def _own_user_agent(self, user_agent):
         """Every page says QAJev drove it: the browser's own user agent with "QAJev/<version>" on the end, so a site,
         or a person's page that counts their visits, can tell QAJev from a person (FlockTab1, 14 Oct 2026). Set before
@@ -1161,7 +1207,9 @@ class Session:
             if marked:
                 with contextlib.suppress(RuntimeError, KeyError, TimeoutError):
                     self.evaluate(mark % "true", timeout_ms=2000)
-            data = self.call("Page.captureScreenshot", format="jpeg", quality=70)["data"]
+            data = self._viewport_data(format="jpeg", quality=70, fromSurface=True, captureBeyondViewport=False)
+        except viewport.ViewportMismatch:
+            raise
         except (RuntimeError, KeyError, TimeoutError):
             return None
         finally:
@@ -1188,14 +1236,13 @@ class Session:
 
     def screen_image(self):
         """The viewport as a JPEG data URL, for Clef (vision.py): what a visitor sees right now."""
-        data = self.call("Page.captureScreenshot", format="jpeg", quality=70)["data"]
+        data = self._viewport_data(format="jpeg", quality=70, fromSurface=True, captureBeyondViewport=False)
         return f"data:image/jpeg;base64,{data}"
 
     def screen_image_png(self):
         """Unmarked lossless input for frame-pixel claim crops; write guards remain active."""
         self.evaluate("window.__qajev && window.__qajev.mark && window.__qajev.mark(false)", timeout_ms=2000)
-        data = self.call("Page.captureScreenshot", format="png", fromSurface=True,
-                         captureBeyondViewport=False)["data"]
+        data = self._viewport_data(format="png", fromSurface=True, captureBeyondViewport=False)
         return f"data:image/png;base64,{data}"
 
     def fetch(self, probe):
@@ -1429,8 +1476,14 @@ class Session:
         where = getattr(self, "shot_dir", None)
         name = f"{getattr(self, 'shot_prefix', 'react')}-{self.react_frames:03d}-{label}.jpg"
         path = self.screenshot(where / name, marked=False) if where else None  # timed: no marking pass
-        return {"shot": label, "at_s": round(at_s, 3), "took_s": round(time.monotonic() - start - at_s, 3),
-                "path": str(path) if path else None}
+        result: dict[str, Any] = {
+            "shot": label, "at_s": round(at_s, 3), "took_s": round(time.monotonic() - start - at_s, 3),
+            "path": str(path) if path else None,
+        }
+        evidence = getattr(self, "last_capture_viewport", None)
+        if path and isinstance(evidence, dict):
+            result["viewport"] = {"page": evidence["after"], "capture_pixels": evidence["capture_pixels"]}
+        return result
 
     def find(self, selector):
         if self.guard_cfg is not None:

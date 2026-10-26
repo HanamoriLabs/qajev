@@ -1,5 +1,25 @@
 # Troubleshooting
 
+**"viewport mismatch: page ... capture ... requested ..." (harness)**
+
+The page and its capture do not agree with the requested device geometry. Before a Chrome web scenario's
+checks or hooks, QAJev measures the page, takes a native capture, then measures again. A mismatch or a resize
+during capture stops that scenario as harness. This check also runs with `--no-shots`.
+
+Saved, reactive and vision images validate their own geometry at capture time. A correct startup cannot make
+a later mismatched frame pass. The full-frame capture stays within the native viewport, and a rejected frame
+is not saved or sent to the vision judge. Passing checks do not turn that capture failure into a product PASS.
+
+Inspect the scenario's `viewport` object in `report.json` (each client's object for a clients scenario).
+It contains requested geometry, actual `innerWidth` and `innerHeight`, the visual viewport, DPR and capture
+pixel dimensions. CSS layout pixels and image pixels differ at a device scale above 1. Mobile pages without
+a viewport meta tag may also use a wider layout scaled into the screen; QAJev accounts for that visual scale.
+`capture_viewport` records a later frame's measurement or failure. The initial `viewport` record remains intact.
+
+A correct page/capture geometry does not prove that a canvas or app container fills the page. A narrow
+container with correct page dimensions is a separate layout question. A geometry failure is not repaired by
+resizing the evidence image or by accepting a passing scripted check.
+
 Start with `qajev doctor`: it checks keys, Chrome, ports and load, and says what to fix.
 
 **"Chrome not found"**

@@ -146,11 +146,13 @@ def _trim(snaps):
 def _first_error(results, where):
     """The first client error in a together() round, as (stop, detail), or None."""
     from .session import GuardMissing, HookFailed, LeftSite
+    from .viewport import ViewportMismatch
 
     for name, _value, error in results:
         if error is None:
             continue
-        stop = {HookFailed: "hook_failed", GuardMissing: "guard_missing", LeftSite: "left_site"}.get(
+        stop = {HookFailed: "hook_failed", GuardMissing: "guard_missing", LeftSite: "left_site",
+                ViewportMismatch: "viewport_mismatch"}.get(
             type(error), "browser_error")
         text = str(error) if stop != "browser_error" else f"{type(error).__name__}: {error}"
         return stop, f"[{name}] {where}: {text}"[:500]
@@ -160,6 +162,7 @@ def _first_error(results, where):
 def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
     """Run a scenario with clients. -> its result (outcome, reason, checks, findings, per-client shots and states)."""
     from . import session as session_mod
+    from .viewport import ViewportMismatch
 
     step = step or (lambda doing: None)
     started = time.monotonic()
@@ -226,6 +229,13 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
             error = c.session.navigate(c.url)
             if error:
                 raise RuntimeError(f"page did not load: {error}")
+            if hasattr(c.session, "verify_viewport"):
+                entry = next(row for row in result["clients"] if row["name"] == c.name)
+                try:
+                    entry["viewport"] = c.session.verify_viewport()
+                except ViewportMismatch as error:
+                    entry["viewport"] = error.evidence
+                    raise
             if observer:
                 observer.safe(observer.start)
             observed = absorb(c, c.session.probe(page_expect))
@@ -299,16 +309,30 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
     except Exception as e:  # noqa: BLE001 (a client that cannot even open is the run's trouble, not the product's)
         from .session import GuardMissing
 
-        stop = "guard_missing" if isinstance(e, GuardMissing) else "browser_error"
+        stop = ("guard_missing" if isinstance(e, GuardMissing) else
+                "viewport_mismatch" if isinstance(e, ViewportMismatch) else "browser_error")
         detail = f"{where}: {type(e).__name__}: {e}"[:500]
     finally:
-        if run_dir:
+        if run_dir and stop != "viewport_mismatch":
             for c in clients:
-                shot = c.session.screenshot(run_dir / "shots" / f"{_slug(scenario.name)}-{c.name}.jpg")
                 entry = next(r for r in result["clients"] if r["name"] == c.name)
-                entry["shot"] = str(shot.relative_to(run_dir)) if shot else None
+                try:
+                    shot = c.session.screenshot(run_dir / "shots" / f"{_slug(scenario.name)}-{c.name}.jpg")
+                    entry["shot"] = str(shot.relative_to(run_dir)) if shot else None
+                    capture = getattr(c.session, "last_capture_viewport", None)
+                    if isinstance(capture, dict):
+                        entry["capture_viewport"] = capture
+                except ViewportMismatch as error:
+                    stop, detail = "viewport_mismatch", f"[{c.name}] capture: {error}"
+                    entry["capture_viewport"] = error.evidence
+                    entry["shot"] = None
             result["shot"] = next((r.get("shot") for r in result["clients"] if r.get("shot")), None)
         for c in clients:
+            entry = next(r for r in result["clients"] if r["name"] == c.name)
+            entry.setdefault("shot", None)
+            capture = getattr(c.session, "last_capture_viewport", None)
+            if "capture_viewport" not in entry and isinstance(capture, dict):
+                entry["capture_viewport"] = capture
             observer = getattr(c.session, "ux_observer", None)
             if observer:
                 observer.safe(observer.finish)
