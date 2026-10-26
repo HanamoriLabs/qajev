@@ -10,6 +10,7 @@ The text helper (values Jev types) is any OpenAI-compatible chat endpoint; an Op
 """
 
 import os
+from collections.abc import Callable
 
 from .config import ROUTING_PLACEHOLDER as PLACEHOLDER  # jev's TYPESAFE_API_KEY on OpenRouter
 
@@ -21,6 +22,9 @@ CLOUDFLARE_RUN = "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run
 CLEF_MODELS = {"clef-flash": 0.09, "clef": 0.24}  # USD per million input tokens (Workers AI, 2026-10); output free
 PROVIDERS = ("auto", "typesafe", "openrouter", "cloudflare")
 SEE = None  # vision.seeing(): a callable giving the current screenshot (a data URL) for each Clef decision
+# Trusted integrations can restore their process-local routing in spawn workers. The callable must be importable
+# and carry metadata only; authorization stays in the worker's inherited environment, never in pool arguments.
+WORKER_BOOTSTRAP: Callable[[], None] | None = None
 
 
 class ProviderError(RuntimeError):
