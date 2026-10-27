@@ -48,9 +48,22 @@ def available_memory() -> int | None:
             # cgroup v2 limits can be much smaller than the host's MemAvailable.
             group = next(line.split("::", 1)[1] for line in CGROUP.read_text().splitlines()
                          if line.startswith("0::"))
-            root = CGROUP_ROOT / group.lstrip("/")
-            maximum = (root / "memory.max").read_text().strip()
-            if maximum != "max":
+            base = CGROUP_ROOT.resolve()
+            leaf = (base / group.lstrip("/")).resolve()
+            if not leaf.is_relative_to(base):
+                return None
+            for root in [leaf, *leaf.parents]:
+                if not root.is_relative_to(base):
+                    break
+                try:
+                    maximum = (root / "memory.max").read_text().strip()
+                except FileNotFoundError:
+                    if root != base or root == leaf:
+                        raise
+                    # A native hierarchy root has no memory.max; finite ancestors still apply.
+                    continue
+                if maximum == "max":
+                    continue
                 available = min(available, max(0, int(maximum) - int((root / "memory.current").read_text())))
             return available
         except (OSError, ValueError, KeyError, StopIteration):

@@ -22,6 +22,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Linux parallel-browser admission now respects every ancestor cgroup v2 memory limit as well as the host's
+  available memory. Sibling scopes consuming a shared parent budget can no longer be overlooked when deciding
+  whether another run fits. Concurrency defaults and configured RAM budgets stay unchanged.
 - Managed Chrome now starts with a fixed runtime environment allowlist, excluding model credentials and arbitrary
   application variables in serial and parallel jobs. Existing profiles without the isolation marker require a
   browser restart. Command-hook behavior and its `--allow-commands` gate are unchanged.
