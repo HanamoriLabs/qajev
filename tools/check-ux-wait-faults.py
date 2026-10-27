@@ -2,10 +2,10 @@
 import argparse
 import hashlib
 import json
-from pathlib import Path
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 CHECKS = "qajev/ux_checks.py"
 OPTIONS = "qajev/ux_options.py"
