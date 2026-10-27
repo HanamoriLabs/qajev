@@ -70,6 +70,7 @@ class Observer:
 
     def settle(self, quiet_ms=None, timeout=10):
         quiet_ms = self.config["ux_settle_ms"] if quiet_ms is None else quiet_ms
+        timeout = min(timeout, self.config["ux_settle_timeout_ms"] / 1000)
         began = time.monotonic()
         until = began + timeout
         while True:
@@ -79,10 +80,11 @@ class Observer:
             if (state.get("quiet_ms", 0) >= quiet_ms and not state.get("finite_animations")
                     and network_quiet >= quiet_ms and (time.monotonic() - began) * 1000 >= quiet_ms):
                 return True
-            if time.monotonic() >= until:
+            remaining = until - time.monotonic()
+            if remaining <= 0:
                 self.note("page did not settle")
                 return False
-            time.sleep(0.05)
+            time.sleep(min(0.05, remaining))
 
     def start(self):
         self.session.evaluate(SOURCE)

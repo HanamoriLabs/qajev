@@ -55,6 +55,7 @@ class Options:
     ux_keyboard_main: str | None = None
     ux_keyboard_press_return: bool | None = None
     ux_settle_ms: int | None = None
+    ux_settle_timeout_ms: int | None = None
     ux_shift_px: float | None = None
     ux_tap_min_px: float | None = None
     ux_max_findings: int | None = None

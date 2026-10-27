@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UX fixture: continuous updates</title>
+<style>
+  body { margin: 16px; font: 16px system-ui; }
+  button { min-width: 44px; min-height: 44px; }
+  #tiny { min-width: 0; min-height: 0; width: 20px; height: 20px; padding: 0; }
+</style>
+<h1>Continuous updates</h1>
+<p>Frame <span id="counter">0</span></p>
+<button id="tiny" type="button" aria-label="Small target">+</button>
+<script>
+  let count = 0;
+  function tick() {
+    document.getElementById("counter").textContent = String(++count);
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+</script>
+</html>

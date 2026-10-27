@@ -12,6 +12,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- `ux_settle_timeout_ms` (CLI `--ux-settle-timeout-ms`) caps each UX quiet wait for
+  continuously updating pages. The default stays 10 seconds, every UX scan still
+  runs, and an expired wait records "page did not settle".
+
 - An opt-in registered-machine observer snapshots selected local jobs and approved report roots into a durable
   outbox, then publishes tests and evidence idempotently. Human-placed machine credentials are observation-only;
   registration requires the companion Cloud API. No model route, execution agent or service is enabled by default.

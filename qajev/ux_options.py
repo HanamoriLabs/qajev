@@ -12,6 +12,7 @@ DEFAULTS = {
     "ux_keyboard_main": "reachable",
     "ux_keyboard_press_return": False,
     "ux_settle_ms": 750,
+    "ux_settle_timeout_ms": 10000,
     "ux_shift_px": 8,
     "ux_tap_min_px": 44,
     "ux_max_findings": 10,
@@ -53,9 +54,11 @@ def parse(values=None, where="ux"):
             raise ValueError(f"{where}: {key} must be at least 0")
         if key == "ux_tap_min_px" and value <= 0:
             raise ValueError(f"{where}: {key} must be greater than 0")
-    for key, minimum in (("ux_settle_ms", 0), ("ux_max_findings", 1)):
+    for key, minimum in (("ux_settle_ms", 0), ("ux_settle_timeout_ms", 0), ("ux_max_findings", 1)):
         if key in out and (isinstance(out[key], bool) or not isinstance(out[key], int) or out[key] < minimum):
             raise ValueError(f"{where}: {key} must be a whole number of at least {minimum}")
+    if out.get("ux_settle_timeout_ms", 0) > 10000:
+        raise ValueError(f"{where}: ux_settle_timeout_ms must be at most 10000")
     return out
 
 
