@@ -19,6 +19,7 @@ ux_keyboard_ratio: 0.45
 ux_keyboard_main: reachable
 ux_keyboard_press_return: false
 ux_settle_ms: 750
+ux_settle_timeout_ms: 10000
 ux_shift_px: 8
 ux_tap_min_px: 44
 ux_max_findings: 10
@@ -28,6 +29,21 @@ The equivalent flags use hyphens, for example `--ux strict`,
 `--ux-keyboard-scope all`, `--ux-checks cover,tap,clip` and
 `--ux-keyboard-press-return` (or `--no-ux-keyboard-press-return`). The web MCP tools
 accept the same option names.
+
+For a page that updates continuously, set `ux_settle_timeout_ms: 250` or pass
+`--ux-settle-timeout-ms 250` to cap each UX quiet wait. The default stays 10000 ms;
+the allowed range is 0–10000 ms. Startup, after-action and final scans still run,
+and the report keeps **page did not settle** if the page never becomes quiet.
+Shorter internal waits, such as keyboard measurements, keep their own lower cap.
+The cap bounds polling for quiet, not the browser request or the scan itself.
+
+`ux_settle_ms` is the required quiet interval, not a timeout. Lowering it alone
+does not bound the wait on a continuously changing page. A shorter timeout can
+observe a page before a later layout update; keep it long enough for the changes
+being tested, or use an explicit `wait_for` hook before judging the finished state.
+It does not replace readiness checks. The separate scenario `settle` option
+retries failing page expectations; `settle: 0` is useful for checks that only read
+already-completed measurements, including their planted variants.
 
 | Finding | What it measures |
 |---|---|

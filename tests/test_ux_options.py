@@ -9,6 +9,7 @@ from qajev import cli, cloud, mcp_server, suite, ux_options
 def test_defaults_and_old_boolean_modes_are_resolved_without_shared_lists():
     assert ux_options.resolve()["ux"] == "advisory"
     assert ux_options.resolve()["ux_keyboard_press_return"] is False
+    assert ux_options.resolve()["ux_settle_timeout_ms"] == 10000
     assert ux_options.resolve({"ux": True})["ux"] == "advisory"
     assert ux_options.resolve({"ux": False})["ux"] == "off"
     first = ux_options.resolve()
@@ -26,6 +27,19 @@ def test_run_options_beat_inherited_values_and_none_keeps_the_suite_value():
     assert resolved["ux_settle_ms"] == 750
 
 
+@pytest.mark.parametrize("cap", [0, 125, 10000])
+def test_wait_cap_reaches_real_run_options_and_inherits_per_scenario(cap):
+    from qajev.runner import Options
+
+    loaded = suite.parse({"base_url": "http://example.test", "ux_settle_timeout_ms": 1000,
+                          "scenarios": [{"name": "inherited", "expect": {"js": "true"}},
+                                        {"name": "override", "ux_settle_timeout_ms": cap,
+                                         "expect": {"js": "true"}}]})
+    assert loaded.scenarios[0].ux_options["ux_settle_timeout_ms"] == 1000
+    assert loaded.scenarios[1].ux_options["ux_settle_timeout_ms"] == cap
+    assert ux_options.resolve(Options(ux_settle_timeout_ms=cap), loaded.ux_options)["ux_settle_timeout_ms"] == cap
+
+
 @pytest.mark.parametrize("key,value", [
     ("ux", "enabled"), ("ux", 1),
     ("ux_checks", ["cover", "imagined"]), ("ux_checks", [1]),
@@ -34,6 +48,8 @@ def test_run_options_beat_inherited_values_and_none_keeps_the_suite_value():
     ("ux_keyboard_ratio", float("nan")), ("ux_keyboard_ratio", float("inf")),
     ("ux_keyboard_ratio", True), ("ux_keyboard_press_return", "false"),
     ("ux_settle_ms", -1), ("ux_settle_ms", 1.5), ("ux_settle_ms", True),
+    ("ux_settle_timeout_ms", -1), ("ux_settle_timeout_ms", 10001),
+    ("ux_settle_timeout_ms", 1.5), ("ux_settle_timeout_ms", True),
     ("ux_shift_px", -1), ("ux_shift_px", float("nan")),
     ("ux_tap_min_px", 0), ("ux_tap_min_px", float("inf")),
     ("ux_max_findings", 0), ("ux_max_findings", 1.5), ("ux_max_findings", True),
@@ -66,7 +82,8 @@ def test_suite_and_scenario_inherit_explicit_options_before_run_overrides():
 
 FLAGS = ["--ux", "strict", "--ux-checks", "cover,keyboard,clip", "--ux-keyboard-scope", "all",
          "--ux-keyboard-ratio", "0.4", "--ux-keyboard-main", "visible", "--ux-keyboard-press-return",
-         "--ux-settle-ms", "300", "--ux-shift-px", "0", "--ux-tap-min-px", "48", "--ux-max-findings", "3"]
+         "--ux-settle-ms", "300", "--ux-settle-timeout-ms", "250", "--ux-shift-px", "0",
+         "--ux-tap-min-px", "48", "--ux-max-findings", "3"]
 
 
 @pytest.mark.parametrize("command,target", [("check", "https://example.com/"), ("run", "test.yaml"),
@@ -75,7 +92,8 @@ def test_every_web_cli_accepts_and_serializes_all_explicit_ux_flags(command, tar
     args = cli.build_parser().parse_args([command, target, *FLAGS])
     expected = {"ux": "strict", "ux_checks": ["cover", "keyboard", "clip"], "ux_keyboard_scope": "all",
                 "ux_keyboard_ratio": .4, "ux_keyboard_main": "visible", "ux_keyboard_press_return": True,
-                "ux_settle_ms": 300, "ux_shift_px": 0, "ux_tap_min_px": 48, "ux_max_findings": 3}
+                "ux_settle_ms": 300, "ux_settle_timeout_ms": 250,
+                "ux_shift_px": 0, "ux_tap_min_px": 48, "ux_max_findings": 3}
     assert ux_options.parse(args) == expected
     from qajev import runner
 
@@ -113,7 +131,8 @@ def test_every_web_mcp_entry_point_forwards_explicit_options_and_preserves_suite
     monkeypatch.setattr(mcp_server, "_dispatch", fake_dispatch)
     options = {"ux": "strict", "ux_checks": ["cover", "keyboard", "clip"], "ux_keyboard_scope": "all",
                "ux_keyboard_ratio": .4, "ux_keyboard_main": "visible", "ux_keyboard_press_return": False,
-               "ux_settle_ms": 300, "ux_shift_px": 0, "ux_tap_min_px": 48, "ux_max_findings": 3}
+               "ux_settle_ms": 300, "ux_settle_timeout_ms": 250,
+               "ux_shift_px": 0, "ux_tap_min_px": 48, "ux_max_findings": 3}
     for tool, args, kwargs in [(mcp_server.qa_check, ("http://example.test/", None), {}),
                                (mcp_server.qa_run_suite, (None,), {"suite_path": "test.yaml"}),
                                (mcp_server.qa_smoke, ("http://example.test/", None), {}),

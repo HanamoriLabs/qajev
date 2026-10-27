@@ -153,6 +153,8 @@ def _ux_flags(p):
     g.add_argument("--ux-keyboard-press-return", action=argparse.BooleanOptionalAction, default=None,
                    help="verify that Return closes the keyboard, while preventing form submission")
     g.add_argument("--ux-settle-ms", type=value("ux_settle_ms", int), metavar="MS")
+    g.add_argument("--ux-settle-timeout-ms", type=value("ux_settle_timeout_ms", int), metavar="MS",
+                   help="cap each UX quiet wait at 0–10000 ms (default: 10000); every scan still runs")
     g.add_argument("--ux-shift-px", type=value("ux_shift_px", float), metavar="PX")
     g.add_argument("--ux-tap-min-px", type=value("ux_tap_min_px", float), metavar="PX")
     g.add_argument("--ux-max-findings", type=value("ux_max_findings", int), metavar="N")

@@ -113,6 +113,29 @@ def counts(observer):
     return Counter(f["check"] for f in observer.result["findings"])
 
 
+def test_continuous_updates_use_short_wait_and_still_find_small_target(page, site):
+    session, folder = page
+    began = time.monotonic()
+    observer = session.open_ux(site + "/ux-busy.html", ux_settle_timeout_ms=125)
+    assert time.monotonic() - began < 3, "a busy page must not consume the old ten-second wait"
+    assert counts(observer) == {"UX-TAP": 1}
+    assert observer.result["notes"] == ["page did not settle"]
+    assert (folder / observer.result["findings"][0]["screenshot"]).is_file()
+    observer.finish()
+    assert observer.result["findings"][0]["repeats"] == 2
+
+
+def test_short_wait_still_catches_real_delayed_layout_shift(page, site):
+    session, folder = page
+    observer = session.open_ux(site + "/ux-shift.html", ux_settle_timeout_ms=500)
+    session.run_hook({"click": "#take"}, site)
+    assert counts(observer) == {"UX-SHIFT": 1}
+    item = observer.result["findings"][0]
+    assert item["data"]["dy"] == 160
+    assert (folder / item["screenshot"]).is_file()
+    assert "page did not settle" in observer.result["notes"]
+
+
 def test_covered_control_has_exact_geometry_and_first_crop(page, site):
     from PIL import Image
 
