@@ -54,9 +54,12 @@ used by active browsers is not charged a second time. Startup reservations also 
 envelope measured when the active group began, so simultaneous launches cannot spend the same free RAM twice.
 Each run retains its declared budget; the largest active reserve applies. The envelope resets when all active
 runs finish. Memory returning within that envelope can admit a queued process while another still runs.
-Linux cgroup v2 limits also apply. Unknown memory or an older active lease with no RAM reservation permits at
-most one run; insufficient known memory queues even the first run requesting N above 1. Active work is never
-killed to lower N. External `--cdp-url` and native runs remain exclusive.
+On Linux, available memory is capped by the host's `MemAvailable` and the remaining memory at every finite
+cgroup v2 limit, from the run's own cgroup through its ancestors to the cgroup mount root. Sibling usage in a
+shared parent therefore reduces admission capacity even when the run's own scope has room. Unlimited levels
+are skipped. An unreadable limit below the mount root makes memory unknown. Unknown memory or an older active
+lease with no RAM reservation permits at most one run; insufficient known memory queues even the first run
+requesting N above 1. Active work is never killed to lower N. External `--cdp-url` and native runs remain exclusive.
 
 `--events` emits `waiting` immediately when queued, then every 10 seconds, `admitted` before browser startup,
 and `released` on exit. Reports and `qajev jobs ID --json` carry `timing.queue_seconds` and

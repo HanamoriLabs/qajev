@@ -101,6 +101,88 @@ def test_linux_memory_obeys_container_limits_and_refuses_unknown_limits(
     assert SAMPLE_MEMORY() == expected
 
 
+def _linux_cgroup_tree(monkeypatch, tmp_path, *, host=16 * 1024**3, changes=None):
+    mount = tmp_path / "cgroups"
+    limits = {"": ("max", None), "shared": (str(12 * 1024**3), str(8 * 1024**3)),
+              "shared/worker": ("max", None), "shared/worker/run": (str(12 * 1024**3), str(1024**3))}
+    limits.update(changes or {})
+    for name, (maximum, current) in limits.items():
+        directory = mount / name
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "memory.max").write_text(maximum)
+        if current is not None:
+            (directory / "memory.current").write_text(current)
+    meminfo, cgroup = tmp_path / "meminfo", tmp_path / "cgroup"
+    meminfo.write_text(f"MemAvailable: {host // 1024} kB\n")
+    cgroup.write_text("0::/shared/worker/run\n")
+    monkeypatch.setattr(browser_pool.sys, "platform", "linux")
+    monkeypatch.setattr(browser_pool, "MEMINFO", meminfo)
+    monkeypatch.setattr(browser_pool, "CGROUP", cgroup)
+    monkeypatch.setattr(browser_pool, "CGROUP_ROOT", mount)
+    return mount
+
+
+def test_parent_cgroup_remaining_memory_blocks_browser_admission(monkeypatch, tmp_path):
+    _linux_cgroup_tree(monkeypatch, tmp_path)
+    monkeypatch.setattr(browser_pool, "available_memory", SAMPLE_MEMORY)
+    monkeypatch.setenv("QAJEV_BROWSER_RAM_MIB", "4096")
+    monkeypatch.setenv("QAJEV_BROWSER_RESERVE_MIB", "3072")
+    # The leaf has 11 GiB left; sibling usage leaves only 4 GiB in the shared parent.
+    assert SAMPLE_MEMORY() == 4 * 1024**3
+    with pytest.raises(jobs.Busy, match="memory"):
+        with jobs.machine_lock("shared parent fixture", browser_runs=2, wait=0):
+            raise AssertionError("a run exceeded the shared parent memory budget")
+    assert not browser_pool.holders()
+
+
+@pytest.mark.parametrize("host,changes,expected", [
+    pytest.param(16 * 1024**3, {}, 4 * 1024**3, id="skip-unlimited-intermediate"),
+    pytest.param(2 * 1024**3, {}, 2 * 1024**3, id="host-is-tightest"),
+    pytest.param(16 * 1024**3, {"shared/worker/run": (str(3 * 1024**3), str(1024**3))},
+                 2 * 1024**3, id="leaf-is-tightest"),
+    pytest.param(16 * 1024**3, {"shared": (str(6 * 1024**3), str(8 * 1024**3))},
+                 0, id="parent-is-exhausted"),
+    pytest.param(16 * 1024**3, {"": (str(5 * 1024**3), str(2 * 1024**3))},
+                 3 * 1024**3, id="mount-root-is-tightest"),
+    pytest.param(16 * 1024**3, {"shared": ("max", None)},
+                 11 * 1024**3, id="all-ancestors-unlimited"),
+])
+def test_linux_memory_uses_the_tightest_host_leaf_or_ancestor(monkeypatch, tmp_path, host, changes, expected):
+    _linux_cgroup_tree(monkeypatch, tmp_path, host=host, changes=changes)
+    assert SAMPLE_MEMORY() == expected
+
+
+@pytest.mark.parametrize("filename,contents", [("memory.max", None), ("memory.max", "broken"),
+                                              ("memory.current", None), ("memory.current", "broken")])
+def test_linux_memory_refuses_unknown_parent_limits(monkeypatch, tmp_path, filename, contents):
+    mount = _linux_cgroup_tree(monkeypatch, tmp_path)
+    file = mount / "shared" / filename
+    if contents is None:
+        file.unlink()
+    else:
+        file.write_text(contents)
+    assert SAMPLE_MEMORY() is None
+
+
+@pytest.mark.parametrize("mount_has_memory_max", [False, True])
+def test_linux_cgroup_walk_stops_at_the_mount_root(monkeypatch, tmp_path, mount_has_memory_max):
+    mount = _linux_cgroup_tree(monkeypatch, tmp_path)
+    if not mount_has_memory_max:
+        (mount / "memory.max").unlink()  # The host hierarchy root has no memory.max interface.
+    (mount.parent / "memory.max").write_text("0")
+    (mount.parent / "memory.current").write_text("0")
+    assert SAMPLE_MEMORY() == 4 * 1024**3
+
+
+def test_linux_cgroup_path_cannot_escape_the_mount_root(monkeypatch, tmp_path):
+    _linux_cgroup_tree(monkeypatch, tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "memory.max").write_text("max")
+    browser_pool.CGROUP.write_text("0::/../outside\n")
+    assert SAMPLE_MEMORY() is None
+
+
 def test_low_ram_queues_instead_of_starting_or_killing_active_runs(monkeypatch):
     with jobs.machine_lock("first", browser_runs=4, wait=0.1):
         monkeypatch.setattr(browser_pool, "available_memory", lambda: int(2.5 * 1024**3))
