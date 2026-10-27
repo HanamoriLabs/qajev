@@ -222,7 +222,39 @@ def _link(url):
 
 
 def _pill(outcome):
+    if outcome in ("caught", "missed"):
+        colour, label = ("pass", "CAUGHT") if outcome == "caught" else ("fail", "FAIL")
+        return f'<span class="pill {colour}">{label}</span>'
     return f'<span class="pill {_e(outcome)}">{_e(outcome)}</span>'
+
+
+def _display_outcome(result):
+    if result.get("expected") == "fail":
+        if result.get("graded") == "pass" and result.get("outcome") == "fail":
+            return "caught"
+        if result.get("graded") == "fail":
+            return "missed"
+    return result.get("outcome")
+
+
+def _display_reason(result):
+    kind = _display_outcome(result)
+    if kind == "caught":
+        return "planted fault caught"
+    if kind == "missed":
+        return "the check missed a planted fault"
+    return result.get("reason")
+
+
+def _display_counts(data):
+    scenarios = data.get("scenarios") or []
+    if not scenarios:
+        return dict(data["counts"])
+    counts = {}
+    for result in scenarios:
+        kind = _display_outcome(result)
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts
 
 
 def _table(head, rows):
@@ -239,12 +271,14 @@ NOT_DESCRIBED = '<span class="nd">NOT DESCRIBED</span>'
 
 def _line(line):
     """One check in plain words, ticked by its result, the raw check folded away for agents."""
-    state = "todo" if "ok" not in line else "pass" if line["ok"] else "fail"
+    caught = line.get("caught") and line.get("ok") is False
+    state = "pass" if caught else "todo" if "ok" not in line else "pass" if line["ok"] else "fail"
     said = _e(line["words"]) if line["words"] else f"{NOT_DESCRIBED} <code>{_e(line['check'])}</code>"
     raw = (f'<details><summary>For agents</summary><code>{_e(line["check"])}</code></details>'
            if line["words"] and line.get("check") else "")
     reason = f' <span class="muted">— {_e(line["detail"])}</span>' if line.get("detail") else ""
-    return f'<li><span class="box {state}">{BOX[state]}</span><div>{said}{reason}{raw}</div></li>'
+    label = '<strong>CAUGHT:</strong> ' if caught else ""
+    return f'<li><span class="box {state}">{BOX[state]}</span><div>{label}{said}{reason}{raw}</div></li>'
 
 
 def _plan(items, scenarios):
@@ -254,11 +288,14 @@ def _plan(items, scenarios):
     out = ['<section class="card" id="plan"><h2>Test plan</h2><p class="muted">What each test proves, ticked as it '
            "ran: ✓ passed, ✗ failed, ! stuck or harness, empty: not run.</p><ol class=\"plan\">"]
     for i, it in enumerate(items):
+        kind = _display_outcome(scenarios[i]) if i < len(scenarios) else None
+        state = "pass" if kind == "caught" else "fail" if kind == "missed" else it["state"]
         about = _e(it["about"]) if it["about"] else f"{NOT_DESCRIBED}: this test has no about"
         details = {c.get("check"): c.get("detail") for c in (scenarios[i].get("checks") or [])} if i < len(
             scenarios) else {}
-        lines = "".join(_line({**c, "detail": details.get(c["check"])}) for c in it["checks"])
-        out.append(f'<li class="plan-item {it["state"]}"><span class="box {it["state"]}">{BOX[it["state"]]}</span>'
+        lines = "".join(_line({**c, "detail": details.get(c["check"]), "caught": kind == "caught"})
+                        for c in it["checks"])
+        out.append(f'<li class="plan-item {state}"><span class="box {state}">{BOX[state]}</span>'
                    f'<div><a href="#s{i}"><strong>{it["n"]}. {_e(it["name"])}</strong></a><div>{about}</div>'
                    + (f"<ul>{lines}</ul>" if lines else "") + "</div></li>")
     missing = plan_mod.not_described(items)
@@ -274,19 +311,21 @@ def planted_tag(r):
 
 def planted_count(n):
     """The count at the top of a report, so no real failure hides under the tag unseen."""
-    return (f"{n} test(s) expected to fail (planted faults). Each has graded=pass only when its planted check fails "
-            "and every other check passes; a passing test, or a failure on another check, has graded=fail "
+    return (f"{n} test(s) expected to fail (planted faults). CAUGHT means the named check caught its fault "
+            "and every other check passed. A control that passes or fails on another check was missed "
             "and turns the gate FAIL.")
 
 
 def _scenario(i, r, who="Jev"):
     jev = r.get("jev") or {}
     it = plan_mod.item(i + 1, r.get("name"), r.get("about"), r.get("checks") or [], r.get("outcome"))
-    title = {"pass": "What it proved", "fail": "What went wrong"}.get(r["outcome"], "What happened")
-    parts = [f'<section class="card" id="s{i}"><h3>{_pill(r["outcome"])} {_e(r["name"])}</h3>',
+    outcome = _display_outcome(r)
+    title = {"pass": "What it proved", "caught": "What it proved", "fail": "What went wrong",
+             "missed": "What went wrong"}.get(outcome, "What happened")
+    parts = [f'<section class="card" id="s{i}"><h3>{_pill(outcome)} {_e(r["name"])}</h3>',
              f'<p class="about"><strong>{title}:</strong> '
              + (_e(r["about"]) if r.get("about") else f"{NOT_DESCRIBED}: this test has no about") + "</p>",
-             f'<p>{_e(r.get("reason"))}</p>']
+             f'<p>{_e(_display_reason(r))}</p>']
     ux = ux_details(r)
     if ux is not None:
         parts.append(f'<p><strong>{_e(ux_summary(r))}</strong></p>')
@@ -580,7 +619,7 @@ def _ux(data):
 def ux_summary(scenario):
     """Add advisory context to the existing verdict; the runner alone decides that verdict."""
     ux = ux_details(scenario)
-    outcome = scenario["outcome"]
+    outcome = _display_outcome(scenario)
     if ux is None:
         return outcome
     if ux.get("status") == "incomplete":
@@ -636,11 +675,21 @@ def _scenario_ux(scenario, ux):
 
 
 def render(data):
-    c = data["counts"]
+    c = _display_counts(data)
     cost = data["cost"]
     title = f"QAJev: {data['suite']}"
     interrupted = " (interrupted)" if data.get("interrupted") else ""
-    counts = "".join(f'<span class="pill {o}">{c.get(o, 0)} {o}</span>' for o in OUTCOME_ORDER if c.get(o))
+    labels = {"caught": "plant caught", "missed": "plant missed"}
+    counts = ""
+    for kind in (*OUTCOME_ORDER, "caught", "missed"):
+        number = c.get(kind, 0)
+        if not number:
+            continue
+        label = labels.get(kind, kind)
+        if kind in labels and number != 1:
+            label = label.replace("plant ", "plants ")
+        colour = "pass" if kind == "caught" else "fail" if kind == "missed" else kind
+        counts += f'<span class="pill {colour}">{number} {label}</span>'
     summary = (f"{data['seconds']:.0f} s · ${cost['usd']:.4f} of ${cost['cap_usd'] or 0:.2f} cap · "
                f"{cost['calls']['typesafe']} {decider(data)} decisions, {cost['calls']['text']} text calls")
     project = data.get("project") or {}
@@ -679,8 +728,8 @@ def render(data):
                    "</div>")
 
     out.append(_plan(data.get("plan") or plan_mod.from_results(data["scenarios"]), data["scenarios"]))
-    rows = [[f'<a href="#s{i}">{_e(r["name"])}</a>', _pill(r["outcome"])
-             + (f"<br>{_e(ux_summary(r))}" if ux_details(r) is not None else ""), _e(r.get("reason")),
+    rows = [[f'<a href="#s{i}">{_e(r["name"])}</a>', _pill(_display_outcome(r))
+             + (f"<br>{_e(ux_summary(r))}" if ux_details(r) is not None else ""), _e(_display_reason(r)),
              _link(r.get("end_url") or r.get("url"))] for i, r in enumerate(data["scenarios"])]
     out += ["<h2>Scenarios</h2>", _table(["Scenario", "Outcome", "Why", "Ended at"], rows) or
             '<p class="muted">No scenarios ran.</p>']
@@ -738,7 +787,8 @@ def render(data):
         run.append(("Watched live", f"{data['watched_live_s']:.0f} s in the dashboard"))
     if data.get("sign_in"):
         run.append(("Sign-in", _e(signed_in(data["sign_in"]))))
-    run += [("Legend", "<br>".join(f"{_pill(o)} {_e(t)}" for o, t in LEGEND.items())),
+    legend = {**LEGEND, "caught": "planted fault caught", "missed": "the check missed a planted fault"}
+    run += [("Legend", "<br>".join(f"{_pill(o)} {_e(t)}" for o, t in legend.items() if c.get(o))),
             ("Files", '<a href="report.md">report.md</a> · <a href="report.json">report.json</a>'),
             ("QAJev", _e(data.get("qajev")) + (f" ({_e(data['qajev_commit'])})" if data.get("qajev_commit") else ""))]
     out += ["<h2>Run</h2>", '<div class="card"><dl>', "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in run),
