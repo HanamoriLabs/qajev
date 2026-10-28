@@ -850,3 +850,70 @@ def test_smoke_uses_the_same_isolation_and_timing_contract(monkeypatch, tmp_path
     assert "timing" in built
     assert built["timing"]["run_seconds"] >= 0
     assert built["timing"]["admitted_at"] is not None
+
+
+GIB = 1024**3
+
+
+@pytest.mark.parametrize(
+    "first,second,host_gib,admitted",
+    [
+        # Each run in its own 7 GiB scope on a host with 21 GiB free: the first run's scope does not bound the second.
+        ("/a.scope", "/b.scope", 21, True),
+        # The same cgroup keeps the first run's envelope (7 GiB - 3 GiB budget leaves no room for 3 + 2 GiB).
+        ("/a.scope", "/a.scope", 21, False),
+        # Another cgroup, but the host cannot pay the first run's 3 GiB budget again plus 3 + 2 GiB.
+        ("/a.scope", "/b.scope", 7, False),
+        # A run recorded with no group (an older client, or unknown) shares the envelope, as before.
+        (None, "/b.scope", 21, False),
+        # This run's own group is unknown: the envelope rule stays.
+        ("/a.scope", None, 21, False),
+    ],
+)
+def test_runs_in_separate_memory_cgroups_share_only_the_host(monkeypatch, first, second, host_gib, admitted):
+    # rea, 29 Oct 2026: each look ran in its own 7G systemd scope, and the first run's 7 GiB envelope held every later
+    # run to "room for 1" while the host had 21 GiB free.
+    monkeypatch.setenv("QAJEV_BROWSER_RAM_MIB", "3072")
+    monkeypatch.setattr(browser_pool, "available_memory", lambda: 7 * GIB)
+    monkeypatch.setattr(browser_pool, "host_memory", lambda: 21 * GIB)
+    monkeypatch.setattr(browser_pool, "memory_group", lambda: first)
+    with jobs.machine_lock("first", browser_runs=2, wait=1):
+        assert browser_pool.holders()[0]["ram_group"] == first
+        monkeypatch.setattr(browser_pool, "memory_group", lambda: second)
+        monkeypatch.setattr(browser_pool, "host_memory", lambda: host_gib * GIB)
+        if admitted:
+            with jobs.machine_lock("second", browser_runs=2, wait=1):
+                assert len(browser_pool.holders()) == 2
+        else:
+            with pytest.raises(jobs.Busy, match="memory capacity 1"):
+                with jobs.machine_lock("second", browser_runs=2, wait=0.3):
+                    raise AssertionError("the second run was admitted")
+
+
+def test_another_cgroup_with_unknown_host_memory_stays_serial():
+    active = [{"ram_envelope_bytes": 7 * GIB, "ram_budget_mib": 3072, "ram_reserve_mib": 2048, "ram_group": "/a"}]
+    assert browser_pool._memory_capacity(2, 7 * GIB, 3072, 2048, active, "/b", None) == (1, None)
+    assert browser_pool._memory_capacity(2, 7 * GIB, 3072, 2048, active, "/b", 21 * GIB) == (2, 7 * GIB)
+
+
+def test_memory_group_names_the_nearest_bounding_cgroup(monkeypatch, tmp_path):
+    base = tmp_path / "cg"
+    leaf = base / "user.slice" / "rea-look-1.scope"
+    leaf.mkdir(parents=True)
+    (base / "memory.max").write_text("max\n")
+    (base / "user.slice" / "memory.max").write_text("max\n")
+    (leaf / "memory.max").write_text(f"{7 * GIB}\n")
+    (leaf / "memory.current").write_text(f"{GIB}\n")
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text(f"MemTotal: {32 * 1024**2} kB\nMemAvailable: {21 * 1024**2} kB\n")
+    cgroup = tmp_path / "cgroup"
+    cgroup.write_text("0::/user.slice/rea-look-1.scope\n")
+    monkeypatch.setattr(browser_pool.sys, "platform", "linux")
+    monkeypatch.setattr(browser_pool, "MEMINFO", meminfo)
+    monkeypatch.setattr(browser_pool, "CGROUP", cgroup)
+    monkeypatch.setattr(browser_pool, "CGROUP_ROOT", base)
+    assert browser_pool.memory_group() == "/user.slice/rea-look-1.scope"
+    assert browser_pool.host_memory() == 21 * GIB
+    assert SAMPLE_MEMORY() == 6 * GIB
+    (leaf / "memory.max").write_text("max\n")
+    assert browser_pool.memory_group() == ""
