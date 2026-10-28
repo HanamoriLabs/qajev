@@ -39,33 +39,62 @@ def limit(value: int | str | None = None) -> int:
                     "browser runs", 64)
 
 
+def host_memory() -> int | None:
+    """The host's MemAvailable in bytes on Linux, with no cgroup bound, or None."""
+    if sys.platform != "linux":
+        return None
+    try:
+        fields = dict(line.split(":", 1) for line in MEMINFO.read_text().splitlines())
+        return int(fields["MemAvailable"].split()[0]) * 1024
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def _linux_memory() -> tuple[int, str]:
+    """Available bytes and the nearest cgroup with a finite memory.max ("" when none bounds this process)."""
+    available = host_memory()
+    if available is None:
+        raise ValueError("no MemAvailable")
+    # cgroup v2 limits can be much smaller than the host's MemAvailable.
+    group = next(line.split("::", 1)[1] for line in CGROUP.read_text().splitlines()
+                 if line.startswith("0::"))
+    base = CGROUP_ROOT.resolve()
+    leaf = (base / group.lstrip("/")).resolve()
+    if not leaf.is_relative_to(base):
+        raise ValueError("cgroup outside the mount root")
+    bound = ""
+    for root in [leaf, *leaf.parents]:
+        if not root.is_relative_to(base):
+            break
+        try:
+            maximum = (root / "memory.max").read_text().strip()
+        except FileNotFoundError:
+            if root != base or root == leaf:
+                raise
+            # A native hierarchy root has no memory.max; finite ancestors still apply.
+            continue
+        if maximum == "max":
+            continue
+        bound = bound or "/" + str(root.relative_to(base))
+        available = min(available, max(0, int(maximum) - int((root / "memory.current").read_text())))
+    return available, bound
+
+
+def memory_group() -> str | None:
+    """The nearest cgroup that bounds this process's memory ("" for none), or None when unknown or not Linux."""
+    if sys.platform == "linux":
+        try:
+            return _linux_memory()[1]
+        except (OSError, ValueError, KeyError, StopIteration):
+            return None
+    return None
+
+
 def available_memory() -> int | None:
     """Available bytes, bounded by a Linux cgroup when present. Unknown never means unlimited."""
     if sys.platform == "linux":
         try:
-            fields = dict(line.split(":", 1) for line in MEMINFO.read_text().splitlines())
-            available = int(fields["MemAvailable"].split()[0]) * 1024
-            # cgroup v2 limits can be much smaller than the host's MemAvailable.
-            group = next(line.split("::", 1)[1] for line in CGROUP.read_text().splitlines()
-                         if line.startswith("0::"))
-            base = CGROUP_ROOT.resolve()
-            leaf = (base / group.lstrip("/")).resolve()
-            if not leaf.is_relative_to(base):
-                return None
-            for root in [leaf, *leaf.parents]:
-                if not root.is_relative_to(base):
-                    break
-                try:
-                    maximum = (root / "memory.max").read_text().strip()
-                except FileNotFoundError:
-                    if root != base or root == leaf:
-                        raise
-                    # A native hierarchy root has no memory.max; finite ancestors still apply.
-                    continue
-                if maximum == "max":
-                    continue
-                available = min(available, max(0, int(maximum) - int((root / "memory.current").read_text())))
-            return available
+            return _linux_memory()[0]
         except (OSError, ValueError, KeyError, StopIteration):
             # Do not ignore an unreadable container limit and admit using the host's RAM.
             return None
@@ -91,18 +120,27 @@ def ram_capacity(requested: int, available: int | None, budget_mib: int, reserve
     return min(requested, max(0, (available - reserve_mib * MIB) // (budget_mib * MIB)))
 
 
-def _memory_capacity(requested, available, budget_mib, reserve_mib, active):
+def _memory_capacity(requested, available, budget_mib, reserve_mib, active, group=None, host=None):
     """Free RAM pays for the next process, not again for browsers already resident.
 
     Keep the initial envelope until the active cohort drains: simultaneous startups must not each spend
     the same free RAM before their browsers have allocated it. Older/unknown reservations stay serial.
+    A run admitted in another memory cgroup (`ram_group`, known on both sides) had its envelope from that
+    cgroup's own limit, which never bounds this one: it shares only the host, so the host's MemAvailable
+    pays again for its whole budget. A run with no recorded group shares this one's envelope, as before.
     """
     if available is None or any(r.get("ram_envelope_bytes") is None for r in active):
         return 1, None
-    envelope = min((r["ram_envelope_bytes"] for r in active), default=available)
-    reserved = sum(r["ram_budget_mib"] for r in active) * MIB
+    other = [r for r in active if group is not None and r.get("ram_group") not in (None, group)]
+    same = [r for r in active if r not in other]
+    envelope = min((r["ram_envelope_bytes"] for r in same), default=available)
+    reserved = sum(r["ram_budget_mib"] for r in same) * MIB
     reserve_mib = max([reserve_mib, *(r["ram_reserve_mib"] for r in active)])
     remaining = min(available, max(0, envelope - reserved))
+    if other:
+        if host is None:
+            return 1, None
+        remaining = min(remaining, max(0, host - sum(r["ram_budget_mib"] for r in other) * MIB))
     capacity = len(active) + ram_capacity(requested, remaining, budget_mib, reserve_mib)
     return min(requested, capacity), envelope
 
@@ -200,7 +238,9 @@ def acquire(what, *, browser_runs=None, emit=None, wait: float = 3600, job=None,
                 active = [row for _, row in rows if row["state"] == "active"]
                 first = next((name for name, row in rows if row["state"] == "queued"), None)
                 capacity = min([requested, *(r["limit"] for r in active)])
-                memory, envelope = (_memory_capacity(requested, available_memory(), budget, reserve, active)
+                group = memory_group()
+                memory, envelope = (_memory_capacity(requested, available_memory(), budget, reserve, active,
+                                                     group, host_memory())
                                     if requested > 1 else (64, None))
                 capacity = min(capacity, memory)
                 admitted = first == path.name and len(active) < capacity
@@ -216,7 +256,7 @@ def acquire(what, *, browser_runs=None, emit=None, wait: float = 3600, job=None,
                 now = time.monotonic()
                 if admitted:
                     lease.update(state="active", since=time.time(), admitted_at=time.time(), admitted_mono=now,
-                                 ram_envelope_bytes=envelope)
+                                 ram_envelope_bytes=envelope, ram_group=group)
                     _write(ticket, lease)
                     if requested == 1:
                         _write(legacy, lease)  # old clients still see the exclusive holder
