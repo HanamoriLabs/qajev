@@ -35,9 +35,9 @@ class PrivacyRefused(ValueError):
     """The upload privacy check refused a run's own record (a test name, a reason): the run stays on this machine."""
 
 
-def sanitize_text(text: str, keep: int | None = None) -> str:
+def sanitize_text(text: str, keep: int | None = None, *, tail: bool = False) -> str:
     try:
-        return _sanitize_text(text, keep)
+        return _sanitize_text(text, keep, tail=tail)
     except ValueError as e:
         raise PrivacyRefused(str(e)) from None
 
@@ -409,8 +409,8 @@ class Observer:
                 if REFUSED.format("report.json") not in missing:
                     missing.append(REFUSED.format("report.json"))
             if content is not None:
-                with contextlib.suppress(ValueError):  # the rebuilt report.json stands in for the refused file
-                    missing.remove(REFUSED.format("report.json"))
+                # The rebuilt report.json stands in for a file that was refused, too big or unsafe.
+                missing = [m for m in missing if m not in ("report.json", REFUSED.format("report.json"))]
                 if len(content) > MAX_FILE:
                     raise ObserverError("The source result exceeds the report upload budget.")
                 files.append({"path": "report.json", "sha256": hashlib.sha256(content).hexdigest(), "size": len(content)})
