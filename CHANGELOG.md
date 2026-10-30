@@ -1,14 +1,8 @@
 # Changelog
 
-- Inventory outgoing diagnostic tails and reject unclassified cuts. Dashboard-start and nightly errors clean
-  complete output before shortening it, including JSON that can be captured by a job wrapper.
-
-- Clean generated command, page-check and mobile failure diagnostics before retaining a character tail, so a
-  cut through a home path cannot expose its username. Command matching and declared cloud inputs stay exact.
-
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.4.34: 30 Oct 2026
 
 ### Added
 
@@ -28,6 +22,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Inventory outgoing diagnostic tails and reject unclassified cuts. Dashboard-start and nightly errors clean
+  complete output before shortening it, including JSON that can be captured by a job wrapper.
+- Clean generated command, page-check and mobile failure diagnostics before retaining a character tail, so a
+  cut through a home path cannot expose its username. Command matching and declared cloud inputs stay exact.
 - Linux parallel-browser admission now respects every ancestor cgroup v2 memory limit as well as the host's
   available memory. Sibling scopes consuming a shared parent budget can no longer be overlooked when deciding
   whether another run fits. Concurrency defaults and configured RAM budgets stay unchanged.
