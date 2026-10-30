@@ -89,6 +89,38 @@ def test_a_hold_that_names_no_process_is_honoured(monkeypatch, tmp_path):
             raise AssertionError("an empty hold was ignored")
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads any file")
+@pytest.mark.parametrize("closed", ["file", "folder"])
+def test_a_hold_this_user_cannot_read_is_honoured(monkeypatch, tmp_path, other_job, closed):
+    # workload-gpu, 31 Oct: boxtest-user runs cannot open /home/joseairosa (mode 700), where rea writes its hold
+    folder = tmp_path / "rea"
+    folder.mkdir()
+    hold = _hold(monkeypatch, folder, f"rea {other_job} 03:30\n")
+    locked = hold if closed == "file" else folder
+    locked.chmod(0)
+    try:
+        with pytest.raises(jobs.Busy, match="owner unknown"):
+            with jobs.machine_lock("suite", wait=0.3):
+                raise AssertionError("a hold that cannot be read was taken as no hold")
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root opens any folder")
+def test_a_hold_path_in_a_folder_this_user_cannot_open_holds_even_with_no_file(monkeypatch, tmp_path):
+    # It cannot tell "no hold" from "a hold it may not see", so it waits: list only paths the run's user can open
+    closed = tmp_path / "home"
+    closed.mkdir()
+    monkeypatch.setenv("QAJEV_HOLD_FILES", str(closed / "gpu-solo.hold"))
+    closed.chmod(0)
+    try:
+        with pytest.raises(jobs.Busy, match="owner unknown"):
+            with jobs.machine_lock("suite", wait=0.3):
+                raise AssertionError("a path it cannot check was taken as no hold")
+    finally:
+        closed.chmod(0o700)
+
+
 def _dead_pid():
     proc = subprocess.Popen([sys.executable, "-c", "pass"])
     proc.wait()

@@ -71,7 +71,9 @@ Start a lane's execution watchdog at `admitted`, rather than charging queue wait
 `QAJEV_HOLD_FILES` names hold files that another job writes while it needs the machine alone, such as a GPU
 benchmark. While one of them names a live process that is not this run or one it runs under, the run stays
 queued and `waiting` says whose hold it is. The pid is the line's only all-digit word. A line with no number, or
-with more than one, makes every run wait. A stale file (its process is gone) is ignored. A run whose
+with more than one, makes every run wait. So does a hold file the run's user cannot read, and a path in a folder
+it cannot open, file or not. A run with a private `/tmp` (a sandboxed job) does not see the host's `/tmp` hold
+file, so to it that hold does not exist: list a path the job can see. A stale file (its process is gone) is ignored. A run whose
 `QAJEV_HOLD_OWNER` equals a hold's first words belongs to that hold's job and does not wait on it. The wait counts
 toward `QAJEV_LOCK_WAIT`. The report gets `timing.hold_seconds` and `timing.hold_waits` (each file, its owner
 line, when the wait started and its seconds), and report.md and report.html say how long the run waited.
