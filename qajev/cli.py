@@ -235,7 +235,8 @@ def build_parser():
 
     run = sub.add_parser("run", help="run a suite file (YAML or JSON)")
     run.add_argument("suite", type=Path, nargs="?", help="a suite file (or use --project)")
-    run.add_argument("--only", action="append", default=[], help="run this scenario (plus its dependencies)")
+    run.add_argument("--only", action="append", default=[],
+                     help="run this scenario on every device (plus its dependencies); NAME (phone) runs that copy only")
     proj = run.add_argument_group("project mode")
     proj.add_argument("--project", "-p", help="project name or repo path (.qajev/project.toml)")
     proj.add_argument("--env", "-e", help="project environment (default: the project's default_env)")

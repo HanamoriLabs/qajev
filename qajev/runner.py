@@ -98,15 +98,25 @@ def wait_for_quiet(opts):
     return True, load
 
 
+def device_copies(scenarios, name):
+    """NAME and the copies suite.parse made of it for each further device ("NAME (phone)"): the same url and goal on
+    another device. A scenario its author named "NAME (x)" is not one."""
+    base = next(s for s in scenarios if s.name == name)
+    return [name] + [s.name for s in scenarios
+                     if s.name.startswith(f"{name} (") and s.name.endswith(")") and "(" not in s.name[len(name) + 2:-1]
+                     and (s.url, s.goal) == (base.url, base.goal) and s.device != base.device]
+
+
 def select(suite, only):
-    """--only NAME keeps NAME plus everything it depends on."""
+    """--only NAME keeps NAME on every device (its "NAME (phone)" copy too), plus everything they depend on. A copy's
+    own name ("NAME (phone)") keeps that copy alone. JSR price run A (30 Oct): --only ran the desktop copy only."""
     if not only:
         return list(suite.scenarios)
     by_name = {s.name: s for s in suite.scenarios}
     missing = [n for n in only if n not in by_name]
     if missing:
         raise ConfigError(f"no scenario named {missing}; have {list(by_name)}")
-    keep, todo = set(), list(only)
+    keep, todo = set(), [copy for n in only for copy in device_copies(suite.scenarios, n)]
     while todo:
         name = todo.pop()
         if name not in keep:

@@ -227,7 +227,7 @@ qajev run --project shop --objective "A visitor finds the refund policy" --expec
 
 | Option | Does |
 |---|---|
-| `--only NAME` | run this scenario, plus what it depends on |
+| `--only NAME` | run this scenario on every device, plus what it depends on. `--only 'NAME (phone)'` runs that device's copy only |
 | `--jobs N` | run independent chains of scenarios in parallel (default 1) |
 | `--allow-commands` | let the suite run its shell commands |
 | `--allow-destructive` | as for `check`: destructive controls shown, every host a local dev host or the run is refused (exit 5) |
