@@ -46,6 +46,25 @@ def test_a_timed_out_call_answers_the_open_dialog_and_the_retry_goes_through(kin
                                   "native": True}]
 
 
+def test_a_navigation_held_by_a_leave_page_dialog_goes_on_and_is_not_sent_twice():
+    # Sent again, the second navigation aborts the first (the live test saw net::ERR_ABORTED)
+    page = Page({"type": "beforeunload", "message": ""})
+    history = {"currentIndex": 0, "entries": [{"url": "http://127.0.0.1:8000/form.html"}]}
+
+    def cdp(method, session_id=None, _response_timeout=None, **params):
+        if method == "Page.getNavigationHistory":
+            return history
+        if method == "Page.handleJavaScriptDialog":  # the held navigation commits once the dialog is answered
+            history.update(currentIndex=1, entries=[*history["entries"], {"url": "http://127.0.0.1:8000/next.html"}])
+        return page.cdp(method, session_id, **params)
+
+    transport = SimpleNamespace(error=None, dialogs=[])
+    call = session._patient_cdp(cdp, 30, transport, page.pending)
+    assert call("Page.navigate", session_id="s1", url="http://127.0.0.1:8000/next.html") == {}
+    assert [c[0] for c in page.calls].count("Page.navigate") == 1
+    assert transport.dialogs[0]["answered"] == "leave"
+
+
 def test_with_no_dialog_open_a_timeout_still_retries_once_and_answers_nothing():
     page = Page(None)
     tries = []

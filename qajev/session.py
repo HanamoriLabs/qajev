@@ -114,6 +114,27 @@ def take_answered_dialogs():
     return taken
 
 
+def _same_page(a, b):
+    return str(a or "").split("#")[0].rstrip("/") == str(b or "").split("#")[0].rstrip("/")
+
+
+def _navigation_went_on(raw_cdp, session_id, url, wait=10.0):
+    """After a leave-page dialog is answered, the navigation it held goes on by itself; sending it again aborts one of
+    the two (net::ERR_ABORTED). True once the tab's current entry is `url`, False if it is not within `wait` s."""
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        try:
+            history = raw_cdp("Page.getNavigationHistory", session_id=session_id, _response_timeout=3)
+            entries = history.get("entries") or []
+            index = history.get("currentIndex", len(entries) - 1)
+            if 0 <= index < len(entries) and _same_page(entries[index].get("url"), url):
+                return True
+        except (RuntimeError, OSError, TimeoutError):
+            pass
+        time.sleep(0.1)
+    return False
+
+
 def _patient_cdp(raw_cdp, timeout, transport, pending=None):
     def call(method, session_id=None, **params):
         if transport.error is not None:
@@ -123,8 +144,11 @@ def _patient_cdp(raw_cdp, timeout, transport, pending=None):
             try:
                 return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
             except TimeoutError:
-                if pending is not None and method != "Page.handleJavaScriptDialog":
-                    answer_dialog(raw_cdp, pending, session_id, transport)
+                answered = (pending is not None and method != "Page.handleJavaScriptDialog"
+                            and answer_dialog(raw_cdp, pending, session_id, transport))
+                if answered and method == "Page.navigate" and _navigation_went_on(raw_cdp, session_id,
+                                                                                  params.get("url")):
+                    return {}
                 return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
         except (RuntimeError, OSError, EOFError) as error:
             lost = _is_transport_error(error)
