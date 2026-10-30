@@ -7,8 +7,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 ### Fixed
 
 - A key or text that timed out while another tab's dialog was open is sent again after QAJev answers that dialog.
-  Before, it counted as sent, though this tab may never have had it. Only a dialog on this tab's own page means the
-  input ran.
+  Before, it counted as sent, though this tab may never have had it. A dialog counts as another tab's only when
+  another tab shows its page. An iframe's dialog on this tab, or a tab that does not say its page, still means the
+  input ran, so the key does not arrive twice.
 - report.html and report.md say how QAJev answered a dialog the page opened itself ("Answered alert: closed").
   Before, it read "Dismissed", like the guard's own.
 - The `QAJEV_HOLD_FILES` docs say that under `ProtectHome=yes` a hold path below `/home` always holds.

@@ -12,16 +12,21 @@ FORM = "http://127.0.0.1:8000/form.html"
 
 class Page:
     """A CDP link to a page whose dialog freezes its script: every call times out until the dialog is answered. The
-    browser still says the tab's history (Page.getNavigationHistory), as Chrome does."""
+    browser still says the tab's history (Page.getNavigationHistory) and its tabs (Target.getTargets), as Chrome does.
+    `others` are the urls other tabs show."""
 
-    def __init__(self, dialog, url=FORM):
+    def __init__(self, dialog, url=FORM, others=()):
         self.dialog = dialog
         self.url = url
+        self.others = others
         self.calls = []
 
     def cdp(self, method, session_id=None, _response_timeout=None, **params):
         if method == "Page.getNavigationHistory":
             return {"currentIndex": 0, "entries": [{"url": self.url}]}
+        if method == "Target.getTargets":
+            return {"targetInfos": [{"type": "page", "url": u} for u in (self.url, *self.others)]
+                    + [{"type": "iframe", "url": "http://127.0.0.1:8000/frame.html"}]}
         self.calls.append((method, session_id, params))
         if method == "Page.handleJavaScriptDialog":
             self.dialog = None
@@ -86,11 +91,31 @@ def test_a_key_held_by_a_dialog_is_not_pressed_again_after_the_answer():
 def test_a_key_that_timed_out_on_another_tabs_dialog_is_sent_again():
     # The daemon's one record is another tab's alert: answering it did not free this tab, so the key never counted as
     # pressed here (redteam N2 on #203)
-    page = Page({"type": "alert", "message": "Saved", "url": "http://127.0.0.1:8000/other.html"})
+    page = Page({"type": "alert", "message": "Saved", "url": "http://127.0.0.1:8000/other.html"},
+                others=["http://127.0.0.1:8000/other.html"])
     call, transport = link(page)
     assert call("Input.dispatchKeyEvent", session_id="s1", type="keyDown", key="Enter") == {
         "result": {"value": "complete"}}
     assert [c[0] for c in page.calls].count("Input.dispatchKeyEvent") == 2
+    assert transport.dialogs[0]["answered"] == "closed"
+
+
+@pytest.mark.parametrize("case", ["iframe", "no history"])
+def test_a_key_whose_dialog_may_be_this_tabs_own_is_not_pressed_again(case):
+    # redteam L1 on #206: the record's url is the dialog's frame's, so an iframe's alert on this tab is not the tab's
+    # url; and a tab that does not say its url proves nothing. Only another tab showing the page proves "other".
+    page = Page({"type": "alert", "message": "Saved", "url": "http://127.0.0.1:8000/frame.html"})
+
+    def cdp(method, session_id=None, _response_timeout=None, **params):
+        if case == "no history" and method == "Page.getNavigationHistory":
+            raise TimeoutError("no answer in 3 s")
+        return page.cdp(method, session_id, **params)
+
+    transport = SimpleNamespace(error=None, dialogs=[])
+    call = session._patient_cdp(cdp, 30, transport, page.pending)
+    assert call("Input.dispatchKeyEvent", session_id="s1", type="keyDown", key="Enter") == {}
+    assert [c[0] for c in page.calls].count("Input.dispatchKeyEvent") == 1
+    assert [c[2] for c in page.calls if c[0] == "Page.handleJavaScriptDialog"] == [{"accept": False}]
     assert transport.dialogs[0]["answered"] == "closed"
 
 

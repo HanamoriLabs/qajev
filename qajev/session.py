@@ -103,10 +103,20 @@ def _current_url(raw_cdp, session_id):
         return None
 
 
+def _another_tab_shows(raw_cdp, url):
+    """True when another tab (a page target) shows `url`: the only proof that a dialog record is not this tab's."""
+    try:
+        targets = raw_cdp("Target.getTargets", _response_timeout=3).get("targetInfos") or []
+    except (RuntimeError, OSError, TimeoutError, AttributeError):
+        return False
+    return any(t.get("type") == "page" and _same_page(t.get("url"), url) for t in targets)
+
+
 def answer_dialog(raw_cdp, pending, session_id, transport):
-    """Answer the page dialog the browser daemon saw open, and record it. "own" when its page is this tab's current
-    entry, "other" when it is not (another tab's, or no page named), False when none was open or it could not be
-    answered."""
+    """Answer the page dialog the browser daemon saw open, and record it; False when none was open or it could not be
+    answered. Else whose it was: "own" when its page is this tab's current entry, "other" only when another tab shows
+    that page, and "unknown" for the rest (the url is the dialog's frame's, so an iframe's alert on this tab is not the
+    tab's url; or the tab did not say), redteam L1 on #206."""
     try:
         dialog = pending()
     except (RuntimeError, OSError, TimeoutError, ValueError):
@@ -114,15 +124,21 @@ def answer_dialog(raw_cdp, pending, session_id, transport):
     if not isinstance(dialog, dict) or session_id is None:
         return False
     kind = str(dialog.get("type") or "")
-    own = bool(dialog.get("url")) and _same_page(dialog["url"], _current_url(raw_cdp, session_id))
-    accept = kind == "beforeunload" and own and is_local_dev(dialog["url"])
+    url, current = dialog.get("url"), _current_url(raw_cdp, session_id)
+    if url and current and _same_page(url, current):
+        whose = "own"
+    elif url and current and _another_tab_shows(raw_cdp, url):
+        whose = "other"
+    else:
+        whose = "unknown"
+    accept = kind == "beforeunload" and whose == "own" and is_local_dev(url)
     try:
         raw_cdp("Page.handleJavaScriptDialog", session_id=session_id, _response_timeout=5, accept=accept)
     except (RuntimeError, OSError, TimeoutError):
         return False
     transport.dialogs.append({"kind": kind or "dialog", "message": str(dialog.get("message") or "")[:200],
                               "answered": "leave" if accept else DIALOG_DECLINED.get(kind, "no"), "native": True})
-    return "own" if own else "other"
+    return whose
 
 
 def take_answered_dialogs():
@@ -156,12 +172,13 @@ def _patient_cdp(raw_cdp, timeout, transport, pending=None):
             except TimeoutError:
                 answered = (pending is not None and method != "Page.handleJavaScriptDialog"
                             and answer_dialog(raw_cdp, pending, session_id, transport))
-                if answered == "own" and method.startswith("Input."):
-                    # The held input ran once its dialog closed: sent again, a key or text arrives twice. An answer
-                    # to another tab's dialog did not free this one, so its input is sent again (redteam N2 on #203).
+                if answered and answered != "other" and method.startswith("Input."):
+                    # The held input ran once its dialog closed: sent again, a key or text arrives twice. Only an
+                    # answer to another tab's dialog leaves this one held, so only then is it sent again (redteam N2
+                    # on #203). When whose is unknown, a lost key is safer than a key that arrives twice.
                     return {}
-                if answered == "own" and method == "Page.navigate" and _navigation_went_on(raw_cdp, session_id,
-                                                                                  params.get("url")):
+                if answered and answered != "other" and method == "Page.navigate" and _navigation_went_on(
+                        raw_cdp, session_id, params.get("url")):
                     return {}
                 return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
         except (RuntimeError, OSError, EOFError) as error:
