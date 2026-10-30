@@ -26,7 +26,7 @@ from qajev_upload_privacy import sanitize_text
 from . import __version__, chrome, keys, live, netlog, providers, viewport
 from . import guard as guard_mod
 from . import pad as pad_mod
-from .config import is_loopback, redact
+from .config import is_local_dev, is_loopback, redact
 
 _jev = None
 _HEADLESS_INPUT_SESSIONS: set[str] = set()
@@ -81,9 +81,26 @@ def _is_transport_error(error):
 
 
 # A page's own dialog freezes its script until someone answers it, so every later call to that page waits a full CDP
-# timeout (#802, 30 Oct: a form's leave-page guard cost 5-6.5 min a step). Answered as the production guard answers.
-DIALOG_ANSWERS = {"beforeunload": (True, "leave"), "alert": (True, "ok"), "confirm": (False, "no"),
-                  "prompt": (False, "no")}
+# timeout (#802, 30 Oct: a form's leave-page guard cost 5-6.5 min a step). Only a leave-page dialog on a local dev host
+# is ever accepted, and only when the record is this tab's own: browser_harness keeps one dialog record for the whole
+# daemon, so it can be another tab's while this tab holds a confirm (redteam L2 on #202). On production every dialog
+# hears "no", so two tabs on one url cannot turn a confirm into a yes there either.
+DIALOG_DECLINED = {"alert": "closed", "confirm": "no", "prompt": "no", "beforeunload": "stay"}
+
+
+def _same_page(a, b):
+    return str(a or "").split("#")[0].rstrip("/") == str(b or "").split("#")[0].rstrip("/")
+
+
+def _current_url(raw_cdp, session_id):
+    """The tab's current history entry: the browser keeps it, so a page frozen by a dialog still says."""
+    try:
+        history = raw_cdp("Page.getNavigationHistory", session_id=session_id, _response_timeout=3)
+        entries = history.get("entries") or []
+        index = history.get("currentIndex", len(entries) - 1)
+        return entries[index].get("url") if 0 <= index < len(entries) else None
+    except (RuntimeError, OSError, TimeoutError, AttributeError):
+        return None
 
 
 def answer_dialog(raw_cdp, pending, session_id, transport):
@@ -95,13 +112,14 @@ def answer_dialog(raw_cdp, pending, session_id, transport):
     if not isinstance(dialog, dict) or session_id is None:
         return False
     kind = str(dialog.get("type") or "")
-    accept, said = DIALOG_ANSWERS.get(kind, (False, "no"))
+    accept = (kind == "beforeunload" and is_local_dev(dialog.get("url"))
+              and _same_page(dialog["url"], _current_url(raw_cdp, session_id)))
     try:
         raw_cdp("Page.handleJavaScriptDialog", session_id=session_id, _response_timeout=5, accept=accept)
     except (RuntimeError, OSError, TimeoutError):
         return False
     transport.dialogs.append({"kind": kind or "dialog", "message": str(dialog.get("message") or "")[:200],
-                              "answered": said, "native": True})
+                              "answered": "leave" if accept else DIALOG_DECLINED.get(kind, "no"), "native": True})
     return True
 
 
@@ -114,23 +132,13 @@ def take_answered_dialogs():
     return taken
 
 
-def _same_page(a, b):
-    return str(a or "").split("#")[0].rstrip("/") == str(b or "").split("#")[0].rstrip("/")
-
-
 def _navigation_went_on(raw_cdp, session_id, url, wait=10.0):
     """After a leave-page dialog is answered, the navigation it held goes on by itself; sending it again aborts one of
     the two (net::ERR_ABORTED). True once the tab's current entry is `url`, False if it is not within `wait` s."""
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
-        try:
-            history = raw_cdp("Page.getNavigationHistory", session_id=session_id, _response_timeout=3)
-            entries = history.get("entries") or []
-            index = history.get("currentIndex", len(entries) - 1)
-            if 0 <= index < len(entries) and _same_page(entries[index].get("url"), url):
-                return True
-        except (RuntimeError, OSError, TimeoutError):
-            pass
+        if _same_page(_current_url(raw_cdp, session_id), url):
+            return True
         time.sleep(0.1)
     return False
 
@@ -146,6 +154,8 @@ def _patient_cdp(raw_cdp, timeout, transport, pending=None):
             except TimeoutError:
                 answered = (pending is not None and method != "Page.handleJavaScriptDialog"
                             and answer_dialog(raw_cdp, pending, session_id, transport))
+                if answered and method.startswith("Input."):
+                    return {}  # the held input ran once the dialog closed: sent again, a key or text arrives twice
                 if answered and method == "Page.navigate" and _navigation_went_on(raw_cdp, session_id,
                                                                                   params.get("url")):
                     return {}

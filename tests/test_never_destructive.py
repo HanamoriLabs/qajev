@@ -175,9 +175,32 @@ def test_a_local_pages_leave_guard_is_answered_and_the_next_page_loads(session, 
     assert s.navigate(f"http://127.0.0.1:{port}/index.html") is None
     assert s.evaluate("location.pathname") == "/index.html"
     assert time.monotonic() - started < 45  # one CDP timeout, then the answer: not 60 s a call
-    dialogs = s.probe({})["probe"]["dialogs"]
-    assert {"kind": "beforeunload", "answered": "leave", "native": True}.items() <= next(
-        d for d in dialogs if d.get("native")).items()
+    native = [d for d in s.probe({})["probe"]["dialogs"] if d.get("native")]
+    assert [(d["kind"], d["answered"]) for d in native] == [("beforeunload", "leave")]
+
+
+def test_a_key_whose_handler_opens_an_alert_runs_once(session, port):
+    # redteam L1 on #202: the held keyDown runs once the alert is answered. Sent again, Enter would save twice.
+    s = session()
+    s.arm("mutate")
+    s.navigate(f"http://127.0.0.1:{port}/alert-key.html")
+    started = time.monotonic()
+    s.press("Enter")
+    assert time.monotonic() - started < 45
+    assert s.evaluate("window.saves") == 1
+    native = [d for d in s.probe({})["probe"]["dialogs"] if d.get("native")]
+    assert [(d["kind"], d["answered"]) for d in native] == [("alert", "closed")]
+
+
+def test_a_local_pages_own_confirm_still_hears_no(session, port):
+    # Only the waiting tab's leave-page dialog is accepted, even on a local dev host: a confirm hears "no" there too
+    s = session()
+    s.arm("mutate")
+    s.navigate(f"http://127.0.0.1:{port}/confirm-key.html")
+    s.press("Enter")
+    assert s.evaluate("window.answers") == [False]
+    native = [d for d in s.probe({})["probe"]["dialogs"] if d.get("native")]
+    assert [(d["kind"], d["answered"]) for d in native] == [("confirm", "no")]
 
 
 def test_production_keys_never_delete_outside_a_text_field(session, port):
