@@ -164,6 +164,22 @@ def test_production_dismisses_confirm_prompt_and_beforeunload_and_records_them(s
     assert {"confirm", "prompt", "beforeunload"} <= probe_kinds
 
 
+def test_a_local_pages_leave_guard_is_answered_and_the_next_page_loads(session, port):
+    # #802, 30 Oct: on a local dev host the page's own beforeunload runs. After the visitor touched the page, leaving
+    # it opens Chrome's leave-page dialog, which froze every later page call for 30 s each.
+    s = session()
+    s.arm("mutate")
+    s.navigate(f"http://127.0.0.1:{port}/destructive.html")
+    s.call("Runtime.evaluate", expression="1", userGesture=True)  # a touch: Chrome asks only after one
+    started = time.monotonic()
+    assert s.navigate(f"http://127.0.0.1:{port}/index.html") is None
+    assert s.evaluate("location.pathname") == "/index.html"
+    assert time.monotonic() - started < 45  # one CDP timeout, then the answer: not 60 s a call
+    dialogs = s.probe({})["probe"]["dialogs"]
+    assert {"kind": "beforeunload", "answered": "leave", "native": True}.items() <= next(
+        d for d in dialogs if d.get("native")).items()
+
+
 def test_production_keys_never_delete_outside_a_text_field(session, port):
     s = session()
     s.arm("mutate")

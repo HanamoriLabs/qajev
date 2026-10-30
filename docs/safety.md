@@ -48,6 +48,9 @@ For a proxy without credentials, use `QAJEV_CHROME_FLAGS=--proxy-server=http://1
     through is listed in the report. Other writes are blocked and listed.
   - The page's `confirm()` gets "no", `prompt()` gets nothing, and a "leave this page?" (`beforeunload`) never
     holds the tab; each is recorded in the report. Delete and Backspace reach the page only inside a text field.
+  - On any host, a dialog the page itself opens (alert, confirm, prompt, or Chrome's "leave this page?") is
+    answered when a page call waits on it: leave, OK, and "no" for confirm and prompt. It is listed in `dialogs`
+    with `answered` and `native: true`. Before, it froze the page, and every later call waited a full timeout.
 - **Show destructive controls.** Delete, remove, erase, destroy, drop, purge, wipe, cancel, refund, void,
   revoke, deactivate, unsubscribe, archive, reset, empty trash, close or terminate account, uninstall and
   disconnect are hidden from Jev on **every** host, in every mode, local included. A reset, clear or cancel of
