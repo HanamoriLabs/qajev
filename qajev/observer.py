@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib import error, parse, request
 
-from qajev_upload_privacy import sanitize_request, sanitize_text, sanitize_upload
+from qajev_upload_privacy import sanitize_request, sanitize_upload
+from qajev_upload_privacy import sanitize_text as _sanitize_text
 
 from .report_files import image_paths, relative
 
@@ -28,6 +29,17 @@ REFUSED = "{}: refused by the upload privacy check"  # a file left out of missin
 
 class ObserverError(RuntimeError):
     """Safe operator-facing failure. It never includes a credential or response body."""
+
+
+class PrivacyRefused(ValueError):
+    """The upload privacy check refused a run's own record (a test name, a reason): the run stays on this machine."""
+
+
+def sanitize_text(text: str, keep: int | None = None) -> str:
+    try:
+        return _sanitize_text(text, keep)
+    except ValueError as e:
+        raise PrivacyRefused(str(e)) from None
 
 
 class OutboxFull(ObserverError):
@@ -397,6 +409,8 @@ class Observer:
                 if REFUSED.format("report.json") not in missing:
                     missing.append(REFUSED.format("report.json"))
             if content is not None:
+                with contextlib.suppress(ValueError):  # the rebuilt report.json stands in for the refused file
+                    missing.remove(REFUSED.format("report.json"))
                 if len(content) > MAX_FILE:
                     raise ObserverError("The source result exceeds the report upload budget.")
                 files.append({"path": "report.json", "sha256": hashlib.sha256(content).hexdigest(), "size": len(content)})
@@ -443,7 +457,7 @@ class Observer:
         return len(missing)
 
     def inventory(self) -> dict[str, int]:
-        counts = {"jobs": 0, "historical_reports": 0, "missing_evidence": 0, "no_project": 0, "refused": 0}
+        counts = {"jobs": 0, "historical_reports": 0, "missing_evidence": 0, "no_project": 0, "refused": 0, "invalid": 0}
         seen = set()
         jobs = self.home / "jobs"
         for folder in sorted(jobs.iterdir()) if jobs.is_dir() else []:
@@ -473,8 +487,11 @@ class Observer:
                 continue
             try:
                 counts["missing_evidence"] += self._enqueue(folder.name, data, run, job, project)
-            except ValueError:  # its own record (a test name, a reason) holds what the check refuses: it stays here
+            except PrivacyRefused:  # its own record (a test name, a reason) holds what the check refuses: it stays here
                 counts["refused"] += 1
+                continue
+            except ValueError:  # a record QAJev cannot read, such as a start time that is not a date: it stays here
+                counts["invalid"] += 1
                 continue
             counts["jobs"] += 1
         for root in self.roots:
@@ -489,8 +506,11 @@ class Observer:
                 local = "report-" + hashlib.sha256(str(path).encode()).hexdigest()[:40]
                 try:
                     counts["missing_evidence"] += self._enqueue(local, data, path.parent, {}, project)
-                except ValueError:
+                except PrivacyRefused:
                     counts["refused"] += 1
+                    continue
+                except ValueError:
+                    counts["invalid"] += 1
                     continue
                 counts["historical_reports"] += 1
         counts["pending"] = self.pending()
