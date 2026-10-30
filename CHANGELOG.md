@@ -19,6 +19,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - An opt-in registered-machine observer snapshots selected local jobs and approved report roots into a durable
   outbox, then publishes tests and evidence idempotently. Human-placed machine credentials are observation-only;
   registration requires the companion Cloud API. No model route, execution agent or service is enabled by default.
+  `--project-for FOLDER=PROJECT` (repeatable) names each job's project by the folder it ran in, for a machine that
+  serves several projects. A job no mapped folder holds gets `--project`, or is skipped and counted as `no_project`.
 - Configurable local browser-run concurrency (`--browser-runs` / `QAJEV_BROWSER_RUNS`) with FIFO queueing,
   RAM admission for N above 1, isolated throwaway Chrome resources and unique report folders. Serial N=1
   admission stays unchanged. Job results and reports

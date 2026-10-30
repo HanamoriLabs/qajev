@@ -7,7 +7,7 @@ import pytest
 from qajev.observer import Observer, ObserverError, read_credential
 
 
-def report(home, reports, local="job-1", count=2):
+def report(home, reports, local="job-1", count=2, cwd=None):
     job = home / "jobs" / local
     job.mkdir(parents=True)
     run = reports / local
@@ -17,6 +17,8 @@ def report(home, reports, local="job-1", count=2):
             "scenarios": [{"name": f"test-{i}", "about": "Static marker", "outcome": "pass",
                            "checks": [{"check": "marker", "ok": True}]} for i in range(count)]}
     meta = {"id": local, "argv": ["run", "fixture.yaml"], "started_at": data["started_at"]}
+    if cwd is not None:
+        meta["cwd"] = str(cwd)
     (job / "job.json").write_text(json.dumps(meta))
     (job / "result.json").write_text(json.dumps(data))
     for name in ["report.json", "report.html", "report.md"]:
@@ -326,7 +328,7 @@ def test_database_metadata_cannot_grow_beyond_total_outbox_cap(tmp_path):
                   max_outbox_bytes=cap) as watch:
         with pytest.raises(ObserverError, match="outbox"):
             for number in range(20):
-                watch._enqueue(f"metadata-{number}", data, None, {})
+                watch._enqueue(f"metadata-{number}", data, None, {}, "fixture")
         assert sum(p.stat().st_size for p in (tmp_path / "state").rglob("*") if p.is_file()) <= cap
         assert watch.pending() < 20
 
@@ -653,3 +655,105 @@ def test_pruning_refuses_invalid_hashes_and_symlinks(tmp_path, kind):
         with pytest.raises(ObserverError):
             watch._prune_confirmed()
         assert outside.read_bytes() == b"outside the blob directory"
+
+
+def mapped(tmp_path, project=None, extra=()):
+    folders = {"tw": tmp_path / "box/tw", "verse": tmp_path / "box/verse-workshop", "deep": tmp_path / "box/tw/special"}
+    pairs = [(folders["tw"], "twilight"), (folders["verse"], "figgyz-verse"), (folders["deep"], "special"), *extra]
+    return folders, Observer(tmp_path / "home", [tmp_path / "reports"], tmp_path / "state", project,
+                             project_for=pairs)
+
+
+def test_folder_map_names_each_jobs_project_and_skips_jobs_no_folder_holds(tmp_path):
+    home, reports, box = tmp_path / "home", tmp_path / "reports", tmp_path / "box"
+    report(home, reports, "a-twilight", cwd=box / "tw/qa/rea-qa/tests/qajev")
+    report(home, reports, "b-verse", cwd=box / "verse-workshop")
+    report(home, reports, "c-deeper", cwd=box / "tw/special/suite")
+    report(home, reports, "d-elsewhere", cwd=box / "grailtab")
+    report(home, reports, "e-sibling", cwd=box / "twin/qa")  # shares the text "tw", not the folder
+    report(home, reports, "f-relative", cwd="tw/qa")  # a relative folder is never matched
+    _, watch = mapped(tmp_path)
+    with watch:
+        summary = watch.inventory()
+        assert (summary["jobs"], summary["no_project"]) == (3, 3)
+        server = Server()
+        assert watch.flush(server)["acknowledged"] == 3
+    projects = {row["id"]: row["project"] for row in server.rows.values()}
+    assert projects == {"a-twilight": "twilight", "b-verse": "figgyz-verse", "c-deeper": "special"}
+    assert all(str(box) not in json.dumps(row) for row in server.rows.values()), "a folder path left the machine"
+
+
+def test_default_project_takes_the_jobs_no_folder_holds(tmp_path):
+    report(tmp_path / "home", tmp_path / "reports", "d-elsewhere", cwd=tmp_path / "box/grailtab")
+    _, watch = mapped(tmp_path, project="fallback")
+    with watch:
+        assert watch.inventory()["no_project"] == 0
+        server = Server()
+        watch.flush(server)
+    assert server.rows["qms_d-elsewhere"]["project"] == "fallback"
+
+
+def test_a_report_without_its_job_is_mapped_by_its_report_folder(tmp_path):
+    job, _, _ = report(tmp_path / "home", tmp_path / "reports", "kept")
+    import shutil
+    shutil.rmtree(job)
+    _, watch = mapped(tmp_path, extra=[(tmp_path / "reports", "reports-project")])
+    with watch:
+        assert watch.inventory()["historical_reports"] == 1
+        server = Server()
+        watch.flush(server)
+    assert next(iter(server.rows.values()))["project"] == "reports-project"
+
+
+def test_a_map_is_part_of_the_outbox_identity_and_an_old_outbox_still_opens(tmp_path):
+    report(tmp_path / "home", tmp_path / "reports")
+    with observer(tmp_path) as watch:
+        watch.inventory()
+    with observer(tmp_path) as reopened:  # an outbox from before folder maps keeps working unchanged
+        assert reopened.inventory()["jobs"] == 1
+    with pytest.raises(ObserverError, match="configuration"):
+        mapped(tmp_path)
+
+
+@pytest.mark.parametrize("bad", ["", "-dash-first", "has=equals", "x" * 201, 7])
+def test_invalid_project_names_are_refused_before_anything_is_read(tmp_path, bad):
+    with pytest.raises(ObserverError, match="project name"):
+        Observer(tmp_path / "home", [tmp_path / "reports"], tmp_path / "state", None,
+                 project_for=[(tmp_path / "box", bad)])
+    with pytest.raises(ObserverError, match="project name"):
+        Observer(tmp_path / "home", [tmp_path / "reports"], tmp_path / "state2", bad)
+    assert not (tmp_path / "state").exists() and not (tmp_path / "state2").exists()
+
+
+def test_an_observer_needs_a_project_or_a_folder_map(tmp_path):
+    with pytest.raises(ObserverError, match="map at least one folder"):
+        Observer(tmp_path / "home", [tmp_path / "reports"], tmp_path / "state", None)
+
+
+def test_cli_project_for_maps_folders_and_refuses_bad_forms(tmp_path, capsys):
+    from qajev.cli import main
+
+    report(tmp_path / "home", tmp_path / "reports", "a-twilight", cwd=tmp_path / "box/tw/qa")
+    report(tmp_path / "home", tmp_path / "reports", "b-other", cwd=tmp_path / "box/other")
+    base = ["observe", "--home", str(tmp_path / "home"), "--report-root", str(tmp_path / "reports"),
+            "--state-dir", str(tmp_path / "state"), "--inventory"]
+    assert main([*base, "--project-for", f"{tmp_path / 'box/tw'}=twilight"]) == 0
+    counts = json.loads(capsys.readouterr().out)
+    assert (counts["jobs"], counts["no_project"]) == (1, 1)
+    assert main([*base, "--project-for", "no-equals-sign"]) == 3
+    assert "FOLDER=PROJECT" in capsys.readouterr().err
+    assert main([*base, "--project-for", f"{tmp_path}="]) == 3
+    assert main(base) == 3
+    assert "--project" in capsys.readouterr().err
+
+
+def test_a_jobs_own_project_field_never_overrides_the_operators_map(tmp_path):
+    job, _, _ = report(tmp_path / "home", tmp_path / "reports", "claims", cwd=tmp_path / "box/tw/qa")
+    meta = json.loads((job / "job.json").read_text())
+    (job / "job.json").write_text(json.dumps({**meta, "project": "someone-else"}))
+    _, watch = mapped(tmp_path)
+    with watch:
+        watch.inventory()
+        server = Server()
+        watch.flush(server)
+    assert server.rows["qms_claims"]["project"] == "twilight"
