@@ -897,10 +897,10 @@ def test_a_run_whose_own_record_the_privacy_check_refuses_is_counted_and_the_oth
     assert list(server.rows) == ["qms_b-after"]
 
 
-def _historical(reports, local, name="test-0"):
+def _historical(reports, local, name="test-0", started_at=1_792_972_800):
     run = reports / local
     run.mkdir(parents=True)
-    data = {"suite": "Old suite", "gate": "PASS", "started_at": 1_792_972_800, "seconds": 3, "cost": {"usd": 0},
+    data = {"suite": "Old suite", "gate": "PASS", "started_at": started_at, "seconds": 3, "cost": {"usd": 0},
             "scenarios": [{"name": name, "about": "Static marker", "outcome": "pass",
                            "checks": [{"check": "marker", "ok": True}]}]}
     (run / "report.json").write_text(json.dumps(data))
@@ -954,5 +954,31 @@ def test_a_refused_report_json_rebuilt_from_a_clean_result_is_not_listed_missing
         server = Server()
         watch.flush(server)
     row = server.rows["qms_a-rebuild"]
+    assert "report.json" in [f["path"] for f in row["files"]]
+    assert row["report"]["missing_evidence"] == []
+
+
+def test_a_historical_record_qajev_cannot_read_is_counted_invalid_and_the_other_goes(tmp_path):
+    # redteam R1 (#197).
+    (tmp_path / "home" / "jobs").mkdir(parents=True)
+    _historical(tmp_path / "reports", "old-a", started_at="not-a-date")
+    _historical(tmp_path / "reports", "old-b")
+    with observer(tmp_path) as watch:
+        counts = watch.inventory()
+        assert (counts["refused"], counts["invalid"], counts["historical_reports"]) == (0, 1, 1)
+        assert watch.flush(Server())["acknowledged"] == 1
+
+
+def test_an_unsafe_report_json_rebuilt_from_the_result_is_not_listed_missing(tmp_path):
+    # redteam N2 (#197): a report.json QAJev may not read is replaced by one rebuilt from the job's result.
+    job, run, data = report(tmp_path / "home", tmp_path / "reports", "a-link")
+    (run / "report.json").unlink()
+    (run / "report.json").symlink_to(tmp_path / "elsewhere.json")
+    (tmp_path / "elsewhere.json").write_text(json.dumps(data))
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        server = Server()
+        watch.flush(server)
+    row = server.rows["qms_a-link"]
     assert "report.json" in [f["path"] for f in row["files"]]
     assert row["report"]["missing_evidence"] == []

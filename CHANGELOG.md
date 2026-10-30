@@ -8,7 +8,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 - `qajev observe` counts a run whose record it cannot read, such as a start time that is not a date, as `invalid`,
   apart from `refused`, which now means the upload privacy check only. The other runs still publish.
-- A refused report.json rebuilt from a clean result is no longer also listed as missing evidence.
+- A report.json that was refused, too big or unsafe (a link), and is rebuilt from a clean result, is no longer also
+  listed as missing evidence.
 
 ## 0.4.35: 30 Oct 2026
 
