@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Confirm on Enter</title></head>
+<body>
+  <p>Enter asks before it deletes.</p>
+  <script>
+    window.answers = [];
+    addEventListener('keydown', (e) => { if (e.key === 'Enter') window.answers.push(confirm('Delete everything?')); });
+  </script>
+</body>
+</html>

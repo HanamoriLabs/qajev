@@ -192,6 +192,17 @@ def test_a_key_whose_handler_opens_an_alert_runs_once(session, port):
     assert [(d["kind"], d["answered"]) for d in native] == [("alert", "closed")]
 
 
+def test_a_local_pages_own_confirm_still_hears_no(session, port):
+    # Only the waiting tab's leave-page dialog is accepted, even on a local dev host: a confirm hears "no" there too
+    s = session()
+    s.arm("mutate")
+    s.navigate(f"http://127.0.0.1:{port}/confirm-key.html")
+    s.press("Enter")
+    assert s.evaluate("window.answers") == [False]
+    native = [d for d in s.probe({})["probe"]["dialogs"] if d.get("native")]
+    assert [(d["kind"], d["answered"]) for d in native] == [("confirm", "no")]
+
+
 def test_production_keys_never_delete_outside_a_text_field(session, port):
     s = session()
     s.arm("mutate")
