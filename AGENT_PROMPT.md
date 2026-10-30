@@ -89,7 +89,8 @@ cost, and the path of `report_html` so they can open the report.
 Pass `background: true` (MCP) or `--background` (CLI) to get a job id at once. Follow it with `qa_job(job)` /
 `qajev jobs ID` (it shows the scenarios finished so far and what Jev is doing now), and stop it with
 `qa_stop(job)` / `qajev stop ID`. Only one browser run executes at a time on a machine; others wait in a queue
-and say what they are waiting for. Never start a second copy of a run because the first is queued.
+and say what they are waiting for. A run also waits while another job holds the machine alone (`QAJEV_HOLD_FILES`).
+Never start a second copy of a run because the first is queued.
 
 ### Where it runs
 

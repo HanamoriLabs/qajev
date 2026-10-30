@@ -105,7 +105,8 @@ bug); `unverified` (no expectations given); `skipped`. The run's gate is PASS, F
 the gate, each non-pass outcome with its reason, the findings, the cost and the `report_html` path.
 
 Long runs: pass `background: true` (CLI `--background`), then follow with `qa_job` and stop with `qa_stop`. Runs
-take turns, one at a time per machine; never start a second copy of a queued run.
+take turns, one at a time per machine; never start a second copy of a queued run. A run also waits while another
+job holds the machine alone (`QAJEV_HOLD_FILES`), and its report says how long.
 
 Where it runs: `runner: "cloud"` (CLI `--runner cloud`) sends `qa_check`, `qa_run_suite`, `qa_smoke` and
 `qa_project_run` to QAJev Cloud instead of this machine; `"auto"` uses the cloud when it can. Default: the project's

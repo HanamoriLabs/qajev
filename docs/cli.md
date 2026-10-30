@@ -68,6 +68,12 @@ run time includes browser startup and execution. A queued cancellation has zero 
 `seconds` remains the total wall time, and report `seconds` keeps its existing execution meaning.
 Start a lane's execution watchdog at `admitted`, rather than charging queue wait to the page.
 
+`QAJEV_HOLD_FILES` names hold files that another job writes while it needs the machine alone, such as a GPU
+benchmark. While one of them names a live process that is not this run or one it runs under, the run stays
+queued and `waiting` says whose hold it is. A stale file (its process is gone) is ignored. The wait counts
+toward `QAJEV_LOCK_WAIT`. The report gets `timing.hold_seconds` and `timing.hold_waits` (each file, its owner
+line, when the wait started and its seconds), and report.md and report.html say how long the run waited.
+
 `--jobs N` is separate: it runs independent scenario chains within one suite using tabs in that run's Chrome.
 The pool limits browser runs, not tabs, scenario workers or application server ports. Callers must isolate
 their own application state and servers. `QAJEV_LOCK_WAIT` still bounds the queue wait (default 3600 seconds).

@@ -635,6 +635,17 @@ def _scenario_ux(scenario, ux):
     return "".join(out)
 
 
+def hold_wait(data):
+    """How long the run waited for another job's hold (QAJEV_HOLD_FILES) before Chrome started, in words; "" if not."""
+    timing = data.get("timing") or {}
+    waits = timing.get("hold_waits") or []
+    if not waits:
+        return ""
+    total = timing.get("hold_seconds", sum(w["seconds"] for w in waits))
+    whose = "; ".join(f"{w['file']} ({w['owner']})" for w in waits)
+    return f"Waited {total:.0f} s before Chrome started, for another job's hold: {whose}."
+
+
 def render(data):
     c = data["counts"]
     cost = data["cost"]
@@ -657,6 +668,7 @@ def render(data):
         f'<h1><img class="mark" src="{MARK}" alt="" width="28" height="28">{_e(title)}</h1>',
         f'<p class="about">{_e(data["about"])}</p>' if data.get("about") else "",
         f'<div class="sub">{_e(" · ".join(sub))}</div>' if sub else "",
+        f'<p class="muted">{_e(hold_wait(data))}</p>' if hold_wait(data) else "",
         f'<div class="gate {_e(data["gate"])}">Gate: {_e(data["gate"])}{interrupted}</div>',
         f'<div class="counts">{counts}</div><div class="muted">{_e(summary)}</div>',
         f'<p class="planted">{_e(planted_count(data["expected_fail"]))}</p>' if data.get("expected_fail") else "",

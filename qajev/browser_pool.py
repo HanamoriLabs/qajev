@@ -85,6 +85,60 @@ def available_memory() -> int | None:
     return None
 
 
+def hold_files() -> list[Path]:
+    """QAJEV_HOLD_FILES: hold files (separated like PATH) that another job writes while it needs this machine alone."""
+    return [Path(p).expanduser() for p in os.environ.get("QAJEV_HOLD_FILES", "").split(os.pathsep) if p.strip()]
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:  # another user's live process
+        return True
+    return True
+
+
+def _ancestors():
+    """This process and the ones it runs under: a hold one of them wrote is this run's own."""
+    pids, pid = {os.getpid(), os.getppid()}, os.getppid()
+    for _ in range(64):
+        try:  # Linux; elsewhere only this process and its parent count
+            pid = int(Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+        if pid <= 1 or pid in pids:
+            break
+        pids.add(pid)
+    return pids
+
+
+def held() -> dict | None:
+    """The first listed hold another live job owns, as {"file", "owner"}; None when none holds this machine.
+
+    A hold's first line names its owner, "<job> <pid> <time>" (workload-gpu's gpu-solo.hold, 30 Oct). A hold whose
+    process is gone is stale, and one this run or a process it runs under wrote is its own: neither waits. A hold
+    that names no process, or cannot be read, is honoured."""
+    mine = None
+    for path in hold_files():
+        try:
+            line = (path.read_text(errors="replace").splitlines() or [""])[0].strip()[:200]
+        except FileNotFoundError:
+            continue
+        except OSError:
+            line = ""
+        pid = next((int(word) for word in line.split() if word.isdigit()), None)
+        if pid is not None:
+            if not _alive(pid):
+                continue
+            mine = _ancestors() if mine is None else mine
+            if pid in mine:
+                continue
+        return {"file": str(path), "owner": line or "owner unknown"}
+    return None
+
+
 def ram_capacity(requested: int, available: int | None, budget_mib: int, reserve_mib: int) -> int:
     if available is None:
         return min(requested, 1)
@@ -158,9 +212,12 @@ def timing() -> dict | None:
         return None
     now = time.monotonic()
     admitted = lease.get("admitted_mono")
+    waits = lease.get("hold_waits")
     return {"queued_at": lease["queued_at"], "admitted_at": lease.get("admitted_at"),
             "queue_seconds": round((admitted if admitted is not None else now) - lease["queued_mono"], 3),
-            "run_seconds": round(now - admitted, 3) if admitted is not None else 0.0}
+            "run_seconds": round(now - admitted, 3) if admitted is not None else 0.0,
+            **({"hold_seconds": round(sum(w["seconds"] for w in waits), 3),
+                "hold_waits": [dict(w) for w in waits]} if waits else {})}
 
 
 def parallel() -> bool:
@@ -194,7 +251,15 @@ def acquire(what, *, browser_runs=None, emit=None, wait: float = 3600, job=None,
             fcntl.flock(ticket, fcntl.LOCK_EX)
             _write(ticket, lease)
         last_notice = None
+        holding = None  # (the hold, when it was first seen, its wait record) while one keeps this run out
         while True:
+            hold = held()
+            if holding and hold != holding[0]:  # it went, or another job's hold took its place
+                holding[2]["seconds"] = round(time.monotonic() - holding[1], 3)
+                holding = None
+            if hold and not holding:
+                holding = (hold, time.monotonic(), {**hold, "started_at": time.time(), "seconds": 0.0})
+                lease.setdefault("hold_waits", []).append(holding[2])
             with _guard():
                 rows = _records()
                 active = [row for _, row in rows if row["state"] == "active"]
@@ -203,7 +268,7 @@ def acquire(what, *, browser_runs=None, emit=None, wait: float = 3600, job=None,
                 memory, envelope = (_memory_capacity(requested, available_memory(), budget, reserve, active)
                                     if requested > 1 else (64, None))
                 capacity = min(capacity, memory)
-                admitted = first == path.name and len(active) < capacity
+                admitted = hold is None and first == path.name and len(active) < capacity
                 if admitted:
                     legacy_lock.parent.mkdir(parents=True, exist_ok=True)
                     legacy = open(legacy_lock, "a+")
@@ -221,7 +286,10 @@ def acquire(what, *, browser_runs=None, emit=None, wait: float = 3600, job=None,
                     if requested == 1:
                         _write(legacy, lease)  # old clients still see the exclusive holder
                 who = ", ".join(r["what"] for r in active) or "an earlier request or legacy QAJev run"
-                reason = f"queued behind {who}; capacity {capacity}/{requested}, memory capacity {memory}"
+                reason = (f"another job holds this machine alone: {hold['file']} ({hold['owner']})" if hold else
+                          f"queued behind {who}; capacity {capacity}/{requested}, memory capacity {memory}")
+                if holding:
+                    holding[2]["seconds"] = round(now - holding[1], 3)
             if admitted:
                 if callable(emit):
                     emit({"event": "admitted", "at": lease["admitted_at"], "capacity": capacity,
