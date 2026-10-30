@@ -819,3 +819,79 @@ def test_an_artifact_the_privacy_check_refuses_is_left_out_and_the_run_still_goe
     assert "shots/frame.png" not in [f["path"] for f in row["files"]]
     assert "screenshots" in row["tests"][0]  # the record still names it; the dashboard shows it as missing evidence
     assert all(b"/home/someone" not in blob for blob in server.contents.values())
+
+
+TRUNCATED_DATA_URI = "data:image/png;base64,iVBORw0KGgoAA"  # incorrect padding: the privacy check refuses it
+
+
+def test_a_frame_that_names_a_local_path_by_the_send_read_stays_pending(tmp_path, monkeypatch):
+    # redteam P4 (#195): the frame is clean at the inventory read and names a home folder at the send read.
+    job, run, data = report(tmp_path / "home", tmp_path / "reports", "a-turns")
+    (run / "shots").mkdir()
+    frame = run / "shots/frame.png"
+    frame.write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe\x00clean frame\xff")
+    data["scenarios"][0]["shot"] = "shots/frame.png"
+    (job / "result.json").write_text(json.dumps(data))
+    read_bytes = type(frame).read_bytes
+    reads = []
+
+    def turning(path):
+        content = read_bytes(path)
+        if path == frame:
+            reads.append(path)
+            if len(reads) == 1:
+                path.write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe\x00/home/someone/private\xff")
+        return content
+
+    monkeypatch.setattr(type(frame), "read_bytes", turning)
+    with observer(tmp_path) as watch:
+        with pytest.raises(ObserverError, match="changed during inventory"):
+            watch.inventory()
+        assert watch.pending() == 0
+        assert all(b"/home/someone" not in p.read_bytes() for p in watch.blob_dir.iterdir() if p.is_file())
+
+
+def test_a_refused_report_json_in_an_ended_run_is_left_out_and_both_runs_go(tmp_path):
+    # redteam P5 (#195): report.json is refused, so the ended run rebuilt it from its result, which is refused too.
+    job, run, data = report(tmp_path / "home", tmp_path / "reports", "a-json")
+    data["note"] = TRUNCATED_DATA_URI
+    (job / "result.json").write_text(json.dumps(data))
+    (run / "report.json").write_text(json.dumps(data))
+    report(tmp_path / "home", tmp_path / "reports", "b-after")
+    with observer(tmp_path) as watch:
+        assert watch.inventory()["jobs"] == 2
+        server = Server()
+        assert watch.flush(server)["acknowledged"] == 2
+    row = server.rows["qms_a-json"]
+    assert row["report"]["missing_evidence"] == ["report.json: refused by the upload privacy check"]
+    assert "report.json" not in [f["path"] for f in row["files"]]
+    assert ("qms_b-after", "report.json") in server.contents
+
+
+def test_a_refused_text_report_is_left_out_and_both_runs_go(tmp_path):
+    # redteam P6 (#195).
+    job, run, data = report(tmp_path / "home", tmp_path / "reports", "a-html")
+    (run / "report.html").write_text(f'<img src="{TRUNCATED_DATA_URI}">')
+    report(tmp_path / "home", tmp_path / "reports", "b-after")
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        server = Server()
+        assert watch.flush(server)["acknowledged"] == 2
+    row = server.rows["qms_a-html"]
+    assert row["report"]["missing_evidence"] == ["report.html: refused by the upload privacy check"]
+    assert "report.html" not in [f["path"] for f in row["files"]]
+    assert ("qms_a-html", "report.json") in server.contents
+
+
+def test_a_run_whose_own_record_the_privacy_check_refuses_is_counted_and_the_others_go(tmp_path):
+    # A test name the check refuses: the run's record cannot leave cleaned, so the run stays here, counted.
+    job, run, data = report(tmp_path / "home", tmp_path / "reports", "a-name")
+    data["scenarios"][0]["name"] = f"shows {TRUNCATED_DATA_URI}"
+    (job / "result.json").write_text(json.dumps(data))
+    report(tmp_path / "home", tmp_path / "reports", "b-after")
+    with observer(tmp_path) as watch:
+        summary = watch.inventory()
+        assert (summary["jobs"], summary["refused"]) == (1, 1)
+        server = Server()
+        assert watch.flush(server)["acknowledged"] == 1
+    assert list(server.rows) == ["qms_b-after"]
