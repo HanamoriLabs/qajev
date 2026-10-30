@@ -69,8 +69,11 @@ STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
-    "cpu_throttle", "plan", "color_scheme", "tunnel",
+    "cpu_throttle", "plan", "color_scheme", "tunnel", "browser",
 } | set(ux_options.KEYS)
+# browser: fresh (the default) runs each test, or each depends_on chain, in its own new Chrome, capped at its
+# budget.seconds + runner.CAP_MARGIN; shared runs every test in one Chrome, one tab per chain (the old way).
+BROWSER_MODES = ("fresh", "shared")
 COLOR_SCHEMES = ("light", "dark")
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
@@ -155,6 +158,7 @@ class Suite:
     test_plan: dict | None = None  # that plan's check (planfile.check), set before the run
     tunnel: dict | None = None  # the full tunnel: this machine's dev servers a cloud run reaches (tunnel_spec)
     ux_options: dict = field(default_factory=dict)
+    browser: str = "fresh"  # BROWSER_MODES: a new Chrome per test (or chain), or one Chrome for all
 
     @property
     def mutates(self):
@@ -679,6 +683,9 @@ def parse(data, path=None, devices=None):
         hosts.add(host_of(base))
     hosts |= set(_list(data.get("hosts"), "hosts"))
     account = _account(data["account"], base, Path(path).parent if path else None) if data.get("account") else None
+    browser = str(data.get("browser", "fresh"))
+    if browser not in BROWSER_MODES:
+        raise SuiteError(f"browser: {browser!r} unknown; use one of {list(BROWSER_MODES)}")
     if account:
         hosts.add(host_of(account["login"]["url"]))
     suite = Suite(
@@ -697,6 +704,7 @@ def parse(data, path=None, devices=None):
         plan=_plan_path(data.get("plan")),
         tunnel=tunnel_spec(data.get("tunnel")),
         ux_options=suite_ux,
+        browser=browser,
     )
     check_safety(suite)
     if path:

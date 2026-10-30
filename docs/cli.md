@@ -78,7 +78,8 @@ file, so to it that hold does not exist: list a path the job can see. A stale fi
 toward `QAJEV_LOCK_WAIT`. The report gets `timing.hold_seconds` and `timing.hold_waits` (each file, its owner
 line, when the wait started and its seconds), and report.md and report.html say how long the run waited.
 
-`--jobs N` is separate: it runs independent scenario chains within one suite using tabs in that run's Chrome.
+`--jobs N` is separate: it runs independent scenario chains within one suite, each in its own fresh Chrome (or in
+tabs of one Chrome with `browser: shared`).
 The pool limits browser runs, not tabs, scenario workers or application server ports. Callers must isolate
 their own application state and servers. `QAJEV_LOCK_WAIT` still bounds the queue wait (default 3600 seconds).
 

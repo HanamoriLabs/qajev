@@ -498,10 +498,9 @@ def markdown(data):
         lines.append("")
 
     browser = data["browser"]
-    owner = report_html.browser_owner(browser)
     where = (f"- Native: {browser.get('engine')} game {browser.get('project')} (adapter {browser.get('adapter')}"
              f"{', headless' if browser.get('headless') else ', windowed'})" if browser.get("surface") == "native"
-             else f"- Browser: {browser.get('cdp_url')} ({owner}{', headless' if browser.get('headless') else ''})")
+             else f"- Browser: {report_html.browser_where(browser)}")
     lines += [
         "## Run",
         "",

@@ -809,7 +809,7 @@ def test_runner_isolates_chrome_and_report_folders_and_persists_timings(monkeypa
 
     monkeypatch.setattr(runner, "run_group", run_group)
     monkeypatch.setattr(runner.time, "strftime", lambda *_a, **_kw: "20261024-120000")
-    spec = suite.parse({"name": "same", "base_url": "http://localhost", "scenarios": [
+    spec = suite.parse({"name": "same", "base_url": "http://localhost", "browser": "shared", "scenarios": [
         {"name": "fixture", "about": "Fixture", "expect": {"text": "fixture"}}]})
     opts = runner.Options(out_dir=tmp_path / "reports", headless=True, ephemeral=False)
     with jobs.machine_lock("first", browser_runs=2):

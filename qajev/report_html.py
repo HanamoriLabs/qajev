@@ -539,6 +539,16 @@ def browser_owner(browser):
     return f"QAJev-managed profile {browser.get('profile')}"
 
 
+def browser_where(browser):
+    """The Browser line of both reports: the Chrome a suite shared, or a fresh one for each test, and why it shared one
+    when the suite asked for fresh ones."""
+    headless = ", headless" if browser.get("headless") else ""
+    if browser.get("fresh"):
+        return f"a fresh Chrome for each test ({browser_owner(browser)}{headless})"
+    shared = f"; one Chrome for the suite: {browser['shared_because']}" if browser.get("shared_because") else ""
+    return f"{browser.get('cdp_url')} ({browser_owner(browser)}{headless}){shared}"
+
+
 def decisions_cost(data):
     """What the decisions cost: Jev on TypeSafe is a flat estimate per call; Clef's is its own token count."""
     usd = data["cost"]["usd_typesafe_estimated"]
@@ -735,11 +745,10 @@ def render(data):
     out += [_scenario(i, r, decider(data)) for i, r in enumerate(data["scenarios"])]
 
     browser = data.get("browser") or {}
-    owner = browser_owner(browser)
     run = [("Native", _e(f"{browser.get('engine')} game {browser.get('project')} (adapter {browser.get('adapter')}"
                          f"{', headless' if browser.get('headless') else ', windowed'})"))
            if browser.get("surface") == "native" else
-           ("Browser", _e(f"{browser.get('cdp_url')} ({owner}{', headless' if browser.get('headless') else ''})")),
+           ("Browser", _e(browser_where(browser))),
            *([("Game profile", _e(game_profile(browser)))] if game_profile(browser) else []),
            ("Cost", _e(f"{decisions_cost(data)}, text model "
                        f"${cost['usd_text']:.4f}" + ("" if cost["text_cost_reported"]

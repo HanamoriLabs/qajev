@@ -87,7 +87,7 @@ def test_local_jobs_keep_credentials_out_of_the_launched_chrome(monkeypatch, tmp
         return record
 
     monkeypatch.setattr(chrome, "start", start)
-    parsed = suite.parse({"name": "environment", "base_url": "http://localhost", "scenarios": [
+    parsed = suite.parse({"name": "environment", "base_url": "http://localhost", "browser": "shared", "scenarios": [
         {"name": f"check-{i}", "url": "/", "about": "Fixture", "expect": {"text": "fixture"}} for i in range(2)]})
     try:
         result = runner.run(parsed, runner.Options(jobs=jobs, headless=True, ephemeral=True, out_dir=tmp_path / "runs"))

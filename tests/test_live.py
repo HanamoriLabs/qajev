@@ -74,6 +74,10 @@ class Recorder(http.server.SimpleHTTPRequestHandler):
         if self.path == "/reset.png":  # hang up without an answer: Chrome says net::ERR_EMPTY_RESPONSE
             self.close_connection = True
             return
+        if self.path.startswith("/hang.html"):  # a page that never answers: a test there must stop at its cap
+            time.sleep(60)
+            self.close_connection = True
+            return
         if self.path.startswith("/slow.html"):  # a page the server takes 0.8 s to answer (verse2's deep links)
             time.sleep(0.8)
             body = b"<!doctype html><title>Slow</title><p>The second page</p><script>window.where = 'second'</script>"

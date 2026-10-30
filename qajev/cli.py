@@ -533,7 +533,7 @@ def _screen_printer(args):
             b = event["browser"]
             where = (f"app {b.get('project')}" if b.get("engine") == "app"
                      else f"{b.get('engine')} game {b.get('project')}" if b.get("surface") == "native"
-                     else f"Chrome {b.get('cdp_url')}")
+                     else "a fresh Chrome for each test" if b.get("fresh") else f"Chrome {b.get('cdp_url')}")
             print(f"qajev: {event['suite']} -> {event['run_dir']} ({where})", file=sys.stderr)
         elif kind == "waiting":
             print(f"  waiting: {event['reason']}", file=sys.stderr, flush=True)

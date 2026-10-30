@@ -62,6 +62,9 @@ That is QAJev's side, not your product:
   nothing (often a phone menu it never opened). Say the way there in the goal ("open the menu, then the pricing
   page"). Jev clicking around and not arriving is still a failure: the way may really be missing.
 - *cost cap reached*: raise `--cost-cap`, or narrow the goals.
+- *cap N s hit*: the test ran past its cap, `budget.seconds` plus 60 s (150 s by default), so QAJev stopped its
+  Chrome. Often the page hung, or a dialog or a form held it. The tests after it in its `depends_on` chain are
+  skipped. The other tests run in their own Chrome. Raise `budget.seconds` only if the test truly needs longer.
 
 **"a URL with a user name or password is refused"**
 The URL holds a user name or password (`https://alice:s3cret@shop.example/`). QAJev never writes down a password,
