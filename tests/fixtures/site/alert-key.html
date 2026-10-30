@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Alert on Enter</title></head>
+<body>
+  <p>Enter saves and says so in an alert.</p>
+  <script>
+    window.saves = 0;
+    addEventListener('keydown', (e) => { if (e.key === 'Enter') { window.saves += 1; alert('Saved'); } });
+  </script>
+</body>
+</html>

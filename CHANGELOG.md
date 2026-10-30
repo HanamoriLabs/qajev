@@ -15,8 +15,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 - A dialog the page itself opens no longer freezes the run. On a local dev host, a form's "leave this page?" guard,
   or a `confirm()`, used to block every later page call for a full CDP timeout, twice (5-6.5 min a step in #802).
-  Now the first call that times out answers it (leave, OK, or "no" for confirm and prompt), and the report lists
-  it in `dialogs` with `answered` and `native: true`.
+  Now the first call that times out answers it, and the report lists it in `dialogs` with `answered` and
+  `native: true`. Only a local dev host's "leave this page?", from the tab that waits, is accepted. An alert is
+  closed, confirm and prompt get "no", and any other "leave this page?" gets "stay". A key or text held by the
+  dialog is not sent again, so its handler runs once.
 - `qajev observe` counts a run whose record it cannot read, such as a start time that is not a date, as `invalid`,
   apart from `refused`, which now means the upload privacy check only. The other runs still publish.
 - A report.json that was refused, too big or unsafe (a link), and is rebuilt from a clean result, is no longer also

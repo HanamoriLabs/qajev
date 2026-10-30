@@ -7,15 +7,21 @@ import pytest
 
 from qajev import session
 
+FORM = "http://127.0.0.1:8000/form.html"
+
 
 class Page:
-    """A CDP link to a page whose dialog freezes its script: every call times out until the dialog is answered."""
+    """A CDP link to a page whose dialog freezes its script: every call times out until the dialog is answered. The
+    browser still says the tab's history (Page.getNavigationHistory), as Chrome does."""
 
-    def __init__(self, dialog):
+    def __init__(self, dialog, url=FORM):
         self.dialog = dialog
+        self.url = url
         self.calls = []
 
     def cdp(self, method, session_id=None, _response_timeout=None, **params):
+        if method == "Page.getNavigationHistory":
+            return {"currentIndex": 0, "entries": [{"url": self.url}]}
         self.calls.append((method, session_id, params))
         if method == "Page.handleJavaScriptDialog":
             self.dialog = None
@@ -33,10 +39,10 @@ def link(page, pending=None):
     return session._patient_cdp(page.cdp, 30, transport, pending or page.pending), transport
 
 
-@pytest.mark.parametrize("kind,accept,said", [("beforeunload", True, "leave"), ("alert", True, "ok"),
+@pytest.mark.parametrize("kind,accept,said", [("beforeunload", True, "leave"), ("alert", False, "closed"),
                                               ("confirm", False, "no"), ("prompt", False, "no")])
 def test_a_timed_out_call_answers_the_open_dialog_and_the_retry_goes_through(kind, accept, said):
-    page = Page({"type": kind, "message": "You have unsaved changes"})
+    page = Page({"type": kind, "message": "You have unsaved changes", "url": FORM})
     call, transport = link(page)
     assert call("Runtime.evaluate", session_id="s1", expression="document.readyState") == {
         "result": {"value": "complete"}}
@@ -46,10 +52,41 @@ def test_a_timed_out_call_answers_the_open_dialog_and_the_retry_goes_through(kin
                                   "native": True}]
 
 
+@pytest.mark.parametrize("record", [{"type": "beforeunload", "message": "", "url": "http://127.0.0.1:8000/other.html"},
+                                    {"type": "beforeunload", "message": ""}])
+def test_another_tabs_leave_page_record_never_makes_this_tab_say_yes(record):
+    # browser_harness keeps one dialog record for the whole daemon (redteam L2 on #202): the record is another tab's
+    # beforeunload, or names no page, while this tab holds a confirm. The confirm must hear "no", as on production.
+    page = Page(dict(record))
+    call, transport = link(page)
+    call("Runtime.evaluate", session_id="s1", expression="1")
+    assert [c[2] for c in page.calls if c[0] == "Page.handleJavaScriptDialog"] == [{"accept": False}]
+    assert transport.dialogs[0]["answered"] == "stay"
+
+
+def test_on_production_even_this_tabs_own_leave_page_record_hears_no():
+    # Two production tabs on one url share it, so the url cannot tell them apart: there, nothing is accepted
+    shop = "https://shop.example.com/cart"
+    page = Page({"type": "beforeunload", "message": "", "url": shop}, url=shop)
+    call, transport = link(page)
+    call("Runtime.evaluate", session_id="s1", expression="1")
+    assert [c[2] for c in page.calls if c[0] == "Page.handleJavaScriptDialog"] == [{"accept": False}]
+    assert transport.dialogs[0]["answered"] == "stay"
+
+
+def test_a_key_held_by_a_dialog_is_not_pressed_again_after_the_answer():
+    # The held keyDown runs once the dialog closes; sent again, its handler runs twice (redteam L1 on #202)
+    page = Page({"type": "alert", "message": "Saved", "url": FORM})
+    call, transport = link(page)
+    assert call("Input.dispatchKeyEvent", session_id="s1", type="keyDown", key="Enter") == {}
+    assert [c[0] for c in page.calls].count("Input.dispatchKeyEvent") == 1
+    assert transport.dialogs[0]["answered"] == "closed"
+
+
 def test_a_navigation_held_by_a_leave_page_dialog_goes_on_and_is_not_sent_twice():
     # Sent again, the second navigation aborts the first (the live test saw net::ERR_ABORTED)
-    page = Page({"type": "beforeunload", "message": ""})
-    history = {"currentIndex": 0, "entries": [{"url": "http://127.0.0.1:8000/form.html"}]}
+    page = Page({"type": "beforeunload", "message": "", "url": FORM})
+    history = {"currentIndex": 0, "entries": [{"url": FORM}]}
 
     def cdp(method, session_id=None, _response_timeout=None, **params):
         if method == "Page.getNavigationHistory":
