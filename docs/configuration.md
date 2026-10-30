@@ -104,7 +104,8 @@ times; the existing hook and run limits still apply.
 | `QAJEV_CDP_TIMEOUT` | seconds per browser command | `30` |
 | `QAJEV_LOAD_HIGH`, `QAJEV_LOAD_OK`, `QAJEV_LOAD_WAIT` | wait before a scenario (`smoke` and `play`: before starting) while the 1-minute load is at or above HIGH, until it drops below OK; at most WAIT seconds per run | `150`, `100`, `600` |
 | `QAJEV_LOCK_WAIT` | seconds a run waits in the queue before giving up (exit code 4) | `3600` |
-| `QAJEV_HOLD_FILES` | hold files, separated like `PATH`, that another job writes while it needs this machine alone. A browser run does not start while one of them exists and its first line names a live process (`<job> <pid> <time>`) that is not the run or a process it runs under. A file whose process is gone is ignored. A file that names no process is honoured. The wait counts toward `QAJEV_LOCK_WAIT`, and the report says how long the run waited and for whose hold | none |
+| `QAJEV_HOLD_FILES` | hold files, separated like `PATH`, that another job writes while it needs this machine alone. A browser run does not start while one of them exists and its first line names a live process that is not the run or a process it runs under. The pid is the line's only all-digit word (`<job> <pid> <time>`). A file whose process is gone is ignored. A file that names no process, or more than one number, is honoured. The wait counts toward `QAJEV_LOCK_WAIT`, and the report says how long the run waited and for whose hold | none |
+| `QAJEV_HOLD_OWNER` | the job this run belongs to, such as `rea chain 1031fx`: a hold whose first words are this tag is the run's own job's, and the run does not wait on it. For a hold that names no process here, such as one written from another machine | none |
 
 The load gate only matters on shared or busy machines; set `QAJEV_LOAD_HIGH=0` to never wait.
 

@@ -8,7 +8,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 - `QAJEV_HOLD_FILES`: a browser run waits while another job holds the machine alone. Each listed file, such as a GPU
   benchmark's `gpu-solo.hold`, names its owner as `<job> <pid> <time>`. The run waits while that process lives and is
-  not the run or one it runs under. The report says how long it waited and for whose hold (`timing.hold_waits`).
+  not the run or one it runs under, or while the line names no process. `QAJEV_HOLD_OWNER` lets a job's own runs pass
+  its hold. The report says how long a run waited and for whose hold (`timing.hold_waits`).
 
 ### Fixed
 

@@ -23,6 +23,7 @@ def pool(monkeypatch, tmp_path):
     monkeypatch.setattr(jobs, "local_runs_off", lambda: False)
     monkeypatch.delenv("QAJEV_BROWSER_RUNS", raising=False)
     monkeypatch.delenv("QAJEV_HOLD_FILES", raising=False)
+    monkeypatch.delenv("QAJEV_HOLD_OWNER", raising=False)
 
 
 @pytest.fixture
@@ -86,6 +87,83 @@ def test_a_hold_that_names_no_process_is_honoured(monkeypatch, tmp_path):
     with pytest.raises(jobs.Busy, match="owner unknown"):
         with jobs.machine_lock("suite", wait=0.3):
             raise AssertionError("an empty hold was ignored")
+
+
+def _dead_pid():
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    return proc.pid
+
+
+def test_verses_real_owner_line_names_its_pid_at_the_end(monkeypatch, tmp_path, other_job):
+    _hold(monkeypatch, tmp_path, f"verse-perf 00:35:41: current-bank GPU confirm {other_job}\n")
+    with pytest.raises(jobs.Busy, match="verse-perf"):
+        with jobs.machine_lock("suite", wait=0.3):
+            raise AssertionError("a live Verse hold was ignored")
+    _hold(monkeypatch, tmp_path, f"verse-perf 00:35:41: current-bank GPU confirm {_dead_pid()}\n")
+    with jobs.machine_lock("suite", wait=0.3):
+        pass  # Verse's job is gone: its hold is stale
+
+
+def test_a_line_with_two_numbers_names_no_process_and_is_honoured(monkeypatch, tmp_path, other_job):
+    # Taking the first number as the pid would read a dead number here and skip a live hold.
+    _hold(monkeypatch, tmp_path, f"look {_dead_pid()} started by {other_job}\n")
+    with pytest.raises(jobs.Busy, match="started by"):
+        with jobs.machine_lock("suite", wait=0.3):
+            raise AssertionError("a hold with two numbers was skipped")
+
+
+def test_reas_chain_hold_names_no_pid_and_only_its_own_tagged_runs_pass(monkeypatch, tmp_path):
+    _hold(monkeypatch, tmp_path, "rea chain 1031fx 16:57:20: waits for the browser; no new look (early-hold)\n")
+    for owner in (None, "rea chain 9999zz", "re"):  # untagged, another chain, a tag that is only part of a word
+        if owner:
+            monkeypatch.setenv("QAJEV_HOLD_OWNER", owner)
+        with pytest.raises(jobs.Busy, match="rea chain 1031fx"):
+            with jobs.machine_lock("look", wait=0.3):
+                raise AssertionError(f"a run tagged {owner!r} passed rea's chain hold")
+    monkeypatch.setenv("QAJEV_HOLD_OWNER", "rea chain 1031fx")
+    with jobs.machine_lock("look", wait=0.3):
+        assert "hold_waits" not in browser_pool.timing()
+
+
+LOOK = """
+import pathlib, sys
+from qajev import browser_pool, jobs
+tmp = pathlib.Path(sys.argv[1])
+browser_pool.ROOT, jobs.LOCK, jobs.local_runs_off = tmp / "pool", tmp / "legacy.lock", lambda: False
+try:
+    with jobs.machine_lock("look", wait=0.5):
+        print("admitted", flush=True)
+except jobs.Busy as error:
+    print("waited:", error, flush=True)
+"""
+
+OWNER = """
+import os, subprocess, sys, time
+hold, tmp, look = sys.argv[1:]
+open(hold, "w").write(f"rea-look-chain {os.getpid()} 16:20:00\\n")
+# the look runs a few processes below the hold's owner, as systemd-run --scope and bash put it on workload-gpu
+out = subprocess.run(["bash", "-c", f'"{sys.executable}" -c "$0" "$1"; exit $?', look, tmp],  # no exec: bash stays
+                     capture_output=True, text=True)
+print("own look:", out.stdout.strip() or out.stderr.strip()[-300:], flush=True)
+time.sleep(60)
+"""
+
+
+def test_a_look_under_the_holds_owner_runs_and_a_look_of_another_job_waits(monkeypatch, tmp_path):
+    hold = tmp_path / "gpu-solo.hold"
+    monkeypatch.setenv("QAJEV_HOLD_FILES", str(hold))
+    owner = subprocess.Popen([sys.executable, "-c", OWNER, str(hold), str(tmp_path), LOOK],
+                             stdout=subprocess.PIPE, text=True)
+    assert owner.stdout is not None
+    try:
+        assert owner.stdout.readline().strip() == "own look: admitted"
+        other = subprocess.run([sys.executable, "-c", LOOK, str(tmp_path)], capture_output=True, text=True)
+        assert other.stdout.startswith("waited:"), other.stdout + other.stderr[-300:]
+        assert f"rea-look-chain {owner.pid}" in other.stdout
+    finally:
+        owner.kill()
+        owner.wait()
 
 
 def test_every_listed_file_counts_and_a_missing_one_holds_nothing(monkeypatch, tmp_path, other_job):

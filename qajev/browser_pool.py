@@ -114,12 +114,21 @@ def _ancestors():
     return pids
 
 
+def _tagged_mine(line):
+    """QAJEV_HOLD_OWNER: the job this run belongs to. A hold whose first words are that tag is the run's own job's,
+    even when its writer is no process here (rea's chain writes "rea chain <id> <time>: ..." from another machine)."""
+    tag = os.environ.get("QAJEV_HOLD_OWNER", "").split()
+    return bool(tag) and [word.rstrip(":") for word in line.split()[:len(tag)]] == tag
+
+
 def held() -> dict | None:
     """The first listed hold another live job owns, as {"file", "owner"}; None when none holds this machine.
 
-    A hold's first line names its owner, "<job> <pid> <time>" (workload-gpu's gpu-solo.hold, 30 Oct). A hold whose
-    process is gone is stale, and one this run or a process it runs under wrote is its own: neither waits. A hold
-    that names no process, or cannot be read, is honoured."""
+    A hold's first line names its owner and its pid, its only all-digit word: "<job> <pid> <time>" (workload-gpu's
+    gpu-solo.hold, 30 Oct) or "verse-perf 00:35:41: current-bank GPU confirm <pid>". A hold whose
+    process is gone is stale, and one this run or a process it runs under wrote is its own: neither waits. Nor
+    does a hold whose first words are this run's QAJEV_HOLD_OWNER. A hold that names no process, or cannot be read,
+    is honoured."""
     mine = None
     for path in hold_files():
         try:
@@ -128,7 +137,12 @@ def held() -> dict | None:
             continue
         except OSError:
             line = ""
-        pid = next((int(word) for word in line.split() if word.isdigit()), None)
+        if _tagged_mine(line):
+            continue
+        # The pid is the line's only all-digit word. With two (a date as well, say), which one is the pid is a guess,
+        # and a wrong guess at a dead number would skip a live hold: the line counts as naming no process.
+        numbers = [int(word) for word in line.split() if word.isdigit()]
+        pid = numbers[0] if len(numbers) == 1 else None
         if pid is not None:
             if not _alive(pid):
                 continue
