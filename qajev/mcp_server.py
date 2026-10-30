@@ -51,7 +51,7 @@ something on a site, and to catch errors a browser can see.
   pass means something. A result lists the tests without one under `about_missing`.
 
 Outcomes: pass; fail (product wrong); stuck (Jev found no way forward: verify by hand, often UX);
-harness (budget/stale/model/browser trouble, Jev said DONE without a single action, a goal whose checks held before
+harness (budget/stale/loop/model/browser trouble, Jev said DONE without a single action, a goal whose checks held before
 Jev moved and Jev took no action, a local server not answering, or a js check whose own code broke: says nothing
 about the product); unverified (no checks);
 skipped. Gate: PASS, FAIL or INCOMPLETE. A planted fault (expect_fail: the says text of the check it must fail on)

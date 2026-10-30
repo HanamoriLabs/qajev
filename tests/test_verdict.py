@@ -103,6 +103,8 @@ BAD = [{"check": "page shows 'Pro'", "ok": False, "detail": None}]
     ("blocked", BAD, True, "stuck"),
     ("budget_actions", BAD, True, "harness"),
     ("stale", BAD, True, "harness"),
+    ("loop", OK, True, "pass"),                 # Jev looped, but the page was judged in full
+    ("loop", BAD, True, "harness"),             # a loop says nothing about the product
     ("model_error", BAD, True, "harness"),
     ("guard_missing", BAD, True, "harness"),
     ("done", [], False, "unverified"),

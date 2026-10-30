@@ -21,6 +21,9 @@ from .ux_options import resolve as resolve_ux
 
 MODEL_ERROR = re.compile(r"model|typesafe|text helper|text_model|provider", re.I)
 STALE_LIMIT = 8  # decisions without an executed action before we call the page churning
+# Clicks on one target in a row that leave the page in at most 2 states (nothing happens, or it toggles back and forth)
+# before the scenario stops as a loop. #802 (30 Oct): Jev clicked one box 9 and 11 times and spent the action budget.
+LOOP_CLICKS = 3
 # The expectations a run that stopped early may never reach, as its reason names them.
 NOT_RUN = {"looks": "expect.looks", "after": "the after hooks", "fetch": "expect.fetch", "command": "expect.command",
            "effect": "expect.effect"}
@@ -512,6 +515,26 @@ def _did(h):
     return f"{h.get('kind') or 'act'} {action!r}"
 
 
+def _loop(history, prints, first):
+    """How often Jev clicked one target in a row while the page did not move on, once that is LOOP_CLICKS or more;
+    else 0. prints[i] is the page's fingerprint after history[i], first the one before history[0]. "Load more" clicked
+    3 times shows 3 new pages, so it is no loop; a button that does nothing, or a box that toggles, is."""
+    if len(prints) < len(history) or not history:
+        return 0
+    last = history[-1]
+    if last.get("kind") != "click":
+        return 0
+    n = 0
+    while n < len(history) and history[-1 - n].get("kind") == "click" and history[-1 - n].get("action") == last.get(
+            "action"):
+        n += 1
+    if n < LOOP_CLICKS:
+        return 0
+    start = len(history) - n
+    states = {prints[start - 1] if start else first, *prints[start:len(history)]}
+    return n if None not in states and len(states) <= 2 else 0
+
+
 def _last_stale(session):
     """The last stale decision's reason, for a "stale" stop: "; the last: <Jev's reason> <what changed>"."""
     words = verdict.stale_words(getattr(session, "last_stale", None))
@@ -529,6 +552,7 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None, he
     deadline = started + scenario.budget["seconds"]
     reasks = escapes = model_failures = stale_base = 0
     assists = session.assists = []
+    first, prints = (state.get("page") or {}).get("fingerprint"), []
     while True:
         read()
         # A goal whose checks held before it began is not reached by holding still: the Orchestrator's sign-in goal
@@ -538,6 +562,12 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None, he
         if state["status"] == "done":
             step("said DONE", n=len(state["history"]) + 1)
             return "done", None
+        if clicks := _loop(state["history"], prints, first):
+            # Before Jev's own BLOCKED after 3 actions that changed nothing: QAJev's two scroll-and-ask-again turns
+            # would only bring more clicks on the same target (#802 run 9: 9 clicks).
+            target = state["history"][-1].get("action")
+            return "loop", (f"{target!r} {clicks} times in a row, and the page did not move on; the last actions: "
+                            + "; ".join(_did(h) for h in state["history"][-5:]))
         if state["status"] == "blocked":
             step("said BLOCKED" + ("; QAJev scrolls a screen and asks again" if reasks < 2 else ""))
             # BLOCKED often fires on a page that has not finished loading, or on content below the fold that Jev
@@ -574,6 +604,8 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None, he
             return "stale", f"{pending} decisions without an action" + _last_stale(session)
         try:
             session.tick()
+            while len(prints) < len(state["history"]):  # the page each action left: _loop compares them
+                prints.append((state.get("page") or {}).get("fingerprint"))
             model_failures = 0
             for h in state["history"][told:]:
                 step(_did(h), p=h.get("probability"), n=h.get("step"))
