@@ -94,7 +94,8 @@ def test_report_gate_counts_and_markdown(tmp_path):
 def test_a_destructive_run_carries_a_red_banner_and_every_write_production_let_through(tmp_path):
     results = [result("look", "pass", allowed_writes=[{"method": "POST", "url": "https://shop.example/api/search?q=1"}],
                       dialogs=[{"kind": "confirm", "message": "Really delete item 1?"}, {"kind": "beforeunload",
-                                                                                          "message": ""}])]
+                                                                                          "message": ""},
+                               {"kind": "alert", "message": "Saved", "answered": "closed", "native": True}])]
     ledger = {"usd": 0.0, "usd_typesafe_estimated": 0.0, "usd_text": 0.0, "calls": {"typesafe": 0, "text": 0},
               "tokens": {"typesafe": 0, "text": 0}, "errors": 0, "text_cost_reported": True, "cap_usd": 1.0}
     data = report.build(SimpleNamespace(name="demo", guard={"allow_destructive": True}), results, [ledger],
@@ -106,6 +107,8 @@ def test_a_destructive_run_carries_a_red_banner_and_every_write_production_let_t
         assert "Destructive controls were shown (allow_destructive)" in text
         assert "Allowed write: POST shop.example/api/search" in text and "q=1" not in text
         assert "Dismissed confirm: Really delete item 1?" in text and "Dismissed beforeunload" in text
+        assert "Answered alert: closed: Saved" in text
+        assert "Dismissed alert" not in text  # #202 N2: the page's own dialog is not the guard's
     assert '<div class="box fail" role="alert">' in page
     plain = report.build(SimpleNamespace(name="demo", guard={}), results, [ledger], browser={},
                          started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)

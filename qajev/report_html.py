@@ -210,6 +210,14 @@ def from_frame(request):
     return f", from {_where(request['frame'])}" if request.get("frame") else ""
 
 
+def dialog_line(dialog):
+    """The guard's own dismissal, or how QAJev answered a dialog the page opened itself (native: leave, stay, closed
+    or no; #202 N2: both read "Dismissed" before)."""
+    if dialog.get("native"):
+        return f"Answered {dialog.get('kind')}: {dialog.get('answered')}"
+    return f"Dismissed {dialog.get('kind')}"
+
+
 def _link(url):
     """A clickable http(s) link without its query string; anything else is shown as text."""
     if not url:
@@ -364,7 +372,7 @@ def _scenario(i, r, who="Jev"):
     if len(r.get("block_list_requests") or []) > BLOCK_LIST_SHOWN:
         notes.append(f"Block list: {len(r['block_list_requests']) - BLOCK_LIST_SHOWN} more in report.json")
     for d in r.get("dialogs") or []:
-        notes.append(f"Dismissed {_e(d.get('kind'))}" + (f": {_e(d['message'])}" if d.get("message") else ""))
+        notes.append(_e(dialog_line(d)) + (f": {_e(d['message'])}" if d.get("message") else ""))
     blocked = [a for a in r.get("assists") or [] if a.get("after", "BLOCKED") == "BLOCKED"]
     if blocked:
         moved = sum(1 for a in blocked if a.get("scrolled"))

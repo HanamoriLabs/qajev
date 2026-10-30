@@ -83,6 +83,17 @@ def test_a_key_held_by_a_dialog_is_not_pressed_again_after_the_answer():
     assert transport.dialogs[0]["answered"] == "closed"
 
 
+def test_a_key_that_timed_out_on_another_tabs_dialog_is_sent_again():
+    # The daemon's one record is another tab's alert: answering it did not free this tab, so the key never counted as
+    # pressed here (redteam N2 on #203)
+    page = Page({"type": "alert", "message": "Saved", "url": "http://127.0.0.1:8000/other.html"})
+    call, transport = link(page)
+    assert call("Input.dispatchKeyEvent", session_id="s1", type="keyDown", key="Enter") == {
+        "result": {"value": "complete"}}
+    assert [c[0] for c in page.calls].count("Input.dispatchKeyEvent") == 2
+    assert transport.dialogs[0]["answered"] == "closed"
+
+
 def test_a_navigation_held_by_a_leave_page_dialog_goes_on_and_is_not_sent_twice():
     # Sent again, the second navigation aborts the first (the live test saw net::ERR_ABORTED)
     page = Page({"type": "beforeunload", "message": "", "url": FORM})
