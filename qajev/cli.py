@@ -235,7 +235,10 @@ def build_parser():
 
     run = sub.add_parser("run", help="run a suite file (YAML or JSON)")
     run.add_argument("suite", type=Path, nargs="?", help="a suite file (or use --project)")
-    run.add_argument("--only", action="append", default=[], help="run this scenario (plus its dependencies)")
+    run.add_argument("--only", action="append", default=[],
+                     help="run this scenario on every device (plus its dependencies); NAME (phone) runs that copy only")
+    run.add_argument("--exact", action="store_true",
+                     help="with --only: each name on its own device only, not its other devices' copies")
     proj = run.add_argument_group("project mode")
     proj.add_argument("--project", "-p", help="project name or repo path (.qajev/project.toml)")
     proj.add_argument("--env", "-e", help="project environment (default: the project's default_env)")
@@ -575,7 +578,8 @@ def _options(args):
         out_dir=args.out, jobs=getattr(args, "jobs", 1), strict=args.strict,
         allow_commands=getattr(args, "allow_commands", False), typesafe_usd_per_call=args.usd_per_call,
         cost_cap_usd=args.cost_cap, load_high=args.load_high or None, load_ok=args.load_ok,
-        load_wait=args.load_wait, only=getattr(args, "only", []), shots=not args.no_shots, emit=_printer(args),
+        load_wait=args.load_wait, only=getattr(args, "only", []), only_exact=getattr(args, "exact", False),
+        shots=not args.no_shots, emit=_printer(args),
         **ux_options.parse(args),
         motion=args.motion, cpu_throttle=args.cpu_throttle, color_scheme=getattr(args, "color_scheme", None),
     )

@@ -38,7 +38,8 @@ something on a site, and to catch errors a browser can see.
 - Long runs: pass background=true to get a job id at once, then qa_job(job) for progress and partial results,
   qa_stop(job) to stop it. qa_jobs lists every QAJev run on the machine (any agent's), queued or running.
   Only one browser run executes at a time machine-wide; the others queue.
-- Specific tests: qa_run_suite(only=[...]) and qa_play(suite=..., only=[...]) run chosen scenarios or game steps
+- Specific tests: qa_run_suite(only=[...]) and qa_play(suite=..., only=[...]) run chosen scenarios (on every device;
+  "NAME (phone)" runs one copy) or game steps
   (with what they depend on); qa_rerun(job) runs a finished job's failed, stuck and harness tests again.
 - Where it runs: runner="cloud" sends qa_check, qa_run_suite, qa_smoke and qa_project_run to QAJev Cloud instead of
   this machine; runner="auto" uses the cloud when it can, else this machine (the result's runner_note says why). A

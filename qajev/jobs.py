@@ -445,7 +445,7 @@ def _without_only(argv):
             skip = False
         elif item == "--only":
             skip = True
-        elif not item.startswith("--only="):
+        elif not item.startswith("--only=") and item != "--exact":
             out.append(item)
     return out
 
@@ -470,7 +470,8 @@ def rerun_argv(job_id, failed=False):
                              + ("" if scenarios else " (it has no results: rerun it without --failed)"))
     if argv[0] == "check":  # one test (and its device copies): it runs again as it was
         return argv, "its test that did not pass"
-    return _without_only(argv) + [x for name in names for x in ("--only", name)], \
+    exact = ["--exact"] if argv[0] == "run" else []  # a failed "landing" without "landing (phone)", which passed
+    return _without_only(argv) + [x for name in names for x in ("--only", name)] + exact, \
         f"its {len(names)} test(s) that did not pass"
 
 

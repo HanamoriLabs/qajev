@@ -50,6 +50,7 @@ class Options:
     load_ok: float = 100.0
     load_wait: float = 600.0
     only: list = field(default_factory=list)
+    only_exact: bool = False  # --exact: each --only name alone, not its other devices' copies (rerun --failed)
     shots: bool = True
     ux: str | None = None  # None inherits suite; default advisory. No model calls.
     ux_checks: list | None = None
@@ -98,15 +99,26 @@ def wait_for_quiet(opts):
     return True, load
 
 
-def select(suite, only):
-    """--only NAME keeps NAME plus everything it depends on."""
+def device_copies(scenarios, name):
+    """NAME and the copies suite.parse made of it for each further device ("NAME (phone)"): the same url and goal on
+    another device. A scenario its author named "NAME (x)" is not one."""
+    base = next(s for s in scenarios if s.name == name)
+    return [name] + [s.name for s in scenarios
+                     if s.name.startswith(f"{name} (") and s.name.endswith(")") and "(" not in s.name[len(name) + 2:-1]
+                     and (s.url, s.goal) == (base.url, base.goal) and s.device != base.device]
+
+
+def select(suite, only, exact=False):
+    """--only NAME keeps NAME on every device (its "NAME (phone)" copy too), plus everything they depend on. A copy's
+    own name ("NAME (phone)") keeps that copy alone, and `exact` (--exact) keeps each name alone, so rerun --failed
+    does not run again a copy that passed. JSR price run A (30 Oct): --only ran the desktop copy only."""
     if not only:
         return list(suite.scenarios)
     by_name = {s.name: s for s in suite.scenarios}
     missing = [n for n in only if n not in by_name]
     if missing:
         raise ConfigError(f"no scenario named {missing}; have {list(by_name)}")
-    keep, todo = set(), list(only)
+    keep, todo = set(), list(only) if exact else [copy for n in only for copy in device_copies(suite.scenarios, n)]
     while todo:
         name = todo.pop()
         if name not in keep:
@@ -842,7 +854,7 @@ def sign_in_first(suite, *, opts, cdp_url, headless, motion):
 def run(suite, opts):
     from . import report
 
-    scenarios = select(suite, opts.only)
+    scenarios = select(suite, opts.only, exact=opts.only_exact)
     try:
         models = providers.describe(providers.resolve())
         if any(s.goal for s in scenarios) and models["jev"] == "none":
