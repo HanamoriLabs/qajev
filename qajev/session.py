@@ -1758,6 +1758,17 @@ class Session:
                 chrome.close_target(os.environ["BU_CDP_URL"], target)
 
 
+def daemon_pid():
+    """This process's browser daemon, once it runs, else None. It runs in a session of its own, so its pid is its
+    process group: a run that must stop it (a fresh Chrome's chain past its cap) stops that group, never a name."""
+    if _jev is None:
+        return None
+    try:
+        return _jev.admin.ipc.identify(os.environ["BU_NAME"], timeout=1.0)
+    except Exception:  # no daemon (yet): nothing to stop
+        return None
+
+
 def stop_daemon():
     """Each run starts its own daemon (unique BU_NAME); leave nothing behind."""
     if _jev is None:

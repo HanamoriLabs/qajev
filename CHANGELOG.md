@@ -12,6 +12,16 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   and 11 times (#802) and spent the action budget. A click that shows a new page each time, such as "Load more", is
   no loop.
 
+### Changed
+
+- Each test of a suite runs in its own fresh Chrome. A form left open, a dialog or a hung page in one test no longer
+  holds up the next. A `depends_on` chain keeps one Chrome. A suite's `account` signs in again in each new Chrome.
+  Each test has a cap, `budget.seconds` plus 60 s (150 s by default). A test still running then is stopped and grades
+  harness, "cap 150 s hit". `browser: shared` in a suite keeps one Chrome for the whole suite. QAJev also keeps one
+  Chrome, and says why, with `--cdp-url`, when the profile's Chrome is already open, or with `--jobs` on a kept
+  profile. A wait for a quiet machine does not count toward the cap. Each step before a test has 60 s
+  (`QAJEV_FRESH_START_WAIT`). The report stays redacted of the secrets a sign-in reads in each new Chrome.
+
 ### Fixed
 
 - `--only NAME` (and `qa_run_suite(only=...)`) runs that scenario on every device. Before, it ran the desktop copy

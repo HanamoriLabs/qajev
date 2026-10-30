@@ -287,6 +287,7 @@ allow_destructive: false  # true shows delete, remove, refund, cancel... (a loca
 device: desktop           # desktop | tall | phone | tablet | WIDTHxHEIGHT
 persona: "You are a first-time visitor."
 budget: {actions: 20, seconds: 90}   # per scenario (at most 60 actions)
+browser: fresh            # fresh (default): a new Chrome for each test; shared: one Chrome for the whole suite
 cost_cap_usd: 0.50        # for the whole run; checked before every paid call
 settle: 10                # seconds to wait for expectations after Jev stops
 motion: reduce            # reduce (default): pages are told the visitor prefers less motion; full: as-is
@@ -342,6 +343,20 @@ scenarios:
 
 A scenario **without a `url`** continues in the same tab and depends on the one before it: if that one did not
 pass, this one is skipped.
+
+**Each test gets a fresh Chrome** (`browser: fresh`, the default). A form left open, a dialog or a hung page in one
+test cannot hold up the next one. A `depends_on` chain keeps one Chrome, because its tests share a tab on purpose.
+A fresh Chrome costs about 2-3 s for each test. It uses the same profile, so a sign-in kept in the profile still
+holds. A suite's `account` signs in again in each fresh Chrome, because a new Chrome has no session cookie.
+
+Each test has a cap: its `budget.seconds` plus 60 s, so 150 s by default. A test still running at its cap is
+stopped with its Chrome and graded `harness`, "cap 150 s hit". The tests after it in its chain are skipped. A wait
+for a quiet machine does not count toward the cap. Each step before a test (Chrome up, the sign-in, the step
+between two tests) has 60 s, set by `QAJEV_FRESH_START_WAIT`.
+
+`browser: shared` runs the whole suite in one Chrome, as QAJev did before. QAJev also uses one Chrome, and the report
+says why, when the run attaches to a Chrome with `--cdp-url`, when the profile's Chrome is already open, or with
+`--jobs 2` or more on a kept profile (one Chrome at a time can use a profile folder).
 
 Useful options when running a suite:
 

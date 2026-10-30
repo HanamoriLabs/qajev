@@ -4,6 +4,7 @@ Ownership is proven from the process command line (a port number is a convention
 and stopping kills that exact pid only. Chrome runs at low priority because the machine is shared.
 """
 
+import contextlib
 import json
 import os
 import re
@@ -446,33 +447,38 @@ def reaped(pid):
     return False
 
 
-def _kill(pid, grace=5.0):
+def _kill(pid, grace=5.0, group=False):
+    """group: the whole process group Chrome leads (start() starts it in a session of its own), helpers too."""
+    send = os.killpg if group else os.kill
     try:
-        os.kill(pid, signal.SIGTERM)
+        send(pid, signal.SIGTERM)
     except ProcessLookupError:
         return
     deadline = time.monotonic() + grace
     while time.monotonic() < deadline:
         if reaped(pid):
-            return
+            break
         time.sleep(0.05)
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        return
-    time.sleep(0.1)
-    reaped(pid)
+    else:
+        with contextlib.suppress(ProcessLookupError):
+            send(pid, signal.SIGKILL)
+        time.sleep(0.1)
+        reaped(pid)
+    if group:  # helpers that outlived their leader: the group stays theirs until the last one exits
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(pid, signal.SIGKILL)
 
 
-def stop(profile="default"):
-    """Stop by state key: a profile name, or the `state_key` of an ephemeral Chrome."""
+def stop(profile="default", group=False):
+    """Stop by state key: a profile name, or the `state_key` of an ephemeral Chrome. group: its whole process group
+    (a fresh Chrome whose chain was stopped at its cap or crashed)."""
     path = _state_file(profile)
     if not path.exists():
         return False
     record = json.loads(path.read_text())
     stopped = False
     if owns(record):
-        _kill(record["pid"])
+        _kill(record["pid"], group=group)
         stopped = True
     path.unlink(missing_ok=True)
     if record.get("ephemeral"):
