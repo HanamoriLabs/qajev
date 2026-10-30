@@ -12,8 +12,10 @@ import pytest
 from qajev import runner, verdict
 
 
-def drive(clicks, prints, then="done"):
-    """Jev clicks `clicks` (labels) in turn, and the page's fingerprint after each is the matching one in `prints`."""
+def drive(clicks, prints, then="done", told=None, jev_blocks=False):
+    """Jev clicks `clicks` (labels) in turn, and the page's fingerprint after each is the matching one in `prints`.
+    jev_blocks: like jev_ultrafast's agent, Jev says BLOCKED itself after 3 actions in a row that did not change the
+    page."""
     state = {"status": "ready", "history": [], "decisions": [], "page": {"fingerprint": "start"}}
     moves = iter(zip(clicks, prints))
 
@@ -25,14 +27,18 @@ def drive(clicks, prints, then="done"):
         label, print_ = move
         kind = "fill" if label.startswith("type ") else "click"
         state["decisions"].append({"operation": "CLICK"})
+        changed = print_ != state["page"]["fingerprint"]
         state["history"].append({"step": len(state["history"]) + 1, "action": label.removeprefix("type "),
-                                 "kind": kind, "text": "x" if kind == "fill" else None})
+                                 "kind": kind, "text": "x" if kind == "fill" else None, "page_changed": changed})
         state["page"] = {"fingerprint": print_}
+        if jev_blocks and len(state["history"]) >= 3 and not any(h["page_changed"] for h in state["history"][-3:]):
+            state["status"] = "blocked"
 
     session = SimpleNamespace(agent=SimpleNamespace(state=state), tick=tick, observe=lambda: None,
                               scroll_further=lambda: False)
     stop, detail = runner.drive(session, SimpleNamespace(budget={"actions": 25, "seconds": 60}), read=lambda: None,
-                                page_ok=lambda: False, started=time.monotonic())
+                                page_ok=lambda: False, started=time.monotonic(),
+                                step=lambda doing, **extra: (told if told is not None else []).append(doing))
     return stop, detail, len(state["history"])
 
 
@@ -41,6 +47,21 @@ def test_a_button_that_does_nothing_stops_after_3_clicks_and_says_on_what():
     assert (stop, actions) == ("loop", 3)
     assert detail.startswith("'Save' 3 times in a row, and the page did not move on")
     assert "the last actions: click 'Save'; click 'Save'; click 'Save'" in detail
+
+
+def test_the_loop_stops_before_jevs_own_blocked_brings_more_clicks():
+    # #802 run 9: Jev said BLOCKED after 3 dead clicks, and QAJev's two scroll-and-ask-again turns made it 3 + 3 + 3
+    # (redteam L1 on #209)
+    told = []
+    stop, _, actions = drive(["Save"] * 9, ["start"] * 9, told=told, jev_blocks=True)
+    assert (stop, actions) == ("loop", 3)
+    assert not any(doing.startswith("said BLOCKED") for doing in told)
+
+
+def test_a_page_with_no_fingerprint_is_never_called_a_loop():
+    # Nothing to compare, so QAJev cannot say the page did not move on: Jev's own rules decide (redteam N1 on #209)
+    stop, _, _ = drive(["Save"] * 3, [None] * 3)
+    assert stop == "done"
 
 
 def test_a_box_that_toggles_back_and_forth_is_a_loop_too():
