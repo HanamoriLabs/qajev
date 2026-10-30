@@ -16,6 +16,7 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 - `--only NAME` (and `qa_run_suite(only=...)`) runs that scenario on every device. Before, it ran the desktop copy
   only and left out `NAME (phone)` with no warning. `--only 'NAME (phone)'` still runs that one copy.
+  `qajev rerun --failed` adds the new `--exact`, so it runs only the copies that did not pass.
 - A key or text that timed out while another tab's dialog was open is sent again after QAJev answers that dialog.
   Before, it counted as sent, though this tab may never have had it. A dialog counts as another tab's only when
   another tab shows its page. An iframe's dialog on this tab, or a tab that does not say its page, still means the

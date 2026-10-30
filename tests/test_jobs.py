@@ -120,7 +120,7 @@ def test_a_finished_job_reruns_as_it_was_or_only_its_tests_that_did_not_pass(mon
     run = finished(["run", "suite.yaml", "--only", "home"], 6)
     assert jobs.rerun_argv(run) == (["run", "suite.yaml", "--only", "home"], "all of it")
     argv, what = jobs.rerun_argv(run, failed=True)  # fail, stuck and harness; its own --only replaced
-    assert argv == ["run", "suite.yaml", "--only", "pricing", "--only", "pricing (phone)", "--only", "docs"]
+    assert argv == ["run", "suite.yaml", "--only", "pricing", "--only", "pricing (phone)", "--only", "docs", "--exact"]
     assert what == "its 3 test(s) that did not pass"
     check = finished(["check", "https://c.example", "--goal", "x"], 2)
     assert jobs.rerun_argv(check, failed=True)[0] == ["check", "https://c.example", "--goal", "x"]

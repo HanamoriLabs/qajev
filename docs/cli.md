@@ -228,6 +228,7 @@ qajev run --project shop --objective "A visitor finds the refund policy" --expec
 | Option | Does |
 |---|---|
 | `--only NAME` | run this scenario on every device, plus what it depends on. `--only 'NAME (phone)'` runs that device's copy only |
+| `--exact` | with `--only`: each name on its own device only, not its other devices' copies (`qajev rerun --failed` adds it) |
 | `--jobs N` | run independent chains of scenarios in parallel (default 1) |
 | `--allow-commands` | let the suite run its shell commands |
 | `--allow-destructive` | as for `check`: destructive controls shown, every host a local dev host or the run is refused (exit 5) |
@@ -496,7 +497,8 @@ qajev rerun 20261003-055116-afb3            # the same command again
 qajev rerun 20261003-055116-afb3 --failed   # only its tests that failed, got stuck or hit a harness limit
 ```
 
-`--failed` reruns each of those tests with `--only`, so a test still brings what it depends on (a game step, its
+`--failed` reruns each of those tests with `--only` (and `--exact` for a suite, so a device copy that passed does not
+run again), so a test still brings what it depends on (a game step, its
 `setup: true` steps). The rerun is a new job; `--background`, `--json` and `--quiet` work as for any run. A check is
 one test, so it runs again as it was. It runs in the folder its job ran in, so relative paths mean the same files,
 and it reads the suite file as it is now. Anything the command or suite points at (a game's save folder, a seeded
