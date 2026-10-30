@@ -375,7 +375,11 @@ class Observer:
             if not _safe_file(path, allowed) or path.stat().st_size > MAX_FILE:
                 missing.append(name)
                 continue
-            content = sanitize_upload(path.read_bytes())
+            try:
+                content = sanitize_upload(path.read_bytes())
+            except ValueError:  # a binary that names a local path never leaves; its run and the others still go
+                missing.append(f"{name}: refused by the upload privacy check")
+                continue
             total += len(content)
             if total > MAX_RUN:
                 raise ObserverError("Run evidence exceeds the upload budget; it was not acknowledged.")
@@ -418,7 +422,7 @@ class Observer:
                     raise ObserverError("Run evidence changed during inventory; work stays pending.")
                 try:
                     content = sanitize_upload(source.read_bytes())
-                except OSError:
+                except (OSError, ValueError):
                     raise ObserverError("Run evidence changed during inventory; work stays pending.") from None
             else:
                 content = source

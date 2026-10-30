@@ -799,3 +799,23 @@ def test_one_folder_mapped_to_two_projects_is_refused(tmp_path):
     with Observer(tmp_path / "home", [tmp_path / "reports"], tmp_path / "state", None,
                   project_for=[(tmp_path / "box/tw", "twilight"), (tmp_path / "box/tw", "twilight")]):
         pass  # the same pair twice is harmless
+
+
+def test_an_artifact_the_privacy_check_refuses_is_left_out_and_the_run_still_goes(tmp_path):
+    # workload-gpu, 30 Oct: one binary frame that names a home folder stopped the whole inventory.
+    job, run, data = report(tmp_path / "home", tmp_path / "reports", "a-binary")
+    (run / "shots").mkdir()
+    (run / "shots/frame.png").write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe\x00/home/someone/private\xff")
+    data["scenarios"][0]["shot"] = "shots/frame.png"
+    (job / "result.json").write_text(json.dumps(data))
+    report(tmp_path / "home", tmp_path / "reports", "b-after")
+    with observer(tmp_path) as watch:
+        summary = watch.inventory()
+        assert summary["jobs"] == 2
+        server = Server()
+        assert watch.flush(server)["acknowledged"] == 2
+    row = server.rows["qms_a-binary"]
+    assert row["report"]["missing_evidence"] == ["shots/frame.png: refused by the upload privacy check"]
+    assert "shots/frame.png" not in [f["path"] for f in row["files"]]
+    assert "screenshots" in row["tests"][0]  # the record still names it; the dashboard shows it as missing evidence
+    assert all(b"/home/someone" not in blob for blob in server.contents.values())

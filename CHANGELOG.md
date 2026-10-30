@@ -2,6 +2,14 @@
 
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Fixed
+
+- `qajev observe` no longer stops on one artifact that the upload privacy check refuses, such as a binary frame
+  that names a home folder. That file never leaves the machine and is listed as missing evidence
+  ("<file>: refused by the upload privacy check"). Its run and every other run still publish.
+
 ## 0.4.34: 30 Oct 2026
 
 ### Added
