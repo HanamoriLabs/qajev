@@ -119,6 +119,41 @@ def test_a_key_whose_dialog_may_be_this_tabs_own_is_not_pressed_again(case):
     assert transport.dialogs[0]["answered"] == "closed"
 
 
+def test_a_key_is_not_pressed_again_when_the_tab_list_cannot_be_read():
+    # redteam L1 on #207: the record's url is another tab's, but with no tab list nothing proves it is not this tab's
+    page = Page({"type": "alert", "message": "Saved", "url": "http://127.0.0.1:8000/other.html"},
+                others=["http://127.0.0.1:8000/other.html"])
+
+    def cdp(method, session_id=None, _response_timeout=None, **params):
+        if method == "Target.getTargets":
+            raise TimeoutError("no answer in 3 s")
+        return page.cdp(method, session_id, **params)
+
+    transport = SimpleNamespace(error=None, dialogs=[])
+    call = session._patient_cdp(cdp, 30, transport, page.pending)
+    assert call("Input.dispatchKeyEvent", session_id="s1", type="keyDown", key="Enter") == {}
+    assert [c[0] for c in page.calls].count("Input.dispatchKeyEvent") == 1
+
+
+def test_a_navigation_held_by_an_iframes_dialog_goes_on_and_is_not_sent_twice():
+    # redteam N2 on #207: whose is "unknown" (the record's url is the iframe's), so the held navigation is waited for
+    page = Page({"type": "alert", "message": "Saved", "url": "http://127.0.0.1:8000/frame.html"})
+    history = {"currentIndex": 0, "entries": [{"url": FORM}]}
+
+    def cdp(method, session_id=None, _response_timeout=None, **params):
+        if method == "Page.getNavigationHistory":
+            return history
+        if method == "Page.handleJavaScriptDialog":
+            history.update(currentIndex=1, entries=[*history["entries"], {"url": "http://127.0.0.1:8000/next.html"}])
+        return page.cdp(method, session_id, **params)
+
+    transport = SimpleNamespace(error=None, dialogs=[])
+    call = session._patient_cdp(cdp, 30, transport, page.pending)
+    assert call("Page.navigate", session_id="s1", url="http://127.0.0.1:8000/next.html") == {}
+    assert [c[0] for c in page.calls].count("Page.navigate") == 1
+    assert transport.dialogs[0]["answered"] == "closed"
+
+
 def test_a_navigation_held_by_a_leave_page_dialog_goes_on_and_is_not_sent_twice():
     # Sent again, the second navigation aborts the first (the live test saw net::ERR_ABORTED)
     page = Page({"type": "beforeunload", "message": "", "url": FORM})
