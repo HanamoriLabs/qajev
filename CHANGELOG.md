@@ -2,7 +2,10 @@
 
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.4.37: 31 Oct 2026
+
+Each suite test now runs in its own fresh Chrome. That costs about 2-3 s for each test. `browser: shared` in a
+suite keeps one Chrome for the whole suite, as before.
 
 ### Added
 
