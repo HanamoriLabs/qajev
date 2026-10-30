@@ -12,6 +12,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   listed as missing evidence.
 - `qajev plan-hash` on an approved plan prints the approved sha256 and checks the approval line. Before, it hashed the
   approval line too, so an approved plan looked changed. A plan changed above its line exits 3 with `NOT APPROVED`.
+- The upload privacy check now removes three kinds of local path that went out whole: a home or drive path glued to
+  a word (`WEBPC:\Users\<name>\...`, `logs/home/<name>`), a dev-server file URL (`http://localhost:5173/@fs/Users/<name>/...`,
+  `__open-in-editor?file=...`, also %-encoded), and the home folder inside any other URL. The scheme and host stay.
+- A live frame in a cloud run's events goes exactly when it is a clean JPEG or WebP. Before, its base64 read as a
+  path and was masked, so the dashboard refused the frame. A frame that is not strict base64 of a clean image is left
+  out, and the other events still go.
 
 ## 0.4.35: 30 Oct 2026
 

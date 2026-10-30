@@ -29,6 +29,16 @@ _PATH_START = (
     r"[\w.~%]")
 _PATH = re.compile(_PATH_START + r"[^\s\x00-\x1f<>\"'`|:;#?(){}\[\]]*", re.I)
 _WHOLE_PATH = re.compile(_PATH_START + r"[^\x00-\x1f<>\"'`|:;#?(){}\[\]]*", re.I)
+# A home or drive path right after a word character ("WEBPC:\Users\name", "logs/home/name") is no _PATH start: its
+# look-behind keeps words like "a/b" whole, so such a path went out whole (redteam #75 N1, 30 Oct). These two shapes
+# are masked wherever they sit. The home shape comes first, so "C:\Documents and Settings\name" goes whole. A drive
+# path needs a second backslash, as in _BINARY_PATH: "Call log:\n  - waiting" is a JSON escape in evidence text. So a
+# glued drive path of one part ("logD:\name") stays (redteam #76 N5), and two escapes in a row ("d:\nfoo\nbar") are
+# masked (N6): safe for privacy, at a cost to the text.
+_GLUED_PATH = re.compile(
+    r"(?<=\w)(?:(?:[a-z]:)?[\\/]+(?:users|home[0-9]*|documents and settings)[\\/]+[\w.~%]"
+    r"|[a-z]:\\+[\w.~%][^\s\x00-\x1f<>\"'`|:;#?(){}\[\]\\]*\\+[\w.~%])"
+    r"[^\s\x00-\x1f<>\"'`|:;#?(){}\[\]]*", re.I)
 _BINARY_PATH = re.compile(
     rb"(?:[/\\](?:users|home)[/\\][a-z0-9._ -]+|[a-z]:[\\/]+[a-z0-9._ -]+[\\/][a-z0-9._ -]+|file://)", re.I)
 _URL_KEYS = {"url", "base_url", "href", "src", "action"}
@@ -109,8 +119,34 @@ def _network_repo(value):
     return None
 
 
+# Where a web URL starts to name a file on this machine: Vite's dev-server /@fs/ path, or this machine's home folder,
+# as written or %-encoded (redteam #76 N4, 30 Oct: "http://localhost:5173/@fs/Users/<name>/..." went out whole).
+_FS_URL = re.compile(r"/@fs(?=/)", re.I)
+
+
+def _url_local_start(url):
+    fs = _FS_URL.search(url)
+    if fs:
+        return fs.end()
+    try:
+        home = Path.home().as_posix().rstrip("/")
+    except (OSError, RuntimeError):
+        return None
+    if len(home) < 2:
+        return None
+    at = url.lower().find(home.lower())
+    if at < 0 and home.lower() in unquote(url).lower():
+        parts = urlsplit(url)
+        at = len(f"{parts.scheme}://{parts.netloc}")
+    return at if at >= 0 else None
+
+
 def _relative_path(match, paths=None):
-    original = unquote(match[0]).strip()
+    return _local_reference(match[0], paths)
+
+
+def _local_reference(text, paths=None):
+    original = unquote(text).strip()
     path = original
     path = re.sub(r"\\+/|\\+", "/", path)
     if re.match(r"^[a-z]:", path, re.I):
@@ -155,7 +191,10 @@ def _text(value, paths=None, whole_path=False):
         return keep(match[0] if clean == raw else match[1] + base64.b64encode(clean).decode())
 
     def web(match):
-        return keep(match[0])
+        start = _url_local_start(match[0])
+        if start is None:
+            return keep(match[0])
+        return keep(match[0][:start] + "/") + _local_reference(match[0][start:], paths)
 
     def web_root(match):
         return match[1] + keep(match[2]) + match[3]
@@ -186,6 +225,7 @@ def _text(value, paths=None, whole_path=False):
     value = _CLOSE_TAG.sub(web, value)
     value = _QUOTED.sub(quoted, value)
     value = _PATH.sub(lambda match: _relative_path(match, paths), value)
+    value = _GLUED_PATH.sub(lambda match: _relative_path(match, paths), value)
     for token, text in protected.items():
         value = value.replace(token, text)
     return value
@@ -345,6 +385,25 @@ def request_mode(method: str, path: str) -> str | None:
     return None
 
 
+# A live frame (kind "frame" in a job's event post) carries a screenshot as base64, and a JPEG's base64 starts "/9j/":
+# cleaned as text, it read as a local path and went as "local/<hash>", so the worker refused every cloud live frame
+# and the events sent with it (21-30 Oct). Only that field is checked as an image instead: a JPEG or WebP whose bytes
+# hold no home or drive path goes exactly, and a frame with anything else in it is left out (a masked frame would make
+# the worker refuse the batch again). The base64 is strict: a loose decode drops the characters of a path spliced into
+# it. The bytes get the binary path check even when they decode as text: the text cleaner misses a path just after a
+# letter ("WEBPC:\Users\...").
+_EVENTS_ROUTE = re.compile(r"/api/v1/jobs/[^/]+/events")
+
+
+def _clean_frame(value, paths=None):
+    try:
+        raw = base64.b64decode(value, validate=True) if isinstance(value, str) else b""
+        image = raw[:3] == b"\xff\xd8\xff" or (raw[:4] == b"RIFF" and raw[8:12] == b"WEBP")
+        return bool(image and not _BINARY_PATH.search(raw) and sanitize_upload(raw, paths=paths) == raw)
+    except ValueError:  # not base64, or an image whose bytes hold a home or drive path
+        return False
+
+
 def sanitize_request(method: str, path: str, body: Any, *, paths=None) -> Any:
     """Clean metadata by default; only named runner/protocol inputs retain their exact values."""
     mode = request_mode(method, path)
@@ -366,7 +425,17 @@ def sanitize_request(method: str, path: str, body: Any, *, paths=None) -> Any:
             if field in fields:
                 clean[field] = body[field]
         return clean
-    return _tree(body, paths=paths)
+    clean = _tree(body, paths=paths)
+    if method == "POST" and isinstance(body, list) and _EVENTS_ROUTE.fullmatch(path.split("?", 1)[0].split("#", 1)[0]):
+        kept = []
+        for event, public in zip(body, clean):
+            if isinstance(event, dict) and isinstance(public, dict) and event.get("kind") == "frame" and "data" in event:
+                if not _clean_frame(event["data"], paths):
+                    continue
+                public["data"] = event["data"]
+            kept.append(public)
+        clean = kept
+    return clean
 
 
 def upload_artifact(client, run_id, remote_path, data):
