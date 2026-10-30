@@ -21,6 +21,7 @@ RECORD_TAILS = {
     ('qajev/mcp_server.py', 'qa_mode', 'tail[-5:]'),
     ('qajev/project.py', 'index_rows', 'rows[-limit:]'),
     ('qajev/runner.py', 'run_scenario', "state['history'][-15:]"),
+    ('qajev/runner.py', 'drive', "state['history'][-5:]"),
     ('qajev/native.py', 'play', 'history[-15:]'),
     ('qajev/native.py', 'play_for', 'history[-30:]'),
     ('qajev/signin.py', 'failed_requests', 'failed[-shown:]'),

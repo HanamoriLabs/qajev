@@ -63,3 +63,5 @@ def test_a_loop_is_harness_with_the_reason_unless_the_page_still_passes():
                                        has_checks=True)[:2]
     assert outcome == "harness"
     assert reason.startswith("Jev clicked one target again and again")
+    # With no checks at all, a loop is still QAJev's trouble: not "unverified"
+    assert verdict.classify("loop", [], has_checks=False, stop_detail="'Save' 3 times")[0] == "harness"
