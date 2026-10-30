@@ -47,7 +47,8 @@ browser available, `5` refused (the run would have changed a production site; no
 
 Each scenario lists what the guard did on the page: writes it blocked, every write it let through because
 `guard.allow_requests` named it ("Allowed write: POST ..."), and each `confirm`, `prompt` or `beforeunload` it
-dismissed. A run with `allow_destructive` opens with a red banner saying destructive controls were shown.
+dismissed. A dialog the page itself opened, which QAJev answered, is listed too, with `answered` (leave, ok
+or no) and `native: true`. A run with `allow_destructive` opens with a red banner saying destructive controls were shown.
 
 ## Outcomes
 

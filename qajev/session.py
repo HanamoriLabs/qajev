@@ -80,7 +80,41 @@ def _is_transport_error(error):
     ))
 
 
-def _patient_cdp(raw_cdp, timeout, transport):
+# A page's own dialog freezes its script until someone answers it, so every later call to that page waits a full CDP
+# timeout (#802, 30 Oct: a form's leave-page guard cost 5-6.5 min a step). Answered as the production guard answers.
+DIALOG_ANSWERS = {"beforeunload": (True, "leave"), "alert": (True, "ok"), "confirm": (False, "no"),
+                  "prompt": (False, "no")}
+
+
+def answer_dialog(raw_cdp, pending, session_id, transport):
+    """Answer the page dialog the browser daemon saw open, and record it; False when none was open."""
+    try:
+        dialog = pending()
+    except (RuntimeError, OSError, TimeoutError, ValueError):
+        return False
+    if not isinstance(dialog, dict) or session_id is None:
+        return False
+    kind = str(dialog.get("type") or "")
+    accept, said = DIALOG_ANSWERS.get(kind, (False, "no"))
+    try:
+        raw_cdp("Page.handleJavaScriptDialog", session_id=session_id, _response_timeout=5, accept=accept)
+    except (RuntimeError, OSError, TimeoutError):
+        return False
+    transport.dialogs.append({"kind": kind or "dialog", "message": str(dialog.get("message") or "")[:200],
+                              "answered": said, "native": True})
+    return True
+
+
+def take_answered_dialogs():
+    """The page dialogs answered since the last call, for the next probe's `dialogs`."""
+    transport = getattr(_jev, "transport", None)
+    taken = list(getattr(transport, "dialogs", None) or [])
+    if taken:
+        transport.dialogs.clear()
+    return taken
+
+
+def _patient_cdp(raw_cdp, timeout, transport, pending=None):
     def call(method, session_id=None, **params):
         if transport.error is not None:
             raise transport.error
@@ -89,6 +123,8 @@ def _patient_cdp(raw_cdp, timeout, transport):
             try:
                 return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
             except TimeoutError:
+                if pending is not None and method != "Page.handleJavaScriptDialog":
+                    answer_dialog(raw_cdp, pending, session_id, transport)
                 return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
         except (RuntimeError, OSError, EOFError) as error:
             lost = _is_transport_error(error)
@@ -163,9 +199,14 @@ def load(ledger):
     from jev_ultrafast import model as jev_model
 
     timeout = float(os.environ.get("QAJEV_CDP_TIMEOUT", "30"))
-    transport = SimpleNamespace(error=None)
+    transport = SimpleNamespace(error=None, dialogs=[])
     helpers._send = _checked_send(helpers._send, transport)
-    patient_cdp = _headless_mouse_cdp(_patient_cdp(jev_browser.cdp, timeout, transport), _HEADLESS_INPUT_SESSIONS)
+
+    def pending():  # the dialog the daemon saw open and not yet closed (browser_harness's page_info reads it too)
+        return helpers._send({"meta": "pending_dialog"}, response_timeout=5).get("dialog")
+
+    patient_cdp = _headless_mouse_cdp(_patient_cdp(jev_browser.cdp, timeout, transport, pending),
+                                      _HEADLESS_INPUT_SESSIONS)
     jev_browser.cdp = patient_cdp
 
     raw_init = jev_browser.Browser.__init__
@@ -1158,6 +1199,8 @@ class Session:
         if isinstance(out.get("probe"), dict):
             for key, items in self.frames_drained().items():  # the frames' own records, after the page's
                 out["probe"][key] = (out["probe"].get(key) or []) + items
+            if answered := take_answered_dialogs():  # the page's own dialogs QAJev answered (answer_dialog)
+                self.carried.setdefault("dialogs", []).extend(answered)
             if self.carried:  # the pages the tab has left, first
                 carried, self.carried = self.carried, {}
                 for key, items in carried.items():
