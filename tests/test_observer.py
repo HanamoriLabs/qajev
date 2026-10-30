@@ -715,6 +715,17 @@ def test_a_map_is_part_of_the_outbox_identity_and_an_old_outbox_still_opens(tmp_
         mapped(tmp_path)
 
 
+def test_changing_only_the_folder_map_needs_a_new_outbox(tmp_path):
+    report(tmp_path / "home", tmp_path / "reports")
+    _, watch = mapped(tmp_path)
+    with watch:
+        watch.inventory()
+    _, same = mapped(tmp_path)
+    same.close()  # the same map reopens its outbox
+    with pytest.raises(ObserverError, match="configuration"):
+        mapped(tmp_path, extra=[(tmp_path / "box/grailtab", "grailtab")])
+
+
 @pytest.mark.parametrize("bad", ["", "-dash-first", "has=equals", "x" * 201, 7])
 def test_invalid_project_names_are_refused_before_anything_is_read(tmp_path, bad):
     with pytest.raises(ObserverError, match="project name"):
