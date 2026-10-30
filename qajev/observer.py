@@ -134,6 +134,15 @@ def _safe_file(path: Path, root: Path | None) -> bool:
     return not root.is_symlink() and path.is_file()
 
 
+PROJECT = re.compile(r"[A-Za-z0-9][A-Za-z0-9 '._:@+\-/~]{0,199}")  # the Cloud API's project name rule
+
+
+def _check_project(name: object) -> None:
+    if not isinstance(name, str) or not PROJECT.fullmatch(name):
+        raise ObserverError(f"Invalid project name {name!r}: start with a letter or digit, then use letters, digits, "
+                            "spaces and ' . _ : @ + - / ~ (at most 200 characters).")
+
+
 def _tests(data: dict) -> list[dict]:
     out = []
     for scenario in data.get("scenarios", []):
@@ -155,10 +164,25 @@ def _tests(data: dict) -> list[dict]:
 class Observer:
     """Own one configured outbox. Its durable blobs survive source/report pruning and interrupted uploads."""
 
-    def __init__(self, home: Path, report_roots: list[Path], state: Path, project: str, endpoint: str | None = None,
-                 *, max_outbox_bytes: int = DEFAULT_OUTBOX_BYTES):
+    def __init__(self, home: Path, report_roots: list[Path], state: Path, project: str | None,
+                 endpoint: str | None = None, *, max_outbox_bytes: int = DEFAULT_OUTBOX_BYTES,
+                 project_for: list[tuple[Path, str]] | None = None):
         if type(max_outbox_bytes) is not int or max_outbox_bytes < 256 * 1024:
             raise ObserverError("The outbox byte cap must be an integer of at least 256 KiB.")
+        self.project = project
+        # A machine that serves several projects names them by folder. Only the operator's map decides; a job's own
+        # metadata never picks its project, and no folder path leaves the machine.
+        self.project_for = sorted(((Path(os.path.normpath(Path(prefix).expanduser().absolute())), name)
+                                   for prefix, name in project_for or []), key=lambda item: -len(item[0].parts))
+        for name in [project] if project is not None else []:
+            _check_project(name)
+        named: dict[Path, str] = {}
+        for prefix, name in self.project_for:
+            _check_project(name)
+            if named.setdefault(prefix, name) != name:
+                raise ObserverError(f"The folder {prefix} is mapped to two projects: {named[prefix]!r} and {name!r}.")
+        if project is None and not self.project_for:
+            raise ObserverError("Name a project, or map at least one folder to a project.")
         self.max_outbox_bytes = max_outbox_bytes
         self.home = Path(home).absolute()
         self.roots = [Path(root).absolute() for root in report_roots]
@@ -184,7 +208,6 @@ class Observer:
                 elif path.parent != self.state or path.name not in self._database_files:
                     self._other_bytes += path.stat().st_size
         self._reserve(0)
-        self.project = project
         self.lock = (self.state / "observer.lock").open("a+")
         try:
             fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -198,7 +221,10 @@ class Observer:
             self.db.executescript("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
                                  "CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, digest TEXT NOT NULL, "
                                  "record TEXT NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0);")
-            config = json.dumps([str(self.home), [str(root) for root in self.roots], project, endpoint])
+            config = [str(self.home), [str(root) for root in self.roots], project, endpoint]
+            if self.project_for:  # an outbox made before folder maps keeps its configuration identity
+                config.append(sorted([str(prefix), name] for prefix, name in self.project_for))
+            config = json.dumps(config)
             if self._setting("configuration") not in {None, config}:
                 raise ObserverError("This outbox belongs to another observation configuration; "
                                     "use a new state directory.")
@@ -317,7 +343,19 @@ class Observer:
             self._sync_blobs()
         return sha
 
-    def _enqueue(self, local: str, data: dict, run: Path | None, job: dict) -> int:
+    def project_of(self, *places: object) -> str | None:
+        """The deepest mapped folder that holds the first known place (a job's start folder; only when that is
+        unknown, its report folder), else the default project, else None: such a run is skipped, never guessed.
+        A known but unmapped start folder never falls through to its report folder's project."""
+        place = next((p for p in places if isinstance(p, (str, Path)) and Path(p).is_absolute()), None)
+        if place is not None:
+            path = Path(os.path.normpath(place))
+            for prefix, name in self.project_for:
+                if path == prefix or prefix in path.parents:
+                    return name
+        return self.project
+
+    def _enqueue(self, local: str, data: dict, run: Path | None, job: dict, project: str) -> int:
         missing, files = [], []
         sources: dict[str, Path | bytes] = {}
         try:
@@ -352,7 +390,7 @@ class Observer:
                 raise ObserverError("The source result exceeds the report upload budget.")
             files.append({"path": "report.json", "sha256": hashlib.sha256(content).hexdigest(), "size": len(content)})
             sources["report.json"] = content
-        rec = {"id": local, "kind": "run", "project": self.project,
+        rec = {"id": local, "kind": "run", "project": project,
                "title": sanitize_text(str(data.get("suite") or job.get("title") or local), 160),
                "gate": gate if gate in ENDED | {"queued", "running"} else "harness",
                "started_at": _iso(data.get("started_at") or job.get("started_at")),
@@ -394,7 +432,7 @@ class Observer:
         return len(missing)
 
     def inventory(self) -> dict[str, int]:
-        counts = {"jobs": 0, "historical_reports": 0, "missing_evidence": 0}
+        counts = {"jobs": 0, "historical_reports": 0, "missing_evidence": 0, "no_project": 0}
         seen = set()
         jobs = self.home / "jobs"
         for folder in sorted(jobs.iterdir()) if jobs.is_dir() else []:
@@ -418,15 +456,23 @@ class Observer:
             run = Path(data["run_dir"]).absolute() if isinstance(data.get("run_dir"), str) else None
             if run:
                 seen.add(run)
-            counts["missing_evidence"] += self._enqueue(folder.name, data, run, job)
+            project = self.project_of(job.get("cwd"), run)
+            if project is None:
+                counts["no_project"] += 1
+                continue
+            counts["missing_evidence"] += self._enqueue(folder.name, data, run, job, project)
             counts["jobs"] += 1
         for root in self.roots:
             for path in sorted(root.rglob("report.json")) if root.is_dir() else []:
                 if path.parent in seen or not _safe_file(path, root):
                     continue
                 data = _json(path)
+                project = self.project_of(path.parent)
+                if project is None:
+                    counts["no_project"] += 1
+                    continue
                 local = "report-" + hashlib.sha256(str(path).encode()).hexdigest()[:40]
-                counts["missing_evidence"] += self._enqueue(local, data, path.parent, {})
+                counts["missing_evidence"] += self._enqueue(local, data, path.parent, {}, project)
                 counts["historical_reports"] += 1
         counts["pending"] = self.pending()
         counts["blob_bytes"] = self._blob_bytes

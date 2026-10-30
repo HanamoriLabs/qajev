@@ -178,7 +178,11 @@ def build_parser():
     observe.add_argument("--report-root", type=Path, action="append", required=True,
                          help="approved report root, including external --out folders (repeatable)")
     observe.add_argument("--state-dir", type=Path, required=True, help="private durable observer state, mode 0700")
-    observe.add_argument("--project", required=True, help="registered machine's approved project name")
+    observe.add_argument("--project", help="approved project name for every job no --project-for folder holds")
+    observe.add_argument("--project-for", action="append", default=[], metavar="FOLDER=PROJECT",
+                         help="jobs started in FOLDER (or, with no known start folder, reporting there) belong to "
+                              "PROJECT; the deepest folder wins (repeatable). A job no folder holds is skipped unless "
+                              "--project is given")
     observe.add_argument("--url", default="https://cloud.qajev.com", help="Cloud control-plane origin")
     observe.add_argument("--credential-file", type=Path, help="operator-placed machine credential file, mode 0600")
     observe.add_argument("--inventory", action="store_true", help="snapshot backlog locally and print counts, "
@@ -1818,9 +1822,19 @@ def cmd_observe(args):
                                     for root in args.report_root):
         print("qajev: keep the machine credential outside approved report roots", file=sys.stderr)
         return EXIT_CONFIG
+    project_for = []
+    for item in args.project_for:
+        folder, _, name = item.rpartition("=")
+        if not folder or not name:
+            print(f"qajev: --project-for takes FOLDER=PROJECT, not {item!r}", file=sys.stderr)
+            return EXIT_CONFIG
+        project_for.append((Path(folder), name))
+    if not args.project and not project_for:
+        print("qajev: observe needs --project or at least one --project-for FOLDER=PROJECT", file=sys.stderr)
+        return EXIT_CONFIG
     try:
         with Observer(args.home, args.report_root, args.state_dir, args.project, args.url,
-                      max_outbox_bytes=args.max_outbox_mib * 1024**2) as observer:
+                      max_outbox_bytes=args.max_outbox_mib * 1024**2, project_for=project_for) as observer:
             client = None
             while True:
                 inventory = observer.inventory()
