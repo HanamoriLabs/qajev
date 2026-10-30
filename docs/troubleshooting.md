@@ -65,6 +65,8 @@ That is QAJev's side, not your product:
 - *cap N s hit*: the test ran past its cap, `budget.seconds` plus 60 s (150 s by default), so QAJev stopped its
   Chrome. Often the page hung, or a dialog or a form held it. The tests after it in its `depends_on` chain are
   skipped. The other tests run in their own Chrome. Raise `budget.seconds` only if the test truly needs longer.
+- *a fresh Chrome's chain did not get to its next test within 60 s*: Chrome, the sign-in or the end of the last test
+  took longer than `QAJEV_FRESH_START_WAIT`. On a busy machine, raise it.
 
 **"a URL with a user name or password is refused"**
 The URL holds a user name or password (`https://alice:s3cret@shop.example/`). QAJev never writes down a password,

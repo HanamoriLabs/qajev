@@ -4,16 +4,18 @@ Parallelism is one process per worker: browser_harness reads BU_NAME at import, 
 own one daemon. Every worker opens its own tab in the same QAJev Chrome and stops its own daemon.
 """
 
+import contextlib
 import dataclasses
 import os
 import re
+import signal
 import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import browser_pool, chrome, live, plan, providers, ux, verdict, vision
-from .config import redact, redact_tree, secret_values
+from .config import redact, redact_tree, remember_secret, remembered_secrets, secret_values
 from .diagnostics import keep_console
 from .ledger import CostCapReached, Ledger
 from .suite import has_checks
@@ -97,6 +99,7 @@ def wait_for_quiet(opts):
             load = os.getloadavg()[0]
     finally:
         opts.load_waited += time.monotonic() - started
+        _emit(opts, "waited", seconds=round(time.monotonic() - started, 1), quiet=load < opts.load_ok)
     return True, load
 
 
@@ -791,7 +794,27 @@ def _worker(payload):
 # one process per test with a 150 s cap passed 21 of 21, each in 9-17 s. A chain keeps one Chrome: its tests share a
 # tab on purpose.
 CAP_MARGIN = 60.0  # s beyond a test's budget.seconds (90 by default, so a 150 s cap): loading, hooks and checks
-START_ALLOWANCE = 60.0  # s for a fresh Chrome to start and the suite's account to sign in, before a chain's first test
+START_WAIT = 60.0  # QAJEV_FRESH_START_WAIT's default: s for each step before a test (Chrome up, sign-in, the next test)
+
+
+def start_wait():
+    """Seconds a fresh Chrome's chain may take for each step before a test starts: after Chrome is up, after the
+    sign-in, and between two tests. Chrome's own start has QAJEV_CHROME_START_WAIT on top. Raises ConfigError."""
+    text = os.environ.get("QAJEV_FRESH_START_WAIT", "")
+    try:
+        value = float(text) if text else START_WAIT
+    except ValueError:
+        value = -1.0
+    if not value > 0:
+        raise ConfigError(f"QAJEV_FRESH_START_WAIT must be a number of seconds above 0, not {text!r}")
+    return value
+
+
+def _chrome_start_wait():
+    try:
+        return float(os.environ.get("QAJEV_CHROME_START_WAIT", "60"))
+    except ValueError:
+        return 60.0
 
 
 def test_cap(scenario):
@@ -822,14 +845,30 @@ def _fresh_chain(payload, messages):
     """One chain in its own new Chrome, in a child process the parent can stop at a test's cap. It tells the parent
     through `messages`: ("chrome", state key) once Chrome runs, each ("event", event) the chain emits (with
     ("ledger", summary) after each test), ("signin", what happened), then ("done", results and ledger)."""
+    from . import session as session_mod
+
     suite, chain, opts_dict, suite_meta, run_dir, cap, per_call, shared, bootstrap, ephemeral = payload
     _init_worker(shared, bootstrap)
     ledger = Ledger(cap, per_call, shared=shared)
+    told, daemon_told = set(), []
+
+    def say(kind, body):
+        """Only this process read the account's secrets (vault, password, codes, cookie): it redacts them from all it
+        sends, and tells the parent what to redact as well, for the report it writes."""
+        learnt = [v for v in remembered_secrets() if v not in told]
+        if learnt:
+            told.update(learnt)
+            messages.put(("secrets", learnt))
+        messages.put((kind, redact_tree(body, secret_values())))
 
     def emit(event):
-        messages.put(("event", event))
+        if event.get("event") == "start" and not daemon_told:  # its browser daemon runs by now
+            daemon_told.append(True)
+            if pid := session_mod.daemon_pid():
+                say("daemon", pid)
+        say("event", event)
         if event.get("event") == "scenario":
-            messages.put(("ledger", ledger.summary()))
+            say("ledger", ledger.summary())
 
     fields = {f.name for f in dataclasses.fields(Options)}
     opts = Options(**{k: v for k, v in opts_dict.items() if k in fields}, emit=emit)
@@ -843,15 +882,15 @@ def _fresh_chain(payload, messages):
                    for s in chain]
         for r in results:
             emit({"event": "scenario", "result": r})
-        messages.put(("done", {"results": results, "ledger": ledger.summary()}))
+        say("done", {"results": results, "ledger": ledger.summary(), "load_waited": opts.load_waited})
         return
     key = owned.get("state_key") or opts.profile
-    messages.put(("chrome", key))
+    say("chrome", key)
     try:
         if suite.account and not getattr(opts, "sign_in_here", None):  # login.tab: same signs in in run_group
             signed = sign_in_first(suite, opts=opts, cdp_url=owned["cdp_url"], headless=suite_meta["headless"],
                                    motion=suite_meta["motion"])
-            messages.put(("signin", signed))
+            say("signin", signed)
             opts.account = suite.account["name"] if signed["ok"] else None
             if not signed["ok"]:
                 results = [_finish({"name": s.name, "url": s.url, "goal": s.goal, "mode": s.mode, "checks": [],
@@ -859,14 +898,13 @@ def _fresh_chain(payload, messages):
                                    "harness", f"sign-in failed: {signed['reason']}", time.monotonic()) for s in chain]
                 for r in results:
                     emit({"event": "scenario", "result": r})
-                messages.put(("done", {"results": results, "ledger": ledger.summary(),
-                                       "load_waited": opts.load_waited}))
+                say("done", {"results": results, "ledger": ledger.summary(), "load_waited": opts.load_waited})
                 return
         out = run_group(chain, opts=opts, cdp_url=owned["cdp_url"], suite_meta=suite_meta, run_dir=run_dir,
                         ledger=ledger)
         if getattr(opts, "signed_here", None):
-            messages.put(("signin", opts.signed_here))
-        messages.put(("done", {"results": out["results"], "ledger": out["ledger"], "load_waited": opts.load_waited}))
+            say("signin", opts.signed_here)
+        say("done", {"results": out["results"], "ledger": out["ledger"], "load_waited": opts.load_waited})
     finally:
         chrome.stop(key)
 
@@ -885,10 +923,30 @@ def _not_run(scenario, outcome, stop, reason):
                    outcome, reason, time.monotonic())
 
 
+def _stop_group(pid, grace=5.0):
+    """Stop a process group this run's chain started in a session of its own (its browser daemon), by its pid: never
+    by a name. A pid that leads no group now is someone else's: left alone."""
+    try:
+        if os.getpgid(pid) != pid:
+            return
+        os.killpg(pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(pid, 0)
+        except (ProcessLookupError, PermissionError):
+            return
+        time.sleep(0.05)
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pid, signal.SIGKILL)
+
+
 def run_fresh(suite, chains, *, opts, suite_meta, run_dir, cap, emit):
     """Each chain in its own Chrome (_fresh_chain), at most opts.jobs at once. A test still running at its cap
-    (test_cap) is stopped with its Chrome and graded harness, "cap N s hit"; the rest of its chain is not run.
-    -> (results by name, ledger summaries, the first sign-in)."""
+    (test_cap) is stopped with its Chrome and graded harness, "cap N s hit"; the rest of its chain is not run. A wait
+    for a quiet machine stops the clock. -> (results by name, ledger summaries, the first sign-in)."""
     import multiprocessing
     import queue as queue_mod
 
@@ -896,18 +954,22 @@ def run_fresh(suite, chains, *, opts, suite_meta, run_dir, cap, emit):
     shared = ctx.Value("d", 0.0)
     opts_dict = {k: v for k, v in opts.__dict__.items() if k != "emit"}
     ephemeral = _fresh_ephemeral(opts)
+    between = start_wait()
     results, ledgers, signed = {}, [], None
     waiting, running = list(chains), []
 
     def stop(job):
+        """The chain's process, then what it started: its Chrome (by its state record, the whole process group) and
+        its browser daemon (by the pid it said)."""
         job["process"].terminate()
         job["process"].join(5)
         if job["process"].is_alive():
             job["process"].kill()
             job["process"].join(5)
         if job["chrome"]:
-            chrome.stop(job["chrome"])
-        chrome.reap()  # its browser daemon, whose owner is gone now
+            chrome.stop(job["chrome"], group=True)
+        if job["daemon"]:
+            _stop_group(job["daemon"])
 
     def report(scenario, result):
         results[scenario.name] = result
@@ -920,8 +982,15 @@ def run_fresh(suite, chains, *, opts, suite_meta, run_dir, cap, emit):
                 kind, body = job["messages"].get(timeout=wait) if wait else job["messages"].get_nowait()
             except queue_mod.Empty:
                 return signed
-            if kind == "chrome":
+            now = time.monotonic()
+            if kind == "secrets":  # what the chain read for its sign-in: this report is redacted of it too
+                for value in body:
+                    remember_secret(value)
+            elif kind == "daemon":
+                job["daemon"] = body
+            elif kind == "chrome":
                 job["chrome"] = body
+                job["deadline"] = now + between
             elif kind == "ledger":
                 job["ledger"] = body
             elif kind == "signin":
@@ -933,17 +1002,28 @@ def run_fresh(suite, chains, *, opts, suite_meta, run_dir, cap, emit):
                 for r in body["results"]:
                     results.setdefault(r["name"], r)
             elif kind == "event":
-                if body.get("event") == "start":
+                event = body.get("event")
+                if event == "start":
                     job["current"] = next(s for s in job["chain"] if s.name == body["scenario"])
-                    job["deadline"] = time.monotonic() + test_cap(job["current"])
-                elif body.get("event") == "scenario":
+                    job["deadline"] = now + test_cap(job["current"])
+                elif event == "scenario":
                     results[body["result"]["name"]] = body["result"]
                     job["current"] = None
-                    job["deadline"] = time.monotonic() + START_ALLOWANCE
-                elif body.get("event") == "waiting":  # a wait for a quiet machine is never the test's own time
-                    job["deadline"] = (time.monotonic() + max(0.0, opts.load_wait - opts.load_waited)
-                                       + (test_cap(job["current"]) if job["current"] else START_ALLOWANCE))
+                    job["deadline"] = now + between
+                elif event == "signin" and not job["current"]:  # a sign-in started or ended: the next step's time
+                    job["deadline"] = now + between
+                elif event == "waiting" and job["paused"] is None:  # the clock stops for a quiet-machine wait...
+                    job["paused"] = now
+                elif event == "waited" and job["paused"] is not None:  # ...and goes on from where it stopped
+                    job["deadline"] += now - job["paused"]
+                    job["paused"] = None
                 emit(body)
+
+    def late(job):
+        now = time.monotonic()
+        if job["paused"] is not None:  # a wait is bounded by the run's load budget: past it, the chain is stuck
+            return now > job["paused"] + max(0.0, opts.load_wait - opts.load_waited) + between
+        return now > job["deadline"]
 
     try:
         while waiting or running:
@@ -953,35 +1033,40 @@ def run_fresh(suite, chains, *, opts, suite_meta, run_dir, cap, emit):
                            opts.typesafe_usd_per_call, shared, providers.WORKER_BOOTSTRAP, ephemeral)
                 process, messages = _start_chain(ctx, payload)
                 running.append({"chain": chain, "process": process, "messages": messages, "chrome": None,
-                                "current": None, "deadline": time.monotonic() + START_ALLOWANCE, "ledger": None,
-                                "done": False, "waited_from": opts.load_waited, "waited": 0.0})
+                                "daemon": None, "current": None, "paused": None, "ledger": None, "done": False,
+                                "deadline": time.monotonic() + _chrome_start_wait() + between,
+                                "waited_from": opts.load_waited, "waited": 0.0})
             for job in list(running):
                 signed = drain(job, signed)
-                late = not job["done"] and time.monotonic() > job["deadline"]
-                if not job["done"] and not late and job["process"].is_alive():
+                over = not job["done"] and late(job)
+                if not job["done"] and not over and job["process"].is_alive():
                     continue
-                if not job["done"] and not late:  # it ended: what it said last can still be on its way
+                if not job["done"] and not over:  # it ended: what it said last can still be on its way
                     signed = drain(job, signed, wait=1.0)
-                if late:
+                if over:
                     stop(job)
                     current = job["current"]
                     for s in job["chain"]:
                         if s.name in results:
                             continue
                         if current is None:
-                            report(s, _not_run(s, "harness", "browser_error", "a fresh Chrome did not start its "
-                                               f"tests within {START_ALLOWANCE:.0f} s"))
+                            report(s, _not_run(s, "harness", "browser_error", "a fresh Chrome's chain did not get "
+                                               f"to its next test within {between:.0f} s (QAJEV_FRESH_START_WAIT)"))
                         elif s.name == current.name:
                             report(s, _not_run(s, "harness", "cap", f"cap {test_cap(s):.0f} s hit"))
                         else:
                             report(s, _not_run(s, "skipped", "cap",
                                                f"not run: {current.name!r} before it in its chain hit its cap"))
                 else:
-                    job["process"].join(5)
-                    for s in job["chain"]:  # a child that died without saying so: its chain, not the whole run
+                    if job["done"]:
+                        job["process"].join(5)
+                    code = job["process"].exitcode
+                    if not job["done"]:  # a child that died without saying so: what it started is stopped as at a cap
+                        stop(job)
+                    for s in job["chain"]:  # its own tests, not the whole run's
                         if s.name not in results:
                             report(s, _not_run(s, "harness", "browser_error",
-                                               f"the test's browser process ended (exit {job['process'].exitcode})"))
+                                               f"the test's browser process ended (exit {code})"))
                 opts.load_waited += job["waited"]  # load_wait is one budget for the whole run, as in one Chrome
                 ledgers.append(job["ledger"] or Ledger(cap).summary())
                 running.remove(job)
@@ -1091,6 +1176,7 @@ def run(suite, opts):
     owned = None
     plan_mode, shared_because = browser_plan(suite, opts)
     if plan_mode == "fresh":  # each chain starts its own Chrome (run_fresh)
+        start_wait()  # a bad QAJEV_FRESH_START_WAIT stops the run here, before any Chrome
         cdp_url = None
         browser = {"managed": True, "fresh": True, "profile": opts.profile, "ephemeral": _fresh_ephemeral(opts),
                    "headless": bool(opts.headless)}

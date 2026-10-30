@@ -75,3 +75,54 @@ def test_a_hung_page_is_stopped_at_its_cap_and_the_other_tests_run(site, tmp_pat
     assert not [r for r in chrome.status(profile) if r.get("alive")], "the hung test's Chrome must be stopped"
     (md,) = tmp_path.rglob("report.md")
     assert "cap 5 s hit" in md.read_text()
+
+
+def leak_seed(folder, email, password, totp, session):
+    (folder / "qa_test_user.json").write_text(json.dumps(
+        {"test_account": True, "allowed_hosts": ["127.0.0.1"], "email": email, "password": password,
+         "totp_secret_base32": totp, "session": session}))
+
+
+@pytest.mark.parametrize("browser", ["fresh", "shared"])
+@pytest.mark.parametrize("by", ["password", "cookie"])
+def test_a_page_that_prints_the_sign_in_secrets_leaves_none_in_the_report(site, tmp_path, browser, by):  # noqa: F811
+    # The email (by vault reference), the password, the one-time code and the cookie value are read only where the
+    # account signs in: in a fresh Chrome's own process. leak.html prints them all; the report holds none of them.
+    from test_live import FIXTURE_TOTP, fixture_codes
+
+    email, password, session = "leak-person@example.test", "fixture-leak-8842", "sess-leak-value-5c2d"
+    leak_seed(tmp_path, email, password, FIXTURE_TOTP, session)
+    login = ("  password: seed:qa_test_user.json#password\n  totp: seed:qa_test_user.json#totp_secret_base32\n"
+             "  login: {url: /login-leak.html}\n") if by == "password" else (
+             "  cookie: {name: leak-session, value: 'seed:qa_test_user.json#session', http_only: false}\n"
+             "  login: {url: /leak.html, signed_in: {text: Signed in}}\n")
+    suite = tmp_path / "leak.yaml"
+    suite.write_text(f"""
+name: leak
+base_url: {site}
+devices: [desktop]
+browser: {browser}
+account:
+  email: seed:qa_test_user.json#email
+{login}scenarios:
+  - name: the page prints what the sign-in left
+    url: /leak.html
+    expect: {{text: ["This page leaks"]}}
+""")
+    started = time.time()
+    p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--headless", "--ephemeral",
+                        "--profile", f"leak-{os.getpid()}", "--out", str(tmp_path / "out"), "--json", "--quiet",
+                        "--load-high", "0", "--events"], capture_output=True, text=True, timeout=300,
+                       env={**os.environ, "QAJEV_RUNNER": "local"})
+    built = json.loads(p.stdout)
+    assert built["sign_in"]["ok"] is True, built["sign_in"]
+    secrets = {"email": email, "password": password, "session": session}
+    if by == "password":  # the code typed: this step's or the one before (the server takes both)
+        secrets |= {f"code {c}": c for t in (started, time.time()) for c in fixture_codes(FIXTURE_TOTP, t)}
+    written = {str(f): f.read_text(errors="replace") for f in (tmp_path / "out").rglob("*") if f.is_file()}
+    written |= {"stdout": p.stdout, "stderr (events)": p.stderr}
+    leaked = sorted({(name, where) for where, text in written.items() for name, value in secrets.items()
+                     if value in text})
+    assert not leaked, leaked  # which value, where: never the value itself
+    (report,) = (tmp_path / "out").rglob("report.json")
+    assert "[redacted]" in report.read_text()  # the page did print them

@@ -19,7 +19,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   Each test has a cap, `budget.seconds` plus 60 s (150 s by default). A test still running then is stopped and grades
   harness, "cap 150 s hit". `browser: shared` in a suite keeps one Chrome for the whole suite. QAJev also keeps one
   Chrome, and says why, with `--cdp-url`, when the profile's Chrome is already open, or with `--jobs` on a kept
-  profile.
+  profile. A wait for a quiet machine does not count toward the cap. Each step before a test has 60 s
+  (`QAJEV_FRESH_START_WAIT`). The report stays redacted of the secrets a sign-in reads in each new Chrome.
 
 ### Fixed
 

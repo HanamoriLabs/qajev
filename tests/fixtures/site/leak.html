@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="Leak">
+<title>Your account</title></head>
+<body>
+  <h1>Your account</h1>
+  <p id="who"></p>
+  <script>
+    // Prints every secret a sign-in left behind: what login-leak.html kept, and the session cookie (a preset one too).
+    const shown = [localStorage.leak_email, localStorage.leak_password, localStorage.leak_code, document.cookie]
+      .filter(Boolean).join(' | ');
+    who.textContent = 'Signed in. This page leaks: ' + shown;
+    console.error('leaked: ' + shown);
+  </script>
+</body>
+</html>

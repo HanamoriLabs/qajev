@@ -350,7 +350,9 @@ A fresh Chrome costs about 2-3 s for each test. It uses the same profile, so a s
 holds. A suite's `account` signs in again in each fresh Chrome, because a new Chrome has no session cookie.
 
 Each test has a cap: its `budget.seconds` plus 60 s, so 150 s by default. A test still running at its cap is
-stopped with its Chrome and graded `harness`, "cap 150 s hit". The tests after it in its chain are skipped.
+stopped with its Chrome and graded `harness`, "cap 150 s hit". The tests after it in its chain are skipped. A wait
+for a quiet machine does not count toward the cap. Each step before a test (Chrome up, the sign-in, the step
+between two tests) has 60 s, set by `QAJEV_FRESH_START_WAIT`.
 
 `browser: shared` runs the whole suite in one Chrome, as QAJev did before. QAJev also uses one Chrome, and the report
 says why, when the run attaches to a Chrome with `--cdp-url`, when the profile's Chrome is already open, or with

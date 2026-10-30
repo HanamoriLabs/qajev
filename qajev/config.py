@@ -197,6 +197,11 @@ def remember_secret(value):
         _REMEMBERED.add(value)
 
 
+def remembered_secrets():
+    """The values this process read from a vault or typed for a sign-in: a fresh Chrome's chain sends them on."""
+    return sorted(_REMEMBERED)
+
+
 def secret_values():
     return sorted(
         {v for k, v in os.environ.items() if SECRET_NAME.search(k) and v and len(v) >= 8} | _REMEMBERED,

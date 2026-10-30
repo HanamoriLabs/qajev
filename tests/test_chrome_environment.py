@@ -66,10 +66,16 @@ def launch_env(monkeypatch, tmp_path):
     return parent_temp
 
 
+@pytest.mark.parametrize("browser", ["shared", "fresh"])
 @pytest.mark.parametrize("jobs", [1, 2])
 @pytest.mark.parametrize("private_temp", [False, True])
 def test_local_jobs_keep_credentials_out_of_the_launched_chrome(monkeypatch, tmp_path, launch_env,
-                                                               jobs, private_temp):
+                                                               jobs, private_temp, browser):
+    # fresh (the default) starts each chain's Chrome in that chain: here a thread (chain_threads), the real code
+    from chain_threads import start_chain
+
+    monkeypatch.setattr(runner, "_start_chain", start_chain)
+    monkeypatch.setitem(globals(), "_barrier", None)  # a chain in a thread sets it in this process: never left over
     monkeypatch.setattr(browser_pool, "parallel", lambda: private_temp)
     monkeypatch.setattr(chrome, "reap", lambda: [])
     monkeypatch.setattr(runner, "_worker", _work)
@@ -87,20 +93,23 @@ def test_local_jobs_keep_credentials_out_of_the_launched_chrome(monkeypatch, tmp
         return record
 
     monkeypatch.setattr(chrome, "start", start)
-    parsed = suite.parse({"name": "environment", "base_url": "http://localhost", "browser": "shared", "scenarios": [
+    parsed = suite.parse({"name": "environment", "base_url": "http://localhost", "browser": browser, "scenarios": [
         {"name": f"check-{i}", "url": "/", "about": "Fixture", "expect": {"text": "fixture"}} for i in range(2)]})
     try:
         result = runner.run(parsed, runner.Options(jobs=jobs, headless=True, ephemeral=True, out_dir=tmp_path / "runs"))
         assert len(result["scenarios"]) == 2
-        assert len({row["worker_pid"] for row in result["scenarios"]}) == jobs
+        if browser == "shared":  # one Chrome; with jobs 2, a worker process for each chain
+            assert len({row["worker_pid"] for row in result["scenarios"]}) == jobs
         assert result["cost"]["usd"] == 0
-        assert len(observations) == 1
-        child_names = set(observations[0]["names"])
-        assert not child_names.intersection(FORBIDDEN), sorted(child_names.intersection(FORBIDDEN))
-        assert records[0].get("environment_isolated") is True
-        assert {"PATH", "HOME"} <= child_names
-        expected_temp = records[0]["temp_dir"] if private_temp else str(launch_env)
-        assert set(observations[0]["temp"].values()) == {expected_temp}
+        assert len(observations) == (1 if browser == "shared" else 2)  # fresh: one Chrome for each chain
+        for record, observed in zip(records, observations, strict=True):
+            child_names = set(observed["names"])
+            assert not child_names.intersection(FORBIDDEN), sorted(child_names.intersection(FORBIDDEN))
+            assert record.get("environment_isolated") is True
+            assert {"PATH", "HOME"} <= child_names
+            # a fresh Chrome always has its own temp folder: several can run side by side
+            expected_temp = record["temp_dir"] if private_temp or browser == "fresh" else str(launch_env)
+            assert set(observed["temp"].values()) == {expected_temp}
         assert all(os.environ.get(name) for name in FORBIDDEN[:14])
     finally:
         for record in records:

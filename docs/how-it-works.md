@@ -69,8 +69,9 @@ progress, and `qajev top` reads them.
 | `event` | When | Fields |
 |---|---|---|
 | `waiting` | queued, or waiting for the machine to calm down | `reason`, `queued` |
+| `waited` | a wait for the machine to calm down ended | `seconds`, `quiet` |
 | `reaped` | leftovers of dead runs were cleaned up | `items` |
-| `run` | the browser is ready | `suite`, `run_dir`, `browser`, `scenarios` |
+| `run` | the browser is ready (with a fresh Chrome for each test: the run starts) | `suite`, `run_dir`, `browser`, `scenarios` |
 | `signin` | a seeded test account starts signing in, then has signed in or failed | `account`; then `ok`, `email`, `seconds` or `reason` |
 | `start` | a scenario begins | `scenario` |
 | `step` | each move Jev makes; every 2 s of real-time game play | `scenario`, `doing`, `p`, `n`, `spent_usd`, `at` |
