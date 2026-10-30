@@ -314,6 +314,11 @@ The approver then adds, as the last line of the plan:
 Approved by the Orchestrator 8 Oct 2026 10:34 sha256:3f1c...
 ```
 
+Run it again on the approved file to check it. It hashes the text above the approval line, so it prints the same
+sha256, plus `approved: <the line>` on stderr. If the plan changed above its line, it prints the new sha256,
+`NOT APPROVED (the plan changed after its approval ...)` and exits `3`. If text comes after the last approval line, it
+prints the sha256 of the whole file, for a new approval line at its end.
+
 ## The approved test plan on a run
 
 `qajev run`, `check`, `smoke` and `play` take `--plan FILE`: the approved test plan this run follows. It overrides a

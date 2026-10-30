@@ -113,6 +113,41 @@ def test_qajev_plan_hash_prints_the_line_to_approve_a_plan(tmp_path, capsys):
     assert capsys.readouterr().out.strip() == f"sha256:{planfile.digest(PLAN)}"
 
 
+def test_plan_hash_on_an_approved_plan_gives_the_approved_hash_and_checks_it(tmp_path, capsys):
+    # The Orchestrator, 30 Oct (dash #802): plan-hash on the approved file printed the hash of the plan and its
+    # approval line together, so it never matched the line and the approved plan looked changed.
+    p = tmp_path / "plan.md"
+    p.write_text(approve(PLAN, "30 Oct 2026 12:51"))
+    assert cli.main(["plan-hash", str(p)]) == 0
+    got = capsys.readouterr()
+    assert got.out.strip() == f"sha256:{planfile.digest(PLAN)}"
+    assert "approved: Approved by the Orchestrator 30 Oct 2026 12:51" in got.err
+
+
+def test_plan_hash_says_when_an_approved_plan_changed_above_its_line(tmp_path, capsys):
+    p = tmp_path / "plan.md"
+    edited = PLAN.replace("the order is saved", "the order is saved and mailed")
+    p.write_text(approve(PLAN).replace(PLAN, edited))
+    assert cli.main(["plan-hash", str(p)]) == 3
+    got = capsys.readouterr()
+    assert got.out.strip() == f"sha256:{planfile.digest(edited)}"  # the hash a new approval of this text needs
+    assert "NOT APPROVED (the plan changed after its approval" in got.err
+
+
+def test_plan_hash_on_a_plan_with_text_after_its_approval_hashes_all_of_it(tmp_path, capsys):
+    # The last approval line covers everything above it, earlier approvals too: a new line at the end needs the hash
+    # of the whole file as it stands.
+    p = tmp_path / "plan.md"
+    text = approve(PLAN) + "\n## Added later\n\n- one more step\n"
+    p.write_text(text)
+    assert cli.main(["plan-hash", str(p)]) == 0
+    got = capsys.readouterr()
+    assert got.out.strip() == f"sha256:{planfile.digest(text)}"
+    assert "for a new approval line at its end" in got.err
+    p.write_text(text + f"Approved by the Orchestrator 30 Oct 2026 13:00 sha256:{planfile.digest(text)}\n")
+    assert planfile.check(p)["approved"] is True
+
+
 def test_a_run_without_an_approved_plan_warns_and_with_the_rule_on_is_refused_before_chrome(tmp_path, capsys,
                                                                                            monkeypatch):
     ran = []

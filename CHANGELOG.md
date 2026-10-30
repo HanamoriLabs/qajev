@@ -10,6 +10,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   apart from `refused`, which now means the upload privacy check only. The other runs still publish.
 - A report.json that was refused, too big or unsafe (a link), and is rebuilt from a clean result, is no longer also
   listed as missing evidence.
+- `qajev plan-hash` on an approved plan prints the approved sha256 and checks the approval line. Before, it hashed the
+  approval line too, so an approved plan looked changed. A plan changed above its line exits 3 with `NOT APPROVED`.
 
 ## 0.4.35: 30 Oct 2026
 

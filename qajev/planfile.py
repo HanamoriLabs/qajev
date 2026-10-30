@@ -18,6 +18,7 @@ from pathlib import Path
 
 APPROVER = os.environ.get("QAJEV_PLAN_APPROVER") or "the Orchestrator"
 NO_PLAN = "no test plan named (plan: in the suite, or --plan)"
+TEXT_AFTER = "text after its last approval line is not approved"
 
 
 def required():
@@ -91,7 +92,7 @@ def check(path):
         return {**out, "problem": "the plan changed after its approval (the sha256 of the text above the approval "
                                   "line is not the one approved)"}
     if any(rest.strip() for rest in lines[last + 1:]):
-        return {**out, "problem": "text after its last approval line is not approved"}
+        return {**out, "problem": TEXT_AFTER}
     return {**out, "approved": True}
 
 
