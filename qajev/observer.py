@@ -139,7 +139,8 @@ PROJECT = re.compile(r"[A-Za-z0-9][A-Za-z0-9 '._:@+\-/~]{0,199}")  # the Cloud A
 
 def _check_project(name: object) -> None:
     if not isinstance(name, str) or not PROJECT.fullmatch(name):
-        raise ObserverError(f"Invalid project name {name!r}: use letters, digits and . _ - (at most 200 characters).")
+        raise ObserverError(f"Invalid project name {name!r}: start with a letter or digit, then use letters, digits, "
+                            "spaces and ' . _ : @ + - / ~ (at most 200 characters).")
 
 
 def _tests(data: dict) -> list[dict]:
@@ -175,8 +176,11 @@ class Observer:
                                    for prefix, name in project_for or []), key=lambda item: -len(item[0].parts))
         for name in [project] if project is not None else []:
             _check_project(name)
-        for _prefix, name in self.project_for:
+        named: dict[Path, str] = {}
+        for prefix, name in self.project_for:
             _check_project(name)
+            if named.setdefault(prefix, name) != name:
+                raise ObserverError(f"The folder {prefix} is mapped to two projects: {named[prefix]!r} and {name!r}.")
         if project is None and not self.project_for:
             raise ObserverError("Name a project, or map at least one folder to a project.")
         self.max_outbox_bytes = max_outbox_bytes
@@ -340,11 +344,11 @@ class Observer:
         return sha
 
     def project_of(self, *places: object) -> str | None:
-        """The deepest mapped folder that holds the first known place (a job's folder, then its report folder), else
-        the default project, else None: such a run is skipped, never guessed."""
-        for place in places:
-            if not isinstance(place, (str, Path)) or not Path(place).is_absolute():
-                continue
+        """The deepest mapped folder that holds the first known place (a job's start folder; only when that is
+        unknown, its report folder), else the default project, else None: such a run is skipped, never guessed.
+        A known but unmapped start folder never falls through to its report folder's project."""
+        place = next((p for p in places if isinstance(p, (str, Path)) and Path(p).is_absolute()), None)
+        if place is not None:
             path = Path(os.path.normpath(place))
             for prefix, name in self.project_for:
                 if path == prefix or prefix in path.parents:

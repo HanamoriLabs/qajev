@@ -180,8 +180,9 @@ def build_parser():
     observe.add_argument("--state-dir", type=Path, required=True, help="private durable observer state, mode 0700")
     observe.add_argument("--project", help="approved project name for every job no --project-for folder holds")
     observe.add_argument("--project-for", action="append", default=[], metavar="FOLDER=PROJECT",
-                         help="jobs started in FOLDER, or reporting there, belong to PROJECT; the deepest folder "
-                              "wins (repeatable). A job no folder holds is skipped unless --project is given")
+                         help="jobs started in FOLDER (or, with no known start folder, reporting there) belong to "
+                              "PROJECT; the deepest folder wins (repeatable). A job no folder holds is skipped unless "
+                              "--project is given")
     observe.add_argument("--url", default="https://cloud.qajev.com", help="Cloud control-plane origin")
     observe.add_argument("--credential-file", type=Path, help="operator-placed machine credential file, mode 0600")
     observe.add_argument("--inventory", action="store_true", help="snapshot backlog locally and print counts, "

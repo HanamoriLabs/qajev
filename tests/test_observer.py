@@ -757,3 +757,34 @@ def test_a_jobs_own_project_field_never_overrides_the_operators_map(tmp_path):
         server = Server()
         watch.flush(server)
     assert server.rows["qms_claims"]["project"] == "twilight"
+
+
+def test_a_known_unmapped_start_folder_never_takes_its_report_folders_project(tmp_path):
+    # redteam L1: cwd /data/grailtab (unmapped), report under the mapped /data/tw: skipped, or the default project.
+    home, box = tmp_path / "home", tmp_path / "box"
+    report(home, box / "tw/out", "grail-out-in-tw", cwd=box / "grailtab")
+    report(home, box / "tw/out", "unknown-start", cwd=None)  # no start folder: its report folder decides
+    _, watch = mapped(tmp_path)
+    with watch:
+        summary = watch.inventory()
+        assert (summary["jobs"], summary["no_project"]) == (1, 1)
+        server = Server()
+        watch.flush(server)
+    assert {row["id"]: row["project"] for row in server.rows.values()} == {"unknown-start": "twilight"}
+    import shutil
+    shutil.rmtree(tmp_path / "state")
+    _, watch = mapped(tmp_path, project="fallback")
+    with watch:
+        watch.inventory()
+        server = Server()
+        watch.flush(server)
+    assert server.rows["qms_grail-out-in-tw"]["project"] == "fallback"
+
+
+def test_one_folder_mapped_to_two_projects_is_refused(tmp_path):
+    with pytest.raises(ObserverError, match="two projects"):
+        Observer(tmp_path / "home", [tmp_path / "reports"], tmp_path / "state", None,
+                 project_for=[(tmp_path / "box/tw", "twilight"), (tmp_path / "box/tw/", "other")])
+    with Observer(tmp_path / "home", [tmp_path / "reports"], tmp_path / "state", None,
+                  project_for=[(tmp_path / "box/tw", "twilight"), (tmp_path / "box/tw", "twilight")]):
+        pass  # the same pair twice is harmless
