@@ -535,7 +535,9 @@ def _screen_printer(args):
         elif kind == "waiting":
             print(f"  waiting: {event['reason']}", file=sys.stderr, flush=True)
         elif kind == "admitted":
-            print(f"  browser slot ready: queued {event['timing']['queue_seconds']:.1f}s "
+            held = (f", {event['timing']['hold_seconds']:.0f}s of it for another job's hold"
+                    if event["timing"].get("hold_seconds") else "")
+            print(f"  browser slot ready: queued {event['timing']['queue_seconds']:.1f}s{held} "
                   f"(capacity {event['capacity']})", file=sys.stderr, flush=True)
         elif kind == "start":
             print(f"  ▸ {event['scenario']}", file=sys.stderr, flush=True)

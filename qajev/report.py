@@ -341,6 +341,7 @@ def markdown(data):
         f"**Gate: {data['gate']}**" + (" (interrupted)" if data.get("interrupted") else ""),
         "",
         *([f"Started: {report_html.format_time(data['started_at'])}", ""] if data.get("started_at") else []),
+        *([report_html.hold_wait(data), ""] if report_html.hold_wait(data) else []),
         *(["## Report incomplete", "", data["report_incomplete"]["reason"], "",
            *["- " + name for name in data["report_incomplete"]["missing"]], ""]
           if data.get("report_incomplete") else []),
