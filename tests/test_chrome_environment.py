@@ -89,7 +89,8 @@ def test_local_jobs_keep_credentials_out_of_the_launched_chrome(monkeypatch, tmp
     def start(*args, **kwargs):
         record = original_start(*args, **kwargs)
         records.append(record)
-        observations.append(json.loads((Path(record["profile_dir"]) / "environment.json").read_text()))
+        # one append for the pair: two fresh chains start their Chromes at once
+        observations.append((record, json.loads((Path(record["profile_dir"]) / "environment.json").read_text())))
         return record
 
     monkeypatch.setattr(chrome, "start", start)
@@ -102,7 +103,7 @@ def test_local_jobs_keep_credentials_out_of_the_launched_chrome(monkeypatch, tmp
             assert len({row["worker_pid"] for row in result["scenarios"]}) == jobs
         assert result["cost"]["usd"] == 0
         assert len(observations) == (1 if browser == "shared" else 2)  # fresh: one Chrome for each chain
-        for record, observed in zip(records, observations, strict=True):
+        for record, observed in observations:
             child_names = set(observed["names"])
             assert not child_names.intersection(FORBIDDEN), sorted(child_names.intersection(FORBIDDEN))
             assert record.get("environment_isolated") is True
