@@ -23,6 +23,7 @@ MAX_FILE = 50 * 1024**2
 MAX_RUN = 500 * 1024**2
 DEFAULT_OUTBOX_BYTES = 512 * 1024**2
 ENDED = {"pass", "fail", "stuck", "harness", "incomplete", "stopped"}
+REFUSED = "{}: refused by the upload privacy check"  # a file left out of missing evidence; it never leaves the machine
 
 
 class ObserverError(RuntimeError):
@@ -378,7 +379,7 @@ class Observer:
             try:
                 content = sanitize_upload(path.read_bytes())
             except ValueError:  # a binary that names a local path never leaves; its run and the others still go
-                missing.append(f"{name}: refused by the upload privacy check")
+                missing.append(REFUSED.format(name))
                 continue
             total += len(content)
             if total > MAX_RUN:
@@ -389,11 +390,17 @@ class Observer:
         if gate in ENDED and not any(file["path"] == "report.json" for file in files):
             # A foreground configuration/harness error can have a job result but no output directory.
             # Preserve that full selected-home result instead of acknowledging only a shortened summary.
-            content = sanitize_upload(json.dumps(data, ensure_ascii=False).encode())
-            if len(content) > MAX_FILE:
-                raise ObserverError("The source result exceeds the report upload budget.")
-            files.append({"path": "report.json", "sha256": hashlib.sha256(content).hexdigest(), "size": len(content)})
-            sources["report.json"] = content
+            try:
+                content = sanitize_upload(json.dumps(data, ensure_ascii=False).encode())
+            except ValueError:  # the result itself holds what the check refuses: the run goes without its report.json
+                content = None
+                if REFUSED.format("report.json") not in missing:
+                    missing.append(REFUSED.format("report.json"))
+            if content is not None:
+                if len(content) > MAX_FILE:
+                    raise ObserverError("The source result exceeds the report upload budget.")
+                files.append({"path": "report.json", "sha256": hashlib.sha256(content).hexdigest(), "size": len(content)})
+                sources["report.json"] = content
         rec = {"id": local, "kind": "run", "project": project,
                "title": sanitize_text(str(data.get("suite") or job.get("title") or local), 160),
                "gate": gate if gate in ENDED | {"queued", "running"} else "harness",
@@ -436,7 +443,7 @@ class Observer:
         return len(missing)
 
     def inventory(self) -> dict[str, int]:
-        counts = {"jobs": 0, "historical_reports": 0, "missing_evidence": 0, "no_project": 0}
+        counts = {"jobs": 0, "historical_reports": 0, "missing_evidence": 0, "no_project": 0, "refused": 0}
         seen = set()
         jobs = self.home / "jobs"
         for folder in sorted(jobs.iterdir()) if jobs.is_dir() else []:
@@ -464,7 +471,11 @@ class Observer:
             if project is None:
                 counts["no_project"] += 1
                 continue
-            counts["missing_evidence"] += self._enqueue(folder.name, data, run, job, project)
+            try:
+                counts["missing_evidence"] += self._enqueue(folder.name, data, run, job, project)
+            except ValueError:  # its own record (a test name, a reason) holds what the check refuses: it stays here
+                counts["refused"] += 1
+                continue
             counts["jobs"] += 1
         for root in self.roots:
             for path in sorted(root.rglob("report.json")) if root.is_dir() else []:
@@ -476,7 +487,11 @@ class Observer:
                     counts["no_project"] += 1
                     continue
                 local = "report-" + hashlib.sha256(str(path).encode()).hexdigest()[:40]
-                counts["missing_evidence"] += self._enqueue(local, data, path.parent, {}, project)
+                try:
+                    counts["missing_evidence"] += self._enqueue(local, data, path.parent, {}, project)
+                except ValueError:
+                    counts["refused"] += 1
+                    continue
                 counts["historical_reports"] += 1
         counts["pending"] = self.pending()
         counts["blob_bytes"] = self._blob_bytes
