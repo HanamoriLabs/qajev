@@ -895,3 +895,64 @@ def test_a_run_whose_own_record_the_privacy_check_refuses_is_counted_and_the_oth
         server = Server()
         assert watch.flush(server)["acknowledged"] == 1
     assert list(server.rows) == ["qms_b-after"]
+
+
+def _historical(reports, local, name="test-0"):
+    run = reports / local
+    run.mkdir(parents=True)
+    data = {"suite": "Old suite", "gate": "PASS", "started_at": 1_792_972_800, "seconds": 3, "cost": {"usd": 0},
+            "scenarios": [{"name": name, "about": "Static marker", "outcome": "pass",
+                           "checks": [{"check": "marker", "ok": True}]}]}
+    (run / "report.json").write_text(json.dumps(data))
+    return run
+
+
+def test_a_refused_historical_report_is_counted_and_the_other_goes(tmp_path):
+    # redteam Q1 (#196): historical reports go through the same guard.
+    (tmp_path / "home" / "jobs").mkdir(parents=True)
+    _historical(tmp_path / "reports", "old-a", name=f"shows {TRUNCATED_DATA_URI}")
+    _historical(tmp_path / "reports", "old-b")
+    with observer(tmp_path) as watch:
+        counts = watch.inventory()
+        assert (counts["refused"], counts["historical_reports"]) == (1, 1)
+        assert watch.flush(Server())["acknowledged"] == 1
+
+
+def test_a_refused_run_leaves_no_outbox_row_or_blob_on_any_poll(tmp_path):
+    # redteam Q2 (#196).
+    job, run, data = report(tmp_path / "home", tmp_path / "reports", "a-name")
+    data["scenarios"][0]["name"] = f"shows {TRUNCATED_DATA_URI}"
+    (job / "result.json").write_text(json.dumps(data))
+    report(tmp_path / "home", tmp_path / "reports", "b-after")
+    with observer(tmp_path) as watch:
+        for _ in range(2):
+            assert watch.inventory()["refused"] == 1
+            server = Server()
+            watch.flush(server)
+            assert "qms_a-name" not in server.rows
+        assert [row[0] for row in watch.db.execute("SELECT id FROM outbox")] == ["b-after"]
+
+
+def test_a_record_qajev_cannot_read_is_counted_invalid_not_refused(tmp_path):
+    # redteam Q3 (#196): "refused" means the privacy check only.
+    job, run, data = report(tmp_path / "home", tmp_path / "reports", "a-time")
+    data["started_at"] = "not-a-date"
+    (job / "result.json").write_text(json.dumps(data))
+    report(tmp_path / "home", tmp_path / "reports", "b-after")
+    with observer(tmp_path) as watch:
+        counts = watch.inventory()
+        assert (counts["refused"], counts["invalid"], counts["jobs"]) == (0, 1, 1)
+        assert watch.flush(Server())["acknowledged"] == 1
+
+
+def test_a_refused_report_json_rebuilt_from_a_clean_result_is_not_listed_missing(tmp_path):
+    # redteam Q4 (#196): the rebuilt report.json stands in for the refused file.
+    job, run, data = report(tmp_path / "home", tmp_path / "reports", "a-rebuild")
+    (run / "report.json").write_text(json.dumps({**data, "note": TRUNCATED_DATA_URI}))
+    with observer(tmp_path) as watch:
+        watch.inventory()
+        server = Server()
+        watch.flush(server)
+    row = server.rows["qms_a-rebuild"]
+    assert "report.json" in [f["path"] for f in row["files"]]
+    assert row["report"]["missing_evidence"] == []
