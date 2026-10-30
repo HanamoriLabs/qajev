@@ -55,6 +55,9 @@ That is QAJev's side, not your product:
   `--motion reduce` (the default) and start the scenario on a calmer page, or close what covers the target with a
   `before:` hook.
 - *action or time budget spent*: split the goal, or start closer to the target with `url`.
+- *Jev clicked one target again and again*: Jev clicked the same thing 3 times in a row, and the page did not move
+  on (nothing happened, or it only toggled back and forth). The reason names the target and the last actions. Check
+  by hand that the control works. If it does, say in the goal what comes after it.
 - *Jev never left the start page*: the checks need another page, and Jev only scrolled where it began and clicked
   nothing (often a phone menu it never opened). Say the way there in the goal ("open the menu, then the pricing
   page"). Jev clicking around and not arriving is still a failure: the way may really be missing.

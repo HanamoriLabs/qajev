@@ -15,7 +15,7 @@ OUTCOMES = ("pass", "fail", "stuck", "harness", "unverified", "skipped")
 # Stop reasons that mean the harness, not the product, ended the scenario.
 HARNESS_STOPS = {
     "budget_actions", "budget_seconds", "stale", "cost_cap", "guard_missing", "model_error", "browser_error",
-    "left_site", "hook_failed", "interrupted", "machine_busy", "viewport_mismatch",
+    "left_site", "hook_failed", "interrupted", "machine_busy", "viewport_mismatch", "loop",
 }
 PRODUCT_STOPS = {"done", "reached", "checked", "unreachable"}
 # Stops that mean the run broke before it finished: the checks that did run can never make it a pass. A budget or a
@@ -365,6 +365,7 @@ def _stop_text(stop, detail) -> str:
         "guard_missing": "guard not present on the page (fail closed)", "model_error": "model call failed",
         "browser_error": "browser/daemon error", "left_site": "left the allowed hosts",
         "hook_failed": "hook failed", "interrupted": "interrupted", "machine_busy": "machine too busy",
+        "loop": "Jev clicked one target again and again",
     }.get(stop, str(stop))
     if stop == "model_error" and detail and re.search(r"\b40[13]\b", str(detail)):  # a key the provider refused
         detail = f"{detail} (the model's key was refused: `qajev doctor` says which file or variable it came from)"
