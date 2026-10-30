@@ -369,8 +369,10 @@ def build_parser():
     plan.add_argument("file", type=Path, help="a suite (scenarios:) or a game's steps suite (steps:)")
     plan.add_argument("--json", action="store_true")
     plan_hash = sub.add_parser("plan-hash", help="print the sha256 an approver puts on a test plan's approval line "
-                                                 "(\"Approved by the Orchestrator <d Mon yyyy hh:mm> sha256:...\")")
-    plan_hash.add_argument("file", type=Path, help="the test plan (Markdown), as it stands above the new line")
+                                                 "(\"Approved by the Orchestrator <d Mon yyyy hh:mm> sha256:...\"); "
+                                                 "on a plan that ends with that line, the sha256 of the text above it, "
+                                                 "and whether the line holds it (exit 3 when not)")
+    plan_hash.add_argument("file", type=Path, help="the test plan (Markdown), before or after its approval line")
     tunnel = sub.add_parser("tunnel", help="print a suite's tunnel: (or a project env's tunnel) as JSON: what the "
                                            "QAJev Cloud dispatcher on this machine checks a run's tunnel against")
     tunnel.add_argument("file", type=Path, help="a suite file, or a project file (.toml) with --env")
@@ -768,14 +770,25 @@ def cmd_runner(args):
 
 
 def cmd_plan_hash(args):
-    """The sha256 for a test plan's approval line: of the plan's text as it stands (planfile.digest)."""
+    """The sha256 for a test plan's approval line (planfile.digest). A plan that ends with its approval line gives the
+    sha256 of the text above that line, and the line's own sha256 is checked: an approved plan gives its approved hash
+    (the Orchestrator, 30 Oct: an approved plan printed the hash of the plan and its approval line together)."""
     from . import planfile
 
     text, problem = planfile.read(args.file)
     if problem:
         return _fail(args, f"{args.file}: {problem}", EXIT_CONFIG)
-    print(f"sha256:{planfile.digest(text)}")
-    return 0
+    status = planfile.check(args.file)
+    if not status["approval"]:
+        print(f"sha256:{planfile.digest(text)}")
+        return 0
+    if status["problem"] == planfile.TEXT_AFTER:  # added after the approval: a new line at the end covers it all
+        print(f"sha256:{planfile.digest(text)}")
+        print(f"{args.file}: {planfile.words(status)}; this sha256 is for a new approval line at its end", file=sys.stderr)
+        return 0
+    print(f"sha256:{status['sha256']}")
+    print(f"{args.file}: {planfile.words(status)}", file=sys.stderr)
+    return 0 if status["approved"] else EXIT_CONFIG
 
 
 def cmd_tunnel(args):
