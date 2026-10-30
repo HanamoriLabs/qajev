@@ -104,7 +104,9 @@ def _current_url(raw_cdp, session_id):
 
 
 def answer_dialog(raw_cdp, pending, session_id, transport):
-    """Answer the page dialog the browser daemon saw open, and record it; False when none was open."""
+    """Answer the page dialog the browser daemon saw open, and record it. "own" when its page is this tab's current
+    entry, "other" when it is not (another tab's, or no page named), False when none was open or it could not be
+    answered."""
     try:
         dialog = pending()
     except (RuntimeError, OSError, TimeoutError, ValueError):
@@ -112,15 +114,15 @@ def answer_dialog(raw_cdp, pending, session_id, transport):
     if not isinstance(dialog, dict) or session_id is None:
         return False
     kind = str(dialog.get("type") or "")
-    accept = (kind == "beforeunload" and is_local_dev(dialog.get("url"))
-              and _same_page(dialog["url"], _current_url(raw_cdp, session_id)))
+    own = bool(dialog.get("url")) and _same_page(dialog["url"], _current_url(raw_cdp, session_id))
+    accept = kind == "beforeunload" and own and is_local_dev(dialog["url"])
     try:
         raw_cdp("Page.handleJavaScriptDialog", session_id=session_id, _response_timeout=5, accept=accept)
     except (RuntimeError, OSError, TimeoutError):
         return False
     transport.dialogs.append({"kind": kind or "dialog", "message": str(dialog.get("message") or "")[:200],
                               "answered": "leave" if accept else DIALOG_DECLINED.get(kind, "no"), "native": True})
-    return True
+    return "own" if own else "other"
 
 
 def take_answered_dialogs():
@@ -154,9 +156,11 @@ def _patient_cdp(raw_cdp, timeout, transport, pending=None):
             except TimeoutError:
                 answered = (pending is not None and method != "Page.handleJavaScriptDialog"
                             and answer_dialog(raw_cdp, pending, session_id, transport))
-                if answered and method.startswith("Input."):
-                    return {}  # the held input ran once the dialog closed: sent again, a key or text arrives twice
-                if answered and method == "Page.navigate" and _navigation_went_on(raw_cdp, session_id,
+                if answered == "own" and method.startswith("Input."):
+                    # The held input ran once its dialog closed: sent again, a key or text arrives twice. An answer
+                    # to another tab's dialog did not free this one, so its input is sent again (redteam N2 on #203).
+                    return {}
+                if answered == "own" and method == "Page.navigate" and _navigation_went_on(raw_cdp, session_id,
                                                                                   params.get("url")):
                     return {}
                 return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)

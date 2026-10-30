@@ -462,7 +462,7 @@ def markdown(data):
             lines.append(f"- Block list: {len(listed) - shown} more in report.json")
         for d in r.get("dialogs") or []:
             said = f": {_cell(d['message'], 120)}" if d.get("message") else ""
-            lines.append(f"- Dismissed {_cell(d.get('kind'))}{said}")
+            lines.append(f"- {_cell(report_html.dialog_line(d))}{said}")
         blocked = [a for a in r.get("assists") or [] if a.get("after", "BLOCKED") == "BLOCKED"]
         if blocked:
             moved = sum(1 for a in blocked if a["scrolled"])
