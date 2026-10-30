@@ -850,7 +850,7 @@ def _fresh_chain(payload, messages):
     suite, chain, opts_dict, suite_meta, run_dir, cap, per_call, shared, bootstrap, ephemeral = payload
     _init_worker(shared, bootstrap)
     ledger = Ledger(cap, per_call, shared=shared)
-    told, daemon_told = set(), []
+    told = set()
 
     def say(kind, body):
         """Only this process read the account's secrets (vault, password, codes, cookie): it redacts them from all it
@@ -862,14 +862,13 @@ def _fresh_chain(payload, messages):
         messages.put((kind, redact_tree(body, secret_values())))
 
     def emit(event):
-        if event.get("event") == "start" and not daemon_told:  # its browser daemon runs by now
-            daemon_told.append(True)
-            if pid := session_mod.daemon_pid():
-                say("daemon", pid)
+        if event.get("event") == "start":  # by now its daemon runs, if a Session did not say so already
+            session_mod.daemon_up()
         say("event", event)
         if event.get("event") == "scenario":
             say("ledger", ledger.summary())
 
+    session_mod.daemon_listener = lambda pid: say("daemon", pid)  # the first Session's daemon, sign-in's too
     fields = {f.name for f in dataclasses.fields(Options)}
     opts = Options(**{k: v for k, v in opts_dict.items() if k in fields}, emit=emit)
     for k, v in opts_dict.items():  # what run() set on top, such as login.tab: same's sign_in_here
@@ -1044,19 +1043,24 @@ def run_fresh(suite, chains, *, opts, suite_meta, run_dir, cap, emit):
                 if not job["done"] and not over:  # it ended: what it said last can still be on its way
                     signed = drain(job, signed, wait=1.0)
                 if over:
+                    busy = job["paused"] is not None  # cut in a quiet-machine wait, not by the test's own time
                     stop(job)
                     current = job["current"]
                     for s in job["chain"]:
                         if s.name in results:
                             continue
-                        if current is None:
+                        if busy and (current is None or s.name == current.name):
+                            report(s, _not_run(s, "harness", "machine_busy", "the machine stayed busy past the "
+                                               f"run's load budget (--load-wait {opts.load_wait:.0f} s)"))
+                        elif current is None:
                             report(s, _not_run(s, "harness", "browser_error", "a fresh Chrome's chain did not get "
                                                f"to its next test within {between:.0f} s (QAJEV_FRESH_START_WAIT)"))
                         elif s.name == current.name:
                             report(s, _not_run(s, "harness", "cap", f"cap {test_cap(s):.0f} s hit"))
                         else:
-                            report(s, _not_run(s, "skipped", "cap",
-                                               f"not run: {current.name!r} before it in its chain hit its cap"))
+                            why = "the machine stayed busy" if busy else "hit its cap"
+                            report(s, _not_run(s, "skipped", "machine_busy" if busy else "cap",
+                                               f"not run: {current.name!r} before it in its chain: {why}"))
                 else:
                     if job["done"]:
                         job["process"].join(5)

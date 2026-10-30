@@ -67,6 +67,9 @@ That is QAJev's side, not your product:
   skipped. The other tests run in their own Chrome. Raise `budget.seconds` only if the test truly needs longer.
 - *a fresh Chrome's chain did not get to its next test within 60 s*: Chrome, the sign-in or the end of the last test
   took longer than `QAJEV_FRESH_START_WAIT`. On a busy machine, raise it.
+- *the machine stayed busy past the run's load budget*: the test waited for a quiet machine longer than
+  `--load-wait` and its start allowance, so QAJev stopped its Chrome. The test did not run out of its own time. Run
+  it again when the machine is quieter, or raise `--load-wait`.
 
 **"a URL with a user name or password is refused"**
 The URL holds a user name or password (`https://alice:s3cret@shop.example/`). QAJev never writes down a password,

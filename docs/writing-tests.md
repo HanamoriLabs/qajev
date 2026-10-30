@@ -351,7 +351,8 @@ holds. A suite's `account` signs in again in each fresh Chrome, because a new Ch
 
 Each test has a cap: its `budget.seconds` plus 60 s, so 150 s by default. A test still running at its cap is
 stopped with its Chrome and graded `harness`, "cap 150 s hit". The tests after it in its chain are skipped. A wait
-for a quiet machine does not count toward the cap. Each step before a test (Chrome up, the sign-in, the step
+for a quiet machine does not count toward the cap. A test still in that wait after the run's load budget
+(`--load-wait`) is stopped and graded `harness`, "the machine stayed busy". Each step before a test (Chrome up, the sign-in, the step
 between two tests) has 60 s, set by `QAJEV_FRESH_START_WAIT`.
 
 `browser: shared` runs the whole suite in one Chrome, as QAJev did before. QAJev also uses one Chrome, and the report

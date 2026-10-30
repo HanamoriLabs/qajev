@@ -2,6 +2,7 @@
 step, as one test's open form or dialog held up the next; one process per test with a 150 s cap passed 21 of 21.
 The chains' child processes are threads here: what the parent does with them is the contract."""
 
+import contextlib
 import queue
 import threading
 import time
@@ -189,6 +190,17 @@ def test_a_wait_does_not_loosen_the_cap_after_it(fake, monkeypatch, tmp_path):
     assert time.monotonic() - started < 2.1  # 0.3 s of wait + the 1 s cap; a clock never restarted ends past 2.2 s
 
 
+def test_a_chain_cut_in_a_quiet_machine_wait_says_the_machine_stayed_busy(fake, monkeypatch, tmp_path):
+    # Past the run's load budget the wait is over: the test did not run out of its own time.
+    monkeypatch.setattr(runner, "CAP_MARGIN", 0.5)
+    monkeypatch.setenv("QAJEV_FRESH_START_WAIT", "0.2")
+    fake["wait_hang"], fake["wait_s"] = {"busy"}, 3.0
+    got = by_name(run(parse([{"name": "busy", "url": "/", "budget": {"seconds": 0.5}},
+                             {"name": "after it", "url": "/next", "depends_on": ["busy"]}]), tmp_path, load_wait=0.5))
+    assert (got["busy"]["outcome"], got["busy"]["stop"]) == ("harness", "machine_busy")
+    assert "load budget" in got["busy"]["reason"] and "busy" in got["after it"]["reason"]
+
+
 def test_a_chain_whose_process_ends_without_a_word_costs_its_own_tests_only(fake, tmp_path):
     fake["crash"] = {"pricing"}
     got = by_name(run(parse(CHAINED), tmp_path))
@@ -285,6 +297,7 @@ def test_a_chain_sends_nothing_its_sign_in_read_only_the_values_to_redact(monkey
     monkeypatch.setattr(chrome, "start", lambda profile, **kw: {"cdp_url": "http://127.0.0.1:9", "state_key": "k"})
     monkeypatch.setattr(chrome, "stop", lambda key, group=False: None)
     monkeypatch.setattr(session, "daemon_pid", lambda: None)
+    monkeypatch.setattr(session, "daemon_listener", None)  # the chain sets it: put back after this test
 
     def sign_in_first(suite, **kw):
         for value in SECRETS.values():  # as vault.resolve and signin remember them
@@ -318,3 +331,102 @@ def test_a_chain_sends_nothing_its_sign_in_read_only_the_values_to_redact(monkey
     assert sorted(v for body in told for v in body) == sorted(SECRETS.values())  # the parent learns what to redact
     rest = repr([m for m in said if m[0] != "secrets"])
     assert "[redacted]" in rest and not [k for k, v in SECRETS.items() if v in rest]
+
+
+def test_a_chain_names_its_daemon_as_soon_as_a_session_runs_even_in_its_sign_in(monkeypatch, tmp_path):
+    # A chain stopped while it signs in must not leave its browser daemon: the first Session says its pid.
+    from qajev import session
+
+    monkeypatch.setattr(config, "_REMEMBERED", set())
+    monkeypatch.setattr(chrome, "start", lambda profile, **kw: {"cdp_url": "http://127.0.0.1:9", "state_key": "k"})
+    monkeypatch.setattr(chrome, "stop", lambda key, group=False: None)
+    monkeypatch.setattr(session, "daemon_pid", lambda: 4242)
+    monkeypatch.setattr(session, "daemon_listener", None)
+
+    def sign_in_first(suite, **kw):
+        session.daemon_up()  # what Session() does once its daemon runs
+        return {"account": "tester", "ok": False, "reason": "fixture: the sign-in failed"}
+
+    monkeypatch.setattr(runner, "sign_in_first", sign_in_first)
+    spec = parse([{"name": "account page", "url": "/account"}],
+                 account=dict(zip(("email", "password", "login"), ("tester@example.test",
+                                                                   "seed:qa_test_user.json#password",
+                                                                   {"url": "/login.html"}))))
+    messages = queue.Queue()
+    opts_dict = {k: v for k, v in runner.Options(headless=True).__dict__.items() if k != "emit"}
+    runner._fresh_chain((spec, spec.scenarios, opts_dict, {"headless": True, "motion": "reduce"}, tmp_path, 0.0, 0.0,
+                         None, None, False), messages)
+    said = [messages.get_nowait() for _ in range(messages.qsize())]
+    assert ("daemon", 4242) in said and said.count(("daemon", 4242)) == 1
+    assert not [m for m in said if m[0] == "event" and m[1].get("event") == "start"]  # before any test began
+
+
+# The stops, on real processes: a group this test starts in a session of its own.
+
+def _group(script):
+    """sh in a session (process group) of its own, running script; -> (its pid, the pid it printed)."""
+    import subprocess
+
+    proc = subprocess.Popen(["sh", "-c", script], start_new_session=True, stdout=subprocess.PIPE, text=True)
+    return proc, int(proc.stdout.readline())
+
+
+def _gone(pid, group=True, within=5.0):
+    import os
+
+    deadline = time.monotonic() + within
+    while time.monotonic() < deadline:
+        try:
+            (os.killpg if group else os.kill)(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_a_stop_by_group_stops_the_whole_group_a_chain_started():
+    import os
+    import signal
+
+    proc, helper = _group("sleep 30 & echo $!; wait")
+    threading.Thread(target=proc.wait, daemon=True).start()  # as init reaps a dead chain's daemon
+    try:
+        runner._stop_group(proc.pid, grace=2.0)
+        assert _gone(proc.pid) and _gone(helper, group=False), "the daemon and its helper must both stop"
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+
+
+def test_a_stop_by_group_leaves_a_pid_that_leads_no_group():
+    import os
+    import signal
+    import subprocess
+
+    plain = subprocess.Popen(["sleep", "30"])  # in this test's own group: its pid leads none
+    proc, helper = _group("sleep 30 & echo $!")  # its leader exits; its helper stays in that group
+    proc.wait()
+    try:
+        runner._stop_group(plain.pid, grace=0.5)
+        runner._stop_group(proc.pid, grace=0.5)  # the pid it said is gone: what is left is not signalled by it
+        time.sleep(0.3)
+        assert plain.poll() is None and not _gone(helper, group=False, within=0.2)
+    finally:
+        plain.kill()
+        plain.wait()
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+
+
+def test_chrome_stop_by_group_stops_its_helpers_too():
+    import os
+    import signal
+
+    proc, helper = _group("sleep 30 & echo $!; wait")  # Chrome and a renderer, in Chrome's own session
+    try:
+        chrome._kill(proc.pid, grace=2.0, group=True)
+        assert _gone(helper, group=False), "a helper of a stopped Chrome must stop too"
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()

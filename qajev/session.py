@@ -820,6 +820,7 @@ class Session:
             self.browser = self.agent.browser
             # every freshness check Jev makes (before choosing, before typing, before input) goes through this
             self.browser.fresh = functools.partial(fresh_past_ticks, self.browser, self.jev.browser.MARKER)
+        daemon_up()  # Jev's Browser (or the Tab) has started it
         try:
             self.call("Page.enable")  # must precede addScriptToEvaluateOnNewDocument
             if motion == "reduce":  # before the first navigation, so the first paint already honours it
@@ -1756,6 +1757,18 @@ class Session:
         except Exception:
             if target:
                 chrome.close_target(os.environ["BU_CDP_URL"], target)
+
+
+daemon_listener = None  # a fresh Chrome's chain (runner._fresh_chain): told this process's daemon pid once it runs
+
+
+def daemon_up():
+    """Each Session calls this once its browser daemon runs, so a chain stopped even during its sign-in can have its
+    daemon stopped too. Tells daemon_listener the pid, once."""
+    global daemon_listener
+    if daemon_listener is not None and (pid := daemon_pid()):
+        listener, daemon_listener = daemon_listener, None
+        listener(pid)
 
 
 def daemon_pid():
