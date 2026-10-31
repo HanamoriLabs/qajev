@@ -153,7 +153,7 @@ prints that error and the original cause, and still exits non-zero.
 | Option | Does |
 |---|---|
 | `--runner local\|cloud\|auto` | `local`: this Mac, as today. `cloud`: QAJev Cloud; a run that cannot go is refused, never run here. `auto`: the cloud when it can, else this Mac, with one line saying why. Default: `$QAJEV_RUNNER` (the shell, then `~/.qajev/.env`), then the project's `runner`, else `local` |
-| `--serve DIR[:PORT]` | cloud runs: ship this built site folder; the cloud machine serves it on its own `127.0.0.1:PORT` (default: the port the run opens, else 8877) |
+| `--serve DIR[:PORT]` | cloud runs: ship this built site folder; the cloud machine serves it on its own `127.0.0.1:PORT` (default: the port the run opens, else 8877), as Cloudflare Pages does ([below](#a-shipped-site-is-served-as-cloudflare-pages-serves-it)) |
 | `--model clef\|clef-flash\|clef-omni\|jev\|jev-openrouter` | cloud runs: the model that decides (default: the dashboard's) |
 
 **Busy machines**
@@ -434,6 +434,23 @@ copies, with tar owner names and IDs cleared, before they are split into parts. 
 privacy check. Seeded test-account references and their fixture names use the same stable public reference.
 For a full tunnel, a private local registry lets the dispatcher restore those references on this machine before its
 existing process and permission checks. The registry is never part of the uploaded files.
+
+### A shipped site is served as Cloudflare Pages serves it
+
+With `--serve`, the cloud machine serves the folder as Cloudflare Pages serves a build, so a test sees the answers a
+visitor gets:
+
+- Each file has a quoted content ETag and no Last-Modified. A request whose `If-None-Match` matches gets a 304 with no
+  body.
+- Each answer carries Pages' default headers: `Cache-Control: public, max-age=0, must-revalidate`,
+  `Access-Control-Allow-Origin: *`, `Referrer-Policy` and `X-Content-Type-Options`.
+- The build's `_headers` file applies, with `*` and `:name` patterns and `! Name` to remove a header.
+- The build's `_redirects` file applies: 301, 302 (the default), 303, 307 and 308 redirect, and 200 rewrites in
+  place. The first match wins, and the query string is kept.
+- A folder answers with its `index.html`. A folder is never listed, and `_headers` and `_redirects` are never served.
+
+Not done yet: pretty URLs (`/about.html` as `/about`), the single-page fallback for a build with no `404.html`, a
+custom `404.html` page, absolute-URL patterns and Pages' rule limits. A missing file is a plain 404.
 
 ## `qajev report`
 

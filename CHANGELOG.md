@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Changed
+
+- The `--serve` help, `serve` in the MCP tools and the docs now say how the cloud machine serves a shipped site: as
+  Cloudflare Pages does, with ETag and 304, Pages' cache headers, and the build's `_headers` and `_redirects`. They
+  also say what it does not do yet: pretty URLs, the single-page fallback and a `404.html` page.
+
 ## 0.4.40: 31 Oct 2026
 
 ### Added

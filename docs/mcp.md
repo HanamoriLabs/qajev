@@ -108,7 +108,8 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   `tunnel:` (each port and its dev server's command) goes with `"auto"` too, through the full tunnel: several ports,
   writes with `data: local`, WebSockets. Default: for
   `qa_project_run` the project's `runner`, then this machine's mode (`QAJEV_RUNNER`, which `qa_mode` sets), else local. `serve`
-  (`"DIR"` or `"DIR:PORT"`) ships a built site with a cloud run, served on the cloud machine's own 127.0.0.1.
+  (`"DIR"` or `"DIR:PORT"`) ships a built site with a cloud run, served on the cloud machine's own 127.0.0.1 as
+  Cloudflare Pages serves it ([CLI](cli.md#a-shipped-site-is-served-as-cloudflare-pages-serves-it)).
   `model` picks the cloud run's model. A cloud run returns `{"runner": "cloud", "run_id", "url", "gate", "counts",
   "tests", "report_url", "reason"}`; with `background` its id (`r_...`) and address at once. `qa_job` and `qa_stop`
   take that id. See [CLI: QAJev Cloud](cli.md#qajev-cloud-where-a-run-goes).

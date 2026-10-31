@@ -77,7 +77,8 @@ def _runner_flags(p, website=True):
     if website:
         g.add_argument("--serve", metavar="DIR[:PORT]",
                        help="cloud runs: ship this built site folder; the cloud machine serves it on its own "
-                            "127.0.0.1:PORT (default: the port the run opens, else 8877)")
+                            "127.0.0.1:PORT (default: the port the run opens, else 8877) as Cloudflare Pages "
+                            "does: ETag and 304, Pages' cache headers, the build's _headers and _redirects")
         g.add_argument("--model", choices=CLOUD_MODELS,
                        help="cloud runs: the model that decides (default: the dashboard's)")
 
