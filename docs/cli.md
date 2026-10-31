@@ -296,7 +296,9 @@ tests as ABSENT ONLY. It reads each test's own `expect`, not the expects of a st
 It also exits `2` for a website test whose goal asks Jev to press a key ("press Enter", "the Right arrow key",
 "Ctrl+S"): Jev clicks, types and scrolls, but presses no key. The plan lists such tests as PRESSES KEYS (`key_goals`,
 each with the words found). Press the keys in a `key:` hook and leave them out of the goal. A chord in brackets, such
-as a tab's "(Alt+4)", is a control's label and is not flagged. `qa_plan` is the same for agents.
+as a tab's "(Alt+4)" or "[Ctrl+Shift+Z]", is a control's label and is not flagged. Nor is a key word in a control's
+name, followed by button, link, tab, icon, site, item, page, menu, field, card or panel ("the API keys tab", "Enter
+site"). An arrow is a key only as "arrow key". `qa_plan` is the same for agents.
 
 It also checks the suite's **approved test plan** (`plan:`, see [Writing tests](writing-tests.md#an-approved-test-plan)):
 the line `Plan file: ...` says whether it is approved, and the JSON has `test_plan` (`path`, `approved`, `approval`,
