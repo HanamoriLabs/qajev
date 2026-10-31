@@ -297,7 +297,7 @@ def test_a_chain_sends_nothing_its_sign_in_read_only_the_values_to_redact(monkey
     monkeypatch.setattr(chrome, "start", lambda profile, **kw: {"cdp_url": "http://127.0.0.1:9", "state_key": "k"})
     monkeypatch.setattr(chrome, "stop", lambda key, group=False: None)
     monkeypatch.setattr(session, "daemon_pid", lambda: None)
-    monkeypatch.setattr(session, "daemon_listener", None)  # the chain sets it: put back after this test
+    monkeypatch.setattr(session, "_daemon_listener", None)  # the chain sets it: put back after this test
 
     def sign_in_first(suite, **kw):
         for value in SECRETS.values():  # as vault.resolve and signin remember them
@@ -340,11 +340,15 @@ def test_a_chain_names_its_daemon_as_soon_as_a_session_runs_even_in_its_sign_in(
     monkeypatch.setattr(config, "_REMEMBERED", set())
     monkeypatch.setattr(chrome, "start", lambda profile, **kw: {"cdp_url": "http://127.0.0.1:9", "state_key": "k"})
     monkeypatch.setattr(chrome, "stop", lambda key, group=False: None)
-    monkeypatch.setattr(session, "daemon_pid", lambda: 4242)
-    monkeypatch.setattr(session, "daemon_listener", None)
+    pids = iter([4242, 4242, 5151])  # a second Session on the same daemon, then a daemon started again
+    monkeypatch.setattr(session, "daemon_pid", lambda: next(pids))
+    monkeypatch.setattr(session, "_daemon_listener", None)
+    stopped = []
+    monkeypatch.setattr(session, "stop_daemon", lambda: stopped.append(True))
 
     def sign_in_first(suite, **kw):
-        session.daemon_up()  # what Session() does once its daemon runs
+        for _ in range(3):
+            session.daemon_up()  # what each Session() does once its daemon runs
         return {"account": "tester", "ok": False, "reason": "fixture: the sign-in failed"}
 
     monkeypatch.setattr(runner, "sign_in_first", sign_in_first)
@@ -357,8 +361,29 @@ def test_a_chain_names_its_daemon_as_soon_as_a_session_runs_even_in_its_sign_in(
     runner._fresh_chain((spec, spec.scenarios, opts_dict, {"headless": True, "motion": "reduce"}, tmp_path, 0.0, 0.0,
                          None, None, False), messages)
     said = [messages.get_nowait() for _ in range(messages.qsize())]
-    assert ("daemon", 4242) in said and said.count(("daemon", 4242)) == 1
+    assert [m for m in said if m[0] == "daemon"] == [("daemon", 4242), ("daemon", 5151)]  # each new one, once
     assert not [m for m in said if m[0] == "event" and m[1].get("event") == "start"]  # before any test began
+    assert stopped == [True]  # a chain whose sign-in failed stops its daemon itself: no test of it ran
+
+
+def test_a_chain_that_ran_its_tests_leaves_its_daemon_to_them(monkeypatch, tmp_path):
+    # run_group stops the daemon it used; the chain does not stop it a second time.
+    from qajev import session
+
+    monkeypatch.setattr(config, "_REMEMBERED", set())
+    monkeypatch.setattr(chrome, "start", lambda profile, **kw: {"cdp_url": "http://127.0.0.1:9", "state_key": "k"})
+    monkeypatch.setattr(chrome, "stop", lambda key, group=False: None)
+    monkeypatch.setattr(session, "daemon_pid", lambda: None)
+    monkeypatch.setattr(session, "_daemon_listener", None)
+    stopped = []
+    monkeypatch.setattr(session, "stop_daemon", lambda: stopped.append(True))
+    monkeypatch.setattr(runner, "run_group", lambda chain, **kw: {"results": [], "ledger": {}})
+    spec = parse([{"name": "a page", "url": "/"}])
+    messages = queue.Queue()
+    opts_dict = {k: v for k, v in runner.Options(headless=True).__dict__.items() if k != "emit"}
+    runner._fresh_chain((spec, spec.scenarios, opts_dict, {"headless": True, "motion": "reduce"}, tmp_path, 0.0, 0.0,
+                         None, None, False), messages)
+    assert stopped == []
 
 
 # The stops, on real processes: a group this test starts in a session of its own.

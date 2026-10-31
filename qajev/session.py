@@ -1759,16 +1759,23 @@ class Session:
                 chrome.close_target(os.environ["BU_CDP_URL"], target)
 
 
-daemon_listener = None  # a fresh Chrome's chain (runner._fresh_chain): told this process's daemon pid once it runs
+_daemon_listener = None  # a fresh Chrome's chain (runner._fresh_chain): told each new daemon pid of this process
+_daemon_told = None
+
+
+def listen_daemon(listener):
+    """listener(pid) hears of each browser daemon this process starts from now on (None: no one hears)."""
+    global _daemon_listener, _daemon_told
+    _daemon_listener, _daemon_told = listener, None
 
 
 def daemon_up():
     """Each Session calls this once its browser daemon runs, so a chain stopped even during its sign-in can have its
-    daemon stopped too. Tells daemon_listener the pid, once."""
-    global daemon_listener
-    if daemon_listener is not None and (pid := daemon_pid()):
-        listener, daemon_listener = daemon_listener, None
-        listener(pid)
+    daemon stopped too. Tells the listener each new pid: a daemon started again replaces the one before."""
+    global _daemon_told
+    if _daemon_listener is not None and (pid := daemon_pid()) and pid != _daemon_told:
+        _daemon_told = pid
+        _daemon_listener(pid)
 
 
 def daemon_pid():
