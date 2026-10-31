@@ -99,11 +99,11 @@ scenarios:
     covered = got["a dark canvas half under a lit panel"]  # only the points no element covers are read: all dark
     assert covered["outcome"] == "harness" and covered["canvas_blank"]["points"] < 0.5 * 384, covered
     purpose = got["dark on purpose"]
-    assert purpose["outcome"] == "pass" and purpose["canvas_dark"] == "the hall is shown at night", purpose
+    assert purpose["outcome"] == "pass" and purpose.get("canvas_dark") == "the hall is shown at night", purpose
     assert purpose["reason"].endswith("(canvas_dark: the hall is shown at night)"), purpose
     broke = got["the canvas check breaks"]
     assert broke["outcome"] == "pass" and not broke.get("canvas_blank"), broke
-    assert "planted elementFromPoint" in broke["canvas_blank_error"], broke
+    assert "planted elementFromPoint" in (broke.get("canvas_blank_error") or ""), broke
     assert "the canvas check could not read the end screenshot" in broke["reason"], broke
 
 
@@ -169,7 +169,8 @@ def test_a_readback_in_another_image_format_is_refused(kind):
 def test_a_readback_over_the_size_limit_is_refused(size):
     with pytest.raises(pixels.PixelError, match="outside the limits"):
         pixels.grid_lumas(png(0, size=size, mode="L"))
-    assert pixels.grid_lumas(png(0, size=(16384, 1), mode="L"))  # the limit itself is read
+    for fits in ((16384, 1), (4096, 4096)):  # the limits themselves are read: 16384 a side, 16777216 pixels
+        assert pixels.grid_lumas(png(0, size=fits, mode="L"))
 
 
 @pytest.mark.parametrize("adapter, software", [
@@ -212,7 +213,8 @@ def test_a_hardware_readback_reads_the_browsers_gpu_when_the_adapter_is_unnamed(
 
     s = Session.__new__(Session)
     named = {WEBGPU_ADAPTER_JS: UNNAMED, GPU_NAME_JS: {"device": "Google SwiftShader"}}
-    s.evaluate = lambda js, timeout_ms: named.get(js)
+    s.evaluate = lambda js, timeout_ms: None  # the readback: the page's own expression
+    s.isolated_evaluate = lambda js, timeout_ms: named.get(js)
     got = s.page_canvas({"page": "null", "gpu": "hardware"}, tmp_path / "c.png")
     assert got["gpu"] == {"device": "Google SwiftShader"}, got
     assert got["software"] == "the browser's GPU is software (SwiftShader)", got
@@ -230,6 +232,31 @@ def test_no_readback_or_a_software_gpu_turns_a_pass_into_harness_and_keeps_a_fai
     assert runner.canvas_capture_grade("pass", "ok", {"problem": None, "software": None}) == ("pass", "ok")
     reason = runner.canvas_blank_grade("pass", "ok", {**BLANK, "readback": True})[1]
     assert reason.startswith("the canvas's own readback (canvas_capture: page) is one flat dark colour")
+
+
+# A page script that claims an NVIDIA GPU in the page's own world: WebGL's renderer name, and a WebGPU adapter.
+LYING_GPU = ("(() => { for (const C of [WebGLRenderingContext, WebGL2RenderingContext]) { "
+             "const get = C.prototype.getParameter; C.prototype.getParameter = function (p) { "
+             "return p === 37446 ? 'NVIDIA planted' : get.call(this, p); }; } "
+             "if (navigator.gpu) navigator.gpu.requestAdapter = async () => ({info: {vendor: 'nvidia', "
+             "architecture: 'planted', description: 'NVIDIA planted'}, isFallbackAdapter: false}); return true; })()")
+
+
+# A WebGL without WEBGL_debug_renderer_info (redteam-1 L1, #228): its plain RENDERER says "WebKit WebGL" on every
+# machine, so GPU_NAME_JS must name no GPU. The extension is hidden in the page's world, where the check runs too.
+HIDE_RENDERER_NAME = ("(() => { for (const C of [WebGLRenderingContext, WebGL2RenderingContext]) { "
+                      "const get = C.prototype.getExtension; C.prototype.getExtension = function (n) { "
+                      "return n === 'WEBGL_debug_renderer_info' ? null : get.call(this, n); }; } return true; })()")
+
+
+def names_no_gpu():
+    from qajev.session import GPU_NAME_JS
+
+    return (f"(() => {{ const r = {GPU_NAME_JS}; return r.none === \"the page's WebGL does not name its GPU "
+            "(no WEBGL_debug_renderer_info)\" || JSON.stringify(r); })()")
+
+
+NAMES_NO_GPU = names_no_gpu()
 
 
 # A readback drawn in the page, half lit: the screenshot of /canvas-dark.html is flat dark, this image is not.
@@ -266,6 +293,21 @@ scenarios:
     url: {lit}
     expect: {{text: ["the hall stands"]}}
     canvas_capture: {{page: "{grab}", gpu: hardware}}
+  - name: WebGL without the renderer name
+    about: fixture
+    url: {lit}
+    before:
+      - js: {json.dumps(HIDE_RENDERER_NAME)}
+    expect:
+      js: {json.dumps(NAMES_NO_GPU)}
+      says: {{js: "GPU_NAME_JS names no GPU when WebGL has no WEBGL_debug_renderer_info"}}
+  - name: a page that says it has a GPU
+    about: fixture
+    url: {lit}
+    before:
+      - js: {json.dumps(LYING_GPU)}
+    expect: {{text: ["the hall stands"]}}
+    canvas_capture: {{page: "{grab}", gpu: hardware}}
   - name: dark screen, lit readback
     about: fixture
     url: {dark}
@@ -293,23 +335,43 @@ scenarios:
     hardware = got["hardware asked"]  # QAJev's headless Chrome on a test machine has no hardware WebGPU
     assert hardware["outcome"] == "harness" and "asks for a hardware GPU" in hardware["reason"], hardware
     assert "SwiftShader" in hardware["canvas_capture"]["gpu"]["device"], hardware  # the test machine's software GL
+    # The adapter is read in QAJev's own JS world, which still has navigator.gpu: no adapter, not "no WebGPU".
+    assert hardware["canvas_capture"]["adapter"] == {"none": "the page got no WebGPU adapter"}, hardware
+    unnamed = got["WebGL without the renderer name"]
+    assert unnamed["outcome"] == "pass", unnamed
+    lying = got["a page that says it has a GPU"]["canvas_capture"]  # the page's patches do not reach QAJev's world
+    assert "SwiftShader" in lying["gpu"]["device"] and "planted" not in json.dumps(lying), lying
+    assert lying["adapter"] == {"none": "the page got no WebGPU adapter"}, lying
     skipped = got["dark screen, lit readback"]  # with canvas_capture, the dark screenshot is not graded
     assert skipped["outcome"] == "pass" and not skipped.get("canvas_blank"), skipped
 
 
 # A canvas dark on purpose says why (redteam-1 L4, #225): only words turn the flat dark grade off.
 
-def test_canvas_dark_needs_a_written_reason():
+ONE = {"name": "a", "url": "/", "expect": {"text": "x"}}
+
+
+def test_canvas_dark_is_a_scenarios_written_reason():
     from qajev import suite
 
-    one = {"name": "a", "url": "/", "expect": {"text": "x"}}
-    parsed = suite.parse({"base_url": "http://127.0.0.1:9", "canvas_dark": " a night scene ",
-                          "scenarios": [one, {**one, "name": "b", "canvas_dark": "a fade to black"}]})
-    assert [s.canvas_dark for s in parsed.scenarios] == ["a night scene", "a fade to black"]
-    assert suite.parse({"base_url": "http://127.0.0.1:9", "scenarios": [one]}).scenarios[0].canvas_dark is None
-    for bad in (True, "  ", 1, {"why": "x"}):
-        with pytest.raises(suite.SuiteError, match="canvas_dark must say in words why the canvas is dark on purpose"):
-            suite.parse({"base_url": "http://127.0.0.1:9", "scenarios": [{**one, "canvas_dark": bad}]})
+    parsed = suite.parse({"base_url": "http://127.0.0.1:9",
+                          "scenarios": [ONE, {**ONE, "name": "b", "canvas_dark": " a fade to black "}]})
+    assert [s.canvas_dark for s in parsed.scenarios] == [None, "a fade to black"]
+
+
+@pytest.mark.parametrize("bad", [True, "  ", 1, {"why": "x"}])
+def test_canvas_dark_without_words_is_refused(bad):
+    from qajev import suite
+
+    with pytest.raises(suite.SuiteError, match="canvas_dark must say in words why the canvas is dark on purpose"):
+        suite.parse({"base_url": "http://127.0.0.1:9", "scenarios": [{**ONE, "canvas_dark": bad}]})
+
+
+def test_a_suite_level_canvas_dark_is_refused():  # one reason would turn the check off for every test (redteam-1 L5)
+    from qajev import suite
+
+    with pytest.raises(suite.SuiteError, match="canvas_dark goes on each scenario"):
+        suite.parse({"base_url": "http://127.0.0.1:9", "canvas_dark": "a night scene", "scenarios": [ONE]})
 
 
 @pytest.mark.parametrize("outcome", ["pass", "unverified", "fail"])
@@ -320,6 +382,8 @@ def test_a_canvas_dark_on_purpose_keeps_its_outcome_and_a_broken_check_is_named(
     got, reason = runner.canvas_blank_grade(outcome, "ok", None, error="RuntimeError: gone")
     assert got == outcome and reason == "ok; the canvas check could not read the end screenshot (RuntimeError: gone)"
     assert runner.canvas_blank_grade(outcome, "ok", None, dark="a night scene") == (outcome, "ok")
+    got, reason = runner.canvas_blank_grade(outcome, "ok", {**BLANK, "readback": True}, dark="a night scene")
+    assert got == outcome and reason.endswith("(canvas_dark: a night scene)"), reason  # the readback, too
 
 
 # redteam-1 B1 (#225): canvas_capture runs in QAJev's own tab only. A scenario with clients (clients.py) or a device

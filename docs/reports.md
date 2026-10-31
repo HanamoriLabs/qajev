@@ -71,7 +71,7 @@ their median grey level (`median`), the share within a few levels of it (`flat`)
 view. A pass, or a scenario with no checks, is then **harness**; a failure stays a failure, with the note. The check
 needs the screenshot, so `--no-shots` skips it. When the check itself breaks, the scenario keeps `canvas_blank_error`
 (the error) and its reason says so; the outcome stays. A scenario with `canvas_dark` ([Writing tests](writing-tests.md))
-keeps its outcome on a flat dark canvas: it then keeps `canvas_dark` (the suite's reason), and its reason ends with it.
+keeps its outcome on a flat dark canvas: it then keeps `canvas_dark` (the scenario's reason), and its reason ends with it.
 
 A scenario with `canvas_capture` ([Writing tests](writing-tests.md)) is graded on the canvas's own readback instead.
 It keeps a `canvas_capture` record: `image` (the saved readback, relative to the run folder), `problem` (why there is
