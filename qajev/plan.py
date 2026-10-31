@@ -177,16 +177,19 @@ def absent_only(scenarios):
 # A goal that asks Jev to press a key. Jev clicks, types into a field, picks an option and scrolls, but presses no key
 # (verse #1000, 31 Oct: "press the Right arrow key 3 times" made Jev click the step "Adjust" 8 times). A key press goes
 # in a `key:` hook. A key named by itself must be one no button is called, and a key word followed by "button", "tab",
-# "link"... is a control's name ("the API keys tab", "Enter site"). An arrow is a key only as "arrow key". A chord in
-# brackets ("(Alt+4)", "[Ctrl+Shift+Z]") is a control's label (redteam L1-L2 on #222).
-_VERB = r"\b(?:press(?:es|ed|ing)?|hit(?:s|ting)?|hold(?:s|ing)?)\s+(?:down\s+)?(?:the\s+)?"
+# "link"... is a control's name ("the API keys tab", "Enter site"). An arrow is a key only as "arrow key". A modifier by
+# itself is a key only when held ("Hold Shift"): "Press Alt text" is a button. A chord in brackets ("(Alt+4)",
+# "[Ctrl+Shift+Z]", "(Ctrl/Cmd+S)") is a control's label (redteam on #222 and #223).
+_VERB = r"\b(?:press(?:es|ed|ing)?|hit(?:s|ting)?|hold(?:s|ing)?|held)\s+(?:down\s+)?(?:the\s+)?"
+_HOLD = r"\b(?:hold(?:s|ing)?|held)\s+(?:down\s+)?(?:the\s+)?"
 _CONTROL = r"(?!\s+(?:button|link|tab|icon|site|item|page|menu|field|card|panel)s?\b)"
 _KEYS = re.compile(
     _VERB + r"(?:[\w-]+\s+){0,2}?(?:arrow\s+)?keys?\b" + _CONTROL
-    + r"|" + _VERB + r"(?:enter|return|escape|esc|space(?:bar)?|backspace|arrow(?:up|down|left|right)|page(?:up|down)"
-    r"|shift|ctrl|control|cmd|alt|f(?:1[0-2]|[1-9]))\b" + _CONTROL
-    + r"|\buse\s+(?:the\s+)?arrow\s+keys\b"
-    + r"|(?<![(\[+])(?<![(\[+]\s)\b(?:(?:ctrl|control|cmd|command|alt|option|shift|meta)\s*\+\s*)+"
+    + r"|" + _VERB + r"(?:enter|return|escape|esc|space(?:bar)?|backspace|arrow(?:up|down|left|right)"
+    r"|page\s?(?:up|down)|f(?:1[0-2]|[1-9]))\b" + _CONTROL
+    + r"|" + _HOLD + r"(?:shift|ctrl|control|cmd|command|alt|option|meta)\b" + _CONTROL
+    + r"|\bus(?:e|es|ed|ing)\s+(?:the\s+)?arrow\s+keys\b"
+    + r"|(?<![(\[+/])(?<![(\[+/]\s)\b(?:(?:ctrl|control|cmd|command|alt|option|shift|meta)\s*\+\s*)+"
     r"(?:[a-z0-9]|f(?:1[0-2]|[1-9])|enter|return|tab|space|escape|esc|delete|backspace|up|down|left|right|click)\b",
     re.IGNORECASE)
 

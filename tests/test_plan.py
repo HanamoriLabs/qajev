@@ -146,6 +146,16 @@ def test_a_goal_that_asks_jev_to_press_a_key_is_flagged(tmp_path, capsys):
     ("Use the arrow keys to move.", "Use the arrow keys"),
     ("Press ArrowRight twice.", "Press ArrowRight"),
     ("Hold Shift and click two rows.", "Hold Shift"),
+    # redteam on #223: a modifier by itself is a key only when held (L1); a chord after "/" is in its brackets (L2);
+    # and the misses it found (N3, N4)
+    ("Press Alt text to add a description.", None),
+    ("Press Control Center in the top bar.", None),
+    ("Click Save (Ctrl/Cmd+S).", None),
+    ("Hold down Alt and drag the box.", "Hold down Alt"),
+    ("Press Cmd+K to search.", "Cmd+K"),
+    ("Using the arrow keys, move it.", "Using the arrow keys"),
+    ("Press Page Down twice.", "Press Page Down"),
+    ("Press PageDown twice.", "Press PageDown"),
 ])
 def test_the_key_lint_reads_key_presses_and_not_buttons_or_labels(goal, says):
     from types import SimpleNamespace
