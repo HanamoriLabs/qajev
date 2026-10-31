@@ -100,14 +100,14 @@ def test_canvas_capture_is_a_page_expression_with_an_optional_hardware_gpu():
                          "scenarios": [{"name": "a", "url": "/", "expect": {"text": "x"}}]})
 
 
-def png(colour, size=(64, 48), mode="RGB"):
+def png(colour, size=(64, 48), mode="RGB", drawn=False):
     import io
 
     from PIL import Image
 
     out = io.BytesIO()
     with Image.new(mode, size, colour) as image:
-        if colour == "drawn":
+        if drawn:  # half the canvas lit: a scene, not one colour
             image.paste((200, 120, 40), (0, 0, size[0] // 2, size[1]))
         image.save(out, format="PNG")
     return out.getvalue()
@@ -116,7 +116,7 @@ def png(colour, size=(64, 48), mode="RGB"):
 def test_a_readback_is_read_on_a_grid_and_a_transparent_one_reads_black():
     assert pixels.flat_dark(pixels.grid_lumas(png((11, 11, 16))))
     assert pixels.flat_dark(pixels.grid_lumas(png((0, 0, 0, 0), mode="RGBA")))  # nothing drawn: transparent
-    assert not pixels.flat_dark(pixels.grid_lumas(png("drawn")))
+    assert not pixels.flat_dark(pixels.grid_lumas(png((11, 11, 16), drawn=True)))
     for bad in (b"", b"not an image", b"GIF89a"):
         with pytest.raises(pixels.PixelError):
             pixels.grid_lumas(bad)
@@ -143,7 +143,7 @@ def test_a_software_or_missing_webgpu_adapter_is_named(adapter, software):
 ])
 def test_no_readback_or_a_software_gpu_turns_a_pass_into_harness_and_keeps_a_failure(capture, says):
     graded, reason = runner.canvas_capture_grade("pass", "ok", capture)
-    assert graded == "harness" and reason.startswith(says) and reason.endswith("ok"), reason
+    assert graded == "harness" and says in reason and reason.endswith("; ok"), reason
     graded, reason = runner.canvas_capture_grade("fail", "bad", capture)
     assert graded == "fail" and reason.startswith("bad") and says in reason, reason
     assert runner.canvas_capture_grade("pass", "ok", {"problem": None, "software": None}) == ("pass", "ok")
