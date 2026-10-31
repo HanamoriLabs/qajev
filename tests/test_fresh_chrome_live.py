@@ -233,3 +233,35 @@ def test_a_failed_sign_in_leaves_no_daemon(site, tmp_path, monkeypatch):  # noqa
     assert only["outcome"] == "harness" and "sign-in failed" in only["reason"], only
     assert pids, "the chain must name its daemon"
     assert all(gone(pid) for pid in pids), "the daemon's process group still runs"
+
+
+def test_a_page_that_stops_answering_ends_its_test_at_once_and_the_next_test_runs(site, tmp_path):  # noqa: F811
+    # #802, 30 Oct: a browser that stopped answering cost 300-390 s a step. Two timeouts in a row with no dialog to
+    # answer: the test grades harness at once, and the next test runs in a fresh Chrome.
+    suite = tmp_path / "spin.yaml"
+    suite.write_text(f"""
+name: spin
+base_url: {site}
+devices: [desktop]
+scenarios:
+  - name: a page whose script never stops
+    about: fixture
+    url: /spin.html
+    expect: {{text: ["never stops"]}}
+  - name: a quick page
+    about: fixture
+    url: /index.html
+    expect: {{text: ["QAJev fixture"]}}
+""")
+    started = time.monotonic()
+    p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--headless", "--ephemeral",
+                        "--profile", f"spin-{os.getpid()}", "--out", str(tmp_path / "out"), "--json", "--quiet",
+                        "--load-high", "0"], capture_output=True, text=True, timeout=300,
+                       env={**os.environ, "QAJEV_RUNNER": "local", "QAJEV_CDP_TIMEOUT": "5"})
+    built = json.loads(p.stdout)
+    got = {r["name"]: r for r in built["scenarios"]}
+    spin = got["a page whose script never stops"]
+    assert spin["outcome"] == "harness" and "the browser stopped answering" in spin["reason"], spin
+    assert "timed out twice in a row (5 s each)" in spin["reason"], spin
+    assert got["a quick page"]["outcome"] == "pass", got["a quick page"]
+    assert time.monotonic() - started < 120  # not the test's cap (150 s), nor a 5 s wait for each later call

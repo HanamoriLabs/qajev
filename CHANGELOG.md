@@ -2,6 +2,15 @@
 
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Fixed
+
+- A browser that stops answering now ends its test at once. A browser command that times out twice in a row, with
+  no page dialog to answer, grades the test harness: "the browser stopped answering", with the machine's load at
+  both timeouts. Before, every later command waited 30 s again, so a step could cost 5-6 minutes. The next test
+  tries the browser again.
+
 ## 0.4.38: 31 Oct 2026
 
 ### Fixed

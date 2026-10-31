@@ -161,6 +161,22 @@ def test_ordinary_command_failure_or_timeout_does_not_poison_later_scenarios(gro
     assert seen["starts"] == ["earlier", "lost", "later"]
 
 
+def test_a_browser_that_stops_answering_costs_its_own_test_only(group):
+    # #802, 30 Oct: a command timed out twice in a row (30 s each) with no dialog open, and every later command of the
+    # step waited as long again. Now the test grades harness at once, and the next test tries the browser again.
+    run, fail, seen, _state, _scenarios, _opts, _cdp = group
+    fail["at"], fail["error"] = "navigate", TimeoutError("Runtime.evaluate timed out after 30s waiting for the daemon")
+    results = run()["results"]
+    assert [r["outcome"] for r in results] == ["pass", "harness", "pass", "skipped"]
+    assert results[1]["stop"] == "browser_stalled" and results[1].get("transport_lost") is not True
+    assert results[1]["reason"].startswith(
+        "the browser stopped answering: navigate timed out twice in a row (30 s each)")
+    assert results[1]["reason"].endswith("; the next test tries the browser again")
+    lost = [method for name, method in seen["raw"] if name == "lost"]
+    assert lost.count("navigate") == 2 and lost[-1] == "navigate"  # tried twice, then nothing more in that test
+    assert seen["starts"] == ["earlier", "lost", "later"]
+
+
 def test_later_multiplayer_scenario_does_not_start_after_lost_transport(group, monkeypatch):
     run, _fail, seen, _state, scenarios, _opts, _cdp = group
     scenarios[2].clients = [{"name": "player"}]

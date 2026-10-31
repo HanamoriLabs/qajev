@@ -1,0 +1,4 @@
+<!doctype html>
+<title>Spin</title>
+<p>A page whose script never stops, a moment after it loads: the browser answers nothing on this tab after that.</p>
+<script>addEventListener("load", () => setTimeout(() => { for (;;) {} }, 300));</script>
