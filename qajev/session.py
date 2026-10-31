@@ -518,7 +518,9 @@ FIND_JS = Template("""(() => {
       'only the control you mean' : '') };
   const secret = el.matches('input[type=password],input[autocomplete^="cc-"],input[name*=card i],input[name*=cvc i],' +
     'input[name*=cvv i],input[autocomplete=one-time-code],input[autocomplete$$=-password]');
-  el.scrollIntoView({ block: 'center', inline: 'center' });
+  // The browser's own scrollIntoView: a page can give one element its own (React Native Web gives its ScrollView a
+  // scrollTo that reads other arguments).
+  Element.prototype.scrollIntoView.call(el, { block: 'center', inline: 'center' });
   const r = el.getBoundingClientRect();
   const x = r.x + r.width / 2, y = r.y + r.height / 2;
   const hit = document.elementFromPoint(x, y);
@@ -558,7 +560,7 @@ AT_JS = Template("""(() => {
     el = document.querySelector($selector);
     if (!el) return { error: 'no element matches ' + $selector };
     if (el.dataset.qajevGuard) return { error: 'refused: the guard hid this control (' + el.dataset.qajevGuard + ')' };
-    el.scrollIntoView({ block: 'center', inline: 'center' });
+    Element.prototype.scrollIntoView.call(el, { block: 'center', inline: 'center' });
     const r = el.getBoundingClientRect();
     if (x > r.width || y > r.height)
       return { error: 'the point ' + x + ', ' + y + ' is outside ' + $selector + ' (' + Math.round(r.width) + ' x ' +

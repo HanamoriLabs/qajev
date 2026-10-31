@@ -17,6 +17,7 @@ def find(elements, selector="form button"):
     script = (f"const els = {page}.map((e) => ({{ dataset: e.guard ? {{ qajevGuard: e.guard }} : {{}}, id: e.id, "
               "tagName: 'BUTTON', classList: [], matches: () => false, scrollIntoView() {}, "
               "getBoundingClientRect: () => ({ x: 0, y: 0, width: 10, height: 10 }), contains: () => false }));"
+              "globalThis.Element = class Element { scrollIntoView() {} };"
               "globalThis.document = { querySelector: () => els[0] || null, querySelectorAll: () => els, "
               "elementFromPoint: () => els[0] };"
               f"console.log(JSON.stringify({FIND_JS.substitute(selector=json.dumps(selector))}));")
