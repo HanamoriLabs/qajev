@@ -71,6 +71,12 @@ their median grey level (`median`), the share within a few levels of it (`flat`)
 view. A pass, or a scenario with no checks, is then **harness**; a failure stays a failure, with the note. The check
 needs the screenshot, so `--no-shots` skips it.
 
+A scenario with `canvas_capture` ([Writing tests](writing-tests.md)) is graded on the canvas's own readback instead.
+It keeps a `canvas_capture` record: `image` (the saved readback, relative to the run folder), `problem` (why there is
+no image), `blank` (as `canvas_blank`), and with `gpu: hardware` the WebGPU `adapter` (`vendor`, `architecture`,
+`description`, `fallback`) and `software` (why it is no hardware GPU). A flat dark readback also gives a `canvas_blank`
+record with `readback: true`. A problem, a software adapter or a flat dark readback makes a pass **harness**.
+
 Each scenario ends with one outcome. The most important idea in QAJev: **a failure of the product and a failure of
 the test tool are kept apart.**
 

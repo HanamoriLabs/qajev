@@ -128,3 +128,29 @@ def flat_dark(lumas, *, dark=24, spread=6, share=0.97, least=40):
     if middle >= dark or near < share:
         return None
     return {"points": len(lumas), "median": middle, "flat": round(near, 3)}
+
+
+def grid_lumas(data, *, columns=24, rows=16):
+    """An image's grey levels (0-255) at a columns x rows grid of points, for flat_dark: the canvas's own readback
+    (canvas_capture: page). PNG, JPEG or WebP; transparent pixels read as black. Raises PixelError."""
+    if not isinstance(data, bytes) or not data:
+        raise PixelError("the readback is not an image")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(data)) as image:
+                if image.format not in {"PNG", "JPEG", "WEBP"}:
+                    raise PixelError(f"the readback is {image.format or 'an unknown'} image, not PNG, JPEG or WebP")
+                width, height = image.size
+                if not (0 < width <= _MAX_DIMENSION and 0 < height <= _MAX_DIMENSION and width * height <= _MAX_PIXELS):
+                    raise PixelError("the readback's size is outside the limits")
+                image.load()
+                with image.convert("RGBA") as rgba, Image.new("RGBA", image.size, (0, 0, 0, 255)) as black:
+                    with Image.alpha_composite(black, rgba) as flat, flat.convert("L") as grey:
+                        return [grey.getpixel((int(width * (i + 0.5) / columns), int(height * (j + 0.5) / rows)))
+                                for i in range(columns) for j in range(rows)]
+    except PixelError:
+        raise
+    except (OSError, SyntaxError, ValueError, struct.error, Image.DecompressionBombError,
+            Image.DecompressionBombWarning) as error:
+        raise PixelError("the readback is not a valid image") from error

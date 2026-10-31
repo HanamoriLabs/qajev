@@ -730,6 +730,27 @@ CANVAS_POINTS = """(() => {
   return {size: [c.width, c.height], share: most / (W * H), width: W, points};
 })()"""
 
+# The page's WebGPU adapter as the page gets it, for canvas_capture's gpu: hardware. No device is made.
+WEBGPU_ADAPTER_JS = """(async () => {
+  if (!navigator.gpu) return {none: 'the page has no WebGPU (navigator.gpu)'};
+  const a = await navigator.gpu.requestAdapter();
+  if (!a) return {none: 'the page got no WebGPU adapter'};
+  const i = a.info || {};
+  return {vendor: i.vendor || '', architecture: i.architecture || '', description: i.description || '',
+          fallback: !!(a.isFallbackAdapter ?? i.isFallbackAdapter)};
+})()"""
+_SOFTWARE_GPU = re.compile(r"swiftshader|llvmpipe|lavapipe|softpipe|software|warp", re.IGNORECASE)
+
+
+def software_adapter(adapter):
+    """Why a WebGPU adapter is no hardware GPU (a fallback, or SwiftShader, llvmpipe...), else None."""
+    if not isinstance(adapter, dict) or adapter.get("none"):
+        return (adapter or {}).get("none") or "the page's WebGPU adapter could not be read"
+    named = " ".join(str(adapter.get(k) or "") for k in ("vendor", "architecture", "description"))
+    if (soft := _SOFTWARE_GPU.search(named)) or adapter.get("fallback"):
+        return f"the page's WebGPU adapter is software ({soft.group(0) if soft else 'a fallback adapter'})"
+    return None
+
 # The browser's own user-agent client hints, in CDP's UserAgentMetadata shape: an override without them drops them.
 UA_HINTS_JS = """(async () => {
   const d = navigator.userAgentData;
@@ -1377,6 +1398,42 @@ class Session:
                      for x, y in seen["points"]]
         flat = pixels.flat_dark(lumas)
         return {**flat, "canvas": seen["size"], "share": round(seen["share"], 2)} if flat else None
+
+    def page_canvas(self, spec, path):
+        """canvas_capture: page. Runs the suite's readback expression, saves the image at path and reads it as
+        flat_dark does; with gpu: hardware, also the page's WebGPU adapter. -> {image, problem, blank, adapter,
+        software}: image is the saved path or None, problem says why there is no image."""
+        import base64
+
+        from . import pixels
+
+        out: dict[str, Any] = {"image": None, "problem": None, "blank": None, "adapter": None, "software": None}
+        try:
+            url = self.evaluate(spec["page"], timeout_ms=15000)
+        except (RuntimeError, TimeoutError) as error:
+            url, out["problem"] = None, f"the readback expression failed: {error}"
+        if url is not None and not (isinstance(url, str) and url.startswith("data:image/") and ";base64," in url):
+            out["problem"] = "the readback expression gave no data:image/...;base64 URL"
+        elif isinstance(url, str):
+            try:
+                raw = base64.b64decode(url.split(",", 1)[1], validate=True)
+                out["blank"] = pixels.flat_dark(pixels.grid_lumas(raw))
+                kind = url[len("data:image/"):url.index(";")].lower()
+                path = path.with_suffix({"jpeg": ".jpg", "webp": ".webp"}.get(kind, ".png"))
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(raw)
+                out["image"] = path
+            except (ValueError, pixels.PixelError) as error:
+                out["problem"] = f"the readback is no image: {error}"
+        elif out["problem"] is None:
+            out["problem"] = "the readback expression gave nothing"
+        if spec.get("gpu") == "hardware":
+            try:
+                out["adapter"] = self.evaluate(WEBGPU_ADAPTER_JS, timeout_ms=10000)
+            except (RuntimeError, TimeoutError) as error:
+                out["adapter"] = {"none": f"the WebGPU adapter could not be read: {error}"}
+            out["software"] = software_adapter(out["adapter"])
+        return out
 
     def screenshot(self, path, marked=True):
         """The viewport as a JPEG at path. marked: where the read-only guard hid a control, the picture shows a dashed

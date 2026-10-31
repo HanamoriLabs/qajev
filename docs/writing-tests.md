@@ -81,6 +81,26 @@ Use `qajev run` or `qa_run_suite` with the same suite. `qajev plan` describes th
 fault can name the comparison's exact plan words with `expect_fail`, as for other checks. Report downloads keep all
 three PNGs; Cloud publication needs the matching CLI and evidence-uploader versions on its runner.
 
+## A canvas the screenshot cannot show: `canvas_capture`
+
+QAJev reads the end screenshot of each web test. When the page's main canvas is one flat dark colour in that picture,
+the test is harness (see [Reports](reports.md)). Some browsers leave a WebGL or WebGPU canvas out of their screenshots
+while the page draws. Then give the suite (or one scenario) the canvas's own readback:
+
+```yaml
+canvas_capture:
+  page: "document.querySelector('canvas').toDataURL()"   # a data:image/...;base64 URL, or a Promise of one
+  gpu: hardware                                          # optional: the page's WebGPU adapter must be a real GPU
+```
+
+At the end of the test QAJev runs `page` itself, saves the image in the report (`shots/<test>-canvas.png`) and grades
+that image, not the screenshot. A readback that is one flat dark colour is harness: the page drew nothing. An empty
+canvas's readback is transparent, and QAJev reads it as black. If the expression fails, gives nothing or gives no image,
+the test is harness too. With `gpu: hardware`, QAJev also reads the page's WebGPU adapter. No adapter, a fallback
+adapter, or a software one (SwiftShader, llvmpipe, lavapipe...) makes the test harness. A failure stays a failure, with
+the note. For a WebGL or WebGPU canvas, draw with `preserveDrawingBuffer: true`, or read the canvas in the same frame
+as the draw, else the readback is empty.
+
 ## What only a look at the screen tells (Clef)
 
 Write one visible claim per `looks` entry. Each entry gets its own model question and probability; claims are not
