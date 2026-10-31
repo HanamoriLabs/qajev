@@ -32,7 +32,8 @@ something on a site, and to catch errors a browser can see.
   give expectations (expect_text / expect_url / expect_js). Jev's own DONE is only a hint; the verdict
   comes from those checks.
 - qa_run_suite for many scenarios (YAML suite; see qajev init). Lint a suite with qa_plan first (free, runs
-  nothing): it lists the tests that do not say what they prove, whose runs could never PASS.
+  nothing): it lists the tests that do not say what they prove, whose runs could never PASS, and the goals that ask
+  Jev to press a key (Jev cannot: use a key hook).
 - qa_project_run to prove a product: a project's stored objectives (qa_projects lists them) or one ad-hoc
   objective; reports are filed per project and listed by qa_reports.
 - Long runs: pass background=true to get a job id at once, then qa_job(job) for progress and partial results,
@@ -799,7 +800,8 @@ async def qa_reports(project: str | None = None, limit: int = 20) -> dict:
 async def qa_plan(suite: str) -> dict:
     """A suite's test plan without running it (free, no browser): each test's about and its checks in plain words,
     and `not_described`, the tests that do not say what they prove (a run would be INCOMPLETE), and `absent_only`, the
-    tests whose only checks say a text is absent (a blank page passes them). `suite`: a suite file
+    tests whose only checks say a text is absent (a blank page passes them), and `key_goals`, the tests whose goal asks
+    Jev to press a key, which it cannot (press it in a `key:` hook), each with the words found. `suite`: a suite file
     (scenarios:) or a game's steps suite (steps:). Lint a suite with it before running or sending a PR.
     `test_plan`: the approved test plan file the suite names (`plan:`): its path, whether it is approved, the
     approval line, the sha256 of the plan text above that line, and the problem when it is not approved."""
