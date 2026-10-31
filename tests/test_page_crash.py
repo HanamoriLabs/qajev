@@ -95,8 +95,8 @@ def group(monkeypatch, tmp_path):
         def check_host(self, *_a):
             pass
 
-        def navigate(self, url):
-            self.url = url
+        def navigate(self, url):  # as Session.navigate: the page is open, and the test reads it next
+            self.url, self.doing = url, "reading the page"
 
         def _crash_if_asked(self):
             if "/crash" in self.url:
@@ -205,6 +205,7 @@ def crashable():
 def test_browser_hears_a_real_renderer_crash_and_the_next_page_loads(crashable, site):
     tab, _cdp = crashable
     tab.navigate(site + "/")
+    assert tab.doing == "reading the page"
     # chrome://kill ends the renderer, as a real crash does. Page.crash and chrome://crash only hang it in headless
     # Chromium 153 on Linux, with no crash event (measured on the test box, 1 Nov).
     tab.call("Page.navigate", url="chrome://kill")
@@ -216,7 +217,8 @@ def test_browser_hears_a_real_renderer_crash_and_the_next_page_loads(crashable, 
     with pytest.raises(session.PageCrashed):
         tab.evaluate("1")
     assert time.monotonic() - began < 2  # no call waits on the dead page
-    assert tab.page_crash()["url"] in {site + "/", "chrome://kill/"}  # the browser's own word for the dead tab
+    assert tab.page_crash()["url"] in {site + "/", "chrome://kill/"}  # the browser's word for the dead tab
+    assert tab.page_crash()["step"] == "reading the page"  # the kill went by a raw call, not by navigate
     tab.recover_crash()
     tab.navigate(site + "/")
     assert tab.evaluate("1 + 1") == 2 and tab.page_crash() is None

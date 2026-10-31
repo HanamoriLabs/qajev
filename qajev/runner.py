@@ -204,7 +204,6 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     started = time.monotonic()
     if hasattr(session, "begin_test"):  # the last test's page: its frames were named under that test
         session.begin_test()
-    session.doing = "setting up the tab"  # what the test is doing, for a page that crashes (_crashed_result)
     session.assists = []  # this scenario's own; a hook failing before Jev's loop must not inherit the last one's
     session.react_log, session.react_frames = [], 0  # frames and releases from react hooks, this scenario's own
     session.last_capture_viewport = None
@@ -212,12 +211,11 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     session.shot_prefix = slug(scenario.name)
     quiet, load1 = wait_for_quiet(opts)
     scheme = scenario.color_scheme or getattr(opts, "color_scheme", None)
-    cache = _cache(scenario, opts)
     result = {
         "name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
         "device": scenario.device, "load1": round(load1, 1), "checks": [], "findings": [], "screens": [],
         "blocked_writes": [], "guard_hidden": 0, "history": [], "jev": None, "shot": None,
-        **({"color_scheme": scheme} if scheme else {}), **_cache_record(cache),
+        **({"color_scheme": scheme} if scheme else {}), **_cache_record(_cache(scenario, opts)),
     }
     if not quiet:
         return _finish(result, "skipped", f"machine busy (load1 {load1:.0f})", started)
@@ -279,7 +277,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         if hasattr(session, "set_color_scheme"):  # a stand-in session in tests may not have it
             session.set_color_scheme(scheme)
         session.set_device(scenario.device)
-        _prepare_tab(session, scenario, opts, cache)
+        _prepare_tab(session, scenario, opts)
         session.arm(scenario.mode, scenario.speech)
         if hasattr(session, "configure_ux"):
             ux_observer = session.configure_ux(opts, run_dir, scenario.name, getattr(scenario, "ux_options", None))
@@ -289,7 +287,6 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             session.use_pad()  # before the page loads: a game may read its pads only once, at load
         if scenario.url:
             session.check_host(scenario.url)
-            session.doing = f"opening {scenario.url}"  # a page that crashes names it (_crashed_result)
             error = session.navigate(scenario.url)
             if error:
                 stop, detail = "unreachable", error
@@ -303,13 +300,10 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             _emit(opts, "step", scenario=scenario.name, at=time.time(),
                   doing="reading the page and running its checks" if has_page_checks(scenario.expect)
                   else "reading the page")
-            session.doing = "reading the page"
             read()
             findings += verdict.document_findings(observed.get("status"), scenario.expect, scenario=scenario.name,
                                                   url=observed.get("url"))
-            for n, hook in enumerate(scenario.before, 1):
-                session.doing = f"before hook {n} of {len(scenario.before)}"
-                session.run_hook(hook, observed.get("url") or scenario.url)
+            _run_hooks(session, "before", scenario.before, observed.get("url") or scenario.url)
             if scenario.before:  # the checks judge the page after its hooks (verse2, 6 Oct: a wait_for "did not
                 read()           # wait" because the checks used the page as read before it ran)
             if scenario.goal:
@@ -330,7 +324,6 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                           **({"stale": s["stale"]} if s.get("stale") else {}))
 
                 held = bool(before) and verdict.all_ok(before)
-                session.doing = "Jev's goal"
                 with vision.seeing(session.screen_image if scenario.vision else None):
                     stop, detail = drive(session, scenario, read, page_ok, started, step, decided, held=held)
             else:
@@ -358,7 +351,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     checks = []
     ran = set()  # the expectations beyond the page's own that did run
     if stop not in {"unreachable", "interrupted", "viewport_mismatch"} and transport_error() is None:
-        session.doing = "the checks"
+        _doing(session, "the checks")
         try:
             if stop != "reached" and has_page_checks(scenario.expect):
                 if not page_ok():
@@ -396,9 +389,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                     stop, detail = "model_error", f"while judging looks: {e}"
             if stop not in verdict.HARNESS_STOPS:
                 ran.add("after")  # a hook that fails is named by the stop itself, not as never run
-                for n, hook in enumerate(scenario.after, 1):
-                    session.doing = f"after hook {n} of {len(scenario.after)}"
-                    session.run_hook(hook, observed.get("url") or scenario.url)
+                _run_hooks(session, "after", scenario.after, observed.get("url") or scenario.url)
                 says = scenario.expect.get("says") or {}  # the author's words for these checks (the test plan)
                 for probe in scenario.expect.get("fetch", []):
                     checks.append(verdict.fetch_check(probe, session.fetch(probe) or {}))
@@ -652,6 +643,7 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None, he
     """Jev's loop with QAJev's judgment around it. Returns (stop, detail). step(doing, **extra) hears each move;
     decided(decision) hears each of the model's decisions as it is made, stale ones too (qajev top's decisions view).
     held: the page's checks already held before Jev's first move, so they count as reached only after one."""
+    _doing(session, "Jev's goal")
     agent = session.agent
     state = agent.state
     step = step or (lambda doing, **extra: None)
@@ -777,6 +769,19 @@ def _transport_result(scenario, error, started, result=None):
                    "harness", f"browser/daemon transport lost: {error}; no automatic retry", started)
 
 
+def _doing(session, words):
+    """What the test is doing now, in words, for a page that crashes (_crashed_result). Session.begin_test and
+    Session.navigate say the rest: run_scenario is at the type checker's limit of paths."""
+    session.doing = words
+
+
+def _run_hooks(session, kind, hooks, url):
+    """The test's before or after hooks, in order, each named for a page that crashes ("before hook 2 of 3")."""
+    for n, hook in enumerate(hooks, 1):
+        _doing(session, f"{kind} hook {n} of {len(hooks)}")
+        session.run_hook(hook, url)
+
+
 def _cache(scenario, opts):
     """cold when the test or the run asks for a cold cache, else None."""
     return getattr(scenario, "cache", None) or getattr(opts, "cache", None)
@@ -786,10 +791,10 @@ def _cache_record(cache):
     return {"cache": cache} if cache else {}
 
 
-def _prepare_tab(session, scenario, opts, cache):
+def _prepare_tab(session, scenario, opts):
     """The test's cache and console_keep patterns, before its page loads and its guard is armed."""
     if hasattr(session, "set_cache"):  # a stand-in session in tests may not have it
-        session.set_cache(cache)
+        session.set_cache(_cache(scenario, opts))
     session.console_keep = list(dict.fromkeys([*(getattr(opts, "console_keep", None) or ()),
                                                *getattr(scenario, "console_keep", [])]))
 

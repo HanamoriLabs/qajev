@@ -930,6 +930,7 @@ class Session:
         self.loaded_at = 0.0  # when the last navigation or reload ended (a click into a frame waits FRAME_INPUT_S)
         self.last_test_page = None  # the page the last test left this tab on (begin_test): its frames are named
         self.crash = None  # {url, step} once this test's page crashed (page_crash)
+        self.doing = None  # what the test is doing, in words, for a page that crashes
         self.cache = None  # "cold": every load of this test goes to the network (set_cache)
         self.console_keep = ()  # this test's console_keep patterns: lines that match are always kept (guard.js)
         # Jev's agent and its Browser; a multiplayer client has a Tab and no agent (only Jev's own paths use one)
@@ -1027,7 +1028,8 @@ class Session:
 
     def page_crash(self):
         """{url, step} when this tab's page crashed since the test began (netlog hears Inspector.targetCrashed), else
-        None. step: what the test was doing when QAJev first heard of it (self.doing, set by runner.run_scenario).
+        None. step: what the test was doing when QAJev first heard of it (self.doing: begin_test, navigate and the
+        runner set it).
         From then on every call of this test fails at once (PageCrashed), and runner.run_group grades the test fail."""
         if getattr(self, "crash", None) is not None:
             return self.crash
@@ -1369,6 +1371,7 @@ class Session:
         return found
 
     def navigate(self, url, timeout=30.0):
+        self.doing = f"opening {url}"  # what the test is doing, for a page that crashes (page_crash)
         self.carry()
         result = self.call("Page.navigate", url=url)
         if result.get("errorText"):
@@ -1386,6 +1389,7 @@ class Session:
                 self.guard_settled()
         self.minimize()
         self.loaded_at = time.monotonic()
+        self.doing = "reading the page"
         return None
 
     def reload(self, timeout=30.0):
@@ -1408,6 +1412,7 @@ class Session:
         under this test (that test's own looks named them). Its blocked writes still carry on. A page that crashed in
         the last test is left first: a new page starts a new renderer, and the crash was that test's."""
         self.recover_crash()
+        self.doing = "setting up the tab"
         self.carried.pop("frames_not_observed", None)
         self.carried.pop("frames_accepted", None)
         for key in CONSOLE_KEYS:
