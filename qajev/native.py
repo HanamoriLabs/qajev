@@ -345,6 +345,27 @@ class GodotGame:
             shutil.rmtree(self.user_dir, ignore_errors=True)
 
 
+PAGE_CRASHED = "the page crashed"  # electron.App, on Inspector.targetCrashed
+
+
+def _crash_grade(game, result):
+    """A page that crashed during this step ("Aw, Snap": electron.App hears Inspector.targetCrashed) fails the step,
+    whatever stopped it: a crash is the product's fault, never harness. A crash the suite asked for (crash_renderer:)
+    is taken out of game.errors, so it is not graded."""
+    errors = getattr(game, "errors", None)
+    if not isinstance(errors, list):
+        return
+    seen, (graded_list, graded) = errors.count(PAGE_CRASHED), getattr(game, "crashes_graded", (None, 0))
+    graded = graded if graded_list is errors else 0  # a new launch has a new list
+    game.crashes_graded = (errors, seen)
+    if seen <= graded:
+        return
+    step = result.get("name")
+    result.update(outcome="fail", stop="page_crashed", page_crashed={"url": None, "last_step": step},
+                  reason=f"the page crashed during the step {step!r}" + (f"; {result['reason']}"
+                                                                         if result.get("reason") else ""))
+
+
 def _track_output(game, result, *, check_errors=None, capture=None):
     captures = getattr(game, "_output_captures", [])
     if not captures:
@@ -1474,6 +1495,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
             if r.get("stop") != "browser_error":
                 fresh = len(results)
                 problems = set()  # a new process: its watchdog starts again, and so do its problems
+            _crash_grade(game, r)
             _track_output(game, r, check_errors=(step.get("expect") or {}).get("no_errors", True))
             results.append(r)
             if callable(emit):
@@ -1576,6 +1598,7 @@ def run_session(game, steps, *, ledger, run_dir, shots=True, emit=None, vision=F
         if r.get("idled_s") is not None:  # the step's time includes its idle (it was 0 s after a 45 s idle)
             r["seconds"] = round(time.monotonic() - began, 2)
         r["cost_usd"] = round(ledger.spent() - spent, 5)
+        _crash_grade(game, r)
         _track_output(game, r, check_errors=(step.get("expect") or {}).get("no_errors", True))
         results.append(r)
         if callable(emit):

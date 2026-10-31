@@ -103,7 +103,11 @@ How to write a check:
 Outcomes: `pass`; `fail` (the product is wrong); `stuck` (Jev found no way forward, often a usability problem:
 look at the screenshot); `harness` (QAJev's own problem: says nothing about the product, never report it as a
 bug); `unverified` (no expectations given); `skipped`. The run's gate is PASS, FAIL or INCOMPLETE. Tell the person
-the gate, each non-pass outcome with its reason, the findings, the cost and the `report_html` path.
+the gate, each non-pass outcome with its reason, the findings, the cost and the `report_html` path. A page that
+crashes ("Aw, Snap") is `fail`: "the page crashed at <URL>; last step: <step>". To chase a crash, run with
+`cache: cold` (CLI `--cold-cache`, tool `cold_cache: true`): every load skips the cache and the service worker. Give
+`console_keep: [pattern]` (CLI `--console-keep`, tool `console_keep`) to keep the page's matching console lines
+apart from the 50-line cap, under `page_console_kept`.
 
 Long runs: pass `background: true` (CLI `--background`), then follow with `qa_job` and stop with `qa_stop`. Runs
 take turns, one at a time per machine; never start a second copy of a queued run. A run also waits while another

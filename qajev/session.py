@@ -55,12 +55,20 @@ class LeftSite(RuntimeError):
     pass
 
 
+CONSOLE_KEYS = ("page_console", "page_console_omitted", "page_console_kept", "page_console_kept_omitted")  # guard.js
+
+
 class TransportLost(RuntimeError):
     """The connection is gone; its state and unacknowledged actions cannot be replayed safely."""
 
 
 class BrowserStalled(TimeoutError):
     """The browser stopped answering this test: a command timed out twice in a row with no page dialog to answer."""
+
+
+class PageCrashed(BrowserStalled):
+    """The page's renderer crashed (Chrome's "Aw, Snap"): the rest of the test fails at once, as for a stalled browser,
+    but the test grades fail. A page that crashes is the product's fault (Verse, 1 Nov: on a cold cache)."""
 
 
 def transport_error():
@@ -498,7 +506,7 @@ PROBE_JS = Template("""(async () => {
   // Include diagnostics emitted by the check itself, in the same read that carries its verdict.
   if (probe && q.drainPageConsole) {
     const after = q.drainPageConsole();
-    for (const key of ['page_console', 'page_console_omitted'])
+    for (const key of ['page_console', 'page_console_omitted', 'page_console_kept', 'page_console_kept_omitted'])
       probe[key] = (probe[key] || []).concat(after[key] || []);
   }
   return { probe, url: location.href, title: document.title, status,
@@ -921,6 +929,10 @@ class Session:
         self.carried = {}  # what a page's guard recorded before the tab left it, for the next probe
         self.loaded_at = 0.0  # when the last navigation or reload ended (a click into a frame waits FRAME_INPUT_S)
         self.last_test_page = None  # the page the last test left this tab on (begin_test): its frames are named
+        self.crash = None  # {url, step} once this test's page crashed (page_crash)
+        self.doing = None  # what the test is doing, in words, for a page that crashes
+        self.cache = None  # "cold": every load of this test goes to the network (set_cache)
+        self.console_keep = ()  # this test's console_keep patterns: lines that match are always kept (guard.js)
         # Jev's agent and its Browser; a multiplayer client has a Tab and no agent (only Jev's own paths use one)
         self.agent: Any
         self.browser: Any
@@ -988,6 +1000,8 @@ class Session:
                 observer.safe(observer.after)
 
     def call(self, method, **params):
+        if self.page_crash() is not None:  # the page is gone: each call would wait out its timeout for nothing
+            raise browser_stalled() or PageCrashed("the page crashed")
         # An inactive or minimized Linux surface can wait a full CDP timeout for its next frame.
         if method == "Page.captureScreenshot" and sys.platform == "linux":
             self.browser.call("Page.bringToFront")
@@ -1011,6 +1025,48 @@ class Session:
         """A condition's settled value is truthy (a throw, a rejection or no answer counts as not holding)."""
         r = self.evaluate(awaited(expression)) or {}
         return "error" not in r and bool(r.get("value"))
+
+    def page_crash(self):
+        """{url, step} when this tab's page crashed since the test began (netlog hears Inspector.targetCrashed), else
+        None. step: what the test was doing when QAJev first heard of it (self.doing: begin_test, navigate and the
+        runner set it).
+        From then on every call of this test fails at once (PageCrashed), and runner.run_group grades the test fail."""
+        if getattr(self, "crash", None) is not None:
+            return self.crash
+        net = getattr(self, "net", None)
+        if net is None or getattr(net, "crashed", None) is None:
+            return None
+        url = None
+        with contextlib.suppress(Exception):  # the browser's own word for the tab; the runner falls back to its own
+            url = self.jev.cdp("Target.getTargetInfo", targetId=self.browser.target)["targetInfo"].get("url")
+        self.crash = {"url": url, "step": getattr(self, "doing", None)}
+        if (transport := getattr(_jev, "transport", None)) is not None and getattr(transport, "stalled", None) is None:
+            transport.stalled = PageCrashed(f"the page crashed at {url or 'its last address'}")
+        return self.crash
+
+    def recover_crash(self):
+        """Leave a page that crashed: a new page starts a new renderer. The crash was the last test's (or page's)."""
+        net = getattr(self, "net", None)
+        if getattr(self, "crash", None) is None and getattr(net, "crashed", None) is None:
+            return
+        self.crash = None
+        if net is not None:
+            net.crashed = None
+        if isinstance(browser_stalled(), PageCrashed):
+            clear_stall()
+        with contextlib.suppress(RuntimeError, TimeoutError):
+            self.call("Page.navigate", url="about:blank")
+
+    def set_cache(self, cache):
+        """cache: cold: Chrome's cache and the site's service worker are bypassed for every load of the test, as on a
+        visitor's first visit (Network.setCacheDisabled, Network.setBypassServiceWorker); None: as a normal browser."""
+        cold = cache == "cold"
+        if cold == (getattr(self, "cache", None) == "cold"):
+            return
+        self.call("Network.enable")
+        self.call("Network.setCacheDisabled", cacheDisabled=cold)
+        self.call("Network.setBypassServiceWorker", bypass=cold)
+        self.cache = cache
 
     def minimize(self):
         """Keep a visible run's window out of the way. The page still draws: Chrome's flags here
@@ -1051,6 +1107,7 @@ class Session:
             redact_emails=self.guard_opts.get("redact_emails", False),
             allow_secret_fields=self.guard_opts.get("allow_secret_fields", False),
             allow_destructive=self.guard_opts.get("allow_destructive", False),
+            console_keep=getattr(self, "console_keep", ()),
         )
         if self.guard_cfg and cfg["v"] == self.guard_cfg["v"]:
             return
@@ -1199,7 +1256,7 @@ class Session:
         with contextlib.suppress(RuntimeError, TimeoutError):
             got = self.evaluate(DRAIN_JS, timeout_ms=3000) or {}
             for key, items in got.items():
-                if leaving_last_test and key in ("page_console", "page_console_omitted"):
+                if leaving_last_test and key in CONSOLE_KEYS:
                     continue
                 self.carried.setdefault(key, []).extend(items or [])
         for key, items in self.frames_drained().items():
@@ -1314,6 +1371,7 @@ class Session:
         return found
 
     def navigate(self, url, timeout=30.0):
+        self.doing = f"opening {url}"  # what the test is doing, for a page that crashes (page_crash)
         self.carry()
         result = self.call("Page.navigate", url=url)
         if result.get("errorText"):
@@ -1331,6 +1389,7 @@ class Session:
                 self.guard_settled()
         self.minimize()
         self.loaded_at = time.monotonic()
+        self.doing = "reading the page"
         return None
 
     def reload(self, timeout=30.0):
@@ -1350,11 +1409,14 @@ class Session:
 
     def begin_test(self):
         """A new test starts on this tab: the last test's page is marked, so leaving it does not name its frames
-        under this test (that test's own looks named them). Its blocked writes still carry on."""
+        under this test (that test's own looks named them). Its blocked writes still carry on. A page that crashed in
+        the last test is left first: a new page starts a new renderer, and the crash was that test's."""
+        self.recover_crash()
+        self.doing = "setting up the tab"
         self.carried.pop("frames_not_observed", None)
         self.carried.pop("frames_accepted", None)
-        self.carried.pop("page_console", None)
-        self.carried.pop("page_console_omitted", None)
+        for key in CONSOLE_KEYS:
+            self.carried.pop(key, None)
         self.last_test_page = self._document()
 
     def _document(self):

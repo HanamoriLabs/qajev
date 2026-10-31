@@ -54,7 +54,7 @@ something on a site, and to catch errors a browser can see.
   `about:` on each scenario or step of a suite (and on the suite). The person reads it next to the result, so a
   pass means something. A result lists the tests without one under `about_missing`.
 
-Outcomes: pass; fail (product wrong); stuck (Jev found no way forward: verify by hand, often UX);
+Outcomes: pass; fail (product wrong, or the page crashed); stuck (Jev found no way forward: verify by hand, often UX);
 harness (budget/stale/loop/cap/model/browser trouble, Jev said DONE without a single action, a goal whose checks
 held before Jev moved and Jev took no action, a local server not answering, or a js check whose own code broke: says
 nothing about the product); unverified (no checks);
@@ -97,6 +97,20 @@ def _cpu_args(cpu_throttle):
     if isinstance(cpu_throttle, bool) or not isinstance(cpu_throttle, int) or not 1 <= cpu_throttle <= 8:
         raise ToolError("cpu_throttle must be a whole number from 1 to 8")
     return ["--cpu-throttle", str(cpu_throttle)]
+
+
+def _keep_args(console_keep, cold_cache):
+    """console_keep: patterns whose console lines are always kept; cold_cache: every load as on a first visit."""
+    if isinstance(console_keep, str):
+        console_keep = [console_keep]
+    from .suite import SuiteError
+    from .suite import console_keep as patterns
+
+    try:
+        kept = patterns(console_keep or None, "console_keep")
+    except SuiteError as e:
+        raise ToolError(str(e)) from None
+    return [f"--console-keep={p}" for p in kept] + (["--cold-cache"] if cold_cache else [])
 
 
 def _scheme_args(color_scheme):
@@ -418,6 +432,8 @@ async def qa_check(
     real_devices: list[str] | None = None,
     motion: str | None = None,
     color_scheme: str | None = None,
+    console_keep: list[str] | None = None,
+    cold_cache: bool = False,
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
     plan: str | None = None,
@@ -467,6 +483,9 @@ async def qa_check(
     address and state "queued" at once, background or not, with no gate: qa_job(job) gives the gate when it ends.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
+    console_keep: patterns (JavaScript regular expressions): the page's console lines that match are always kept,
+    apart from the 50-line cap (up to 200 a test). cold_cache: every load skips Chrome's cache and the service worker,
+    as a first visit. A page that crashes ("Aw, Snap") fails its test: the reason names its URL and the last step.
     """
     where = _runner_args(runner, serve, model)
     args = ["check", url, "--mode", mode, *(["--device", device] if device else []), "--max-actions",
@@ -503,6 +522,7 @@ async def qa_check(
         args.append("--allow-destructive")
     args += _motion_args(motion)
     args += _scheme_args(color_scheme)
+    args += _keep_args(console_keep, cold_cache)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)
@@ -529,6 +549,8 @@ async def qa_run_suite(
     real_devices: list[str] | None = None,
     motion: str | None = None,
     color_scheme: str | None = None,
+    console_keep: list[str] | None = None,
+    cold_cache: bool = False,
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
     plan: str | None = None,
@@ -563,6 +585,9 @@ async def qa_run_suite(
     address and state "queued" at once, background or not, with no gate: qa_job(job) gives the gate when it ends.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
+    console_keep: patterns (JavaScript regular expressions): the page's console lines that match are always kept,
+    apart from the 50-line cap (up to 200 a test). cold_cache: every load skips Chrome's cache and the service worker,
+    as a first visit. A page that crashes ("Aw, Snap") fails its test: the reason names its URL and the last step.
     """
     where = _runner_args(runner, serve, model)
     if bool(suite_path) == bool(suite_yaml):
@@ -592,6 +617,7 @@ async def qa_run_suite(
         args.append("--allow-destructive")
     args += _motion_args(motion)
     args += _scheme_args(color_scheme)
+    args += _keep_args(console_keep, cold_cache)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)
@@ -616,6 +642,7 @@ async def qa_smoke(
     devices: list[str] | None = None,
     motion: str | None = None,
     color_scheme: str | None = None,
+    cold_cache: bool = False,
     cpu_throttle: int | None = None,
     ux: str | bool | None = None,
     plan: str | None = None,
@@ -651,6 +678,8 @@ async def qa_smoke(
     address and state "queued" at once, background or not, with no gate: qa_job(job) gives the gate when it ends.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
+    cold_cache: every page load skips Chrome's cache and the service worker, as a first visit. A page that crashes
+    ("Aw, Snap") fails, and the crawl goes on.
     """
     where = _runner_args(runner, serve, model)
     args = ["smoke", url, "--max-pages", str(max_pages), *(["--device", device] if device else []),
@@ -660,6 +689,7 @@ async def qa_smoke(
         args.append("--check-links")
     args += _motion_args(motion)
     args += _scheme_args(color_scheme)
+    args += _keep_args(None, cold_cache)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices)
     args += _plan_args(plan)
@@ -709,6 +739,8 @@ async def qa_project_run(
     real_devices: list[str] | None = None,
     motion: str | None = None,
     color_scheme: str | None = None,
+    console_keep: list[str] | None = None,
+    cold_cache: bool = False,
     cpu_throttle: int | None = None,
     allow_destructive: bool = False,
     plan: str | None = None,
@@ -746,6 +778,9 @@ async def qa_project_run(
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     Without runner, the project's `runner` in project.toml counts after QAJEV_RUNNER.
+    console_keep: patterns (JavaScript regular expressions): the page's console lines that match are always kept,
+    apart from the 50-line cap (up to 200 a test). cold_cache: every load skips Chrome's cache and the service worker,
+    as a first visit. A page that crashes ("Aw, Snap") fails its test: the reason names its URL and the last step.
     """
     where = _runner_args(runner, serve, model)
     args = ["run", "--project", project, *_browser_args(profile, None, headless, browser_runs)]
@@ -761,6 +796,7 @@ async def qa_project_run(
         args.append("--allow-destructive")
     args += _motion_args(motion)
     args += _scheme_args(color_scheme)
+    args += _keep_args(console_keep, cold_cache)
     args += _cpu_args(cpu_throttle)
     args += _devices_args(devices, real_devices)
     args += _plan_args(plan)

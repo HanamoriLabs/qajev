@@ -72,6 +72,8 @@ goal = "You are in the UK. Find what the Pro plan costs per month. Stop when tha
 expect = { visible = ["£11.50"] }
 tags = ["core"]
 # color_scheme = "dark"   # light | dark: the page is told the system prefers it (default: the browser's own)
+# cache = "cold"          # every load skips Chrome's cache and the service worker, as a first visit
+# console_keep = ["^\\[boot\\]"]   # the console lines that match are always kept (JavaScript regular expressions)
 
 [[objective]]
 name = "a visitor sends feedback"

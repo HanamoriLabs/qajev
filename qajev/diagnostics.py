@@ -8,6 +8,7 @@ from qajev_upload_privacy import sanitize_text, sanitize_upload
 from .config import redact
 
 CONSOLE_LINES = 50
+CONSOLE_KEPT_LINES = 200  # console_keep: the lines that match, on a cap of their own
 CONSOLE_CHARACTERS = 500
 CONSOLE_LEVELS = {"log", "info", "warn", "error"}
 DIAGNOSTIC_BYTES = 64 * 1024
@@ -51,10 +52,39 @@ def clean_evidence(value: dict) -> dict:
     return {"_qajev_truncated": f"[truncated {len(shown)} characters]"}
 
 
+def _console_line(item):
+    return isinstance(item, dict) and item.get("level") in CONSOLE_LEVELS and isinstance(item.get("text"), str)
+
+
+def _cleaned(item):
+    text = sanitize_text(redact(item["text"]))
+    return {"level": item["level"], "text": text[:CONSOLE_CHARACTERS],
+            **({"truncated": True} if len(text) > CONSOLE_CHARACTERS else {})}
+
+
+def _count(result, key, counts):
+    for count in counts or []:
+        if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+            result[key] = result.get(key, 0) + count
+
+
 def keep_console(result: dict, probe: dict) -> None:
-    """Accumulate across reads and navigations, with one cap for the whole scenario."""
+    """Accumulate across reads and navigations, with one cap for the whole scenario. The lines that match the test's
+    console_keep come apart (page_console_kept), on a cap of their own that no other line counts against."""
+    for item in probe.get("page_console_kept") or []:
+        if not _console_line(item):
+            continue
+        kept = result.setdefault("page_console_kept", [])
+        if len(kept) >= CONSOLE_KEPT_LINES:
+            result["page_console_kept_omitted"] = result.get("page_console_kept_omitted", 0) + 1
+            continue
+        kept.append(_cleaned(item))
+    _count(result, "page_console_kept_omitted", probe.get("page_console_kept_omitted"))
+    for pattern in probe.get("console_keep_broken") or []:
+        if isinstance(pattern, str) and pattern not in result.setdefault("console_keep_broken", []):
+            result["console_keep_broken"].append(pattern)
     for item in probe.get("page_console") or []:
-        if not isinstance(item, dict) or item.get("level") not in CONSOLE_LEVELS or not isinstance(item.get("text"), str):
+        if not _console_line(item):
             continue
         kept = result.setdefault("page_console", [])
         if len(kept) >= CONSOLE_LINES:
@@ -64,9 +94,5 @@ def keep_console(result: dict, probe: dict) -> None:
             if routine is None:
                 continue
             kept.pop(routine)
-        text = sanitize_text(redact(item["text"]))
-        kept.append({"level": item["level"], "text": text[:CONSOLE_CHARACTERS],
-                     **({"truncated": True} if len(text) > CONSOLE_CHARACTERS else {})})
-    for count in probe.get("page_console_omitted") or []:
-        if isinstance(count, int) and not isinstance(count, bool) and count > 0:
-            result["page_console_omitted"] = result.get("page_console_omitted", 0) + count
+        kept.append(_cleaned(item))
+    _count(result, "page_console_omitted", probe.get("page_console_omitted"))

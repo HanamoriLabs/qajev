@@ -167,6 +167,15 @@ test ends at once; before, every later command waited as long again. The reason 
 timeouts. Often a page script never stopped, or the machine was too busy. The next test tries the browser again.
 The tests that `depends_on` it are skipped, as after any test that did not pass.
 
+**"the page crashed at <URL>; last step: <step>" (fail)**
+The page's renderer crashed (Chrome's "Aw, Snap"), so the test fails: a crash is the product's fault. The step says
+what the test was doing when QAJev heard of it: opening the page, a hook, Jev's last action, or the checks. Run it
+again with `cache: cold` (or `--cold-cache`) to see whether it happens only on a first visit. Add `console_keep`
+patterns for the page's own start-up lines, so they stay in the report however much the page logs. A multiplayer
+test names the client, an Electron step names the step, and a sign-in page that crashes fails the tests it
+blocked. A renderer that hangs instead of ending sends no crash event: that test still grades harness, "the
+browser stopped answering". In headless Chromium on Linux, `Page.crash` and `chrome://crash` hang it that way.
+
 **The MCP tools do not show up in my agent**
 Check that `qajev mcp` runs from the agent's environment (use the full path from `which qajev`), then restart the
 agent's session.

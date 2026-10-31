@@ -427,6 +427,8 @@ def markdown(data):
                 if check.get("evidence_type") != "js":
                     lines += [" · ".join(f"[{key}]({evidence[key]})" for key in
                                          ("crop", "reference", "panel", "difference") if evidence.get(key)), ""]
+        if r.get("cache") == "cold":
+            lines += ["", "Cache: cold (every load skipped Chrome's cache and the service worker)", ""]
         if r.get("page_console") or r.get("page_console_omitted"):
             lines += ["", "Page console:", ""]
             for entry in r.get("page_console") or []:
@@ -434,6 +436,17 @@ def markdown(data):
                 lines += ["    " + text.replace("\n", "\n    ")]
             if r.get("page_console_omitted"):
                 lines += ["", f"{r['page_console_omitted']} console lines omitted"]
+            lines += [""]
+        if r.get("page_console_kept") or r.get("page_console_kept_omitted") or r.get("console_keep_broken"):
+            lines += ["", "Page console, lines kept by console_keep:", ""]
+            for entry in r.get("page_console_kept") or []:
+                text = f"{entry.get('level')}: {entry.get('text')}" + (" [truncated]" if entry.get("truncated") else "")
+                lines += ["    " + text.replace("\n", "\n    ")]
+            if r.get("page_console_kept_omitted"):
+                lines += ["", f"{r['page_console_kept_omitted']} matching lines cut (over 200)"]
+            for pattern in r.get("console_keep_broken") or []:
+                lines += ["", f"console_keep pattern {pattern!r} is not a JavaScript regular expression: it kept "
+                              "nothing"]
             lines += [""]
         diagnostics = r.get("diagnostics")
         if isinstance(diagnostics, dict):

@@ -9,6 +9,25 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `canvas_dark: "<why>"` on a scenario whose canvas is dark on purpose. A flat dark canvas then keeps the test's
   outcome, and the reason ends with the scenario's words. A reason is required: `canvas_dark: true` is refused, and so
   is a suite-level `canvas_dark`, which would turn the check off for every test.
+- `console_keep: [pattern, ...]` on a scenario, a suite or a project objective, `--console-keep PATTERN` on the
+  command line, and `console_keep` on `qa_check`, `qa_run_suite` and `qa_project_run`. The page's console lines that
+  match a pattern (a JavaScript regular expression) are always kept, under `page_console_kept`. They have a cap of
+  their own, 200 lines a test, and the 50 other lines never push them out. `page_console_kept_omitted` counts the
+  matching lines over the cap. A pattern in Python-only syntax is refused when the suite loads. The report shows the
+  kept lines in a section of their own.
+- `cache: cold` on a scenario, a suite or a project objective, `--cold-cache` on the command line, and `cold_cache`
+  on `qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run`. Every load of the test then skips Chrome's cache
+  and the site's service worker, as a visitor's first visit does. Before, only the first load of a fresh profile was
+  cold: reloads and later pages came from the cache. The report says "Cache: cold".
+
+### Changed
+
+- A page whose renderer crashes (Chrome's "Aw, Snap") now fails its test, with stop `page_crashed` and the reason
+  "the page crashed at <URL>; last step: <step>". The gate is FAIL. Before, the test waited out its browser timeouts
+  and graded harness. Every later browser call of that test now fails at once, and the next test starts on a new
+  page. A crash is never a planted fault caught. The same holds on every path that runs a page: `qajev smoke` fails
+  the crashed page and goes on, a multiplayer test fails when a client's page crashes, an Electron step in
+  `qajev play` fails when its page crashes, and a sign-in page that crashes fails the tests that needed it.
 
 ### Fixed
 

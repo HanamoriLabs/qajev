@@ -548,6 +548,8 @@ def planted(result, check):
         return "fail", PLANTED_MISSED
     if outcome != "fail":
         return outcome, reason
+    if result.get("stop") == "page_crashed":  # the product's fault, but not the one planted
+        return "fail", f"the page crashed, which is never the planted fault caught. {reason}".strip()
     if result.get("stop") in HARNESS_STOPS:
         return "harness", (f"stopped ({result['stop']}) before its failure could count: a crash or a time-out is never "
                            f"the planted fault caught. {reason}").strip()

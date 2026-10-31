@@ -23,8 +23,13 @@
   const localDev = (host) => /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/i.test(host) || /\.(localhost|test)$/i.test(host);
   const local = localDev(location.hostname);
   let cfg, deny, mutating, destructive, harmless, grave, purchase, allow, allowRequest, hosts, readOnly, heard;
+  let consoleKeep = [], consoleKeepBroken = [];
   const configure = (next) => {
     cfg = next; state.v = next.v; state.mode = next.mode;
+    consoleKeep = []; consoleKeepBroken = [];
+    for (const pattern of next.console_keep || []) {
+      try { consoleKeep.push(new RegExp(pattern)); } catch (e) { consoleKeepBroken.push(String(pattern)); }
+    }
     deny = re(next.deny); mutating = re(next.mutating); destructive = re(next.destructive); allow = re(next.allow);
     harmless = next.harmless && next.harmless.length ? new RegExp(next.harmless.join('|'), 'gi') : null;
     grave = re(next.grave);
@@ -131,8 +136,18 @@
     } catch (e) { return '[unserializable console argument]'; }
   }).join(' '));
   state.pageConsole = [];
-  let pageConsoleOmitted = 0;
+  state.pageConsoleKept = [];
+  let pageConsoleOmitted = 0, pageConsoleKeptOmitted = 0;
   const keepPageConsole = (level, args) => {
+    // console_keep: a line that matches is always kept, with a cap of its own. The 50 lines below never push it out.
+    if (consoleKeep.length) {
+      const text = consoleText(args);
+      if (consoleKeep.some((r) => r.test(text))) {
+        if (state.pageConsoleKept.length < 200) state.pageConsoleKept.push({ level, text });
+        else pageConsoleKeptOmitted++;
+        return;
+      }
+    }
     // Keep normal strings whole for privacy cleaning; oversized items become content-free source markers.
     if (state.pageConsole.length >= 50) {
       pageConsoleOmitted++;
@@ -145,8 +160,12 @@
   };
   state.drainPageConsole = () => {
     const out = { page_console: state.pageConsole.splice(0),
-                  page_console_omitted: pageConsoleOmitted ? [pageConsoleOmitted] : [] };
+                  page_console_omitted: pageConsoleOmitted ? [pageConsoleOmitted] : [],
+                  page_console_kept: state.pageConsoleKept.splice(0),
+                  page_console_kept_omitted: pageConsoleKeptOmitted ? [pageConsoleKeptOmitted] : [],
+                  ...(consoleKeepBroken.length ? { console_keep_broken: consoleKeepBroken.slice() } : {}) };
     pageConsoleOmitted = 0;
+    pageConsoleKeptOmitted = 0;
     return out;
   };
   const consoleError = console.error;

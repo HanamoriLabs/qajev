@@ -39,7 +39,7 @@ ENV_KEYS = {"base_url", "hosts", "mode", "device", "devices", "real_devices", "p
             "cpu_throttle",
             "account", "allow_destructive", "tunnel"}
 OBJECTIVE_KEYS = {"name", "env", "url", "goal", "expect", "tags", "before", "after", "budget", "device", "persona",
-                  "mode", "settle", "depends_on", "speech", "vision", "about", "color_scheme"}
+                  "mode", "settle", "depends_on", "speech", "vision", "about", "color_scheme", "console_keep", "cache"}
 # email and password are vault references (vault.py) or, for email, the plain address; never a password value.
 ACCOUNT_KEYS = {"email", "password", "login", "email_env", "password_env", "seed", "profile", "note", "totp", "cookie"}
 

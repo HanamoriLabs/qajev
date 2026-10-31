@@ -96,6 +96,9 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   and `cpu_throttle` (run the page's CPU 1 to 8 times slower, e.g. 4 for a phone-like phone pass).
   `qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run` take `color_scheme` (`light` or `dark`): the page's
   `prefers-color-scheme` answers so, for every test that names none.
+  The same four take `cold_cache: true`: every load skips Chrome's cache and the service worker, as a first visit.
+  `qa_check`, `qa_run_suite` and `qa_project_run` take `console_keep` (patterns, JavaScript regular expressions):
+  the console lines that match are always kept, apart from the 50-line cap. A page that crashes fails its test.
   `qa_check`, `qa_run_suite` and `qa_project_run` take `real_devices` (`["ios"]`, `["android"]` or both) to
   also run in Chrome on an Android emulator (iOS Safari cannot read page content yet): opt-in, read-only, and slower
   (see [Mobile](mobile.md)).

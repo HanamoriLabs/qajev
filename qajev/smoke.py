@@ -177,6 +177,15 @@ def robots_for(start_url, timeout=10):
     return robots
 
 
+def _crashed(session, result, url):
+    """The page's renderer crashed (session.PageCrashed): this page fails, as a crash is the product's fault, and the
+    crawl goes on from a new renderer."""
+    where = (session.page_crash() or {}).get("url") or url
+    result.update(outcome="fail", stop="page_crashed", page_crashed={"url": where, "last_step": "reading the page"},
+                  reason=f"the page crashed at {where}; last step: reading the page")
+    session.recover_crash()
+
+
 def _examine(session, result, page, dev, *, settle, host, opts, run_dir):
     """Lint the loaded page into `result` (findings, checks, outcome, screenshot). -> the page's facts."""
     time.sleep(settle)
@@ -279,6 +288,8 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
                                       motion=opts.motion or "reduce", cpu_throttle=opts.cpu_throttle or 1)
         if getattr(opts, "color_scheme", None):  # --color-scheme: every page is crawled as on a light or dark system
             session.set_color_scheme(opts.color_scheme)
+        if getattr(opts, "cache", None):  # --cold-cache: every page loads as on a first visit
+            session.set_cache(opts.cache)
         session.set_device(dev)
         session.arm("readonly")
         watching.enter_context(live.frames(run_dir, session.page_socket()))
@@ -302,39 +313,42 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
             time.sleep(max(0.0, last_load + delay - time.monotonic()))
             last_load = time.monotonic()
             served = served_file(url)
-            if hasattr(session, "configure_ux"):
-                session.configure_ux(opts, run_dir, page)
-            error = None if served else session.navigate(url)
-            if served:
-                status, final, kind = served
-                result.update(outcome="pass", stop="download",
-                              reason=f"a download ({kind or 'unknown type'}, HTTP {status}, {final}); not opened",
-                              checks=[{"check": "link answers with HTTP < 400", "ok": True, "detail": None}])
-            elif error == "net::ERR_ABORTED":
-                # QAJev refuses downloads, so a link to a file aborts: say what the link serves instead of failing it
-                status, final, kind = http_status(url)
-                html = "text/html" in kind
-                ok = isinstance(status, int) and status < 400 and not html
-                result.update(outcome="pass" if ok else "fail", stop="download",
-                              reason=(f"a download ({kind or 'unknown type'}, HTTP {status}, {final}); not opened"
-                                      if ok else f"page did not load: {error} (HTTP {status})"),
-                              checks=[{"check": "link answers with HTTP < 400", "ok": ok,
-                                       "detail": None if ok else f"HTTP {status}"}])
-            elif error:
-                outcome, reason = verdict.unreachable(url, error)
-                result.update(outcome=outcome, reason=reason, stop="unreachable")
-            else:
-                facts = _examine(session, result, page, dev, settle=settle, host=host, opts=opts, run_dir=run_dir)
-                if urlsplit(facts.get("url") or "").netloc == host:
-                    for link in map(canon, facts.get("links", [])):
-                        discovered.add(link)
-                        if link in seen or SKIP.search(link):
-                            continue
-                        seen.add(link)
-                        if robots is not None and not robots.can_fetch(USER_AGENT, link):
-                            disallowed.add(link)  # robots.txt says no: not a page we owe a visit
-                            continue
-                        queue.append(link)
+            try:
+                if hasattr(session, "configure_ux"):
+                    session.configure_ux(opts, run_dir, page)
+                error = None if served else session.navigate(url)
+                if served:
+                    status, final, kind = served
+                    result.update(outcome="pass", stop="download",
+                                  reason=f"a download ({kind or 'unknown type'}, HTTP {status}, {final}); not opened",
+                                  checks=[{"check": "link answers with HTTP < 400", "ok": True, "detail": None}])
+                elif error == "net::ERR_ABORTED":
+                    # QAJev refuses downloads, so a link to a file aborts: say what the link serves, not a failure
+                    status, final, kind = http_status(url)
+                    html = "text/html" in kind
+                    ok = isinstance(status, int) and status < 400 and not html
+                    result.update(outcome="pass" if ok else "fail", stop="download",
+                                  reason=(f"a download ({kind or 'unknown type'}, HTTP {status}, {final}); not opened"
+                                          if ok else f"page did not load: {error} (HTTP {status})"),
+                                  checks=[{"check": "link answers with HTTP < 400", "ok": ok,
+                                           "detail": None if ok else f"HTTP {status}"}])
+                elif error:
+                    outcome, reason = verdict.unreachable(url, error)
+                    result.update(outcome=outcome, reason=reason, stop="unreachable")
+                else:
+                    facts = _examine(session, result, page, dev, settle=settle, host=host, opts=opts, run_dir=run_dir)
+                    if urlsplit(facts.get("url") or "").netloc == host:
+                        for link in map(canon, facts.get("links", [])):
+                            discovered.add(link)
+                            if link in seen or SKIP.search(link):
+                                continue
+                            seen.add(link)
+                            if robots is not None and not robots.can_fetch(USER_AGENT, link):
+                                disallowed.add(link)  # robots.txt says no: not a page we owe a visit
+                                continue
+                            queue.append(link)
+            except session_mod.PageCrashed:
+                _crashed(session, result, url)
             result["seconds"] = round(time.monotonic() - began, 2)
             results.append(result)
             emit("scenario", result=result)
@@ -351,14 +365,17 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
                 emit("start", scenario=page)
                 time.sleep(max(0.0, last_load + delay - time.monotonic()))
                 last_load = time.monotonic()
-                if hasattr(session, "configure_ux"):
-                    session.configure_ux(opts, run_dir, page)
-                error = session.navigate(first["url"])
-                if error:
-                    outcome, reason = verdict.unreachable(first["url"], error)
-                    result.update(outcome=outcome, reason=reason, stop="unreachable")
-                else:
-                    _examine(session, result, page, other, settle=settle, host=host, opts=opts, run_dir=run_dir)
+                try:
+                    if hasattr(session, "configure_ux"):
+                        session.configure_ux(opts, run_dir, page)
+                    error = session.navigate(first["url"])
+                    if error:
+                        outcome, reason = verdict.unreachable(first["url"], error)
+                        result.update(outcome=outcome, reason=reason, stop="unreachable")
+                    else:
+                        _examine(session, result, page, other, settle=settle, host=host, opts=opts, run_dir=run_dir)
+                except session_mod.PageCrashed:
+                    _crashed(session, result, first["url"])
                 result["seconds"] = round(time.monotonic() - began, 2)
                 results.append(result)
                 emit("scenario", result=result)
@@ -397,6 +414,8 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
         built["timing"] = measured
     if getattr(opts, "color_scheme", None):
         built["color_scheme"] = opts.color_scheme
+    if getattr(opts, "cache", None):
+        built["cache"] = opts.cache
     built["cpu_throttle"] = opts.cpu_throttle or 1
     if consistency is not None:
         built["ux"] = {"consistency": consistency}

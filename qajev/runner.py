@@ -69,6 +69,8 @@ class Options:
     ux_max_findings: int | None = None
     motion: str | None = None  # overrides the suite's motion (reduce | full)
     color_scheme: str | None = None  # light | dark for every test that names none (a test's own wins)
+    console_keep: tuple = ()  # patterns for every test, beside each test's own console_keep
+    cache: str | None = None  # cold: every test runs on a cold cache (a test's own cache: cold also does)
     cpu_throttle: int | None = None  # overrides the suite's cpu_throttle (1 to 8)
     emit: object = None
     load_waited: float = 0.0  # seconds already spent waiting; load_wait is a budget for the whole run
@@ -213,7 +215,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         "name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
         "device": scenario.device, "load1": round(load1, 1), "checks": [], "findings": [], "screens": [],
         "blocked_writes": [], "guard_hidden": 0, "history": [], "jev": None, "shot": None,
-        **({"color_scheme": scheme} if scheme else {}),
+        **({"color_scheme": scheme} if scheme else {}), **_cache_record(_cache(scenario, opts)),
     }
     if not quiet:
         return _finish(result, "skipped", f"machine busy (load1 {load1:.0f})", started)
@@ -275,6 +277,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         if hasattr(session, "set_color_scheme"):  # a stand-in session in tests may not have it
             session.set_color_scheme(scheme)
         session.set_device(scenario.device)
+        _prepare_tab(session, scenario, opts)
         session.arm(scenario.mode, scenario.speech)
         if hasattr(session, "configure_ux"):
             ux_observer = session.configure_ux(opts, run_dir, scenario.name, getattr(scenario, "ux_options", None))
@@ -300,8 +303,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             read()
             findings += verdict.document_findings(observed.get("status"), scenario.expect, scenario=scenario.name,
                                                   url=observed.get("url"))
-            for hook in scenario.before:
-                session.run_hook(hook, observed.get("url") or scenario.url)
+            _run_hooks(session, "before", scenario.before, observed.get("url") or scenario.url)
             if scenario.before:  # the checks judge the page after its hooks (verse2, 6 Oct: a wait_for "did not
                 read()           # wait" because the checks used the page as read before it ran)
             if scenario.goal:
@@ -349,6 +351,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     checks = []
     ran = set()  # the expectations beyond the page's own that did run
     if stop not in {"unreachable", "interrupted", "viewport_mismatch"} and transport_error() is None:
+        _doing(session, "the checks")
         try:
             if stop != "reached" and has_page_checks(scenario.expect):
                 if not page_ok():
@@ -386,8 +389,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                     stop, detail = "model_error", f"while judging looks: {e}"
             if stop not in verdict.HARNESS_STOPS:
                 ran.add("after")  # a hook that fails is named by the stop itself, not as never run
-                for hook in scenario.after:
-                    session.run_hook(hook, observed.get("url") or scenario.url)
+                _run_hooks(session, "after", scenario.after, observed.get("url") or scenario.url)
                 says = scenario.expect.get("says") or {}  # the author's words for these checks (the test plan)
                 for probe in scenario.expect.get("fetch", []):
                     checks.append(verdict.fetch_check(probe, session.fetch(probe) or {}))
@@ -641,6 +643,7 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None, he
     """Jev's loop with QAJev's judgment around it. Returns (stop, detail). step(doing, **extra) hears each move;
     decided(decision) hears each of the model's decisions as it is made, stale ones too (qajev top's decisions view).
     held: the page's checks already held before Jev's first move, so they count as reached only after one."""
+    _doing(session, "Jev's goal")
     agent = session.agent
     state = agent.state
     step = step or (lambda doing, **extra: None)
@@ -766,6 +769,61 @@ def _transport_result(scenario, error, started, result=None):
                    "harness", f"browser/daemon transport lost: {error}; no automatic retry", started)
 
 
+def _doing(session, words):
+    """What the test is doing now, in words, for a page that crashes (_crashed_result). Session.begin_test and
+    Session.navigate say the rest: run_scenario is at the type checker's limit of paths."""
+    session.doing = words
+
+
+def _run_hooks(session, kind, hooks, url):
+    """The test's before or after hooks, in order, each named for a page that crashes ("before hook 2 of 3")."""
+    for n, hook in enumerate(hooks, 1):
+        _doing(session, f"{kind} hook {n} of {len(hooks)}")
+        session.run_hook(hook, url)
+
+
+def _cache(scenario, opts):
+    """cold when the test or the run asks for a cold cache, else None."""
+    return getattr(scenario, "cache", None) or getattr(opts, "cache", None)
+
+
+def _cache_record(cache):
+    return {"cache": cache} if cache else {}
+
+
+def _prepare_tab(session, scenario, opts):
+    """The test's cache and console_keep patterns, before its page loads and its guard is armed."""
+    if hasattr(session, "set_cache"):  # a stand-in session in tests may not have it
+        session.set_cache(_cache(scenario, opts))
+    session.console_keep = list(dict.fromkeys([*(getattr(opts, "console_keep", None) or ()),
+                                               *getattr(scenario, "console_keep", [])]))
+
+
+def _page_crash(session, scenario):
+    """{url, step} when the test's own tab crashed (session.page_crash), else None. A multiplayer test has no tab."""
+    if scenario.clients or session is None or not hasattr(session, "page_crash"):
+        return None
+    return session.page_crash()
+
+
+def _crashed_result(scenario, crash, doing, started, result=None):
+    """A test whose page crashed (session.PageCrashed, Chrome's "Aw, Snap"): fail, whatever its checks said by then. A
+    page that crashes is the product's fault, not QAJev's (Verse, 1 Nov: on a cold cache). doing: what the test was
+    doing when the crash was heard (crash["step"], else session.doing); Jev's last action when it was on its goal."""
+    result = result or {}
+    url = crash.get("url") or result.get("end_url") or scenario.url
+    history = result.get("history") or []
+    doing = crash.get("step") or doing
+    step = doing or "the test's start"
+    if doing == "Jev's goal" and history:
+        step = f"Jev's step {history[-1].get('step') or len(history)}: {_did(history[-1])}"
+    return _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
+                    "checks": [], "findings": [], "screens": [], **result,
+                    "stop": "page_crashed", "page_crashed": {"url": url, "last_step": step},
+                    "stop_detail": f"the page crashed at {url}"},
+                   "fail", f"the page crashed at {url}; last step: {step}", started)
+
+
 def _stalled_result(scenario, stalled, started, result=None):
     """A test whose browser stopped answering (session.BrowserStalled): harness, whatever its checks said by then."""
     return _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
@@ -822,8 +880,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                         if signed_here and not signed_here["ok"]:
                             result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
                                               "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
-                                              "stop": "sign_in"}, "harness", f"sign-in failed: {signed_here['reason']}",
-                                             time.monotonic())
+                                              "stop": "sign_in"}, *sign_in_grade(signed_here), time.monotonic())
                             result["cost_usd"] = 0.0
                             results.append(result)
                             outcomes[scenario.name] = result["outcome"]
@@ -844,6 +901,8 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                 if (error := session_mod.transport_error()) is not None:
                     result = _transport_result(scenario, error, started, result)
                     lost_after = scenario.name
+                elif (crash := _page_crash(session, scenario)) is not None:
+                    result = _crashed_result(scenario, crash, getattr(session, "doing", None), started, result)
                 elif (stalled := session_mod.browser_stalled()) is not None:
                     result = _stalled_result(scenario, stalled, started, result)
             if not blocked_by:
@@ -986,7 +1045,7 @@ def _fresh_chain(payload, messages):
             if not signed["ok"]:
                 results = [_finish({"name": s.name, "url": s.url, "goal": s.goal, "mode": s.mode, "checks": [],
                                     "findings": [], "screens": [], "stop": "sign_in", "cost_usd": 0.0},
-                                   "harness", f"sign-in failed: {signed['reason']}", time.monotonic()) for s in chain]
+                                   *sign_in_grade(signed), time.monotonic()) for s in chain]
                 for r in results:
                     emit({"event": "scenario", "result": r})
                 say("done", {"results": results, "ledger": ledger.summary(), "load_waited": opts.load_waited})
@@ -1208,6 +1267,23 @@ def real_device_run(suite, scenarios, platform, opts, cap, run_dir, emit):
     return results, ledger.summary()
 
 
+def _sign_in_crash(session, done):
+    """The sign-in page crashed (session.page_crash): the reason says so, and sign_in_grade fails the tests."""
+    crash = session.page_crash() if session is not None and hasattr(session, "page_crash") else None
+    if crash is not None:
+        url = crash.get("url") or "the sign-in page"
+        done.update(ok=False, page_crashed={"url": url, "last_step": "signing in"},
+                    reason=f"the page crashed at {url} while signing in")
+
+
+def sign_in_grade(signed):
+    """(outcome, reason) of a test that did not run because its sign-in failed: harness, as QAJev could not sign
+    in, or fail when the sign-in page crashed (a crash is the product's fault, never harness)."""
+    if signed.get("page_crashed"):
+        return "fail", signed["reason"]
+    return "harness", f"sign-in failed: {signed['reason']}"
+
+
 def sign_in_here(session, account, opts):
     """login.tab: same (foleyapp, 13 Oct): the account signed in in the scenarios' own tab, for an app that keeps one
     writer per origin (Foley's OPFS database) and must not see a second tab. -> what happened, as sign_in_first."""
@@ -1221,6 +1297,7 @@ def sign_in_here(session, account, opts):
         seen = signin.page_seen(session)
         if seen:
             done["reason"] = f"{done['reason']} (the page showed: {redact(seen)[:240]})"
+        _sign_in_crash(session, done)
     done["tab"] = "same"
     opts.account = account["name"] if done["ok"] else None
     _emit(opts, "signin", **done)
@@ -1245,6 +1322,7 @@ def sign_in_first(suite, *, opts, cdp_url, headless, motion):
         seen = signin.page_seen(session) if session is not None else ""
         if seen:
             done["reason"] = f"{done['reason']} (the page showed: {redact(seen)[:240]})"
+        _sign_in_crash(session, done)
     finally:
         if session is not None:
             session.close()
@@ -1341,7 +1419,7 @@ def run(suite, opts):
             for s in scenarios:
                 r = _finish({"name": s.name, "url": s.url, "goal": s.goal, "mode": s.mode, "checks": [],
                              "findings": [], "screens": [], "stop": "sign_in"},
-                            "harness", f"sign-in failed: {signed['reason']}", time.monotonic())
+                            *sign_in_grade(signed), time.monotonic())
                 results_by_name[s.name] = r
                 emit({"event": "scenario", "result": r})
         elif opts.jobs > 1 and len(chains) > 1 and not same_tab:

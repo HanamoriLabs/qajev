@@ -73,6 +73,10 @@ needs the screenshot, so `--no-shots` skips it. When the check itself breaks, th
 (the error) and its reason says so; the outcome stays. A scenario with `canvas_dark` ([Writing tests](writing-tests.md))
 keeps its outcome on a flat dark canvas: it then keeps `canvas_dark` (the scenario's reason), and its reason ends with it.
 
+A scenario whose page crashed (Chrome's "Aw, Snap") is **fail**, with stop `page_crashed` and a `page_crashed` record:
+the crashed page's `url` and the `last_step`. A scenario with `cache: cold` keeps `cache: "cold"`. The lines that its
+`console_keep` patterns matched are under `page_console_kept`, and `page_console_kept_omitted` counts those over 200.
+
 A scenario with `canvas_capture` ([Writing tests](writing-tests.md)) is graded on the canvas's own readback instead.
 It keeps a `canvas_capture` record: `image` (the saved readback, relative to the run folder), `problem` (why there is
 no image), `blank` (as `canvas_blank`), and with `gpu: hardware` the WebGPU `adapter` (`vendor`, `architecture`,

@@ -117,6 +117,13 @@ def _common(p):
     g.add_argument("--color-scheme", choices=["light", "dark"],
                    help="tell the page the visitor's system prefers light or dark (prefers-color-scheme), for every "
                         "test that names none; a test's own color_scheme wins")
+    g.add_argument("--console-keep", action="append", default=[], type=_console_pattern, metavar="PATTERN",
+                   help="always keep the page's console lines that match this JavaScript regular expression, apart "
+                        "from the 50-line cap (up to 200 such lines a test); repeat for more; adds to a test's own "
+                        "console_keep")
+    g.add_argument("--cold-cache", action="store_true",
+                   help="every page load skips Chrome's cache and the site's service worker, as on a first visit "
+                        "(as cache: cold on every test)")
     g.add_argument("--cpu-throttle", type=int, choices=range(1, 9), metavar="N",
                    help="run the page's CPU N times slower (1 to 8; default the suite's, else 1), e.g. 4 for a "
                         "phone-like phone pass; the report says so")
@@ -570,6 +577,16 @@ def _screen_printer(args):
     return _safe(emit)
 
 
+def _console_pattern(value):
+    """--console-keep: one pattern, as suite.console_keep reads it."""
+    from .suite import SuiteError, console_keep
+
+    try:
+        return console_keep([value], "--console-keep")[0]
+    except SuiteError as e:
+        raise argparse.ArgumentTypeError(str(e).removeprefix("--console-keep: ")) from None
+
+
 def _options(args):
     from . import ux_options
     from .runner import Options
@@ -583,6 +600,8 @@ def _options(args):
         shots=not args.no_shots, emit=_printer(args),
         **ux_options.parse(args),
         motion=args.motion, cpu_throttle=args.cpu_throttle, color_scheme=getattr(args, "color_scheme", None),
+        console_keep=tuple(getattr(args, "console_keep", None) or ()),
+        cache="cold" if getattr(args, "cold_cache", False) else None,
     )
 
 
@@ -975,6 +994,9 @@ def cmd_smoke(args):
     from .jobs import Busy
     from .runner import ConfigError
 
+    if getattr(args, "console_keep", None):
+        raise SystemExit("qajev smoke: --console-keep is for check, run and project run (a crawl keeps no console "
+                         "lines)")
     _lower_priority()
     _provider_flag(args)
     try:

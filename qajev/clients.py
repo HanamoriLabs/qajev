@@ -327,6 +327,8 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
                     entry["capture_viewport"] = error.evidence
                     entry["shot"] = None
             result["shot"] = next((r.get("shot") for r in result["clients"] if r.get("shot")), None)
+        crashed = [(c.name, crash) for c in clients
+                   if hasattr(c.session, "page_crash") and (crash := c.session.page_crash()) is not None]
         for c in clients:
             entry = next(r for r in result["clients"] if r["name"] == c.name)
             entry.setdefault("shot", None)
@@ -354,6 +356,11 @@ def run(scenario, *, ledger, hosts, run_dir, suite_meta, step=None):
     not_run += [] if final_done else ["the final checks"]
     outcome, reason = verdict.classify(stop, checks, has_checks=has, stop_detail=detail, not_run=not_run)
     outcome, reason = verdict.unguarded(outcome, reason, result.get("frames_not_observed"))
+    if crashed:  # a client's page crashed ("Aw, Snap"): the product's fault, so fail, whatever stopped the run
+        name, crash = crashed[0]
+        url = crash.get("url") or next(c.url for c in clients if c.name == name)
+        result.update(stop="page_crashed", page_crashed={"url": url, "last_step": where, "client": name})
+        outcome, reason = "fail", f"the page crashed at {url} (client {name}); last step: {where}"
     result.update(outcome=outcome, reason=reason, stop_detail=detail, not_run=not_run,
                   seconds=round(time.monotonic() - started, 2))
     ux_results = [(c["name"], c["ux"]) for c in result["clients"] if isinstance(c.get("ux"), dict)]

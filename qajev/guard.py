@@ -91,7 +91,7 @@ MODES = ("readonly", "mutate")
 
 
 def build_config(*, mode="readonly", hosts=(), deny=(), allow=(), allow_requests=(), speech=None,
-                 redact_emails=False, allow_secret_fields=False, allow_destructive=False):
+                 redact_emails=False, allow_secret_fields=False, allow_destructive=False, console_keep=()):
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
     cfg = {
@@ -109,6 +109,7 @@ def build_config(*, mode="readonly", hosts=(), deny=(), allow=(), allow_requests
         "redact_emails": bool(redact_emails),
         "allow_secret_fields": bool(allow_secret_fields),
         "allow_destructive": bool(allow_destructive),
+        "console_keep": list(console_keep or ()),
     }
     cfg["v"] = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()[:12]
     return cfg
