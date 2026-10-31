@@ -192,6 +192,8 @@ def crashable():
                                                                                          **params))
     tab.jev = SimpleNamespace(cdp=cdp.call)
     tab.headless, tab.carried, tab.last_test_page, tab.guard_cfg, tab.agent = True, {}, None, None, None
+    tab.hosts, tab.guard_opts, tab.device, tab.script_id, tab.loaded_at = set(), {}, None, None, 0
+    tab.ux_observer, tab.ux_script_id = None, None
     tab.net = netlog.start(f"ws://127.0.0.1:{urlsplit(ENDPOINT).port}/devtools/page/{target}")
     tab.net.ask("Runtime.evaluate", expression="1")  # its Inspector.enable went first, on the same link
     yield tab, cdp, sid
