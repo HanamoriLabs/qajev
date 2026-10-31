@@ -836,8 +836,12 @@ class Session:
                 version = self.jev.cdp("Browser.getVersion") or {}
             except (RuntimeError, TimeoutError, AttributeError):
                 version = {}
-            if not self.headless:  # attached over --cdp-url: ask the browser itself
-                self.headless = "Headless" in version.get("product", "")
+            if not self.headless:  # attached over --cdp-url: ask the browser itself. Chrome's new headless mode
+                # names itself "Chrome/153" as its product: only its user agent still says HeadlessChrome (31 Oct).
+                # Taken for a visible Chrome, it was minimized, and every tab of a headless window then drew no
+                # frame: screenshots hung, smooth scrolling stopped, for this run and any other run on that Chrome.
+                self.headless = ("Headless" in version.get("product", "")
+                                 or "HeadlessChrome" in version.get("userAgent", ""))
             if self.headless and (input_session := getattr(self.browser, "session", None)):
                 _HEADLESS_INPUT_SESSIONS.add(input_session)
             self._own_user_agent(version.get("userAgent", ""))

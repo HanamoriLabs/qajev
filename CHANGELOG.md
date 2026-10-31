@@ -10,6 +10,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   names its daemon as soon as the daemon starts, and names each new daemon after that.
 - A fresh Chrome's chain whose sign-in fails now stops its browser daemon. Before, the daemon kept running after
   the run.
+- A run attached with `--cdp-url` to a headless Chrome 153 now knows the Chrome is headless. That Chrome names
+  itself "Chrome/153", and only its user agent says "HeadlessChrome". Before, QAJev took it for a visible Chrome and
+  minimized its window. Then no tab in that Chrome drew a frame: each screenshot waited until it timed out, and
+  smooth scrolling stopped. This hit the run itself and any other run on that Chrome.
 - A test stopped while it waited for a quiet machine now says "the machine stayed busy past the run's load budget".
   Before, it said "cap N s hit", and the tests after it said their test "hit its cap".
 
