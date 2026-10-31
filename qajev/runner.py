@@ -412,9 +412,19 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             try:
                 shot = session.screenshot(run_dir / "shots" / f"{slug(scenario.name)}.jpg")
                 result["shot"] = str(shot.relative_to(run_dir)) if shot else None
+                with contextlib.suppress(RuntimeError, KeyError, TimeoutError, OSError, ValueError):
+                    if shot and not scenario.canvas_capture and (blank := session.blank_canvas(shot)):
+                        result["canvas_blank"] = blank
             except ViewportMismatch as e:
                 stop, detail = "viewport_mismatch", str(e)
                 result["capture_viewport"] = e.evidence
+        if scenario.canvas_capture and run_dir and transport_error() is None:  # the canvas's own readback (suite.py)
+            got = session.page_canvas(scenario.canvas_capture,
+                                      run_dir / "shots" / f"{slug(scenario.name)}-canvas.png")
+            image = str(got["image"].relative_to(run_dir)) if got["image"] else None
+            result["canvas_capture"] = {**got, "image": image}
+            if got["blank"]:
+                result["canvas_blank"] = {**got["blank"], "readback": True}
 
     capture = getattr(session, "last_capture_viewport", None)
     if "capture_viewport" not in result and isinstance(capture, dict):
@@ -448,6 +458,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),
                                        url=scenario.url, before=before)
     result.update({k: v for k, v in (("stop_detail", detail), ("not_run", not_run)) if v})
+    outcome, reason = canvas_blank_grade(outcome, reason, result.get("canvas_blank"))
+    outcome, reason = canvas_capture_grade(outcome, reason, result.get("canvas_capture"))
     idle = verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
                                  session.agent.state["history"]) if scenario.goal else None
     if outcome in {"fail", "stuck"} and idle:
@@ -515,6 +527,46 @@ def scroll_to_visible(session, expect):
         if not moved:
             break
     return {"after": "visible", "scrolled": screens, "found": False}
+
+
+def canvas_blank_grade(outcome, reason, blank):
+    """A pass, or a test with no checks, whose end screenshot shows the page's main canvas as one flat dark colour
+    says nothing about the page: harness (workload-gpu, 31 Oct: a headless Chrome with --disable-vulkan-surface left
+    every 3D view out of the screenshot, and the tests passed on their text checks). A failure stays a failure, with
+    the note. -> (outcome, reason)"""
+    if not blank:
+        return outcome, reason
+    if blank.get("readback"):
+        words = (f"the canvas's own readback (canvas_capture: page) is one flat dark colour ({blank['flat']:.0%} of "
+                 f"{blank['points']} points): the page drew nothing")
+    else:
+        words = (f"the screenshot shows the page's main canvas as one flat dark colour ({blank['flat']:.0%} of the "
+                 f"{blank['points']} points no other element covers): the browser's capture may lack the canvas's GPU "
+                 "layer (a headless Chrome with --disable-vulkan-surface does that), or the page drew nothing")
+    return _harness_unless_failed(outcome, reason, words)
+
+
+def canvas_capture_grade(outcome, reason, capture):
+    """canvas_capture: page. No readback image says nothing about the canvas, and neither does a run on a software
+    WebGPU adapter when the suite asks for gpu: hardware: harness, as canvas_blank_grade. -> (outcome, reason)"""
+    if not capture:
+        return outcome, reason
+    if capture.get("problem"):
+        outcome, reason = _harness_unless_failed(outcome, reason, f"canvas_capture: page gave no readback image: "
+                                                                  f"{capture['problem']}")
+    if capture.get("software"):
+        outcome, reason = _harness_unless_failed(outcome, reason, f"canvas_capture asks for a hardware GPU, but "
+                                                                  f"{capture['software']}")
+    return outcome, reason
+
+
+def _harness_unless_failed(outcome, reason, words):
+    """A pass, or a test with no checks, is harness with words first; a failure keeps its outcome, with the words."""
+    if outcome in {"pass", "unverified"}:
+        return "harness", f"{words}; {reason}"
+    if outcome == "fail":
+        return outcome, f"{reason}; {words}"
+    return outcome, reason
 
 
 def _finish(result, outcome, reason, started):
@@ -1136,6 +1188,12 @@ def real_device_run(suite, scenarios, platform, opts, cap, run_dir, emit):
     except native.NativeError as e:
         results = [{"name": st["name"], "outcome": "harness", "stop": "browser_error", "checks": [], "findings": [],
                     "screens": [], "reason": f"{mobile.BROWSER_NAMES[platform]} unavailable: {e}"} for st in steps]
+    capture = {f"{s.name} ({mobile.BROWSER_NAMES[platform]})" for s in scenarios if s.canvas_capture}
+    for result in results:  # the readback runs over CDP in QAJev's Chrome: a device browser gives none
+        if result.get("name") in capture:
+            result["canvas_capture"] = {"problem": "not run in a device browser"}
+            result["outcome"], result["reason"] = canvas_capture_grade(result.get("outcome"), result.get("reason", ""),
+                                                                       result["canvas_capture"])
     return results, ledger.summary()
 
 

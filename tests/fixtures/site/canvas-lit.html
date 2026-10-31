@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="A 3D view">
+<title>A 3D view that draws</title>
+<style>
+  body { margin: 0; background: #0b0b10; color: #ddd; font: 16px/1.4 sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  .panel { position: fixed; left: 8px; bottom: 8px; padding: 8px; background: #050508; border: 1px solid #333; }
+</style></head>
+<body>
+  <!-- The same page, with a dark scene drawn on its canvas: a night sky with a lit hall in it. -->
+  <canvas id="view"></canvas>
+  <div class="panel">Stage 1 of 5: the hall stands</div>
+  <script>
+    const c = document.getElementById('view'), g = c.getContext('2d');
+    c.width = innerWidth; c.height = innerHeight;
+    const sky = g.createLinearGradient(0, 0, 0, c.height);
+    sky.addColorStop(0, '#0b0b10'); sky.addColorStop(1, '#2a3550');
+    g.fillStyle = sky; g.fillRect(0, 0, c.width, c.height);
+    for (let i = 0; i < 8; i++) {  // eight pillars and a walkway, as stones
+      g.fillStyle = `hsl(${30 + i * 4}, 30%, ${35 + i * 3}%)`;
+      g.fillRect(c.width * (0.1 + i * 0.1), c.height * 0.35, c.width * 0.04, c.height * 0.45);
+    }
+    g.fillStyle = '#8a7a60'; g.fillRect(c.width * 0.08, c.height * 0.3, c.width * 0.84, c.height * 0.06);
+  </script>
+</body>
+</html>

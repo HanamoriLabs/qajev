@@ -60,6 +60,7 @@ SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
     "persona", "speech", "vision", "about", "clients", "steps", "state", "seed", "color_scheme", "expect_fail",
+    "canvas_capture",
 } | set(ux_options.KEYS)
 # A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
 MAX_CLIENTS = 12
@@ -69,7 +70,7 @@ STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
-    "cpu_throttle", "plan", "color_scheme", "tunnel", "browser",
+    "cpu_throttle", "plan", "color_scheme", "tunnel", "browser", "canvas_capture",
 } | set(ux_options.KEYS)
 # browser: fresh (the default) runs each test, or each depends_on chain, in its own new Chrome, capped at its
 # budget.seconds + runner.CAP_MARGIN; shared runs every test in one Chrome, one tab per chain (the old way).
@@ -125,6 +126,7 @@ class Scenario:
     color_scheme: str | None = None  # light | dark: the page's prefers-color-scheme answers so; None: the browser's
     expect_fail: dict | None = None  # a planted fault: {check, words}, the one check it must fail on (_expect_fail)
     ux_options: dict = field(default_factory=dict)  # explicit suite/scenario options; run flags override them
+    canvas_capture: dict | None = None  # {page, gpu}: the canvas is proved by its own readback (suite.canvas_capture)
 
     @property
     def task(self):
@@ -609,6 +611,11 @@ def parse(data, path=None, devices=None):
         expect = _expect(item.get("expect"), f"{where}.expect")
         goal = item.get("goal")
         clients = None
+        capture = canvas_capture(item.get("canvas_capture", data.get("canvas_capture")), f"{where}.canvas_capture")
+        if capture and "clients" in item:  # its players run in clients.py's own tabs, which read no canvas
+            raise SuiteError(f"{where}: canvas_capture does not run in a scenario with clients" + (
+                "" if "canvas_capture" in item else "; the suite's canvas_capture reaches it, so give canvas_capture "
+                                                    "to each scenario that needs it instead"))
         if "clients" in item:
             if goal or item.get("before") or item.get("after") or item.get("persona"):
                 raise SuiteError(f"{where}: a scenario with clients has steps, not a goal, persona or before/after "
@@ -663,6 +670,7 @@ def parse(data, path=None, devices=None):
             color_scheme=color_scheme(item.get("color_scheme", data.get("color_scheme")), f"{where}.color_scheme"),
             expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where),
             ux_options=_ux_options({**suite_ux, **_ux_options(item, where)}, where),
+            canvas_capture=capture,
         ))
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")
@@ -792,6 +800,26 @@ def color_scheme(value, where):
     if value not in COLOR_SCHEMES:
         raise SuiteError(f"{where}: color_scheme must be light or dark, not {value!r}")
     return value
+
+
+CANVAS_CAPTURE_KEYS = {"page", "gpu"}
+
+
+def canvas_capture(value, where):
+    """`canvas_capture: {page: EXPR, gpu: hardware}`: the canvas is proved by its own readback, not by the browser's
+    screenshot. page: a JS expression that gives a data: URL of the canvas's image (or a Promise of one), such as
+    `document.querySelector('canvas').toDataURL()`. gpu: hardware also needs a hardware WebGPU adapter. -> the
+    mapping, or None."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise SuiteError(f"{where}: canvas_capture must be a mapping: {{page: <JS expression>}}")
+    _unknown(where, value, CANVAS_CAPTURE_KEYS)
+    if not isinstance(value.get("page"), str) or not value["page"].strip():
+        raise SuiteError(f"{where}: canvas_capture.page must be a JS expression that gives a data: URL of the canvas")
+    if value.get("gpu") not in (None, "hardware"):
+        raise SuiteError(f"{where}: canvas_capture.gpu must be hardware, not {value['gpu']!r}")
+    return {"page": value["page"].strip(), "gpu": value.get("gpu")}
 
 
 def about(value, where):

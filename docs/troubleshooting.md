@@ -68,6 +68,16 @@ That is QAJev's side, not your product:
   skipped. The other tests run in their own Chrome. Raise `budget.seconds` only if the test truly needs longer.
 - *a fresh Chrome's chain did not get to its next test within 60 s*: Chrome, the sign-in or the end of the last test
   took longer than `QAJEV_FRESH_START_WAIT`. On a busy machine, raise it.
+- *the screenshot shows the page's main canvas as one flat dark colour*: the 3D view (or another large canvas) is not
+  in the picture, while the HTML over it is. A headless Chrome started with `--disable-vulkan-surface` leaves every
+  WebGL and WebGPU canvas out of its screenshots: remove that flag from the browser you attach with `--cdp-url`. If the
+  page really draws nothing there at the end, that is the page's bug: end the test on a drawn frame. If the browser
+  cannot show the canvas in a screenshot, give the suite `canvas_capture: {page: ...}`, the canvas's own readback.
+- *the canvas's own readback (canvas_capture: page) is one flat dark colour*: the page drew nothing into the canvas,
+  or the readback is empty. A WebGL or WebGPU canvas needs `preserveDrawingBuffer: true`, or a read in the same frame.
+- *canvas_capture: page gave no readback image*: the expression failed, or gave no `data:image/...;base64` URL.
+- *canvas_capture asks for a hardware GPU, but the page's WebGPU adapter is software*: the browser gives the page
+  SwiftShader or another software adapter. Run the test on a machine with a GPU, with Chrome's GPU flags.
 - *the machine stayed busy past the run's load budget*: the test waited for a quiet machine longer than
   `--load-wait` and its start allowance, so QAJev stopped its Chrome. The test did not run out of its own time. Run
   it again when the machine is quieter, or raise `--load-wait`.

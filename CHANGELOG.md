@@ -9,6 +9,18 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `qajev plan` and `qa_plan` flag a website test whose goal asks Jev to press a key ("press Enter", "the Right arrow
   key", "Ctrl+S"), and exit 2. Jev clicks, types and scrolls, but presses no key, so such a goal sends it clicking
   around. The plan lists them as PRESSES KEYS (`key_goals` in the JSON) and says to press the keys in a `key:` hook.
+- `canvas_capture: {page: <JS expression>, gpu: hardware}` in a suite or scenario. QAJev runs the expression at the end
+  of the test, saves the canvas's own readback in the report and grades it, not the screenshot. A flat dark readback,
+  no readback, or (with `gpu: hardware`) a software WebGPU adapter such as SwiftShader makes a pass harness. The report
+  keeps a `canvas_capture` record with the image and the adapter's vendor and architecture. A suite that gives it to
+  a scenario with `clients` is refused, and a device-browser copy of such a scenario is harness.
+
+### Fixed
+
+- A test whose end screenshot shows the page's main canvas as one flat dark colour no longer passes: it is harness,
+  and the report keeps a `canvas_blank` record. A headless Chrome started with `--disable-vulkan-surface` left every
+  WebGL and WebGPU canvas out of its screenshots, and tests of a 3D view passed on the HTML around it. A failure stays
+  a failure, with the note.
 
 ## 0.4.39: 31 Oct 2026
 
