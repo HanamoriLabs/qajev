@@ -163,7 +163,7 @@ def _projects(_minute):
     from . import project
 
     try:
-        return [(urlsplit(url).netloc, p["name"]) for p in project.listing() if not p.get("error")
+        return [(plain_host(urlsplit(url)), p["name"]) for p in project.listing() if not p.get("error")
                 for url in (p.get("envs") or {}).values() if url]
     except Exception:  # a broken project file must not break `qajev jobs`
         return []

@@ -283,6 +283,20 @@ def test_an_ipv6_host_keeps_its_brackets_in_a_name():
     assert jobs.describe_argv(["check", "http://[::1]/a"]) == "check [::1] /a"
     assert check_name("http://[::1]:8765/x") == "[::1]:8765 /x"
     assert jobs.plain_host(urlsplit("http://[2001:db8::7]:443/")) == "[2001:db8::7]:443"
+    assert jobs.plain_host(urlsplit("x:y"), "x:y") == "x:y"  # no host: the fallback text, never bracketed
+
+
+def test_a_project_names_its_runs_whatever_form_its_url_takes(monkeypatch):
+    # The project's URL and the run's URL name the same host: an IPv6 address, another case, or user info in the
+    # project URL must not keep the project's name off its runs (redteam on #234).
+    from qajev import project
+
+    monkeypatch.setattr(project, "listing", lambda: [{"name": "local", "envs": {"dev": "http://[::1]:8765"}},
+                                                     {"name": "shop", "envs": {"prod": "https://alice@Shop.Example/"}}])
+    jobs._projects.cache_clear()  # cached per minute; another test may have filled it
+    assert jobs.describe_argv(["smoke", "http://[::1]:8765/"]) == "smoke local"
+    assert jobs.describe_argv(["check", "https://shop.example/cart"]) == "check shop /cart"
+    jobs._projects.cache_clear()
 
 
 def test_describe_argv():

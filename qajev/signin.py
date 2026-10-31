@@ -189,11 +189,10 @@ def _where(url):
     (redteam on #128: redact knows only QAJev's own values, not a token the site puts in a path)."""
     from urllib.parse import urlsplit
 
+    from .jobs import plain_host as host_and_port  # "[::1]:8765" as a person writes it, never "::1:8765"
+
     u = urlsplit(url)
-    try:
-        host = f"{u.hostname or ''}{f':{u.port}' if u.port else ''}"
-    except ValueError:  # a port that is not a number
-        host = u.hostname or ""
+    host = host_and_port(u)
     parts = u.path.split("/")
     after = [i > 0 and any(w in parts[i - 1].lower() for w in SECRET_AFTER) for i in range(len(parts))]
     path = "/".join("…" if OPAQUE.fullmatch(part) or after[i] else part for i, part in enumerate(parts))
