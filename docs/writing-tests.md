@@ -97,14 +97,25 @@ At the end of the test QAJev runs `page` itself, saves the image in the report (
 that image, not the screenshot. A readback that is one flat dark colour is harness: the page drew nothing. An empty
 canvas's readback is transparent, and QAJev reads it as black. If the expression fails, gives nothing or gives no image,
 the test is harness too. With `gpu: hardware`, QAJev also reads the page's WebGPU adapter. No adapter, a fallback
-adapter, or a software one (SwiftShader, llvmpipe, lavapipe...) makes the test harness. A failure stays a failure, with
-the note. For a WebGL or WebGPU canvas, draw with `preserveDrawingBuffer: true`, or read the canvas in the same frame
+adapter, or a software one (SwiftShader, llvmpipe, lavapipe...) makes the test harness. An adapter that gives no vendor
+and no architecture proves nothing, so QAJev then asks WebGL for the GPU the browser draws with: it must name a GPU
+that is not a software one, else the test is harness. A failure stays a failure, with the note. For a WebGL or WebGPU canvas, draw with `preserveDrawingBuffer: true`, or read the canvas in the same frame
 as the draw, else the readback is empty. QAJev saves the readback even with `--no-shots`.
 
 The readback runs in QAJev's own Chrome tab only. A scenario with `clients` cannot have `canvas_capture`, and a
 suite-level `canvas_capture` cannot reach one: such a suite is refused when it loads, so give `canvas_capture` to each
 scenario that needs it. In a device browser (`real_devices`), no readback runs, so that copy of the scenario is
 harness.
+
+A page whose canvas is dark on purpose (a night scene, a fade to black at the end) says why, in the suite or the
+scenario:
+
+```yaml
+canvas_dark: "the last stage fades to black before the score screen"
+```
+
+Then a flat dark canvas, in the screenshot or the readback, does not make the test harness. The reason must be words:
+`canvas_dark: true` is refused when the suite loads. The report's reason ends with the suite's words.
 
 ## What only a look at the screen tells (Clef)
 

@@ -77,7 +77,12 @@ That is QAJev's side, not your product:
   or the readback is empty. A WebGL or WebGPU canvas needs `preserveDrawingBuffer: true`, or a read in the same frame.
 - *canvas_capture: page gave no readback image*: the expression failed, or gave no `data:image/...;base64` URL.
 - *canvas_capture asks for a hardware GPU, but the page's WebGPU adapter is software*: the browser gives the page
-  SwiftShader or another software adapter. Run the test on a machine with a GPU, with Chrome's GPU flags.
+  SwiftShader or another software adapter. Run the test on a machine with a GPU, with Chrome's GPU flags. The same
+  applies to *the browser's GPU is software*.
+- *... gives no vendor or architecture ...: the GPU could not be read*: the page's adapter does not say what it is, and
+  WebGL names no GPU either (why is in brackets). Run the test on a machine with a GPU.
+- *the canvas check could not read the end screenshot*: the flat dark check broke (the error is in brackets), so the
+  result says nothing about the canvas either way. The outcome stays. Run the test again; if it repeats, report it.
 - *the machine stayed busy past the run's load budget*: the test waited for a quiet machine longer than
   `--load-wait` and its start allowance, so QAJev stopped its Chrome. The test did not run out of its own time. Run
   it again when the machine is quieter, or raise `--load-wait`.

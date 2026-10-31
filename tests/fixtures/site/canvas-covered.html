@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="A covered canvas">
+<title>A dark canvas half under a lit panel</title>
+<style>
+  body { margin: 0; background: #0b0b10; color: #222; font: 16px/1.4 sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  .panel { position: fixed; left: 0; top: 0; width: 60vw; height: 100vh; padding: 16px; box-sizing: border-box;
+           background: #f4f1ea; }
+</style></head>
+<body>
+  <!-- A full-screen canvas that draws nothing, with a lit HTML panel over its left 60%. Only the points no element
+       covers are the canvas's own: they are all dark. Read with the panel, the canvas would look drawn. -->
+  <canvas id="view"></canvas>
+  <div class="panel">the hall stands</div>
+</body>
+</html>
