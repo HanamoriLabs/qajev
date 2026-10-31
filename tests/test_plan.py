@@ -113,10 +113,10 @@ def test_a_goal_that_asks_jev_to_press_a_key_is_flagged(tmp_path, capsys):
         "    expect: {text: [4 poses]}\n")
     assert cli.main(["plan", str(site), "--json"]) == 2
     data = json.loads(capsys.readouterr().out)
-    assert data["key_goals"] == [{"name": "refit", "says": "Press the Right arrow"}]
+    assert data["key_goals"] == [{"name": "refit", "says": "Press the Right arrow key"}]
     assert cli.main(["plan", str(site)]) == 2
     out = capsys.readouterr().out
-    assert "PRESSES KEYS: refit (“Press the Right arrow”)" in out and "key:" in out
+    assert "PRESSES KEYS: refit (“Press the Right arrow key”)" in out and "key:" in out
     site.write_text(site.read_text().replace("Press the Right arrow key 3 times. ", ""))
     assert cli.main(["plan", str(site), "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["key_goals"] == []
@@ -132,6 +132,20 @@ def test_a_goal_that_asks_jev_to_press_a_key_is_flagged(tmp_path, capsys):
     ("Press the Save button, then return to the list.", None),
     ("Open the menu Releases (Alt+9).", None),
     ("Press the Tab named Width.", None),
+    # redteam on #222: a chord of 3 keys in brackets is a label too (L1); a key word in a control's name is no key
+    # (L2); and the misses it found (N1)
+    ("Click Redo (Ctrl+Shift+Z).", None),
+    ("Open the inspector [Cmd+Option+I].", None),
+    ("Save it ( Ctrl+S ) now.", None),
+    ("Undo with Ctrl+Shift+Z.", "Ctrl+Shift+Z"),
+    ("Press the API keys tab.", None),
+    ("Hit the Next arrow on the carousel.", None),
+    ("Press Enter site on the age gate.", None),
+    ("Pick the Option + Extras bundle.", None),
+    ("Hitting Enter sends it.", "Hitting Enter"),
+    ("Use the arrow keys to move.", "Use the arrow keys"),
+    ("Press ArrowRight twice.", "Press ArrowRight"),
+    ("Hold Shift and click two rows.", "Hold Shift"),
 ])
 def test_the_key_lint_reads_key_presses_and_not_buttons_or_labels(goal, says):
     from types import SimpleNamespace
