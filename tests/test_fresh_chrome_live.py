@@ -150,3 +150,86 @@ account:
     assert not leaked, leaked  # which value, where: never the value itself
     (report,) = (tmp_path / "out").rglob("report.json")
     assert "[redacted]" in report.read_text()  # the page did print them
+
+
+class Heard:
+    """A chain's queue as the parent reads it, noting each daemon pid the chain names."""
+
+    def __init__(self, messages, pids):
+        self.messages, self.pids = messages, pids
+
+    def _note(self, message):
+        if message[0] == "daemon":
+            self.pids.append(message[1])
+        return message
+
+    def get(self, *args, **kw):
+        return self._note(self.messages.get(*args, **kw))
+
+    def get_nowait(self):
+        return self._note(self.messages.get_nowait())
+
+
+def gone(pid, within=5.0):
+    deadline = time.monotonic() + within
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def signin_suite(base_url, tmp_path, login_url):
+    from qajev import suite as suite_mod
+
+    return suite_mod.parse({"name": "daemon", "base_url": base_url, "devices": ["desktop"],
+                            "account": dict(zip(("email", "password", "login"), (
+                                "tester@example.test", "seed:qa_test_user.json#password", {"url": login_url}))),
+                            "scenarios": [{"name": "the account page", "url": "/account.html",
+                                           "expect": {"text": ["Signed in as tester@example.test"]}}]},
+                           path=tmp_path / "suite.yaml")
+
+
+def heard_chains(monkeypatch):
+    from qajev import runner
+
+    pids, real = [], runner._start_chain
+
+    def start_chain(ctx, payload):
+        process, messages = real(ctx, payload)
+        return process, Heard(messages, pids)
+
+    monkeypatch.setattr(runner, "_start_chain", start_chain)
+    return pids
+
+
+def test_a_chain_stopped_in_its_sign_in_leaves_no_daemon(site, tmp_path, monkeypatch):  # noqa: F811
+    # The login page never answers, so the chain is stopped before its first test: its Session's daemon goes too.
+    from qajev import runner
+
+    monkeypatch.setenv("QAJEV_FRESH_START_WAIT", "10")
+    seed(tmp_path, "fixture-pass-123")
+    pids = heard_chains(monkeypatch)
+    built = runner.run(signin_suite(site, tmp_path, "/hang.html"),
+                       runner.Options(out_dir=tmp_path / "out", headless=True, ephemeral=True,
+                                      profile=f"signin-hang-{os.getpid()}", load_high=None))
+    (only,) = built["scenarios"]
+    assert only["outcome"] == "harness" and "within 10 s" in only["reason"], only
+    assert pids, "the chain must name its daemon before its sign-in ends"
+    assert all(gone(pid) for pid in pids), "the daemon's process group still runs"
+
+
+def test_a_failed_sign_in_leaves_no_daemon(site, tmp_path, monkeypatch):  # noqa: F811
+    from qajev import runner
+
+    seed(tmp_path, "not-the-password")
+    pids = heard_chains(monkeypatch)
+    built = runner.run(signin_suite(site, tmp_path, "/login.html"),
+                       runner.Options(out_dir=tmp_path / "out", headless=True, ephemeral=True,
+                                      profile=f"signin-wrong-{os.getpid()}", load_high=None))
+    (only,) = built["scenarios"]
+    assert only["outcome"] == "harness" and "sign-in failed" in only["reason"], only
+    assert pids, "the chain must name its daemon"
+    assert all(gone(pid) for pid in pids), "the daemon's process group still runs"

@@ -7,7 +7,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 ### Fixed
 
 - A fresh Chrome's chain that is stopped during its sign-in no longer leaves its browser daemon running. The chain
-  names its daemon as soon as the daemon starts.
+  names its daemon as soon as the daemon starts, and names each new daemon after that.
+- A fresh Chrome's chain whose sign-in fails now stops its browser daemon. Before, the daemon kept running after
+  the run.
 - A test stopped while it waited for a quiet machine now says "the machine stayed busy past the run's load budget".
   Before, it said "cap N s hit", and the tests after it said their test "hit its cap".
 

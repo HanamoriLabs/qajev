@@ -868,7 +868,8 @@ def _fresh_chain(payload, messages):
         if event.get("event") == "scenario":
             say("ledger", ledger.summary())
 
-    session_mod.daemon_listener = lambda pid: say("daemon", pid)  # the first Session's daemon, sign-in's too
+    session_mod.listen_daemon(lambda pid: say("daemon", pid))  # each daemon a Session starts, sign-in's too
+    handed = False  # run_group stops the daemon it used: a chain that does not get there stops its own
     fields = {f.name for f in dataclasses.fields(Options)}
     opts = Options(**{k: v for k, v in opts_dict.items() if k in fields}, emit=emit)
     for k, v in opts_dict.items():  # what run() set on top, such as login.tab: same's sign_in_here
@@ -899,12 +900,15 @@ def _fresh_chain(payload, messages):
                     emit({"event": "scenario", "result": r})
                 say("done", {"results": results, "ledger": ledger.summary(), "load_waited": opts.load_waited})
                 return
+        handed = True
         out = run_group(chain, opts=opts, cdp_url=owned["cdp_url"], suite_meta=suite_meta, run_dir=run_dir,
                         ledger=ledger)
         if getattr(opts, "signed_here", None):
             say("signin", opts.signed_here)
         say("done", {"results": out["results"], "ledger": out["ledger"], "load_waited": opts.load_waited})
     finally:
+        if not handed:  # its sign-in's daemon (a failed sign-in, say): as try_sign_in does
+            session_mod.stop_daemon()
         chrome.stop(key)
 
 
