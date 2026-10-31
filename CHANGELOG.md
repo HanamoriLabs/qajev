@@ -2,6 +2,15 @@
 
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Fixed
+
+- A fresh Chrome's chain that is stopped during its sign-in no longer leaves its browser daemon running. The chain
+  names its daemon as soon as the daemon starts.
+- A test stopped while it waited for a quiet machine now says "the machine stayed busy past the run's load budget".
+  Before, it said "cap N s hit", and the tests after it said their test "hit its cap".
+
 ## 0.4.37: 31 Oct 2026
 
 Each suite test now runs in its own fresh Chrome. That costs about 2-3 s for each test. `browser: shared` in a

@@ -63,6 +63,19 @@ def test_a_hung_page_is_stopped_at_its_cap_and_the_other_tests_run(site, tmp_pat
         {"name": "the test after it", "url": "/index.html", "depends_on": ["a page that never answers"],
          "expect": {"text": ["QAJev fixture"]}},
         {"name": "a quick page", "url": "/index.html", "expect": {"text": ["QAJev fixture"]}}]})
+    seen, real_stop, real_group = {}, chrome.stop, runner._stop_group
+
+    def stop(key, group=False):  # the pid of the Chrome the parent stops at the cap, read before it stops it
+        if group and chrome._state_file(key).exists():
+            seen["chrome"] = json.loads(chrome._state_file(key).read_text())["pid"]
+        return real_stop(key, group=group)
+
+    def stop_group(pid, **kw):
+        seen["daemon"] = pid
+        return real_group(pid, **kw)
+
+    monkeypatch.setattr(chrome, "stop", stop)
+    monkeypatch.setattr(runner, "_stop_group", stop_group)
     started = time.monotonic()
     built = runner.run(spec, runner.Options(out_dir=tmp_path, headless=True, ephemeral=True, profile=profile,
                                             load_high=None))
@@ -73,6 +86,17 @@ def test_a_hung_page_is_stopped_at_its_cap_and_the_other_tests_run(site, tmp_pat
     assert got["a quick page"]["outcome"] == "pass", got["a quick page"]
     assert time.monotonic() - started < 50  # the page hangs for 60 s
     assert not [r for r in chrome.status(profile) if r.get("alive")], "the hung test's Chrome must be stopped"
+    assert set(seen) == {"chrome", "daemon"}, seen  # both by what the chain started, never by a name
+    for what, pid in seen.items():  # Chrome's whole process group, and the daemon's
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.killpg(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError(f"{what}'s process group still runs")
     (md,) = tmp_path.rglob("report.md")
     assert "cap 5 s hit" in md.read_text()
 
