@@ -1,7 +1,6 @@
 """A page that crashes ("Aw, Snap") fails its test: a renderer crash is the product's fault, not QAJev's."""
 
 import contextlib
-import json
 import os
 import time
 from types import SimpleNamespace
@@ -196,7 +195,7 @@ def crashable():
     tab.ux_observer, tab.ux_script_id = None, None
     tab.net = netlog.start(f"ws://127.0.0.1:{urlsplit(ENDPOINT).port}/devtools/page/{target}")
     tab.net.ask("Runtime.evaluate", expression="1")  # its Inspector.enable went first, on the same link
-    yield tab, cdp, sid
+    yield tab, cdp
     tab.net.stop()
     cdp.call("Target.closeTarget", targetId=target)
     cdp.socket.close()
@@ -204,9 +203,11 @@ def crashable():
 
 @pytest.mark.skipif(not ENDPOINT or os.uname().sysname != "Linux", reason="requires approved CPU fixture browser")
 def test_browser_hears_a_real_renderer_crash_and_the_next_page_loads(crashable, site):
-    tab, cdp, sid = crashable
+    tab, _cdp = crashable
     tab.navigate(site + "/")
-    cdp.socket.send(json.dumps({"id": 900001, "method": "Page.crash", "sessionId": sid}))  # it never answers
+    # chrome://kill ends the renderer, as a real crash does. Page.crash and chrome://crash only hang it in headless
+    # Chromium 153 on Linux, with no crash event (measured on the test box, 1 Nov).
+    tab.call("Page.navigate", url="chrome://kill")
     deadline = time.monotonic() + 10
     while tab.net.crashed is None and time.monotonic() < deadline:
         time.sleep(0.05)
@@ -215,7 +216,7 @@ def test_browser_hears_a_real_renderer_crash_and_the_next_page_loads(crashable, 
     with pytest.raises(session.PageCrashed):
         tab.evaluate("1")
     assert time.monotonic() - began < 2  # no call waits on the dead page
-    assert tab.page_crash()["url"] == site + "/"
+    assert tab.page_crash()["url"] in {site + "/", "chrome://kill/"}  # the browser's own word for the dead tab
     tab.recover_crash()
     tab.navigate(site + "/")
     assert tab.evaluate("1 + 1") == 2 and tab.page_crash() is None
