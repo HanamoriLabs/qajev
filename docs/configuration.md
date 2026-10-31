@@ -119,7 +119,7 @@ The load gate only matters on shared or busy machines; set `QAJEV_LOAD_HIGH=0` t
 | `QAJEV_CLOUD_URL` | the dashboard (https only) | `https://cloud.qajev.com` |
 | `QAJEV_CLOUD_HOLD` | comma-separated words (any case): a suite path, project or target that holds one stays on this Mac unless the command says `--runner cloud` | none |
 | `QAJEV_LOCAL_RUNS` | `off`: this machine runs no QAJev test. Every browser run here (check, suite, smoke, play, nightly) is refused before Chrome starts and says to use `--runner cloud`. Read from `~/.qajev/.env` at every run; an `off` there wins over the shell | on |
-| `QAJEV_CLOUD_WAIT` | seconds a cloud run is waited for before QAJev gives up (exit `4`); the run goes on in the cloud | `7200` |
+| `QAJEV_CLOUD_WAIT` | seconds the CLI waits for a cloud run before it gives up (exit `4`); the run goes on in the cloud. The MCP tools return a cloud run's id at once and do not wait | `7200` |
 | `QAJEV_CLOUD_CREDIT_WAIT` | seconds a cloud run that waits for credits is followed before QAJev says so and returns (exit `4`); the run stays queued | `60` |
 
 `qajev doctor` has a `cloud` line: whether the key is found (never its value), the default runner and where it came

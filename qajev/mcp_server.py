@@ -46,6 +46,8 @@ something on a site, and to catch errors a browser can see.
   this machine; runner="auto" uses the cloud when it can, else this machine (the result's runner_note says why). A
   cloud run never falls back to this machine. A signed-in profile stays here, and a site on this machine's 127.0.0.1
   needs its built folder shipped with serve="DIR[:PORT]". A cloud run's id starts with r_; qa_job and qa_stop take it.
+  A cloud run returns its id at once, with state "queued" and no gate: it is not a pass. Follow it with qa_job(job)
+  until it ends; only that result has the gate. The run goes on in the cloud when the call ends; qa_stop stops it.
   The default is QAJEV_RUNNER, else local; qa_doctor shows it and whether the cloud key is found.
 - Every run writes report.html for the person (its path is in the result as report_html).
 - ALWAYS say what each test proves and why, in plain words: `about` on qa_check, qa_play and qa_project_run, and
@@ -284,7 +286,7 @@ async def _dispatch(args, where, ctx, background, title=None):
                     raise ToolError(f"runner cloud{'' if source == '--runner' else f' ({source})'}: {e}") from None
                 note = f"runner auto: this run stays on this machine: {e}"
             else:
-                return await _cloud_report(plan, ctx, background)
+                return await _cloud_report(plan, ctx)
     except cloud.CloudError as e:
         if parsed.command == "run" and e.code == cloud.EXIT_CONFIG:
             from . import report
@@ -303,45 +305,26 @@ async def _dispatch(args, where, ctx, background, title=None):
     return report
 
 
-async def _cloud_report(plan, ctx, background):
-    """Send the run to QAJev Cloud. background: its id and address at once. Otherwise follow it (relaying its progress)
-    to its gate; cancelling the call stops the cloud run."""
+CLOUD_QUEUED = ("The run is queued in QAJev Cloud. This result has no gate, so it is not a pass. "
+                 "Call qa_job(job) until its state is no longer queued or running: that result has the gate.")
+
+
+async def _cloud_report(plan, ctx):
+    """Send the run to QAJev Cloud and return its id at once, background or not. The run goes on in the cloud whatever
+    happens to this call: qa_job follows it, qa_stop stops it. Before, a call waited up to 2 hours for the gate, and
+    the agent saw the id only when it ended. A run stuck at "running, 0 of 0 tests" then held the agent with no id, and
+    a call that ended stopped the run."""
     from . import cloud
 
     client = await asyncio.to_thread(cloud.connect)
     run_id = await asyncio.to_thread(cloud.submit, client, plan)
     url = cloud.run_url(client.base, run_id)
-    if background:
-        return {"runner": "cloud", "job": run_id, "run_id": run_id, "url": url, "state": "queued",
-                "warnings": plan.warnings, "next": "qa_job(job) for progress and the result; qa_stop(job) to stop it"}
+    out = {"runner": "cloud", "job": run_id, "run_id": run_id, "url": url, "state": "queued", "gate": None,
+           "note": CLOUD_QUEUED, "warnings": plan.warnings,
+           "next": f"qa_job({run_id!r}) for progress and, once it ends, the gate; qa_stop({run_id!r}) to stop it"}
     if ctx is not None:
         await ctx.report_progress(0, None, f"cloud run {run_id}: {url}")
-    deadline, last, misses = time.monotonic() + cloud.wait_seconds(), None, 0
-    try:
-        while True:
-            try:
-                run = await asyncio.to_thread(cloud.status, client, run_id)
-                misses = 0
-            except cloud.CloudError as e:
-                misses += 1
-                if misses >= 3:
-                    raise ToolError(f"{e} ({url})") from None
-                await asyncio.sleep(cloud.POLL_S)
-                continue
-            seen = (run.get("gate"), run.get("progress"), run.get("now_test"))
-            if ctx is not None and seen != last:
-                await ctx.report_progress(0, None, " · ".join(str(x) for x in seen if x))
-            last = seen
-            if cloud.done(run):
-                return {**cloud.result(client.base, run), **({"warnings": plan.warnings} if plan.warnings else {})}
-            if time.monotonic() >= deadline:
-                raise ToolError(f"waited {cloud.wait_seconds() / 60:.0f} min and the run has not finished; it goes on "
-                                f"in the cloud: qa_job({run_id!r}) follows it ({url})")
-            await asyncio.sleep(cloud.POLL_S)
-    except asyncio.CancelledError:
-        with contextlib.suppress(cloud.CloudError):
-            await asyncio.to_thread(cloud.stop, client, run_id)
-        raise
+    return out
 
 
 async def _cloud_job(run_id, stopping=False):
@@ -472,7 +455,7 @@ async def qa_check(
     expect_fail: a planted fault: the says text of the one check it must fail on (true: the test's only check). It
     keeps outcome="fail" and gets graded="pass" when only that check fails; a passing test, or a failure on another
     check, gets graded="fail" and turns the gate FAIL. Stuck and harness keep their grade (gate INCOMPLETE).
-    Returns the report with a gate and findings.
+    Returns the report with a gate and findings (a cloud run: its id at once, with no gate; see runner).
     background: return a job id at once instead (follow with qa_job, stop with qa_stop).
     runner: where the run goes: "local" (this machine), "cloud" (QAJev Cloud: refused with the reason when it cannot go,
     never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a dev server
@@ -480,8 +463,8 @@ async def qa_check(
     or project env with tunnel: through the full tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a
     built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT as Cloudflare
     Pages does (_headers, _redirects, ETag). model: the cloud run's decision model (clef, clef-flash, clef-omni, jev,
-    jev-openrouter; default the dashboard's). A cloud run in the
-    background returns its id (r_...) and address at once.
+    jev-openrouter; default the dashboard's). A cloud run returns its id (r_...),
+    address and state "queued" at once, background or not, with no gate: qa_job(job) gives the gate when it ends.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     """
@@ -576,8 +559,8 @@ async def qa_run_suite(
     or project env with tunnel: through the full tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a
     built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT as Cloudflare
     Pages does (_headers, _redirects, ETag). model: the cloud run's decision model (clef, clef-flash, clef-omni, jev,
-    jev-openrouter; default the dashboard's). A cloud run in the
-    background returns its id (r_...) and address at once.
+    jev-openrouter; default the dashboard's). A cloud run returns its id (r_...),
+    address and state "queued" at once, background or not, with no gate: qa_job(job) gives the gate when it ends.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     """
@@ -664,8 +647,8 @@ async def qa_smoke(
     or project env with tunnel: through the full tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a
     built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT as Cloudflare
     Pages does (_headers, _redirects, ETag). model: the cloud run's decision model (clef, clef-flash, clef-omni, jev,
-    jev-openrouter; default the dashboard's). A cloud run in the
-    background returns its id (r_...) and address at once.
+    jev-openrouter; default the dashboard's). A cloud run returns its id (r_...),
+    address and state "queued" at once, background or not, with no gate: qa_job(job) gives the gate when it ends.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     """
@@ -758,8 +741,8 @@ async def qa_project_run(
     or project env with tunnel: through the full tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a
     built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT as Cloudflare
     Pages does (_headers, _redirects, ETag). model: the cloud run's decision model (clef, clef-flash, clef-omni, jev,
-    jev-openrouter; default the dashboard's). A cloud run in the
-    background returns its id (r_...) and address at once.
+    jev-openrouter; default the dashboard's). A cloud run returns its id (r_...),
+    address and state "queued" at once, background or not, with no gate: qa_job(job) gives the gate when it ends.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
     Without runner, the project's `runner` in project.toml counts after QAJEV_RUNNER.
