@@ -611,6 +611,11 @@ def parse(data, path=None, devices=None):
         expect = _expect(item.get("expect"), f"{where}.expect")
         goal = item.get("goal")
         clients = None
+        capture = canvas_capture(item.get("canvas_capture", data.get("canvas_capture")), f"{where}.canvas_capture")
+        if capture and "clients" in item:  # its players run in clients.py's own tabs, which read no canvas
+            raise SuiteError(f"{where}: canvas_capture does not run in a scenario with clients" + (
+                "" if "canvas_capture" in item else "; the suite's canvas_capture reaches it, so give canvas_capture "
+                                                    "to each scenario that needs it instead"))
         if "clients" in item:
             if goal or item.get("before") or item.get("after") or item.get("persona"):
                 raise SuiteError(f"{where}: a scenario with clients has steps, not a goal, persona or before/after "
@@ -665,8 +670,7 @@ def parse(data, path=None, devices=None):
             color_scheme=color_scheme(item.get("color_scheme", data.get("color_scheme")), f"{where}.color_scheme"),
             expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where),
             ux_options=_ux_options({**suite_ux, **_ux_options(item, where)}, where),
-            canvas_capture=canvas_capture(item.get("canvas_capture", data.get("canvas_capture")),
-                                          f"{where}.canvas_capture"),
+            canvas_capture=capture,
         ))
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")

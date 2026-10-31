@@ -200,3 +200,42 @@ scenarios:
     assert none["reason"].startswith("canvas_capture: page gave no readback image: the readback expression gave"), none
     hardware = got["hardware asked"]  # QAJev's headless Chrome on a test machine has no hardware WebGPU
     assert hardware["outcome"] == "harness" and "asks for a hardware GPU" in hardware["reason"], hardware
+
+
+# redteam-1 B1 (#225): canvas_capture runs in QAJev's own tab only. A scenario with clients (clients.py) or a device
+# browser (real_devices) reads no canvas, so it must never pass as if the readback had been graded.
+
+PLAYERS = {"name": "duel", "url": "/", "clients": 2, "steps": [{"all": {"js": "1"}}], "expect": {"text": "x"}}
+
+
+@pytest.mark.parametrize("data, says", [
+    ({"scenarios": [{**PLAYERS, "canvas_capture": {"page": "grab()"}}]}, "does not run in a scenario with clients$"),
+    ({"canvas_capture": {"page": "grab()"}, "scenarios": [PLAYERS]}, "give canvas_capture to each scenario"),
+])
+def test_canvas_capture_on_a_scenario_with_clients_is_refused(data, says):
+    from qajev import suite
+
+    with pytest.raises(suite.SuiteError, match=says):
+        suite.parse({"base_url": "http://127.0.0.1:9", **data})
+    assert suite.parse({"base_url": "http://127.0.0.1:9", "scenarios": [PLAYERS]}).scenarios[0].canvas_capture is None
+
+
+def test_a_device_browser_run_of_a_canvas_capture_scenario_is_harness(monkeypatch):
+    import contextlib
+    from types import SimpleNamespace
+
+    from qajev import mobile, native, suite
+
+    parsed = suite.parse({"base_url": "http://127.0.0.1:9", "scenarios": [
+        {"name": "view", "url": "/", "expect": {"text": "x"}, "canvas_capture": {"page": "grab()"}},
+        {"name": "plain", "url": "/", "expect": {"text": "x"}}]})
+    monkeypatch.setattr(mobile, "MobileApp", lambda *_a, **_kw: contextlib.nullcontext(None))
+    monkeypatch.setattr(native, "run_session", lambda _g, steps, **_kw: [
+        {"name": st["name"], "outcome": "pass", "reason": "all 1 check(s) passed"} for st in steps])
+    results, _ = runner.real_device_run(parsed, parsed.scenarios, "android", SimpleNamespace(
+        shots=False, typesafe_usd_per_call=0.0), 1.0, None, None)
+    got = {r["name"]: r for r in results}
+    view, plain = got["view (Android Chrome)"], got["plain (Android Chrome)"]
+    assert view["outcome"] == "harness", view
+    assert view["reason"].startswith("canvas_capture: page gave no readback image: not run in a device browser")
+    assert plain["outcome"] == "pass" and "canvas_capture" not in plain, plain

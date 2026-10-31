@@ -1188,6 +1188,12 @@ def real_device_run(suite, scenarios, platform, opts, cap, run_dir, emit):
     except native.NativeError as e:
         results = [{"name": st["name"], "outcome": "harness", "stop": "browser_error", "checks": [], "findings": [],
                     "screens": [], "reason": f"{mobile.BROWSER_NAMES[platform]} unavailable: {e}"} for st in steps]
+    capture = {f"{s.name} ({mobile.BROWSER_NAMES[platform]})" for s in scenarios if s.canvas_capture}
+    for result in results:  # the readback runs over CDP in QAJev's Chrome: a device browser gives none
+        if result.get("name") in capture:
+            result["canvas_capture"] = {"problem": "not run in a device browser"}
+            result["outcome"], result["reason"] = canvas_capture_grade(result.get("outcome"), result.get("reason", ""),
+                                                                       result["canvas_capture"])
     return results, ledger.summary()
 
 

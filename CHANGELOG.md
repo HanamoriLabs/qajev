@@ -12,7 +12,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `canvas_capture: {page: <JS expression>, gpu: hardware}` in a suite or scenario. QAJev runs the expression at the end
   of the test, saves the canvas's own readback in the report and grades it, not the screenshot. A flat dark readback,
   no readback, or (with `gpu: hardware`) a software WebGPU adapter such as SwiftShader makes a pass harness. The report
-  keeps a `canvas_capture` record with the image and the adapter's vendor and architecture.
+  keeps a `canvas_capture` record with the image and the adapter's vendor and architecture. A suite that gives it to
+  a scenario with `clients` is refused, and a device-browser copy of such a scenario is harness.
 
 ### Fixed
 

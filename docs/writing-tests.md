@@ -99,7 +99,12 @@ canvas's readback is transparent, and QAJev reads it as black. If the expression
 the test is harness too. With `gpu: hardware`, QAJev also reads the page's WebGPU adapter. No adapter, a fallback
 adapter, or a software one (SwiftShader, llvmpipe, lavapipe...) makes the test harness. A failure stays a failure, with
 the note. For a WebGL or WebGPU canvas, draw with `preserveDrawingBuffer: true`, or read the canvas in the same frame
-as the draw, else the readback is empty.
+as the draw, else the readback is empty. QAJev saves the readback even with `--no-shots`.
+
+The readback runs in QAJev's own Chrome tab only. A scenario with `clients` cannot have `canvas_capture`, and a
+suite-level `canvas_capture` cannot reach one: such a suite is refused when it loads, so give `canvas_capture` to each
+scenario that needs it. In a device browser (`real_devices`), no readback runs, so that copy of the scenario is
+harness.
 
 ## What only a look at the screen tells (Clef)
 
