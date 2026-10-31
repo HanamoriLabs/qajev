@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="A 3D view">
+<title>A 3D view that draws nothing</title>
+<style>
+  body { margin: 0; background: #0b0b10; color: #ddd; font: 16px/1.4 sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  .panel { position: fixed; left: 8px; bottom: 8px; padding: 8px; background: #050508; border: 1px solid #333; }
+</style></head>
+<body>
+  <!-- A full-screen 3D view whose frames never reach the screenshot: the canvas is one flat dark colour, and only the
+       HTML panel over it is drawn (workload-gpu, 31 Oct: a headless Chrome with --disable-vulkan-surface). -->
+  <canvas id="view"></canvas>
+  <div class="panel">Stage 1 of 5: the hall stands</div>
+</body>
+</html>

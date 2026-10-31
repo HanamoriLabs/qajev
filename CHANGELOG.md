@@ -10,6 +10,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   key", "Ctrl+S"), and exit 2. Jev clicks, types and scrolls, but presses no key, so such a goal sends it clicking
   around. The plan lists them as PRESSES KEYS (`key_goals` in the JSON) and says to press the keys in a `key:` hook.
 
+### Fixed
+
+- A test whose end screenshot shows the page's main canvas as one flat dark colour no longer passes: it is harness,
+  and the report keeps a `canvas_blank` record. A headless Chrome started with `--disable-vulkan-surface` left every
+  WebGL and WebGPU canvas out of its screenshots, and tests of a 3D view passed on the HTML around it. A failure stays
+  a failure, with the note.
+
 ## 0.4.39: 31 Oct 2026
 
 ### Fixed

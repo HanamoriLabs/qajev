@@ -115,3 +115,16 @@ def compare(off_png: bytes, on_png: bytes, *, tolerance: int, min_changed: float
         "width": width,
         "height": height,
     }, output.getvalue()
+
+
+def flat_dark(lumas, *, dark=24, spread=6, share=0.97, least=40):
+    """A canvas read at sample points (grey levels 0-255) as one flat dark colour: nothing drawn, or a capture without
+    its GPU layer. -> {points, median, flat} when at least `least` points were read, their median is under `dark` and
+    at least `share` of them are within `spread` of it; else None."""
+    if len(lumas) < least:
+        return None
+    middle = sorted(lumas)[len(lumas) // 2]
+    near = sum(1 for value in lumas if abs(value - middle) <= spread) / len(lumas)
+    if middle >= dark or near < share:
+        return None
+    return {"points": len(lumas), "median": middle, "flat": round(near, 3)}

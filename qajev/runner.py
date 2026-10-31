@@ -412,6 +412,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             try:
                 shot = session.screenshot(run_dir / "shots" / f"{slug(scenario.name)}.jpg")
                 result["shot"] = str(shot.relative_to(run_dir)) if shot else None
+                with contextlib.suppress(RuntimeError, KeyError, TimeoutError, OSError, ValueError):
+                    if shot and (blank := session.blank_canvas(shot)):
+                        result["canvas_blank"] = blank
             except ViewportMismatch as e:
                 stop, detail = "viewport_mismatch", str(e)
                 result["capture_viewport"] = e.evidence
@@ -448,6 +451,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),
                                        url=scenario.url, before=before)
     result.update({k: v for k, v in (("stop_detail", detail), ("not_run", not_run)) if v})
+    outcome, reason = canvas_blank_grade(outcome, reason, result.get("canvas_blank"))
     idle = verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
                                  session.agent.state["history"]) if scenario.goal else None
     if outcome in {"fail", "stuck"} and idle:
@@ -515,6 +519,23 @@ def scroll_to_visible(session, expect):
         if not moved:
             break
     return {"after": "visible", "scrolled": screens, "found": False}
+
+
+def canvas_blank_grade(outcome, reason, blank):
+    """A pass, or a test with no checks, whose end screenshot shows the page's main canvas as one flat dark colour
+    says nothing about the page: harness (workload-gpu, 31 Oct: a headless Chrome with --disable-vulkan-surface left
+    every 3D view out of the screenshot, and the tests passed on their text checks). A failure stays a failure, with
+    the note. -> (outcome, reason)"""
+    if not blank:
+        return outcome, reason
+    words = (f"the screenshot shows the page's main canvas as one flat dark colour ({blank['flat']:.0%} of the "
+             f"{blank['points']} points no other element covers): the browser's capture may lack the canvas's GPU "
+             "layer (a headless Chrome with --disable-vulkan-surface does that), or the page drew nothing")
+    if outcome in {"pass", "unverified"}:
+        return "harness", f"{words}; {reason}"
+    if outcome == "fail":
+        return outcome, f"{reason}; {words}"
+    return outcome, reason
 
 
 def _finish(result, outcome, reason, started):

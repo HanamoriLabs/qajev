@@ -710,6 +710,26 @@ def page_changes(before, after, now=None, node=None):
     return out[:6]
 
 
+# The page's largest canvas on screen, when it covers a fifth of the view or more, and a 24 x 16 grid of its points
+# that no other element covers, in CSS pixels: Session.blank_canvas reads them in the end screenshot.
+CANVAS_POINTS = """(() => {
+  const W = innerWidth, H = innerHeight;
+  let best = null, most = 0;
+  for (const c of document.querySelectorAll('canvas')) {
+    const r = c.getBoundingClientRect();
+    const box = [Math.max(0, r.left), Math.max(0, r.top), Math.min(W, r.right), Math.min(H, r.bottom)];
+    const area = Math.max(0, box[2] - box[0]) * Math.max(0, box[3] - box[1]);
+    if (area > most) { best = [c, box]; most = area; }
+  }
+  if (!best || most < 0.2 * W * H) return null;
+  const [c, [x0, y0, x1, y1]] = best, points = [];
+  for (let i = 0; i < 24; i++) for (let j = 0; j < 16; j++) {
+    const x = x0 + (x1 - x0) * (i + 0.5) / 24, y = y0 + (y1 - y0) * (j + 0.5) / 16;
+    if (document.elementFromPoint(x, y) === c) points.push([x, y]);
+  }
+  return {size: [c.width, c.height], share: most / (W * H), width: W, points};
+})()"""
+
 # The browser's own user-agent client hints, in CDP's UserAgentMetadata shape: an override without them drops them.
 UA_HINTS_JS = """(async () => {
   const d = navigator.userAgentData;
@@ -1339,6 +1359,24 @@ class Session:
         if not isinstance(data, dict) or not isinstance(data.get("data"), str):
             raise RuntimeError("effect capture returned no PNG")
         return base64.b64decode(data["data"], validate=True)
+
+    def blank_canvas(self, path):
+        """The screenshot at path shows the page's main canvas as one flat dark colour (pixels.flat_dark), read at the
+        points of it no other element covers: {points, median, flat, canvas, share}, else None. A canvas under
+        pointer-events: none, or smaller than a fifth of the view, is not read."""
+        from PIL import Image
+
+        from . import pixels
+
+        seen = self.evaluate(CANVAS_POINTS, timeout_ms=5000)
+        if not isinstance(seen, dict) or not seen.get("points") or not seen.get("width"):
+            return None
+        with Image.open(path) as image, image.convert("L") as grey:
+            scale = grey.width / seen["width"]
+            lumas = [grey.getpixel((min(grey.width - 1, int(x * scale)), min(grey.height - 1, int(y * scale))))
+                     for x, y in seen["points"]]
+        flat = pixels.flat_dark(lumas)
+        return {**flat, "canvas": seen["size"], "share": round(seen["share"], 2)} if flat else None
 
     def screenshot(self, path, marked=True):
         """The viewport as a JPEG at path. marked: where the read-only guard hid a control, the picture shows a dashed

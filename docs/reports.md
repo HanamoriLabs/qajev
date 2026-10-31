@@ -65,6 +65,12 @@ ends the scenario as **harness**, even when its scripted checks have passed, and
 or judged. Reactive frame entries keep their capture-time page dimensions and image pixels under `viewport`.
 The initial preflight measurement stays in the scenario's original `viewport` object.
 
+When a web scenario's end screenshot shows the page's main canvas (a fifth of the view or more) as one flat dark
+colour, the scenario keeps a `canvas_blank` record: the points of the canvas that no other element covers (`points`),
+their median grey level (`median`), the share within a few levels of it (`flat`), the canvas size and its share of the
+view. A pass, or a scenario with no checks, is then **harness**; a failure stays a failure, with the note. The check
+needs the screenshot, so `--no-shots` skips it.
+
 Each scenario ends with one outcome. The most important idea in QAJev: **a failure of the product and a failure of
 the test tool are kept apart.**
 
