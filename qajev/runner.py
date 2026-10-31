@@ -6,6 +6,7 @@ own one daemon. Every worker opens its own tab in the same QAJev Chrome and stop
 
 import contextlib
 import dataclasses
+import json
 import os
 import re
 import signal
@@ -531,6 +532,22 @@ def _did(h):
     return f"{h.get('kind') or 'act'} {action!r}"
 
 
+_CONTROL = ("role", "label", "kind", "value", "current_value", "checked", "selected", "expanded")
+
+
+def _seen(page):
+    """The page as a person reads it, for _loop: its address, scroll, words and controls (role, name, value, state),
+    with clock times and times taken ticked. Jev's own fingerprint also holds each control's node id and box, so a step
+    that builds the same sliders again, or a line that says how long the view took, reads as a new page after each
+    click (verse #1000, 31 Oct: 8 clicks on "Adjust"). A page that has no reading keeps its fingerprint."""
+    if not isinstance(page, dict) or not isinstance(page.get("actions"), list):
+        return (page or {}).get("fingerprint")
+    from .session import _ticked
+    controls = [[_ticked(a.get(k)) for k in _CONTROL] for a in page["actions"] if isinstance(a, dict)]
+    return json.dumps([page.get("url"), (page.get("scroll") or {}).get("y"), _ticked(page.get("text")), controls],
+                      default=str)
+
+
 def _loop(history, prints, first):
     """How often Jev clicked one target in a row while the page did not move on, once that is LOOP_CLICKS or more;
     else 0. prints[i] is the page's fingerprint after history[i], first the one before history[0]. "Load more" clicked
@@ -568,7 +585,7 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None, he
     deadline = started + scenario.budget["seconds"]
     reasks = escapes = model_failures = stale_base = 0
     assists = session.assists = []
-    first, prints = (state.get("page") or {}).get("fingerprint"), []
+    first, prints = _seen(state.get("page")), []
     while True:
         read()
         # A goal whose checks held before it began is not reached by holding still: the Orchestrator's sign-in goal
@@ -621,7 +638,7 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None, he
         try:
             session.tick()
             while len(prints) < len(state["history"]):  # the page each action left: _loop compares them
-                prints.append((state.get("page") or {}).get("fingerprint"))
+                prints.append(_seen(state.get("page")))
             model_failures = 0
             for h in state["history"][told:]:
                 step(_did(h), p=h.get("probability"), n=h.get("step"))

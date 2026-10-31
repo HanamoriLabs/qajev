@@ -66,3 +66,6 @@ def test_counts_steps_prices_and_labels_are_read_exactly():
                                 "", buy, CLICK)
     assert fresh("Round ends in 1:05:09", "Round ends in 1:04:58")  # hours too
     assert fresh("Retry in 30 sec", "Retry in 9 sec") and fresh("Closes in 5 min", "Closes in 4 min")
+    # verse #1000, 31 Oct: how long a view took, in seconds with a decimal or in ms
+    assert fresh("4 poses (2.3 s).", "4 poses (1.9 s).") and fresh("Fitted again in 412 ms.", "Fitted again in 38 ms.")
+    assert not fresh("Size +2.3 cm", "Size +1.9 cm")

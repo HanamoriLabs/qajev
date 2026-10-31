@@ -10,6 +10,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   no page dialog to answer, grades the test harness: "the browser stopped answering", with the machine's load at
   both timeouts. Before, every later command waited 30 s again, so a step could cost 5-6 minutes. The next test
   tries the browser again.
+- The loop stop now sees a step that builds its controls again. When Jev clicks one target 3 times in a row, QAJev
+  compares the page as a person reads it: the address, the scroll, the words, and each control's name, value and
+  state. Before, it compared Jev's fingerprint, which also holds each control's node id and box. A step that built
+  the same sliders again was a new page on each click, so Jev clicked "Adjust" 8 times.
+- A time taken ("in 2.3 s", "in 412 ms") is now read as a clock: a change in it alone does not make Jev's move stale.
 
 ## 0.4.38: 31 Oct 2026
 
