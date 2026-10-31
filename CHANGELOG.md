@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.40: 31 Oct 2026
+
 ### Added
 
 - `qajev plan` and `qa_plan` flag a website test whose goal asks Jev to press a key ("press Enter", "the Right arrow
