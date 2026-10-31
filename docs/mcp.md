@@ -110,9 +110,11 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   `qa_project_run` the project's `runner`, then this machine's mode (`QAJEV_RUNNER`, which `qa_mode` sets), else local. `serve`
   (`"DIR"` or `"DIR:PORT"`) ships a built site with a cloud run, served on the cloud machine's own 127.0.0.1 as
   Cloudflare Pages serves it ([CLI](cli.md#a-shipped-site-is-served-as-cloudflare-pages-serves-it)).
-  `model` picks the cloud run's model. A cloud run returns `{"runner": "cloud", "run_id", "url", "gate", "counts",
-  "tests", "report_url", "reason"}`; with `background` its id (`r_...`) and address at once. `qa_job` and `qa_stop`
-  take that id. See [CLI: QAJev Cloud](cli.md#qajev-cloud-where-a-run-goes).
+  `model` picks the cloud run's model. A cloud run returns at once, with or without `background`:
+  `{"runner": "cloud", "job", "run_id", "url", "state": "queued", "gate": null, "note", "next"}`. That result has no
+  gate, so it is not a pass. Call `qa_job` with the id (`r_...`) until the run ends: it then gives `gate`, `counts`,
+  `tests`, `report_url` and `reason`. The run goes on in the cloud when the call ends. Only `qa_stop` stops it. See
+  [CLI: QAJev Cloud](cli.md#qajev-cloud-where-a-run-goes).
 - `about`: what the test proves and why, in plain words. The server's instructions ask agents to give it on every
   test (and `about:` on each scenario or step of a suite); a result lists the tests without one, or with a check
   without words, under `about_missing`. The report and `qajev dashboard` show it under each test's name.

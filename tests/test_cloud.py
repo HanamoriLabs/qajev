@@ -861,10 +861,48 @@ def test_mcp_background_cloud_run_returns_its_id_and_qa_job_and_qa_stop_take_it(
     assert ("POST", f"/api/v1/runs/{RUN}/stop", {}) in dash.calls
 
 
-def test_mcp_cloud_run_waits_for_its_gate(dash, monkeypatch):
-    dash.runs = [{"gate": "running"}, {"gate": "pass", "counts": {"pass": 1}, "tests": []}]
+def test_mcp_cloud_run_returns_its_id_at_once_and_says_it_has_no_gate(dash, monkeypatch):
+    def no_wait(*a, **k):
+        raise AssertionError("the MCP call waited for the cloud run")
+
+    monkeypatch.setattr(cloud, "status", no_wait)
     out = asyncio.run(mcp_server.qa_smoke("https://shop.example/", None, runner="cloud"))
-    assert (out["runner"], out["gate"]) == ("cloud", "PASS") and dash.created()["kind"] == "smoke"
+    assert (out["runner"], out["job"], out["run_id"], out["state"]) == ("cloud", RUN, RUN, "queued")
+    assert out["gate"] is None and dash.created()["kind"] == "smoke"
+    assert "not a pass" in out["note"] and f"qa_job({RUN!r})" in out["next"]
+
+
+def test_a_stuck_cloud_run_never_holds_the_mcp_call(dash):
+    # 29 Oct: a run stuck at "running, 0 of 0 tests" held the call for up to 2 hours, with no id to follow or stop.
+    dash.runs = [{"gate": "running", "progress": "0 of 0 tests"}]
+    out = asyncio.run(asyncio.wait_for(mcp_server.qa_check("https://shop.example/", None, runner="cloud",
+                                                           expect_text=["Hi"]), 5))
+    assert (out["job"], out["state"], out["gate"]) == (RUN, "queued", None)
+    job = asyncio.run(mcp_server.qa_job(out["job"]))
+    assert (job["state"], job["progress"]) == ("running", "0 of 0 tests")
+    assert not [c for c in dash.calls if c[1].endswith("/stop")]
+
+
+def test_a_cloud_run_goes_on_when_the_mcp_call_ends(dash):
+    class GoneClient:  # the client goes away while the call reports the run's id
+        async def report_progress(self, *a, **k):
+            await asyncio.Event().wait()
+
+    async def call():
+        task = asyncio.ensure_future(mcp_server.qa_check("https://shop.example/", GoneClient(), runner="cloud",
+                                                         expect_text=["Hi"]))
+        for _ in range(500):
+            await asyncio.sleep(0.01)
+            if any(c[:2] == ("POST", "/api/v1/runs") for c in dash.calls):
+                break
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(call())
+    assert dash.created()["args"][:2] == ["check", "https://shop.example/"]
+    assert not [c for c in dash.calls if c[1].endswith("/stop")], "A call that ended must not stop the cloud run"
 
 
 def test_mcp_cloud_refuses_and_auto_runs_here_with_a_note(dash, monkeypatch):

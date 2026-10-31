@@ -26,6 +26,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Changed
 
+- An MCP cloud run (`qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run` with `runner: "cloud"`) now returns
+  its id, address and state `queued` at once, with or without `background`. The result has no gate and says it is
+  not a pass. `qa_job` gives the gate when the run ends. Before, the call waited up to 2 hours for the gate, and the
+  run id came only as a progress note. A run stuck at "running, 0 of 0 tests" then held the agent with no id it could
+  follow or stop. A call that ended also stopped the cloud run. Now the run goes on in the cloud when the call ends,
+  and only `qa_stop` stops it. The CLI does not change.
 - The `--serve` help, `serve` in the MCP tools and the docs now say how the cloud machine serves a shipped site: as
   Cloudflare Pages does, with ETag and 304, Pages' cache headers, and the build's `_headers` and `_redirects`. They
   also say what it does not do yet: pretty URLs, the single-page fallback and a `404.html` page.
