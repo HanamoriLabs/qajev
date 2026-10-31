@@ -60,7 +60,7 @@ SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
     "persona", "speech", "vision", "about", "clients", "steps", "state", "seed", "color_scheme", "expect_fail",
-    "canvas_capture",
+    "canvas_capture", "canvas_dark",
 } | set(ux_options.KEYS)
 # A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
 MAX_CLIENTS = 12
@@ -70,7 +70,7 @@ STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
-    "cpu_throttle", "plan", "color_scheme", "tunnel", "browser", "canvas_capture",
+    "cpu_throttle", "plan", "color_scheme", "tunnel", "browser", "canvas_capture", "canvas_dark",
 } | set(ux_options.KEYS)
 # browser: fresh (the default) runs each test, or each depends_on chain, in its own new Chrome, capped at its
 # budget.seconds + runner.CAP_MARGIN; shared runs every test in one Chrome, one tab per chain (the old way).
@@ -127,6 +127,7 @@ class Scenario:
     expect_fail: dict | None = None  # a planted fault: {check, words}, the one check it must fail on (_expect_fail)
     ux_options: dict = field(default_factory=dict)  # explicit suite/scenario options; run flags override them
     canvas_capture: dict | None = None  # {page, gpu}: the canvas is proved by its own readback (suite.canvas_capture)
+    canvas_dark: str | None = None  # why the main canvas is one flat dark colour on purpose (suite.canvas_dark)
 
     @property
     def task(self):
@@ -671,6 +672,7 @@ def parse(data, path=None, devices=None):
             expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where),
             ux_options=_ux_options({**suite_ux, **_ux_options(item, where)}, where),
             canvas_capture=capture,
+            canvas_dark=canvas_dark(item.get("canvas_dark", data.get("canvas_dark")), f"{where}.canvas_dark"),
         ))
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")
@@ -820,6 +822,18 @@ def canvas_capture(value, where):
     if value.get("gpu") not in (None, "hardware"):
         raise SuiteError(f"{where}: canvas_capture.gpu must be hardware, not {value['gpu']!r}")
     return {"page": value["page"].strip(), "gpu": value.get("gpu")}
+
+
+def canvas_dark(value, where):
+    """`canvas_dark: <why>`: the page's main canvas is one flat dark colour on purpose (a night scene, a fade to
+    black), so a flat dark canvas does not make the test harness. Only a written reason turns the check off: the report
+    shows it next to the result. -> the reason, or None."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise SuiteError(f"{where}: canvas_dark must say in words why the canvas is dark on purpose, not "
+                         f"{value!r}")
+    return value.strip()
 
 
 def about(value, where):

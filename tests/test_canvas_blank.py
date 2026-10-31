@@ -64,6 +64,25 @@ scenarios:
     about: fixture
     url: /canvas-lit.html
     expect: {{text: ["the hall stands"]}}
+  - name: a small dark canvas
+    about: fixture
+    url: /canvas-small.html
+    expect: {{text: ["the thumbnail stands"]}}
+  - name: a dark canvas half under a lit panel
+    about: fixture
+    url: /canvas-covered.html
+    expect: {{text: ["the hall stands"]}}
+  - name: dark on purpose
+    about: fixture
+    url: /canvas-dark.html
+    canvas_dark: the hall is shown at night
+    expect: {{text: ["the hall stands"]}}
+  - name: the canvas check breaks
+    about: fixture
+    url: /canvas-dark.html
+    expect: {{text: ["the hall stands"]}}
+    after:
+      - js: "document.elementFromPoint = () => {{ throw new Error('planted elementFromPoint') }}"
 """)
     p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--headless", "--ephemeral",
                         "--profile", f"canvas-{os.getpid()}", "--out", str(tmp_path / "out"), "--json", "--quiet",
@@ -75,6 +94,17 @@ scenarios:
     assert dark["reason"].startswith("the screenshot shows the page's main canvas as one flat dark colour"), dark
     assert dark["canvas_blank"]["points"] >= 300 and dark["canvas_blank"]["median"] < 24, dark
     assert lit["outcome"] == "pass" and not lit.get("canvas_blank"), lit
+    small = got["a small dark canvas"]  # 16% of the view: under the fifth that makes a canvas the main one
+    assert small["outcome"] == "pass" and not small.get("canvas_blank"), small
+    covered = got["a dark canvas half under a lit panel"]  # only the points no element covers are read: all dark
+    assert covered["outcome"] == "harness" and covered["canvas_blank"]["points"] < 0.5 * 384, covered
+    purpose = got["dark on purpose"]
+    assert purpose["outcome"] == "pass" and purpose["canvas_dark"] == "the hall is shown at night", purpose
+    assert purpose["reason"].endswith("(canvas_dark: the hall is shown at night)"), purpose
+    broke = got["the canvas check breaks"]
+    assert broke["outcome"] == "pass" and not broke.get("canvas_blank"), broke
+    assert "planted elementFromPoint" in broke["canvas_blank_error"], broke
+    assert "the canvas check could not read the end screenshot" in broke["reason"], broke
 
 
 # canvas_capture: page (the Orchestrator, 31 Oct): a suite whose canvas the browser cannot screenshot proves it by the
@@ -122,6 +152,26 @@ def test_a_readback_is_read_on_a_grid_and_a_transparent_one_reads_black():
             pixels.grid_lumas(bad)
 
 
+@pytest.mark.parametrize("kind", ["GIF", "BMP"])
+def test_a_readback_in_another_image_format_is_refused(kind):
+    import io
+
+    from PIL import Image
+
+    out = io.BytesIO()
+    with Image.new("RGB", (64, 48), (200, 120, 40)) as image:
+        image.save(out, format=kind)
+    with pytest.raises(pixels.PixelError, match=f"the readback is {kind} image, not PNG, JPEG or WebP"):
+        pixels.grid_lumas(out.getvalue())
+
+
+@pytest.mark.parametrize("size", [(16385, 1), (1, 16385), (4097, 4097)])
+def test_a_readback_over_the_size_limit_is_refused(size):
+    with pytest.raises(pixels.PixelError, match="outside the limits"):
+        pixels.grid_lumas(png(0, size=size, mode="L"))
+    assert pixels.grid_lumas(png(0, size=(16384, 1), mode="L"))  # the limit itself is read
+
+
 @pytest.mark.parametrize("adapter, software", [
     ({"vendor": "google", "architecture": "swiftshader", "description": "", "fallback": True}, "swiftshader"),
     ({"vendor": "mesa", "architecture": "", "description": "llvmpipe (LLVM 19)", "fallback": False}, "llvmpipe"),
@@ -137,6 +187,37 @@ def test_a_software_or_missing_webgpu_adapter_is_named(adapter, software):
     assert (got is None) if software is None else (software in got)
 
 
+UNNAMED = {"vendor": "", "architecture": "", "description": "", "fallback": False}
+
+
+@pytest.mark.parametrize("gpu, software", [
+    (None, "the GPU could not be read"),
+    ({"none": "the page has no WebGL to name its GPU"}, "the page has no WebGL to name its GPU"),
+    ({"device": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)"},
+     "the browser's GPU is software (SwiftShader)"),
+    ({"device": "llvmpipe (LLVM 19.1.7, 256 bits)"}, "the browser's GPU is software (llvmpipe)"),
+    ({"device": ""}, "WebGL gives no renderer"),
+    ({"device": "ANGLE (NVIDIA, NVIDIA L4 (0x000027B8) Direct3D11 vs_5_0 ps_5_0, D3D11)"}, None),
+])
+def test_an_unnamed_webgpu_adapter_is_proved_only_by_the_browsers_gpu(gpu, software):
+    from qajev.session import software_adapter
+
+    got = software_adapter(UNNAMED, gpu)
+    assert (got is None) if software is None else (software in got), got
+    assert software_adapter({**UNNAMED, "vendor": "nvidia"}, None) is None  # a named adapter needs no GPU info
+
+
+def test_a_hardware_readback_reads_the_browsers_gpu_when_the_adapter_is_unnamed(tmp_path):
+    from qajev.session import GPU_NAME_JS, WEBGPU_ADAPTER_JS, Session
+
+    s = Session.__new__(Session)
+    named = {WEBGPU_ADAPTER_JS: UNNAMED, GPU_NAME_JS: {"device": "Google SwiftShader"}}
+    s.evaluate = lambda js, timeout_ms: named.get(js)
+    got = s.page_canvas({"page": "null", "gpu": "hardware"}, tmp_path / "c.png")
+    assert got["gpu"] == {"device": "Google SwiftShader"}, got
+    assert got["software"] == "the browser's GPU is software (SwiftShader)", got
+
+
 @pytest.mark.parametrize("capture, says", [
     ({"problem": "the readback expression gave nothing"}, "canvas_capture: page gave no readback image"),
     ({"software": "the page's WebGPU adapter is software (swiftshader)"}, "asks for a hardware GPU"),
@@ -149,6 +230,12 @@ def test_no_readback_or_a_software_gpu_turns_a_pass_into_harness_and_keeps_a_fai
     assert runner.canvas_capture_grade("pass", "ok", {"problem": None, "software": None}) == ("pass", "ok")
     reason = runner.canvas_blank_grade("pass", "ok", {**BLANK, "readback": True})[1]
     assert reason.startswith("the canvas's own readback (canvas_capture: page) is one flat dark colour")
+
+
+# A readback drawn in the page, half lit: the screenshot of /canvas-dark.html is flat dark, this image is not.
+LIT_READBACK = ("(() => { const c = document.createElement('canvas'); c.width = 64; c.height = 48; "
+                "const g = c.getContext('2d'); g.fillStyle = '#c87828'; g.fillRect(0, 0, 32, 48); "
+                "return c.toDataURL(); })()")
 
 
 @LIVE
@@ -179,6 +266,11 @@ scenarios:
     url: {lit}
     expect: {{text: ["the hall stands"]}}
     canvas_capture: {{page: "{grab}", gpu: hardware}}
+  - name: dark screen, lit readback
+    about: fixture
+    url: {dark}
+    expect: {{text: ["the hall stands"]}}
+    canvas_capture: {{page: {json.dumps(LIT_READBACK)}}}
 """)
     out = tmp_path / "out"
     p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--headless", "--ephemeral",
@@ -200,6 +292,34 @@ scenarios:
     assert none["reason"].startswith("canvas_capture: page gave no readback image: the readback expression gave"), none
     hardware = got["hardware asked"]  # QAJev's headless Chrome on a test machine has no hardware WebGPU
     assert hardware["outcome"] == "harness" and "asks for a hardware GPU" in hardware["reason"], hardware
+    assert "SwiftShader" in hardware["canvas_capture"]["gpu"]["device"], hardware  # the test machine's software GL
+    skipped = got["dark screen, lit readback"]  # with canvas_capture, the dark screenshot is not graded
+    assert skipped["outcome"] == "pass" and not skipped.get("canvas_blank"), skipped
+
+
+# A canvas dark on purpose says why (redteam-1 L4, #225): only words turn the flat dark grade off.
+
+def test_canvas_dark_needs_a_written_reason():
+    from qajev import suite
+
+    one = {"name": "a", "url": "/", "expect": {"text": "x"}}
+    parsed = suite.parse({"base_url": "http://127.0.0.1:9", "canvas_dark": " a night scene ",
+                          "scenarios": [one, {**one, "name": "b", "canvas_dark": "a fade to black"}]})
+    assert [s.canvas_dark for s in parsed.scenarios] == ["a night scene", "a fade to black"]
+    assert suite.parse({"base_url": "http://127.0.0.1:9", "scenarios": [one]}).scenarios[0].canvas_dark is None
+    for bad in (True, "  ", 1, {"why": "x"}):
+        with pytest.raises(suite.SuiteError, match="canvas_dark must say in words why the canvas is dark on purpose"):
+            suite.parse({"base_url": "http://127.0.0.1:9", "scenarios": [{**one, "canvas_dark": bad}]})
+
+
+@pytest.mark.parametrize("outcome", ["pass", "unverified", "fail"])
+def test_a_canvas_dark_on_purpose_keeps_its_outcome_and_a_broken_check_is_named(outcome):
+    got, reason = runner.canvas_blank_grade(outcome, "ok", BLANK, dark="a night scene")
+    assert got == outcome and reason == "ok; the main canvas is one flat dark colour, which the suite says is on " \
+                                        "purpose (canvas_dark: a night scene)", reason
+    got, reason = runner.canvas_blank_grade(outcome, "ok", None, error="RuntimeError: gone")
+    assert got == outcome and reason == "ok; the canvas check could not read the end screenshot (RuntimeError: gone)"
+    assert runner.canvas_blank_grade(outcome, "ok", None, dark="a night scene") == (outcome, "ok")
 
 
 # redteam-1 B1 (#225): canvas_capture runs in QAJev's own tab only. A scenario with clients (clients.py) or a device

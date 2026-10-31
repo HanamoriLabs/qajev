@@ -412,9 +412,11 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             try:
                 shot = session.screenshot(run_dir / "shots" / f"{slug(scenario.name)}.jpg")
                 result["shot"] = str(shot.relative_to(run_dir)) if shot else None
-                with contextlib.suppress(RuntimeError, KeyError, TimeoutError, OSError, ValueError):
+                try:
                     if shot and not scenario.canvas_capture and (blank := session.blank_canvas(shot)):
                         result["canvas_blank"] = blank
+                except (RuntimeError, KeyError, TimeoutError, OSError, ValueError) as e:  # the reason says so
+                    result["canvas_blank_error"] = f"{type(e).__name__}: {e}"
             except ViewportMismatch as e:
                 stop, detail = "viewport_mismatch", str(e)
                 result["capture_viewport"] = e.evidence
@@ -458,7 +460,10 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),
                                        url=scenario.url, before=before)
     result.update({k: v for k, v in (("stop_detail", detail), ("not_run", not_run)) if v})
-    outcome, reason = canvas_blank_grade(outcome, reason, result.get("canvas_blank"))
+    if result.get("canvas_blank") and scenario.canvas_dark:
+        result["canvas_dark"] = scenario.canvas_dark
+    outcome, reason = canvas_blank_grade(outcome, reason, result.get("canvas_blank"), dark=scenario.canvas_dark,
+                                         error=result.get("canvas_blank_error"))
     outcome, reason = canvas_capture_grade(outcome, reason, result.get("canvas_capture"))
     idle = verdict.never_set_off(scenario.url, observed.get("url"), scenario.expect,
                                  session.agent.state["history"]) if scenario.goal else None
@@ -529,13 +534,19 @@ def scroll_to_visible(session, expect):
     return {"after": "visible", "scrolled": screens, "found": False}
 
 
-def canvas_blank_grade(outcome, reason, blank):
+def canvas_blank_grade(outcome, reason, blank, *, dark=None, error=None):
     """A pass, or a test with no checks, whose end screenshot shows the page's main canvas as one flat dark colour
     says nothing about the page: harness (workload-gpu, 31 Oct: a headless Chrome with --disable-vulkan-surface left
     every 3D view out of the screenshot, and the tests passed on their text checks). A failure stays a failure, with
-    the note. -> (outcome, reason)"""
+    the note. dark: the suite's canvas_dark, why the canvas is dark on purpose: the outcome stays, and the reason says
+    so. error: the check itself broke, so nothing is known about the canvas: the reason says so. -> (outcome, reason)"""
+    if error:
+        return outcome, f"{reason}; the canvas check could not read the end screenshot ({error})"
     if not blank:
         return outcome, reason
+    if dark:
+        return outcome, (f"{reason}; the main canvas is one flat dark colour, which the suite says is on purpose "
+                         f"(canvas_dark: {dark})")
     if blank.get("readback"):
         words = (f"the canvas's own readback (canvas_capture: page) is one flat dark colour ({blank['flat']:.0%} of "
                  f"{blank['points']} points): the page drew nothing")

@@ -739,17 +739,40 @@ WEBGPU_ADAPTER_JS = """(async () => {
   return {vendor: i.vendor || '', architecture: i.architecture || '', description: i.description || '',
           fallback: !!(a.isFallbackAdapter ?? i.isFallbackAdapter)};
 })()"""
+# The GPU the page's browser draws with, as WebGL names it to the page (its unmasked renderer, such as "ANGLE (NVIDIA,
+# NVIDIA L4 ...)" or "... SwiftShader ..."). CDP's SystemInfo.getInfo would say it too, but only on the browser target,
+# and QAJev's CDP calls go to the page. The context is dropped at once.
+GPU_NAME_JS = """(() => {
+  const make = kind => document.createElement('canvas').getContext(kind);
+  const g = make('webgl2') || make('webgl');
+  if (!g) return {none: 'the page has no WebGL to name its GPU'};
+  const x = g.getExtension('WEBGL_debug_renderer_info');
+  const device = String(g.getParameter(x ? x.UNMASKED_RENDERER_WEBGL : g.RENDERER) || '');
+  const lose = g.getExtension('WEBGL_lose_context');
+  if (lose) lose.loseContext();
+  return {device};
+})()"""
 _SOFTWARE_GPU = re.compile(r"swiftshader|llvmpipe|lavapipe|softpipe|software|warp", re.IGNORECASE)
 
 
-def software_adapter(adapter):
-    """Why a WebGPU adapter is no hardware GPU (a fallback, or SwiftShader, llvmpipe...), else None."""
+def software_adapter(adapter, gpu=None):
+    """Why a WebGPU adapter is no hardware GPU (a fallback, or SwiftShader, llvmpipe...), else None. An adapter that
+    gives no vendor and no architecture is not proof of a hardware GPU: then gpu, the GPU the browser draws with
+    (Session.gpu_info), must name a GPU that is no software one."""
     if not isinstance(adapter, dict) or adapter.get("none"):
         return (adapter or {}).get("none") or "the page's WebGPU adapter could not be read"
     named = " ".join(str(adapter.get(k) or "") for k in ("vendor", "architecture", "description"))
     if (soft := _SOFTWARE_GPU.search(named)) or adapter.get("fallback"):
         return f"the page's WebGPU adapter is software ({soft.group(0) if soft else 'a fallback adapter'})"
-    return None
+    if adapter.get("vendor") or adapter.get("architecture"):
+        return None
+    gpu = gpu if isinstance(gpu, dict) else {}
+    if soft := _SOFTWARE_GPU.search(gpu.get("device") or ""):
+        return f"the browser's GPU is software ({soft.group(0)})"
+    if gpu.get("device"):
+        return None
+    return ("the page's WebGPU adapter gives no vendor or architecture, and the browser names no GPU "
+            f"({gpu.get('none') or 'WebGL gives no renderer'}): the GPU could not be read")
 
 # The browser's own user-agent client hints, in CDP's UserAgentMetadata shape: an override without them drops them.
 UA_HINTS_JS = """(async () => {
@@ -1401,13 +1424,14 @@ class Session:
 
     def page_canvas(self, spec, path):
         """canvas_capture: page. Runs the suite's readback expression, saves the image at path and reads it as
-        flat_dark does; with gpu: hardware, also the page's WebGPU adapter. -> {image, problem, blank, adapter,
-        software}: image is the saved path or None, problem says why there is no image."""
+        flat_dark does; with gpu: hardware, also the page's WebGPU adapter and the browser's GPU. -> {image, problem,
+        blank, adapter, gpu, software}: image is the saved path or None, problem says why there is no image."""
         import base64
 
         from . import pixels
 
-        out: dict[str, Any] = {"image": None, "problem": None, "blank": None, "adapter": None, "software": None}
+        out: dict[str, Any] = {"image": None, "problem": None, "blank": None, "adapter": None, "gpu": None,
+                               "software": None}
         try:
             url = self.evaluate(spec["page"], timeout_ms=15000)
         except (RuntimeError, TimeoutError) as error:
@@ -1432,8 +1456,17 @@ class Session:
                 out["adapter"] = self.evaluate(WEBGPU_ADAPTER_JS, timeout_ms=10000)
             except (RuntimeError, TimeoutError) as error:
                 out["adapter"] = {"none": f"the WebGPU adapter could not be read: {error}"}
-            out["software"] = software_adapter(out["adapter"])
+            out["gpu"] = self.gpu_info()
+            out["software"] = software_adapter(out["adapter"], out["gpu"])
         return out
+
+    def gpu_info(self):
+        """The GPU the browser draws the page with (GPU_NAME_JS): {device}, else {none: why}."""
+        try:
+            got = self.evaluate(GPU_NAME_JS, timeout_ms=10000)
+        except (RuntimeError, TimeoutError) as error:
+            return {"none": f"the GPU name could not be read: {error}"}
+        return got if isinstance(got, dict) else {"none": "the GPU name could not be read"}
 
     def screenshot(self, path, marked=True):
         """The viewport as a JPEG at path. marked: where the read-only guard hid a control, the picture shows a dashed
