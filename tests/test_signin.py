@@ -382,6 +382,8 @@ def test_a_failed_request_never_shows_a_password_a_user_part_or_a_token_in_its_p
         shown = signin._where("https://app.example" + path)
         assert secret not in shown and shown.startswith("app.example/"), (path, shown)
     assert signin._where("https://app.example/v1/item/42") == "app.example/v1/item/42"  # short ids stay readable
+    assert signin._where("http://[::1]:8765/login") == "[::1]:8765/login"  # an IPv6 host keeps its brackets
+    assert signin._where("http://bob@app.example:notaport/x") == "app.example/x"  # a port that is not a number
 
 
 def test_a_failed_sign_in_with_no_failed_request_says_nothing_more(tmp_path):
