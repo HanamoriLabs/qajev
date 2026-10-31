@@ -37,6 +37,12 @@
   const raf = () => new Promise(resolve => requestAnimationFrame(resolve));
   const frames = async () => { await raf(); await raf(); };
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  // The browser's own scroll calls, kept before the page runs. A page can give one element its own scrollTo:
+  // React Native Web's ScrollView reads scrollTo({x, y, animated}), so {left, top} glided the box to the top.
+  const nativeScrollTo = Element.prototype.scrollTo;
+  const nativeScrollIntoView = Element.prototype.scrollIntoView;
+  const scrollElementTo = (el, left, top) => nativeScrollTo.call(el, {left, top, behavior: "instant"});
+  const scrollElementIntoView = (el, block) => nativeScrollIntoView.call(el, {block, inline: "nearest", behavior: "instant"});
 
   function id(el) {
     if (!(el instanceof Element)) return null;
@@ -289,7 +295,7 @@
 
   function restoreScroll(saved) {
     for (const [el, x, y] of saved) {
-      if (el.isConnected && (el.scrollLeft !== x || el.scrollTop !== y)) el.scrollTo({left: x, top: y, behavior: "instant"});
+      if (el.isConnected && (el.scrollLeft !== x || el.scrollTop !== y)) scrollElementTo(el, x, y);
     }
   }
 
@@ -511,7 +517,7 @@
       if (!el.isConnected) { pending.get("UX-COVER").delete(el); continue; }
       const saved = saveScroll();
       try {
-        el.scrollIntoView({block: "center", inline: "nearest", behavior: "instant"});
+        scrollElementIntoView(el, "center");
         if (!budget()) break;
         await frames();
         tick = performance.now();
@@ -871,7 +877,7 @@
 
   window.__qajevUx = Object.freeze({scanStatic, shiftBefore, shiftAfter, keyboardInfo, neutralPoint, mark, unmark, fields,
     snapshot, restore, dismissStart, dismissEnd, settleInfo, state: settleInfo,
-    scrollField: value => { const el = resolve(value); if (!el) return false; el.scrollIntoView({block: "nearest", inline: "nearest", behavior: "instant"}); return true; },
+    scrollField: value => { const el = resolve(value); if (!el) return false; scrollElementIntoView(el, "nearest"); return true; },
     focusField: value => { const el = resolve(value); if (!el || !textField(el)) return false; el.focus({preventScroll: true}); return document.activeElement === el || composedContains(el, document.activeElement); },
     element: value => { const el = resolve(value); return el ? info(el) : null; }});
 })();

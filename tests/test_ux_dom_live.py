@@ -422,6 +422,34 @@ def test_cover_rechecks_after_animation_and_does_not_report_transient_overlay(pa
     assert counts(observer) == {}, observer.result
 
 
+def test_cover_scan_keeps_a_scroll_box_whose_own_scrollto_reads_x_y(page, site):
+    # grailtab, 31 Oct: React Native Web gives each ScrollView element its own scrollTo({x, y, animated}). The
+    # scan's restore called el.scrollTo({left, top}), which that reads as x 0, y 0, animated: the box glided to
+    # the top before the end screenshot. The button's own scrollIntoView does nothing, as a page's could.
+    session, _ = page
+    html = ('<div id="box" style="height:600px;overflow:auto"><div style="position:relative;height:1500px">'
+            '<button id="covered" style="position:absolute;top:950px;left:20px;width:200px;height:48px">'
+            'Covered</button>'
+            '<p id="target" style="position:absolute;top:1400px;margin:0">Target line</p></div></div>'
+            '<div style="position:fixed;left:0;top:0;width:390px;height:120px;z-index:5">Bar</div>')
+    rnw = """const box = document.querySelector('#box'); window.ownCalls = []; window.seen = [];
+      box.scrollTo = (y, x, animated) => { window.ownCalls.push('scrollTo');
+        if (typeof y !== 'number') ({x = 0, y = 0, animated = true} = y || {});
+        box.scroll({top: y, left: x, behavior: animated === false ? 'auto' : 'smooth'}); };
+      document.querySelector('#covered').scrollIntoView = () => window.ownCalls.push('scrollIntoView');
+      box.scrollTop = box.scrollHeight;
+      box.addEventListener('scroll', () => window.seen.push(box.scrollTop));"""
+    observer = session.open_ux(site + "/ux-input-kind.html", ux_checks=["cover"],
+                               before_scan="document.body.innerHTML = " + json.dumps(html) + ";" + rnw)
+    session.evaluate("new Promise(r => setTimeout(r, 1000))")  # a smooth glide ends in about 0.5 s
+    state = session.evaluate("""(() => { const box = document.querySelector('#box'), b = box.getBoundingClientRect();
+      const t = document.querySelector('#target').getBoundingClientRect();
+      return {top: box.scrollTop, calls: window.ownCalls, moved: Math.min(...window.seen) < 900,
+              inside: t.top >= b.top && t.bottom <= b.bottom && t.bottom <= innerHeight}; })()""")
+    # moved: the scan did scroll the box to look at the covered button, so the restore was really tested.
+    assert state == {"top": 900, "calls": [], "moved": True, "inside": True}, (state, observer.result)
+
+
 def test_scroll_is_not_a_content_shift_and_eight_pixels_is_exclusive(page, site):
     session, _ = page
     observer = inline(session, site, '<div style="height:2000px">'

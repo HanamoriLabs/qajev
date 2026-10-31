@@ -18,6 +18,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   script cannot change what they see.
 - When the flat dark canvas check breaks, the report now keeps the error (`canvas_blank_error`) and the reason says
   so. Before, the check was skipped without a word.
+- The UX scan no longer scrolls a React Native Web page back to the top. The cover check scrolls each covered control
+  into view and then puts every scroll box back. React Native Web gives each ScrollView its own `scrollTo`, which
+  reads `{x, y, animated}`, so the scan's put-back glided the box to the top before the end screenshot. The scan now
+  calls the browser's own scroll functions, which it keeps before the page's code runs.
 
 ### Changed
 
