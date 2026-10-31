@@ -59,8 +59,23 @@ class TransportLost(RuntimeError):
     """The connection is gone; its state and unacknowledged actions cannot be replayed safely."""
 
 
+class BrowserStalled(TimeoutError):
+    """The browser stopped answering this test: a command timed out twice in a row with no page dialog to answer."""
+
+
 def transport_error():
     return getattr(getattr(_jev, "transport", None), "error", None)
+
+
+def browser_stalled():
+    """Why the browser stopped answering the current test, or None (runner.run_group grades the test by it)."""
+    return getattr(getattr(_jev, "transport", None), "stalled", None)
+
+
+def clear_stall():
+    """A new test tries the browser again: an ordinary timeout does not cost the tests after it."""
+    if (transport := getattr(_jev, "transport", None)) is not None:
+        transport.stalled = None
 
 
 def require_transport() -> None:
@@ -161,15 +176,26 @@ def _navigation_went_on(raw_cdp, session_id, url, wait=10.0):
     return False
 
 
+def _load1():
+    """The machine's 1-minute load, for a report that says why the browser stopped answering (0.0 if unknown)."""
+    try:
+        return os.getloadavg()[0]
+    except OSError:
+        return 0.0
+
+
 def _patient_cdp(raw_cdp, timeout, transport, pending=None):
     def call(method, session_id=None, **params):
         if transport.error is not None:
             raise transport.error
+        if (stalled := getattr(transport, "stalled", None)) is not None:
+            raise stalled  # the rest of this test waits for nothing: each call would time out again
         params.pop("_response_timeout", None)
         try:
             try:
                 return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
             except TimeoutError:
+                load_first = _load1()
                 answered = (pending is not None and method != "Page.handleJavaScriptDialog"
                             and answer_dialog(raw_cdp, pending, session_id, transport))
                 if answered and answered != "other" and method.startswith("Input."):
@@ -180,7 +206,18 @@ def _patient_cdp(raw_cdp, timeout, transport, pending=None):
                 if answered and answered != "other" and method == "Page.navigate" and _navigation_went_on(
                         raw_cdp, session_id, params.get("url")):
                     return {}
-                return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+                try:
+                    return raw_cdp(method, session_id=session_id, _response_timeout=timeout, **params)
+                except TimeoutError as again:
+                    if answered:  # the page's dialog was answered: the page may answer the next call
+                        raise
+                    # Two timeouts in a row with no dialog to answer: the browser stopped answering. Every later
+                    # call would wait as long again (#802, 30 Oct: 300-390 s a step), so the rest of this test fails
+                    # at once and the test grades harness. The next test tries the browser again (clear_stall).
+                    transport.stalled = BrowserStalled(
+                        f"the browser stopped answering: {method} timed out twice in a row ({timeout:.0f} s each), "
+                        f"with no page dialog to answer (load1 {load_first:.1f}, then {_load1():.1f})")
+                    raise transport.stalled from again
         except (RuntimeError, OSError, EOFError) as error:
             lost = _is_transport_error(error)
             # An oversized IPC request closes that request's socket, not necessarily the daemon's CDP link.
@@ -254,7 +291,7 @@ def load(ledger):
     from jev_ultrafast import model as jev_model
 
     timeout = float(os.environ.get("QAJEV_CDP_TIMEOUT", "30"))
-    transport = SimpleNamespace(error=None, dialogs=[])
+    transport = SimpleNamespace(error=None, dialogs=[], stalled=None)
     helpers._send = _checked_send(helpers._send, transport)
 
     def pending():  # the dialog the daemon saw open and not yet closed (browser_harness's page_info reads it too)

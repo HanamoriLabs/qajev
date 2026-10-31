@@ -140,6 +140,13 @@ Check the browser and system logs for a crash, a killed process or a memory limi
 A restarted GPU process can lose the page's WebGPU resources even when Chrome stays open. Restore a known
 test state, then start a new QAJev process explicitly. A response timeout or an ordinary rejected CDP command
 does not by itself prove that the transport is gone.
+
+**"the browser stopped answering" (harness)**
+A browser command timed out twice in a row (`QAJEV_CDP_TIMEOUT`, 30 s each), with no page dialog to answer. That
+test ends at once; before, every later command waited as long again. The reason gives the machine's load at both
+timeouts. Often a page script never stopped, or the machine was too busy. The next test tries the browser again.
+The tests that `depends_on` it are skipped, as after any test that did not pass.
+
 `Target closed` and `Session with given id not found` can describe a closed popup or a detached target on a
 usable browser connection. They keep normal command-error handling, without invalidating the whole transport
 or replaying the rejected command. Socket, EOF, browser shutdown and WebSocket-loss errors still stop reuse.

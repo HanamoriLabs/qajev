@@ -686,6 +686,14 @@ def _transport_result(scenario, error, started, result=None):
                    "harness", f"browser/daemon transport lost: {error}; no automatic retry", started)
 
 
+def _stalled_result(scenario, stalled, started, result=None):
+    """A test whose browser stopped answering (session.BrowserStalled): harness, whatever its checks said by then."""
+    return _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
+                    "checks": [], "findings": [], "screens": [], **(result or {}),
+                    "stop": "browser_stalled", "stop_detail": str(stalled)},
+                   "harness", f"{stalled}; the next test tries the browser again", started)
+
+
 def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=None):
     from . import session as session_mod
 
@@ -708,6 +716,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
             blocked_by = [d for d in scenario.depends_on if outcomes.get(d) != "pass"]
             started = time.monotonic()
             spent_before = ledger.spent()
+            session_mod.clear_stall()  # a timeout in the test before does not cost this one
             if blocked_by:
                 result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
                                   "mode": scenario.mode, "checks": [], "findings": [], "screens": []},
@@ -755,6 +764,8 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                 if (error := session_mod.transport_error()) is not None:
                     result = _transport_result(scenario, error, started, result)
                     lost_after = scenario.name
+                elif (stalled := session_mod.browser_stalled()) is not None:
+                    result = _stalled_result(scenario, stalled, started, result)
             if not blocked_by:
                 result["cost_usd"] = round(ledger.spent() - spent_before, 5)
             outcomes[scenario.name] = result["outcome"]

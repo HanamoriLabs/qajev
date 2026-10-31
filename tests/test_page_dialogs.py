@@ -191,6 +191,8 @@ def test_with_no_dialog_open_a_timeout_still_retries_once_and_answers_nothing():
 
 
 def test_a_daemon_that_cannot_say_still_gets_the_old_retry():
+    # It cannot say whether a dialog is open, and the retry times out too: nothing was answered, so the browser
+    # stopped answering this test, as below. It is still a timeout.
     page = Page({"type": "beforeunload", "message": ""})
 
     def broken():
@@ -201,6 +203,51 @@ def test_a_daemon_that_cannot_say_still_gets_the_old_retry():
         call("Runtime.evaluate", session_id="s1", expression="1")
     assert transport.dialogs == []
     assert [c[0] for c in page.calls] == ["Runtime.evaluate", "Runtime.evaluate"]
+
+
+def test_a_browser_that_stops_answering_stalls_the_test_after_two_timeouts_and_costs_no_more(monkeypatch):
+    # #802, 30 Oct: with no dialog open, every call timed out twice (30 s each) and the step went on, 300-390 s a step.
+    monkeypatch.setattr(session, "_load1", iter([17.6, 18.2, 3.0, 3.1]).__next__)
+    tries = []
+
+    def hung(method, session_id=None, _response_timeout=None, **params):
+        tries.append(method)
+        raise TimeoutError("Runtime.evaluate timed out after 30s waiting for the daemon")
+
+    transport = SimpleNamespace(error=None, dialogs=[], stalled=None)
+    call = session._patient_cdp(hung, 30, transport, lambda: None)
+    with pytest.raises(session.BrowserStalled) as stalled:
+        call("Runtime.evaluate", session_id="s1", expression="1")
+    assert isinstance(stalled.value, TimeoutError)  # callers that take a timeout still take it
+    assert str(stalled.value) == ("the browser stopped answering: Runtime.evaluate timed out twice in a row "
+                                  "(30 s each), with no page dialog to answer (load1 17.6, then 18.2)")
+    assert transport.stalled is stalled.value and transport.error is None  # this test's, not the transport's
+    assert tries == ["Runtime.evaluate", "Runtime.evaluate"]
+    with pytest.raises(session.BrowserStalled):  # the next call fails at once: it waits for nothing
+        call("Page.navigate", session_id="s1", url="http://127.0.0.1:8000/")
+    assert tries == ["Runtime.evaluate", "Runtime.evaluate"]
+    monkeypatch.setattr(session, "_jev", SimpleNamespace(transport=transport))
+    session.clear_stall()  # the next test tries the browser again
+    with pytest.raises(session.BrowserStalled):
+        call("Runtime.evaluate", session_id="s1", expression="1")
+    assert tries == ["Runtime.evaluate"] * 4
+
+
+def test_a_page_whose_dialog_was_answered_is_not_lost_when_the_retry_times_out():
+    # The page answered once its dialog closed, or it will: only a timeout with nothing to answer means it is gone.
+    page = Page({"type": "alert", "message": "Saved", "url": FORM})
+
+    def still_slow(method, session_id=None, _response_timeout=None, **params):
+        if method in ("Page.getNavigationHistory", "Target.getTargets", "Page.handleJavaScriptDialog"):
+            return page.cdp(method, session_id, **params)
+        raise TimeoutError("busy")
+
+    transport = SimpleNamespace(error=None, dialogs=[], stalled=None)
+    call = session._patient_cdp(still_slow, 30, transport, page.pending)
+    with pytest.raises(TimeoutError) as slow:
+        call("Runtime.evaluate", session_id="s1", expression="1")
+    assert not isinstance(slow.value, session.BrowserStalled) and transport.stalled is None
+    assert transport.dialogs[0]["answered"] == "closed"
 
 
 def test_answered_dialogs_are_taken_once_for_the_next_probe(monkeypatch):
