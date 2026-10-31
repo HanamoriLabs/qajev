@@ -212,12 +212,12 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     session.shot_prefix = slug(scenario.name)
     quiet, load1 = wait_for_quiet(opts)
     scheme = scenario.color_scheme or getattr(opts, "color_scheme", None)
-    cache = getattr(scenario, "cache", None) or getattr(opts, "cache", None)
+    cache = _cache(scenario, opts)
     result = {
         "name": scenario.name, "url": scenario.url, "goal": scenario.goal, "mode": scenario.mode,
         "device": scenario.device, "load1": round(load1, 1), "checks": [], "findings": [], "screens": [],
         "blocked_writes": [], "guard_hidden": 0, "history": [], "jev": None, "shot": None,
-        **({"color_scheme": scheme} if scheme else {}), **({"cache": cache} if cache else {}),
+        **({"color_scheme": scheme} if scheme else {}), **_cache_record(cache),
     }
     if not quiet:
         return _finish(result, "skipped", f"machine busy (load1 {load1:.0f})", started)
@@ -279,10 +279,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         if hasattr(session, "set_color_scheme"):  # a stand-in session in tests may not have it
             session.set_color_scheme(scheme)
         session.set_device(scenario.device)
-        if hasattr(session, "set_cache"):
-            session.set_cache(cache)
-        session.console_keep = list(dict.fromkeys([*(getattr(opts, "console_keep", None) or ()),
-                                                   *getattr(scenario, "console_keep", [])]))
+        _prepare_tab(session, scenario, opts, cache)
         session.arm(scenario.mode, scenario.speech)
         if hasattr(session, "configure_ux"):
             ux_observer = session.configure_ux(opts, run_dir, scenario.name, getattr(scenario, "ux_options", None))
@@ -780,6 +777,30 @@ def _transport_result(scenario, error, started, result=None):
                    "harness", f"browser/daemon transport lost: {error}; no automatic retry", started)
 
 
+def _cache(scenario, opts):
+    """cold when the test or the run asks for a cold cache, else None."""
+    return getattr(scenario, "cache", None) or getattr(opts, "cache", None)
+
+
+def _cache_record(cache):
+    return {"cache": cache} if cache else {}
+
+
+def _prepare_tab(session, scenario, opts, cache):
+    """The test's cache and console_keep patterns, before its page loads and its guard is armed."""
+    if hasattr(session, "set_cache"):  # a stand-in session in tests may not have it
+        session.set_cache(cache)
+    session.console_keep = list(dict.fromkeys([*(getattr(opts, "console_keep", None) or ()),
+                                               *getattr(scenario, "console_keep", [])]))
+
+
+def _page_crash(session, scenario):
+    """{url, step} when the test's own tab crashed (session.page_crash), else None. A multiplayer test has no tab."""
+    if scenario.clients or session is None or not hasattr(session, "page_crash"):
+        return None
+    return session.page_crash()
+
+
 def _crashed_result(scenario, crash, doing, started, result=None):
     """A test whose page crashed (session.PageCrashed, Chrome's "Aw, Snap"): fail, whatever its checks said by then. A
     page that crashes is the product's fault, not QAJev's (Verse, 1 Nov: on a cold cache). doing: what the test was
@@ -876,8 +897,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                 if (error := session_mod.transport_error()) is not None:
                     result = _transport_result(scenario, error, started, result)
                     lost_after = scenario.name
-                elif not scenario.clients and session is not None and hasattr(session, "page_crash") and (
-                        crash := session.page_crash()) is not None:
+                elif (crash := _page_crash(session, scenario)) is not None:
                     result = _crashed_result(scenario, crash, getattr(session, "doing", None), started, result)
                 elif (stalled := session_mod.browser_stalled()) is not None:
                     result = _stalled_result(scenario, stalled, started, result)
