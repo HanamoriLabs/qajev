@@ -185,11 +185,18 @@ def test_console_keep_lines_stay_past_the_fifty_line_cap_on_a_cap_of_their_own()
     assert result["page_console_kept_omitted"] == 10 + 3
 
 
-def test_console_keep_lines_are_cleaned_and_cut_as_the_other_lines():
+def test_console_keep_lines_are_cleaned_and_cut_as_the_other_lines(monkeypatch):
+    from qajev import config
+
+    secret = "SYNTHETIC-KEPT-TOKEN-AABBCCDDEEFF"
+    monkeypatch.setattr(config, "_REMEMBERED", {secret})
     result = {}
     diagnostics.keep_console(result, {"page_console_kept": [{"level": "error", "text": "Verse " + "x" * 900},
+                                                            {"level": "warn", "text": f"Verse {secret}"},
                                                             {"level": "debug", "text": "not a level QAJev keeps"}]})
-    assert result["page_console_kept"] == [{"level": "error", "text": ("Verse " + "x" * 900)[:500], "truncated": True}]
+    first, second = result["page_console_kept"]
+    assert first == {"level": "error", "text": ("Verse " + "x" * 900)[:500], "truncated": True}
+    assert second == {"level": "warn", "text": "Verse [redacted]"}
 
 
 def test_console_keep_is_read_from_the_suite_and_the_test_and_refuses_what_a_page_cannot_read():

@@ -222,3 +222,69 @@ def test_browser_hears_a_real_renderer_crash_and_the_next_page_loads(crashable, 
     tab.recover_crash()
     tab.navigate(site + "/")
     assert tab.evaluate("1 + 1") == 2 and tab.page_crash() is None
+
+
+def test_a_multiplayer_client_whose_page_crashes_fails_the_test(monkeypatch, tmp_path):
+    from test_clients import FakeJudge, FakePlayer
+    from test_clients import suite as multiplayer
+
+    from qajev import clients
+
+    class Crashing(FakePlayer):
+        crash = None
+
+        def run_hook(self, hook, url):
+            if hook.get("js") == "game.walk()" and self.n == 2:
+                self.crash = {"url": self.url, "step": None}
+                raise session.PageCrashed(f"the page crashed at {self.url}")
+            return True
+
+        def page_crash(self):
+            return self.crash
+
+    made = []
+
+    def player(*_a, **_kw):
+        made.append(Crashing(10))
+        made[-1].n = len(made)
+        return made[-1]
+
+    monkeypatch.setattr(session, "Session", player)
+    monkeypatch.setattr(session, "Tab", lambda *a, **k: FakeJudge())
+    s = multiplayer(steps=[{"all": {"js": "game.join()"}}, {"all": {"js": "game.walk()"}}],
+                    clients=3, expect={"text": "Room"}).scenarios[0]
+    result = clients.run(s, ledger=None, hosts={"127.0.0.1"}, run_dir=tmp_path,
+                         suite_meta={"headless": True, "guard": {}})
+    assert result["outcome"] == "fail" and result["stop"] == "page_crashed"
+    assert result["page_crashed"]["client"] == "p2"
+    assert result["reason"].startswith(f"the page crashed at {made[1].url} (client p2); last step: step 2")
+
+
+def test_a_sign_in_page_that_crashes_fails_the_tests_and_a_failed_sign_in_stays_harness():
+    crashed = SimpleNamespace(page_crash=lambda: {"url": "http://127.0.0.1/login", "step": "opening"})
+    done = {"account": "test", "ok": False, "reason": "TimeoutError: the page crashed at http://127.0.0.1/login"}
+    runner._sign_in_crash(crashed, done)
+    assert done["page_crashed"] == {"url": "http://127.0.0.1/login", "last_step": "signing in"}
+    assert runner.sign_in_grade(done) == ("fail", "the page crashed at http://127.0.0.1/login while signing in")
+    plain = {"account": "test", "ok": False, "reason": "the password was refused"}
+    runner._sign_in_crash(SimpleNamespace(page_crash=lambda: None), plain)
+    assert runner.sign_in_grade(plain) == ("harness", "sign-in failed: the password was refused")
+
+
+def test_an_electron_page_crash_fails_its_step_once_and_an_asked_crash_does_not():
+    from qajev import native
+
+    game = SimpleNamespace(errors=[])
+    stalled = {"name": "play a round", "outcome": "harness", "stop": "browser_error", "reason": "the app stopped"}
+    native._crash_grade(game, stalled)
+    assert stalled["outcome"] == "harness"  # no crash: as before
+    game.errors.append(native.PAGE_CRASHED)
+    native._crash_grade(game, stalled)
+    assert stalled["outcome"] == "fail" and stalled["stop"] == "page_crashed"
+    assert stalled["reason"] == "the page crashed during the step 'play a round'; the app stopped"
+    later = {"name": "the menu", "outcome": "pass", "stop": "checked", "reason": "all checks passed"}
+    native._crash_grade(game, later)
+    assert later["outcome"] == "pass"  # the crash was the earlier step's
+    game.errors = [native.PAGE_CRASHED]  # a relaunch: a new list, and a new crash
+    native._crash_grade(game, later)
+    assert later["outcome"] == "fail"

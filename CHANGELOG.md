@@ -25,7 +25,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - A page whose renderer crashes (Chrome's "Aw, Snap") now fails its test, with stop `page_crashed` and the reason
   "the page crashed at <URL>; last step: <step>". The gate is FAIL. Before, the test waited out its browser timeouts
   and graded harness. Every later browser call of that test now fails at once, and the next test starts on a new
-  page. A crash is never a planted fault caught. `qajev smoke` fails the crashed page and goes on.
+  page. A crash is never a planted fault caught. The same holds on every path that runs a page: `qajev smoke` fails
+  the crashed page and goes on, a multiplayer test fails when a client's page crashes, an Electron step in
+  `qajev play` fails when its page crashes, and a sign-in page that crashes fails the tests that needed it.
 
 ### Fixed
 

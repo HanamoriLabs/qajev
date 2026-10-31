@@ -880,8 +880,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                         if signed_here and not signed_here["ok"]:
                             result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
                                               "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
-                                              "stop": "sign_in"}, "harness", f"sign-in failed: {signed_here['reason']}",
-                                             time.monotonic())
+                                              "stop": "sign_in"}, *sign_in_grade(signed_here), time.monotonic())
                             result["cost_usd"] = 0.0
                             results.append(result)
                             outcomes[scenario.name] = result["outcome"]
@@ -1046,7 +1045,7 @@ def _fresh_chain(payload, messages):
             if not signed["ok"]:
                 results = [_finish({"name": s.name, "url": s.url, "goal": s.goal, "mode": s.mode, "checks": [],
                                     "findings": [], "screens": [], "stop": "sign_in", "cost_usd": 0.0},
-                                   "harness", f"sign-in failed: {signed['reason']}", time.monotonic()) for s in chain]
+                                   *sign_in_grade(signed), time.monotonic()) for s in chain]
                 for r in results:
                     emit({"event": "scenario", "result": r})
                 say("done", {"results": results, "ledger": ledger.summary(), "load_waited": opts.load_waited})
@@ -1268,6 +1267,23 @@ def real_device_run(suite, scenarios, platform, opts, cap, run_dir, emit):
     return results, ledger.summary()
 
 
+def _sign_in_crash(session, done):
+    """The sign-in page crashed (session.page_crash): the reason says so, and sign_in_grade fails the tests."""
+    crash = session.page_crash() if session is not None and hasattr(session, "page_crash") else None
+    if crash is not None:
+        url = crash.get("url") or "the sign-in page"
+        done.update(ok=False, page_crashed={"url": url, "last_step": "signing in"},
+                    reason=f"the page crashed at {url} while signing in")
+
+
+def sign_in_grade(signed):
+    """(outcome, reason) of a test that did not run because its sign-in failed: harness, as QAJev could not sign
+    in, or fail when the sign-in page crashed (a crash is the product's fault, never harness)."""
+    if signed.get("page_crashed"):
+        return "fail", signed["reason"]
+    return "harness", f"sign-in failed: {signed['reason']}"
+
+
 def sign_in_here(session, account, opts):
     """login.tab: same (foleyapp, 13 Oct): the account signed in in the scenarios' own tab, for an app that keeps one
     writer per origin (Foley's OPFS database) and must not see a second tab. -> what happened, as sign_in_first."""
@@ -1281,6 +1297,7 @@ def sign_in_here(session, account, opts):
         seen = signin.page_seen(session)
         if seen:
             done["reason"] = f"{done['reason']} (the page showed: {redact(seen)[:240]})"
+        _sign_in_crash(session, done)
     done["tab"] = "same"
     opts.account = account["name"] if done["ok"] else None
     _emit(opts, "signin", **done)
@@ -1305,6 +1322,7 @@ def sign_in_first(suite, *, opts, cdp_url, headless, motion):
         seen = signin.page_seen(session) if session is not None else ""
         if seen:
             done["reason"] = f"{done['reason']} (the page showed: {redact(seen)[:240]})"
+        _sign_in_crash(session, done)
     finally:
         if session is not None:
             session.close()
@@ -1401,7 +1419,7 @@ def run(suite, opts):
             for s in scenarios:
                 r = _finish({"name": s.name, "url": s.url, "goal": s.goal, "mode": s.mode, "checks": [],
                              "findings": [], "screens": [], "stop": "sign_in"},
-                            "harness", f"sign-in failed: {signed['reason']}", time.monotonic())
+                            *sign_in_grade(signed), time.monotonic())
                 results_by_name[s.name] = r
                 emit({"event": "scenario", "result": r})
         elif opts.jobs > 1 and len(chains) > 1 and not same_tab:

@@ -290,7 +290,7 @@ class ElectronGame:
                 parts = [str(a.get("value", a.get("description", ""))) for a in params.get("args") or []]
                 self.errors.append(f"console.error: {' '.join(parts)}"[:300])
             elif method == "Inspector.targetCrashed":
-                self.errors.append("the page crashed")
+                self.errors.append("the page crashed")  # native.PAGE_CRASHED: the step fails (native._crash_grade)
 
     def send(self, method, timeout=20.0, **params):
         if self.ws is None:
