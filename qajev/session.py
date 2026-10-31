@@ -636,8 +636,9 @@ def _items(names, before, after):
     return out
 
 
-# A clock or a countdown as a person reads it: "0:03", "188:26", "1:05:09", "59 s", "30 sec", "5 min".
-_TICKING = re.compile(r"\b\d+:\d\d(?::\d\d)?\b|\b\d+\s*(?:s|secs?|seconds?|mins?|minutes?)\b")
+# A clock, a countdown or a time taken as a person reads it: "0:03", "188:26", "1:05:09", "59 s", "30 sec", "5 min",
+# "2.3 s", "412 ms".
+_TICKING = re.compile(r"\b\d+:\d\d(?::\d\d)?\b|\b\d+(?:\.\d+)?\s*(?:ms|s|secs?|seconds?|mins?|minutes?)\b")
 
 
 def _ticked(value):

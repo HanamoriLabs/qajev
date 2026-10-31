@@ -48,16 +48,17 @@ Another QAJev run has the browser; yours starts when it ends. See who with `qaje
 That is QAJev's side, not your product:
 
 - *decisions went stale*: the page kept changing (new words, a list that moved, an animation). A clock time or a
-  countdown that ticks (a video's "0:03 / 188:26", "Doors close in 59 s", "5 min") does not count: a move whose page
-  changed only there goes ahead. Other numbers are read exactly: a step, a count, a price or a score that changes is
+  countdown that ticks (a video's "0:03 / 188:26", "Doors close in 59 s", "5 min"), or a time taken ("in 2.3 s", "in
+  412 ms"), does not count: a move whose page changed only there goes ahead. Other numbers are read exactly: a step, a count, a price or a score that changes is
   a change. The reason ends with the last stale move's own: what was over its target ("covered by
   div#toast") or what changed; each stale decision says it in the dashboard and in `qajev top --decisions`. Keep
   `--motion reduce` (the default) and start the scenario on a calmer page, or close what covers the target with a
   `before:` hook.
 - *action or time budget spent*: split the goal, or start closer to the target with `url`.
 - *Jev clicked one target again and again*: Jev clicked the same thing 3 times in a row, and the page did not move
-  on (nothing happened, or it only toggled back and forth). The reason names the target and the last actions. Check
-  by hand that the control works. If it does, say in the goal what comes after it.
+  on (nothing happened, or it only toggled back and forth). Controls built again with the same names and values, and
+  a clock or a time taken that changes, are not the page moving on. The reason names the target and the last
+  actions. Check by hand that the control works. If it does, say in the goal what comes after it.
 - *Jev never left the start page*: the checks need another page, and Jev only scrolled where it began and clicked
   nothing (often a phone menu it never opened). Say the way there in the goal ("open the menu, then the pricing
   page"). Jev clicking around and not arriving is still a failure: the way may really be missing.
@@ -140,17 +141,16 @@ Check the browser and system logs for a crash, a killed process or a memory limi
 A restarted GPU process can lose the page's WebGPU resources even when Chrome stays open. Restore a known
 test state, then start a new QAJev process explicitly. A response timeout or an ordinary rejected CDP command
 does not by itself prove that the transport is gone.
+`Target closed` and `Session with given id not found` can describe a closed popup or a detached target on a
+usable browser connection. They keep normal command-error handling, without invalidating the whole transport
+or replaying the rejected command. Socket, EOF, browser shutdown and WebSocket-loss errors still stop reuse.
+The daemon's own `cdp_disconnected` and `Client is stopping` errors also invalidate that connection.
 
 **"the browser stopped answering" (harness)**
 A browser command timed out twice in a row (`QAJEV_CDP_TIMEOUT`, 30 s each), with no page dialog to answer. That
 test ends at once; before, every later command waited as long again. The reason gives the machine's load at both
 timeouts. Often a page script never stopped, or the machine was too busy. The next test tries the browser again.
 The tests that `depends_on` it are skipped, as after any test that did not pass.
-
-`Target closed` and `Session with given id not found` can describe a closed popup or a detached target on a
-usable browser connection. They keep normal command-error handling, without invalidating the whole transport
-or replaying the rejected command. Socket, EOF, browser shutdown and WebSocket-loss errors still stop reuse.
-The daemon's own `cdp_disconnected` and `Client is stopping` errors also invalidate that connection.
 
 **The MCP tools do not show up in my agent**
 Check that `qajev mcp` runs from the agent's environment (use the full path from `which qajev`), then restart the

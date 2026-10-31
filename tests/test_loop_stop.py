@@ -27,10 +27,11 @@ def drive(clicks, prints, then="done", told=None, jev_blocks=False):
         label, print_ = move
         kind = "fill" if label.startswith("type ") else "click"
         state["decisions"].append({"operation": "CLICK"})
-        changed = print_ != state["page"]["fingerprint"]
+        page = print_ if isinstance(print_, dict) else {"fingerprint": print_}
+        changed = page["fingerprint"] != state["page"]["fingerprint"]
         state["history"].append({"step": len(state["history"]) + 1, "action": label.removeprefix("type "),
                                  "kind": kind, "text": "x" if kind == "fill" else None, "page_changed": changed})
-        state["page"] = {"fingerprint": print_}
+        state["page"] = page
         if jev_blocks and len(state["history"]) >= 3 and not any(h["page_changed"] for h in state["history"][-3:]):
             state["status"] = "blocked"
 
@@ -77,6 +78,36 @@ def test_a_box_that_toggles_back_and_forth_is_a_loop_too():
 def test_clicks_that_move_the_page_on_or_are_broken_up_are_no_loop(clicks, prints):
     stop, _, actions = drive(clicks, prints)
     assert (stop, actions) == ("done", len(clicks))
+
+
+def read(n, said, size="0.0 cm", value="0"):
+    """A page as Jev reads it after click n: the step's controls are built again, so each has a new node id and box,
+    and Jev's fingerprint is new each time."""
+    return {"url": "http://verse.localhost/workshop/#fit", "scroll": {"y": 0, "height": 900 + n},
+            "text": f"Fit\nAdjust\n{said}\nOverall size {size}", "fingerprint": f"print {n}",
+            "actions": [{"id": "e1", "node": 4, "role": "button", "label": "Adjust", "kind": "click", "value": "",
+                         "rect": {"x": 10, "y": 80, "w": 90, "h": 30}},
+                        {"id": "e2", "node": 20 + n, "role": "slider", "label": "Overall size", "kind": "click",
+                         "value": value, "rect": {"x": 10, "y": 200 + n / 10, "w": 300, "h": 20}}]}
+
+
+@pytest.mark.parametrize("said", ["Hoodie 3 on the boy in 4 poses ({}.{} s).", "Fitted again in {}{} ms."])
+def test_a_step_that_builds_the_same_controls_again_and_says_how_long_it_took_is_a_loop(said):
+    # verse #1000, 31 Oct: Jev clicked the step "Adjust" 8 times in a row. Each click built its sliders again and the
+    # line under the views gave the time the 4 poses took, so each fingerprint was new and the loop was never seen.
+    stop, detail, actions = drive(["Adjust"] * 8, [read(n, said.format(n + 1, 9 - n)) for n in range(8)])
+    assert (stop, actions) == ("loop", 3)
+    assert detail.startswith("'Adjust' 3 times in a row, and the page did not move on")
+
+
+@pytest.mark.parametrize("shown", ["words", "value"])
+def test_a_control_built_again_that_shows_a_new_value_each_time_is_no_loop(shown):
+    # A "+" that raises a size 1 cm a click moves the page on, even when it builds its controls again: in the words,
+    # or only in the slider's own value
+    pages = [read(n, "Fitted again in 412 ms.", **({"size": f"+{n}.0 cm"} if shown == "words" else {"value": str(n)}))
+             for n in range(4)]
+    stop, _, actions = drive(["+"] * 4, pages)
+    assert (stop, actions) == ("done", 4)
 
 
 def test_a_loop_is_harness_with_the_reason_unless_the_page_still_passes():
