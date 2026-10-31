@@ -125,6 +125,8 @@ prints that error and the original cause, and still exits non-zero.
 | `--devices LIST` | the devices every website test runs on (default `desktop,phone`; `--device` pins one) |
 | `--motion reduce\|full` | `reduce` (default): pages are told the visitor prefers less motion, so busy animations stop changing under Jev; `full`: as a normal browser |
 | `--color-scheme light\|dark` | tell the page the visitor's system prefers light or dark (`prefers-color-scheme`), for every test that names none; a test's own `color_scheme` wins |
+| `--console-keep PATTERN` | always keep the page's console lines that match this JavaScript regular expression, under `page_console_kept`, apart from the 50-line cap (up to 200 a test); repeat for more; adds to a test's own `console_keep` (not for `qajev smoke`) |
+| `--cold-cache` | every page load skips Chrome's cache and the site's service worker, as on a first visit (as `cache: cold` on every test) |
 | `--cpu-throttle N` | run the page's CPU N times slower (1 to 8; default the suite's, else 1), e.g. 4 for a phone-like phone pass; the report says so under Run |
 
 **Output**

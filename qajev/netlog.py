@@ -114,6 +114,7 @@ class Failures(threading.Thread):
         self.workers = {}  # session id -> its worker's script address: its console is read for findings
         self.worker_logs = []  # since the last take: {level, detail}
         self.connected = threading.Event()
+        self.crashed = None  # when the page's renderer crashed (Inspector.targetCrashed), until session.begin_test
         self.ws = None
 
     def run(self):
@@ -123,6 +124,8 @@ class Failures(threading.Thread):
             self.ws = connect(self.ws_url, open_timeout=5, max_size=32 * 2**20)
             with self.send_lock:
                 self.ws.send(json.dumps({"id": 1, "method": "Network.enable", "params": {"maxPostDataSize": 0}}))
+                # Inspector.targetCrashed: the page's renderer crashed (session.page_crash)
+                self.ws.send(json.dumps({"id": next(self.ids), "method": "Inspector.enable", "params": {}}))
             self.connected.set()
             while not self.halt.is_set():
                 try:
@@ -152,6 +155,8 @@ class Failures(threading.Thread):
                 waiter = self.replies[message["id"]]
                 waiter[1] = message
                 waiter[0].set()
+            elif method == "Inspector.targetCrashed" and not sid:  # the page's own renderer ("Aw, Snap")
+                self.crashed = time.monotonic()
             elif method == "Target.attachedToTarget":
                 self._attached(params)
             elif method == "Target.detachedFromTarget":

@@ -327,6 +327,15 @@ def _scenario(i, r, who="Jev"):
         if r.get("page_console_omitted"):
             lines.append(f"{r['page_console_omitted']} console lines omitted")
         parts.append('<details><summary>Page console</summary><pre>' + _e("\n".join(lines)) + '</pre></details>')
+    if r.get("page_console_kept") or r.get("page_console_kept_omitted") or r.get("console_keep_broken"):
+        lines = [f"{entry.get('level')}: {entry.get('text')}" + (" [truncated]" if entry.get("truncated") else "")
+                 for entry in r.get("page_console_kept") or []]
+        if r.get("page_console_kept_omitted"):
+            lines.append(f"{r['page_console_kept_omitted']} matching lines cut (over 200)")
+        lines += [f"console_keep pattern {pattern!r} is not a JavaScript regular expression: it kept nothing"
+                  for pattern in r.get("console_keep_broken") or []]
+        parts.append('<details open><summary>Page console: lines kept by console_keep</summary><pre>'
+                     + _e("\n".join(lines)) + '</pre></details>')
     r = {**r, "_lines": [{**line, "detail": c.get("detail")} for line, c in zip(it["checks"], r.get("checks") or [])]}
     facts = []
     if r.get("url"):
@@ -343,6 +352,11 @@ def _scenario(i, r, who="Jev"):
         facts.append(("Device", _e(size)))
     if r.get("color_scheme"):
         facts.append(("Color scheme", _e(f"{r['color_scheme']} (the page was told the system prefers it)")))
+    if r.get("cache") == "cold":
+        facts.append(("Cache", _e("cold: every load skipped Chrome's cache and the service worker")))
+    if isinstance(r.get("page_crashed"), dict):
+        crash = r["page_crashed"]
+        facts.append(("Page crashed", _e(f"at {crash.get('url')}; last step: {crash.get('last_step')}")))
     timing = [f"{r['seconds']} s" if r.get("seconds") is not None else "",
               f"idled {r['idled_s']:.0f} s, no input from QAJev" if r.get("idled_s") is not None else "",
               f"looked at the game at most {r['look_gap_s']:.1f} s apart" if r.get("look_gap_s") is not None else "",

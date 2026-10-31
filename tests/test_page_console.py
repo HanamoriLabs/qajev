@@ -169,3 +169,106 @@ def test_page_log_and_info_reach_the_report_without_changing_the_verdict(page, s
     saved = json.loads((folder / "report.json").read_text())
     assert saved["gate"] == "PASS" and saved["scenarios"][0]["page_console"] == lines
     assert "0.29" in (folder / "report.html").read_text() and "Page console" in (folder / "report.html").read_text()
+
+
+def test_console_keep_lines_stay_past_the_fifty_line_cap_on_a_cap_of_their_own():
+    result = {}
+    kept = [{"level": "log", "text": f"Verse boot {i}"} for i in range(60)]
+    diagnostics.keep_console(result, {"page_console": [{"level": "log", "text": str(i)} for i in range(70)],
+                                      "page_console_kept": kept})
+    assert result["page_console_kept"] == kept and "page_console_kept_omitted" not in result
+    assert len(result["page_console"]) == 50 and result["page_console_omitted"] == 20
+    diagnostics.keep_console(result, {"page_console_kept": [{"level": "warn", "text": f"Verse late {i}"}
+                                                            for i in range(150)], "page_console_kept_omitted": [3]})
+    assert len(result["page_console_kept"]) == diagnostics.CONSOLE_KEPT_LINES == 200
+    assert result["page_console_kept"][:60] == kept  # the first matching lines stay
+    assert result["page_console_kept_omitted"] == 10 + 3
+
+
+def test_console_keep_lines_are_cleaned_and_cut_as_the_other_lines():
+    result = {}
+    diagnostics.keep_console(result, {"page_console_kept": [{"level": "error", "text": "Verse " + "x" * 900},
+                                                            {"level": "debug", "text": "not a level QAJev keeps"}]})
+    assert result["page_console_kept"] == [{"level": "error", "text": ("Verse " + "x" * 900)[:500], "truncated": True}]
+
+
+def test_console_keep_is_read_from_the_suite_and_the_test_and_refuses_what_a_page_cannot_read():
+    parsed = suite.parse({"console_keep": "^boot", "scenarios": [
+        {"name": "a", "url": "http://127.0.0.1/", "about": "x", "console_keep": ["Verse \\d+", "^boot"],
+         "expect": {"text": "a"}},
+        {"name": "b", "url": "http://127.0.0.1/", "about": "x", "expect": {"text": "a"}}]})
+    assert [s.console_keep for s in parsed.scenarios] == [["^boot", "Verse \\d+"], ["^boot"]]
+    for bad, words in [("(?P<n>x)", "Python-only"), ("(?i)verse", "Python-only"), ("(", "not a regular expression"),
+                       (["a"] * 21, "at most 20"), ([""], "a list of patterns"), (7, "a list of patterns")]:
+        with pytest.raises(suite.SuiteError, match=words):
+            suite.parse({"scenarios": [{"name": "a", "url": "http://127.0.0.1/", "about": "x", "console_keep": bad,
+                                        "expect": {"text": "a"}}]})
+
+
+def test_console_keep_goes_to_the_guard_and_changes_its_version():
+    from qajev import guard
+
+    plain, keeping = guard.build_config(), guard.build_config(console_keep=["^Verse"])
+    assert keeping["console_keep"] == ["^Verse"] and plain["console_keep"] == []
+    assert plain["v"] != keeping["v"]  # a test with other patterns re-arms the guard
+    assert '"console_keep": ["^Verse"]' in guard.script(keeping)
+
+
+def test_the_runner_gives_the_guard_the_run_and_the_test_patterns(monkeypatch):
+    from test_check_evidence import Page
+
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda _: (True, 1))
+    armed = []
+
+    class Keeping(Page):
+        def arm(self, *_):
+            armed.append(self.console_keep)
+
+    scenario = suite.parse({"console_keep": "^boot", "scenarios": [{
+        "name": "one", "url": "http://127.0.0.1/", "settle": 0, "console_keep": ["Verse"],
+        "expect": {"js": "false"}}]}).scenarios[0]
+    runner.run_scenario(Keeping({}), scenario, opts=runner.Options(shots=False, ux="off", console_keep=("^run",)),
+                        hosts={"127.0.0.1"}, run_dir=None)
+    assert armed == [["^run", "^boot", "Verse"]]
+
+
+def test_kept_lines_reach_both_reports(tmp_path):
+    parsed = suite.parse({"scenarios": [{"name": "kept", "url": "http://127.0.0.1/", "about": "x",
+                                         "console_keep": ["Verse"], "expect": {"text": "a"}}]})
+    result = {"name": "kept", "url": "http://127.0.0.1/", "goal": None, "mode": "readonly", "outcome": "fail",
+              "reason": "the page crashed at http://127.0.0.1/; last step: reading the page", "checks": [],
+              "findings": [], "screens": [], "stop": "page_crashed", "cache": "cold",
+              "page_crashed": {"url": "http://127.0.0.1/", "last_step": "reading the page"},
+              "page_console_kept": [{"level": "error", "text": "Verse <boot> failed"}],
+              "page_console_kept_omitted": 4, "console_keep_broken": ["(?>x)"]}
+    data = report.build(parsed, [result], [], browser={}, started_at=time.time(), strict=False, interrupted=False,
+                        run_dir=tmp_path)
+    report.write(tmp_path, data)
+    html = (tmp_path / "report.html").read_text()
+    assert "lines kept by console_keep" in html and "Verse &lt;boot&gt; failed" in html
+    assert "4 matching lines cut (over 200)" in html and "(?&gt;x)" in html
+    assert "every load skipped Chrome&#x27;s cache" in html or "every load skipped Chrome's cache" in html
+    assert "Page crashed" in html
+    markdown = (tmp_path / "report.md").read_text()
+    assert "Page console, lines kept by console_keep:" in markdown and "error: Verse <boot> failed" in markdown
+    assert "Cache: cold" in markdown
+    assert json.loads((tmp_path / "report.json").read_text())["scenarios"][0]["page_console_kept"] == [
+        {"level": "error", "text": "Verse <boot> failed"}]
+
+
+@pytest.mark.skipif(not ENDPOINT or os.uname().sysname != "Linux", reason="requires approved CPU fixture browser")
+def test_browser_keeps_matching_lines_past_the_cap_and_names_a_pattern_it_cannot_read(page, site):
+    session, _ = page
+    session.hosts = {urlsplit(site).netloc}
+    session.console_keep = ["^Verse boot", "(?>x)"]
+    session.arm("readonly")
+    session.navigate(site + "/")
+    session.evaluate("console.log('Verse boot 1'); for (let i = 0; i < 60; i++) console.log(String(i)); "
+                     "console.error('Verse boot 2 failed'); console.warn('not Verse boot'); true")
+    result = {}
+    diagnostics.keep_console(result, session.probe({})["probe"])
+    assert result["page_console_kept"] == [{"level": "log", "text": "Verse boot 1"},
+                                           {"level": "error", "text": "Verse boot 2 failed"}]
+    assert len(result["page_console"]) == 50 and result["page_console_omitted"] == 11
+    assert result["page_console"][-1] == {"level": "warn", "text": "not Verse boot"}
+    assert result["console_keep_broken"] == ["(?>x)"]

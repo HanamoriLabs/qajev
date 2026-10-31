@@ -60,7 +60,7 @@ SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
     "persona", "speech", "vision", "about", "clients", "steps", "state", "seed", "color_scheme", "expect_fail",
-    "canvas_capture", "canvas_dark",
+    "canvas_capture", "canvas_dark", "console_keep", "cache",
 } | set(ux_options.KEYS)
 # A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
 MAX_CLIENTS = 12
@@ -70,7 +70,8 @@ STEP_KEYS = {"all", "client", "stagger", "jitter", "snapshot", "until", "timeout
 SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
-    "cpu_throttle", "plan", "color_scheme", "tunnel", "browser", "canvas_capture", "canvas_dark",
+    "cpu_throttle", "plan", "color_scheme", "tunnel", "browser", "canvas_capture", "canvas_dark", "console_keep",
+    "cache",
 } | set(ux_options.KEYS)
 # browser: fresh (the default) runs each test, or each depends_on chain, in its own new Chrome, capped at its
 # budget.seconds + runner.CAP_MARGIN; shared runs every test in one Chrome, one tab per chain (the old way).
@@ -128,6 +129,8 @@ class Scenario:
     ux_options: dict = field(default_factory=dict)  # explicit suite/scenario options; run flags override them
     canvas_capture: dict | None = None  # {page, gpu}: the canvas is proved by its own readback (suite.canvas_capture)
     canvas_dark: str | None = None  # why the main canvas is one flat dark colour on purpose (suite.canvas_dark)
+    console_keep: list = field(default_factory=list)  # patterns: the console lines that match are always kept
+    cache: str | None = None  # cold: every load of the test skips Chrome's cache and the service worker
 
     @property
     def task(self):
@@ -675,7 +678,13 @@ def parse(data, path=None, devices=None):
             ux_options=_ux_options({**suite_ux, **_ux_options(item, where)}, where),
             canvas_capture=capture,
             canvas_dark=canvas_dark(item.get("canvas_dark"), f"{where}.canvas_dark"),
+            console_keep=list(dict.fromkeys([*console_keep(data.get("console_keep"), "suite.console_keep"),
+                                             *console_keep(item.get("console_keep"), f"{where}.console_keep")])),
+            cache=cache(item.get("cache", data.get("cache")), f"{where}.cache"),
         ))
+        if clients and ({"console_keep", "cache"} & set(item)):
+            raise SuiteError(f"{where}: console_keep and cache are for a test in QAJev's own tab, not a multiplayer "
+                             "test's clients")
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")
 
@@ -836,6 +845,45 @@ def canvas_dark(value, where):
         raise SuiteError(f"{where}: canvas_dark must say in words why the canvas is dark on purpose, not "
                          f"{value!r}")
     return value.strip()
+
+
+CONSOLE_KEEP_MAX = 20  # patterns per test
+# Python's own syntax that a page's JavaScript RegExp does not read the same way (or at all)
+NOT_JS = re.compile(r"\(\?P[<=]|\(\?#|\\[AZ]|\(\?[aiLmsux-]+\)")
+
+
+def console_keep(value, where):
+    """`console_keep: [pattern, ...]`: the page's console lines that match a pattern (a JavaScript regular expression,
+    case-sensitive) are always kept, apart from the other lines and on a cap of their own (diagnostics.keep_console).
+    A single pattern may be given as text. -> the patterns, [] when none."""
+    if value is None:
+        return []
+    patterns = [value] if isinstance(value, str) else value
+    if not isinstance(patterns, list) or not all(isinstance(p, str) and p for p in patterns):
+        raise SuiteError(f"{where}: console_keep must be a list of patterns (regular expressions)")
+    if len(patterns) > CONSOLE_KEEP_MAX:
+        raise SuiteError(f"{where}: console_keep takes at most {CONSOLE_KEEP_MAX} patterns, not {len(patterns)}")
+    for pattern in patterns:
+        if len(pattern) > 300:
+            raise SuiteError(f"{where}: a console_keep pattern must be at most 300 characters")
+        try:
+            re.compile(pattern)
+        except re.error as e:
+            raise SuiteError(f"{where}: console_keep pattern {pattern!r} is not a regular expression: {e}") from None
+        if NOT_JS.search(pattern):
+            raise SuiteError(f"{where}: console_keep pattern {pattern!r} uses Python-only syntax; write it as a "
+                             "JavaScript regular expression (no (?P<name>), (?#...), \\A, \\Z or (?i))")
+    return patterns
+
+
+def cache(value, where):
+    """`cache: cold`: every load of the test skips Chrome's cache and the site's service worker, as a visitor's first
+    visit does. -> "cold", or None (the browser's own cache)."""
+    if value is None:
+        return None
+    if value != "cold":
+        raise SuiteError(f"{where}: cache must be cold, not {value!r}")
+    return value
 
 
 def about(value, where):

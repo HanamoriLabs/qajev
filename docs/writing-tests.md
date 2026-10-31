@@ -332,6 +332,8 @@ settle: 10                # seconds to wait for expectations after Jev stops
 motion: reduce            # reduce (default): pages are told the visitor prefers less motion; full: as-is
 cpu_throttle: 1           # run the page's CPU this many times slower (1 to 8), e.g. 4 for a phone-like phone pass
 color_scheme: dark        # light | dark: the page's prefers-color-scheme answers so (default: the browser's own)
+cache: cold               # every load skips Chrome's cache and the service worker, as a first visit
+console_keep: ["^\\[boot\\]"]   # the console lines that match are always kept (JavaScript regular expressions)
 
 scenarios:
   - name: the home page loads
@@ -822,3 +824,18 @@ warnings or errors. This applies across page reads and navigation as well as wit
 `truncated: true` marks a shortened line and `page_console_omitted` counts omitted lines. Navigation within a
 scenario retains its diagnostics, while the next scenario starts its own console record. These diagnostics
 do not add a new pass/fail rule; existing console-error findings keep their verdict behavior.
+
+`console_keep: [pattern, ...]` on a scenario or the suite (the two lists add up, and `--console-keep` adds more) keeps
+the lines that match apart, under `page_console_kept`. A pattern is a JavaScript regular expression, case-sensitive,
+matched against the whole line. A matching line never counts against the 50-line cap, and other lines never push it
+out. A test keeps at most 200 matching lines (the first ones), and `page_console_kept_omitted` counts the rest. A
+pattern in Python-only syntax (`(?P<name>...)`, `(?#...)`, `\A`, `\Z`, `(?i)`) is refused when the suite loads. A
+pattern the page's JavaScript cannot read keeps nothing, and the report names it under `console_keep_broken`.
+
+`cache: cold` on a scenario or the suite (or `--cold-cache` on the command line) makes every load of the test skip
+Chrome's cache and the site's service worker, as a visitor's first visit does. Without it, only the first load of a
+fresh profile is cold: a reload, and every later page, can come from the cache. A cold cache does not clear the
+site's own storage (Cache Storage, IndexedDB, localStorage): a signed-in or reused profile keeps it.
+
+A page whose renderer crashes (Chrome's "Aw, Snap") fails its test. The reason names the crashed page's URL and the
+last step: opening the page, a hook, Jev's last action, or the checks. The next test starts on a new page.
