@@ -21,7 +21,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - The UX scan no longer scrolls a React Native Web page back to the top. The cover check scrolls each covered control
   into view and then puts every scroll box back. React Native Web gives each ScrollView its own `scrollTo`, which
   reads `{x, y, animated}`, so the scan's put-back glided the box to the top before the end screenshot. The scan now
-  calls the browser's own scroll functions, which it keeps before the page's code runs.
+  calls the browser's own scroll functions, which it keeps before the page's code runs. The `click` and `click_at`
+  steps and the imhim adapter also call the browser's own `scrollIntoView`, never an element's own.
 
 ### Changed
 

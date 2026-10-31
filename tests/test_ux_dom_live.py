@@ -450,6 +450,40 @@ def test_cover_scan_keeps_a_scroll_box_whose_own_scrollto_reads_x_y(page, site):
     assert state == {"top": 900, "calls": [], "moved": True, "inside": True}, (state, observer.result)
 
 
+DEEP_BOX = ('<div id="box" style="height:400px;overflow:auto"><div style="position:relative;height:2000px">'
+            '<input id="deep" aria-label="Deep" style="position:absolute;top:1500px;left:20px;width:200px;height:48px">'
+            '</div></div>')
+OWN_NO_OP = """window.ownCalls = []; window.clicks = 0; const deep = document.querySelector('#deep');
+  deep.scrollIntoView = () => window.ownCalls.push('scrollIntoView');
+  deep.addEventListener('click', () => window.clicks++);"""
+DEEP_STATE = """(() => { const b = document.querySelector('#box').getBoundingClientRect();
+  const r = document.querySelector('#deep').getBoundingClientRect();
+  return {calls: window.ownCalls, clicks: window.clicks,
+          inside: r.top >= b.top && r.bottom <= b.bottom && r.bottom <= innerHeight}; })()"""
+
+
+def test_scroll_field_uses_the_browsers_scrollintoview_not_the_fields_own(page, site):
+    # redteam L1 on #230: scrollField (the UX-INPUT crop and the keyboard check) calls the browser's scrollIntoView.
+    session, _ = page
+    inline(session, site, DEEP_BOX, ["cover"])
+    session.evaluate(OWN_NO_OP)
+    assert session.evaluate(DEEP_STATE)["inside"] is False
+    assert session.evaluate("window.__qajevUx.scrollField(document.querySelector('#deep'))") is True
+    assert session.evaluate(DEEP_STATE) == {"calls": [], "clicks": 0, "inside": True}
+
+
+@pytest.mark.parametrize("hook", [{"click": "#deep"}, {"click_at": {"selector": "#deep", "x": 10, "y": 10}}],
+                         ids=["click", "click_at"])
+def test_a_click_scrolls_with_the_browsers_scrollintoview_not_the_elements_own(page, site, hook):
+    # The click hooks bring the target into view first. An element's own scrollIntoView that does nothing must not
+    # leave it out of view: the click would then land on whatever is under that point, or fail as covered.
+    session, _ = page
+    inline(session, site, DEEP_BOX, ["cover"])
+    session.evaluate(OWN_NO_OP)
+    session.run_hook(hook, site)
+    assert session.evaluate(DEEP_STATE) == {"calls": [], "clicks": 1, "inside": True}
+
+
 def test_scroll_is_not_a_content_shift_and_eight_pixels_is_exclusive(page, site):
     session, _ = page
     observer = inline(session, site, '<div style="height:2000px">'

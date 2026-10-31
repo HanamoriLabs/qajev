@@ -343,7 +343,7 @@ window.__qajevAdapter = {
     if (action.op === 'dev_item') { // pick a dev menu option, or press one of its buttons
       const it = devMenuItems().find((x) => x.key === action.match);
       if (!it) return { ok: false, error: 'that dev menu item is no longer there' };
-      it.el.scrollIntoView({ block: 'center' });
+      Element.prototype.scrollIntoView.call(it.el, { block: 'center' }); // the browser's own, never the element's
       if (it.kind === 'select') {
         it.el.value = it.value;
         it.el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -353,7 +353,7 @@ window.__qajevAdapter = {
     if (action.op === 'set_option') { // a settings row scrolled out of the list: bring it in, then click it
       const o = settingsOptions().find((x) => x.key === action.match);
       if (!o) return { ok: false, error: 'that setting is no longer on the screen' };
-      o.el.scrollIntoView({ block: 'center' });
+      Element.prototype.scrollIntoView.call(o.el, { block: 'center' });
       o.el.click();
       return { ok: true };
     }
