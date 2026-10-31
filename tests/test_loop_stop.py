@@ -12,11 +12,11 @@ import pytest
 from qajev import runner, verdict
 
 
-def drive(clicks, prints, then="done", told=None, jev_blocks=False):
-    """Jev clicks `clicks` (labels) in turn, and the page's fingerprint after each is the matching one in `prints`.
-    jev_blocks: like jev_ultrafast's agent, Jev says BLOCKED itself after 3 actions in a row that did not change the
-    page."""
-    state = {"status": "ready", "history": [], "decisions": [], "page": {"fingerprint": "start"}}
+def drive(clicks, prints, then="done", told=None, jev_blocks=False, first=None):
+    """Jev clicks `clicks` (labels) in turn, and the page's fingerprint after each is the matching one in `prints`
+    (or the whole page, as Jev reads it). first: the page before the first click. jev_blocks: like jev_ultrafast's
+    agent, Jev says BLOCKED itself after 3 actions in a row that did not change the page."""
+    state = {"status": "ready", "history": [], "decisions": [], "page": first or {"fingerprint": "start"}}
     moves = iter(zip(clicks, prints))
 
     def tick():
@@ -107,6 +107,34 @@ def test_a_control_built_again_that_shows_a_new_value_each_time_is_no_loop(shown
     pages = [read(n, "Fitted again in 412 ms.", **({"size": f"+{n}.0 cm"} if shown == "words" else {"value": str(n)}))
              for n in range(4)]
     stop, _, actions = drive(["+"] * 4, pages)
+    assert (stop, actions) == ("done", 4)
+
+
+def tabs(n, url="http://127.0.0.1/t", y=0, selected=0, checked="false"):
+    """A page with 3 tabs and a box, its controls built again on each read (a new node id, so a new fingerprint)."""
+    controls = [{"id": f"e{i + 1}", "node": 10 * n + i, "role": "tab", "label": name, "kind": "click", "value": "",
+                 "selected": str(i == selected).lower()} for i, name in enumerate(["Size", "Length", "Width"])]
+    box = {"id": "e4", "node": 10 * n + 3, "role": "checkbox", "label": "Remember me", "kind": "click", "value": "on",
+           "checked": checked}
+    return {"url": url, "scroll": {"y": y, "height": 2000}, "text": "Size Length Width\nRemember me",
+            "fingerprint": f"print {n}", "actions": [*controls, box]}
+
+
+def test_a_box_that_toggles_from_jevs_first_click_is_a_loop():
+    # redteam L1 on #219: the page before the first click is read the same way as the pages after it
+    stop, _, actions = drive(["Remember me"] * 6, [tabs(n + 1, checked=("true", "false")[n % 2]) for n in range(6)],
+                             first=tabs(0))
+    assert (stop, actions) == ("loop", 3)
+
+
+@pytest.mark.parametrize("moved", ["url", "y", "selected"])
+def test_a_click_that_moves_only_the_address_the_scroll_or_the_selected_tab_is_no_loop(moved):
+    # redteam L1 on #219: the same words and controls, but the page moved on in one of these
+    def page(n):
+        return tabs(n, **{"url": {"url": f"http://127.0.0.1/t?page={n}"}, "y": {"y": 560 * n},
+                          "selected": {"selected": n % 3}}[moved])
+
+    stop, _, actions = drive(["Next"] * 4, [page(n + 1) for n in range(4)], first=page(0))
     assert (stop, actions) == ("done", 4)
 
 
