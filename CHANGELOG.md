@@ -6,13 +6,16 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
-- `canvas_dark: "<why>"` in a suite or scenario, for a canvas that is dark on purpose. A flat dark canvas then keeps
-  the test's outcome, and the reason ends with the suite's words. A reason is required: `canvas_dark: true` is refused.
+- `canvas_dark: "<why>"` on a scenario whose canvas is dark on purpose. A flat dark canvas then keeps the test's
+  outcome, and the reason ends with the scenario's words. A reason is required: `canvas_dark: true` is refused, and so
+  is a suite-level `canvas_dark`, which would turn the check off for every test.
 
 ### Fixed
 
 - `canvas_capture` with `gpu: hardware` no longer passes on a WebGPU adapter that gives no vendor and no architecture.
   QAJev then asks WebGL for the GPU the browser draws with, and the test passes only when it names a hardware GPU.
+  A WebGL without its renderer-name extension names no GPU. Both reads run in a JS world of QAJev's own, so a page
+  script cannot change what they see.
 - When the flat dark canvas check breaks, the report now keeps the error (`canvas_blank_error`) and the reason says
   so. Before, the check was skipped without a word.
 

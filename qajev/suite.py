@@ -553,6 +553,8 @@ def parse(data, path=None, devices=None):
     if not isinstance(data, dict):
         raise SuiteError("a suite must be a mapping with a scenarios list")
     _unknown("suite", data, SUITE_KEYS)
+    if "canvas_dark" in data:  # one reason would turn the flat dark check off for every test (redteam-1 L5, #228)
+        raise SuiteError("suite: canvas_dark goes on each scenario whose canvas is dark on purpose, not on the suite")
     suite_ux = _ux_options(data, "suite")
     base = data.get("base_url")
     if base and (refused := user_info_refusal(base)):  # first: no later error may quote the URL
@@ -672,7 +674,7 @@ def parse(data, path=None, devices=None):
             expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where),
             ux_options=_ux_options({**suite_ux, **_ux_options(item, where)}, where),
             canvas_capture=capture,
-            canvas_dark=canvas_dark(item.get("canvas_dark", data.get("canvas_dark")), f"{where}.canvas_dark"),
+            canvas_dark=canvas_dark(item.get("canvas_dark"), f"{where}.canvas_dark"),
         ))
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")

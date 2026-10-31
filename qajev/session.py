@@ -741,16 +741,17 @@ WEBGPU_ADAPTER_JS = """(async () => {
 })()"""
 # The GPU the page's browser draws with, as WebGL names it to the page (its unmasked renderer, such as "ANGLE (NVIDIA,
 # NVIDIA L4 ...)" or "... SwiftShader ..."). CDP's SystemInfo.getInfo would say it too, but only on the browser target,
-# and QAJev's CDP calls go to the page. The context is dropped at once.
+# and QAJev's CDP calls go to the page. Without WEBGL_debug_renderer_info there is no name: the plain RENDERER is
+# "WebKit WebGL" on every machine (redteam-1 L1, #228). The context is dropped at once.
 GPU_NAME_JS = """(() => {
   const make = kind => document.createElement('canvas').getContext(kind);
   const g = make('webgl2') || make('webgl');
   if (!g) return {none: 'the page has no WebGL to name its GPU'};
   const x = g.getExtension('WEBGL_debug_renderer_info');
-  const device = String(g.getParameter(x ? x.UNMASKED_RENDERER_WEBGL : g.RENDERER) || '');
+  const device = x ? String(g.getParameter(x.UNMASKED_RENDERER_WEBGL) || '') : null;
   const lose = g.getExtension('WEBGL_lose_context');
   if (lose) lose.loseContext();
-  return {device};
+  return device === null ? {none: "the page's WebGL does not name its GPU (no WEBGL_debug_renderer_info)"} : {device};
 })()"""
 _SOFTWARE_GPU = re.compile(r"swiftshader|llvmpipe|lavapipe|softpipe|software|warp", re.IGNORECASE)
 
@@ -885,6 +886,14 @@ class Tab:
             self.context = None
 
 
+def _evaluated(r):
+    """A Runtime.evaluate answer's value; a page script that threw raises RuntimeError."""
+    if r.get("exceptionDetails"):
+        detail = r["exceptionDetails"].get("exception", {}).get("description") or r["exceptionDetails"].get("text")
+        raise RuntimeError(f"page script failed: {detail}")
+    return r.get("result", {}).get("value")
+
+
 class Session:
     def __init__(self, ledger, *, headless=False, hosts=(), guard_opts=None, allow_commands=False, cwd=None,
                  motion="reduce", isolated=False, cpu_throttle=1):
@@ -985,10 +994,16 @@ class Session:
     def evaluate(self, expression, timeout_ms=15000):
         r = self.call("Runtime.evaluate", expression=expression, returnByValue=True, awaitPromise=True,
                       timeout=timeout_ms)
-        if r.get("exceptionDetails"):
-            detail = r["exceptionDetails"].get("exception", {}).get("description") or r["exceptionDetails"].get("text")
-            raise RuntimeError(f"page script failed: {detail}")
-        return r.get("result", {}).get("value")
+        return _evaluated(r)
+
+    def isolated_evaluate(self, expression, timeout_ms=15000):
+        """evaluate, in a JS world of QAJev's own beside the page's: it shares the page's DOM, but not its scripts, so a
+        page that patches getParameter or requestAdapter cannot change what QAJev reads (redteam-1 L2, #228)."""
+        frame = self.call("Page.getFrameTree")["frameTree"]["frame"]["id"]
+        context = self.call("Page.createIsolatedWorld", frameId=frame, worldName="qajev")["executionContextId"]
+        r = self.call("Runtime.evaluate", expression=expression, contextId=context, returnByValue=True,
+                      awaitPromise=True, timeout=timeout_ms)
+        return _evaluated(r)
 
     def js_holds(self, expression):
         """A condition's settled value is truthy (a throw, a rejection or no answer counts as not holding)."""
@@ -1453,7 +1468,7 @@ class Session:
             out["problem"] = "the readback expression gave nothing"
         if spec.get("gpu") == "hardware":
             try:
-                out["adapter"] = self.evaluate(WEBGPU_ADAPTER_JS, timeout_ms=10000)
+                out["adapter"] = self.isolated_evaluate(WEBGPU_ADAPTER_JS, timeout_ms=10000)
             except (RuntimeError, TimeoutError) as error:
                 out["adapter"] = {"none": f"the WebGPU adapter could not be read: {error}"}
             out["gpu"] = self.gpu_info()
@@ -1463,7 +1478,7 @@ class Session:
     def gpu_info(self):
         """The GPU the browser draws the page with (GPU_NAME_JS): {device}, else {none: why}."""
         try:
-            got = self.evaluate(GPU_NAME_JS, timeout_ms=10000)
+            got = self.isolated_evaluate(GPU_NAME_JS, timeout_ms=10000)
         except (RuntimeError, TimeoutError) as error:
             return {"none": f"the GPU name could not be read: {error}"}
         return got if isinstance(got, dict) else {"none": "the GPU name could not be read"}
