@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import time
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -272,6 +273,16 @@ def test_describe_argv_never_names_a_urls_user_info():
     url = "https://alice:s3cret@staging.example.com/admin"
     assert jobs.describe_argv(["check", url]) == "check staging.example.com /admin"
     assert jobs.describe_argv(["smoke", "http://bob@127.0.0.1:8765/"]) == "smoke 127.0.0.1:8765"
+
+
+def test_an_ipv6_host_keeps_its_brackets_in_a_name():
+    # urlsplit gives "::1" as the host of http://[::1]:8765/: "::1:8765" reads as one address, not a host and a port.
+    from qajev.cli import check_name
+
+    assert jobs.describe_argv(["smoke", "http://[::1]:8765/"]) == "smoke [::1]:8765"
+    assert jobs.describe_argv(["check", "http://[::1]/a"]) == "check [::1] /a"
+    assert check_name("http://[::1]:8765/x") == "[::1]:8765 /x"
+    assert jobs.plain_host(urlsplit("http://[2001:db8::7]:443/")) == "[2001:db8::7]:443"
 
 
 def test_describe_argv():

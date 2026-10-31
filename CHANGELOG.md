@@ -31,6 +31,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- A run or check on an IPv6 host keeps the host's brackets in its name: `smoke [::1]:8765`, not `smoke ::1:8765`,
+  which reads as one address. `qajev jobs` and the Cloud show that name.
 - `canvas_capture` with `gpu: hardware` no longer passes on a WebGPU adapter that gives no vendor and no architecture.
   QAJev then asks WebGL for the GPU the browser draws with, and the test passes only when it names a hardware GPU.
   A WebGL without its renderer-name extension names no GPU. Both reads run in a JS world of QAJev's own, so a page

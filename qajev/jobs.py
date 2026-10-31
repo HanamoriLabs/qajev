@@ -177,6 +177,8 @@ def plain_host(parts, fallback=""):
     except ValueError:  # a port that is not a number: no port
         port = None
     host = parts.hostname or fallback
+    if parts.hostname and ":" in host:  # an IPv6 address: urlsplit drops its brackets, a person writes "[::1]:8765"
+        host = f"[{host}]"
     return f"{host}:{port}" if host and port else host
 
 
