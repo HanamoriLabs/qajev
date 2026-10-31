@@ -3,6 +3,8 @@ import re
 from html import escape
 from pathlib import Path
 
+import pytest
+
 from qajev import plan, report_html
 
 SIX_GAME = Path(__file__).parent / "fixtures" / "six-game-report.json"
@@ -93,6 +95,51 @@ def test_a_test_whose_only_checks_say_a_text_is_absent_is_flagged(tmp_path, caps
                                              "expect: {text: [You are in], absent: [Sign in or create account]}"))
     assert cli.main(["plan", str(site), "--json"]) == 0  # with a text that must be there, it proves something
     assert json.loads(capsys.readouterr().out)["absent_only"] == []
+
+
+def test_a_goal_that_asks_jev_to_press_a_key_is_flagged(tmp_path, capsys):
+    # verse #1000, 31 Oct: the goal said "press the Right arrow key 3 times". Jev cannot press keys, so it clicked the
+    # step "Adjust" 8 times. Key presses go in a key: hook; the plan says so before a run, and exits 2.
+    from qajev import cli
+
+    site = tmp_path / "site.qajev.yaml"
+    site.write_text(
+        "name: fit\nbase_url: http://127.0.0.1:9\nscenarios:\n"
+        "  - name: refit\n    about: a size release refits\n    url: /\n"
+        "    goal: Click the tab Fit (Alt+4). Press the Right arrow key 3 times. Stop when it says Fitted again.\n"
+        "    expect: {text: [Fitted again]}\n"
+        "  - name: open\n    about: the Fit tab opens\n    url: /\n"
+        "    goal: Click the tab Fit (Alt+4), then the Press kit link. Stop when it says 4 poses.\n"
+        "    expect: {text: [4 poses]}\n")
+    assert cli.main(["plan", str(site), "--json"]) == 2
+    data = json.loads(capsys.readouterr().out)
+    assert data["key_goals"] == [{"name": "refit", "says": "Press the Right arrow"}]
+    assert cli.main(["plan", str(site)]) == 2
+    out = capsys.readouterr().out
+    assert "PRESSES KEYS: refit (“Press the Right arrow”)" in out and "key:" in out
+    site.write_text(site.read_text().replace("Press the Right arrow key 3 times. ", ""))
+    assert cli.main(["plan", str(site), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["key_goals"] == []
+
+
+@pytest.mark.parametrize("goal, says", [
+    ("Type your name, then press Enter.", "press Enter"),
+    ("Hit the Escape key to close it.", "Hit the Escape key"),
+    ("Save it with Ctrl+S.", "Ctrl+S"),
+    ("Press Space to jump.", "Press Space"),
+    ("Hold down the Shift key and click two rows.", "Hold down the Shift key"),
+    ("Click Save. Stop when it says Saved.", None),
+    ("Press the Save button, then return to the list.", None),
+    ("Open the menu Releases (Alt+9).", None),
+    ("Press the Tab named Width.", None),
+])
+def test_the_key_lint_reads_key_presses_and_not_buttons_or_labels(goal, says):
+    from types import SimpleNamespace
+
+    from qajev import plan
+
+    found = plan.key_goals([SimpleNamespace(name="t", goal=goal)])
+    assert found == ([{"name": "t", "says": says}] if says else [])
 
 
 def test_every_expect_key_is_decided_for_the_absent_only_lint():

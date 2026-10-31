@@ -2,6 +2,14 @@
 
 All notable changes to QAJev. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- `qajev plan` and `qa_plan` flag a website test whose goal asks Jev to press a key ("press Enter", "the Right arrow
+  key", "Ctrl+S"), and exit 2. Jev clicks, types and scrolls, but presses no key, so such a goal sends it clicking
+  around. The plan lists them as PRESSES KEYS (`key_goals` in the JSON) and says to press the keys in a `key:` hook.
+
 ## 0.4.39: 31 Oct 2026
 
 ### Fixed

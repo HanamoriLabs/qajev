@@ -285,7 +285,7 @@ words, and the tests that are NOT DESCRIBED. Use it as a lint before you run a s
 ```bash
 qajev plan shop.qajev.yaml            # a website suite (scenarios:)
 qajev plan qa/plans/boss.suite.yaml   # a game's steps suite (steps:)
-qajev plan shop.qajev.yaml --json     # {name, about, plan, not_described, absent_only}
+qajev plan shop.qajev.yaml --json     # {name, about, plan, not_described, absent_only, key_goals}
 ```
 
 It exits `0` when every test says what it proves and `2` while any is NOT DESCRIBED (a run of it would be
@@ -293,7 +293,10 @@ INCOMPLETE, never PASS). It also exits `2` for a website test whose only checks 
 `text`, `visible`, `js`, `looks`, `across`, `fetch` or `command`): a blank page passes it, so it proves nothing. A `url`,
 `url_regex` or `status` check does not change that: a blank page at the right address passes it too. The plan lists such
 tests as ABSENT ONLY. It reads each test's own `expect`, not the expects of a steps suite's steps or of each client.
-`qa_plan` is the same for agents.
+It also exits `2` for a website test whose goal asks Jev to press a key ("press Enter", "the Right arrow key",
+"Ctrl+S"): Jev clicks, types and scrolls, but presses no key. The plan lists such tests as PRESSES KEYS (`key_goals`,
+each with the words found). Press the keys in a `key:` hook and leave them out of the goal. A chord in brackets, such
+as a tab's "(Alt+4)", is a control's label and is not flagged. `qa_plan` is the same for agents.
 
 It also checks the suite's **approved test plan** (`plan:`, see [Writing tests](writing-tests.md#an-approved-test-plan)):
 the line `Plan file: ...` says whether it is approved, and the JSON has `test_plan` (`path`, `approved`, `approval`,

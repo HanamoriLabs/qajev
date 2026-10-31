@@ -174,6 +174,20 @@ def absent_only(scenarios):
             if s.expect.get("absent") and not any(s.expect.get(k) for k in POSITIVE)]
 
 
+# A goal that asks Jev to press a key. Jev clicks, types into a field, picks an option and scrolls, but presses no key
+# (verse #1000, 31 Oct: "press the Right arrow key 3 times" made Jev click the step "Adjust" 8 times). A key press goes
+# in a `key:` hook. A key named by itself must be one no button is called; a chord in brackets is a control's label.
+_KEYS = re.compile(
+    r"\b(?:press|hit|hold)(?:es|ed|ing)?\s+(?:down\s+)?(?:the\s+)?(?:[\w-]+\s+){0,2}?(?:keys?|arrows?)\b"
+    r"|\b(?:press|hit)(?:es|ed|ing)?\s+(?:the\s+)?(?:enter|return|escape|esc|space(?:bar)?|backspace|f(?:1[0-2]|[1-9]))\b"
+    r"|(?<!\()\b(?:ctrl|control|cmd|command|alt|option|shift|meta)\s*\+\s*\w+", re.IGNORECASE)
+
+
+def key_goals(scenarios):
+    """The tests whose goal asks Jev to press a key, which it cannot. -> [{name, says}], says: the words found."""
+    return [{"name": s.name, "says": m.group(0)} for s in scenarios if s.goal and (m := _KEYS.search(s.goal))]
+
+
 def not_described(plan):
     """The tests the plan flags: no `about`, or a check without plain words. -> [name]"""
     return [it["name"] for it in plan if not it["described"]]
