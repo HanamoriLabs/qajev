@@ -425,17 +425,18 @@ def test_cover_rechecks_after_animation_and_does_not_report_transient_overlay(pa
 def test_cover_scan_keeps_a_scroll_box_whose_own_scrollto_reads_x_y(page, site):
     # grailtab, 31 Oct: React Native Web gives each ScrollView element its own scrollTo({x, y, animated}). The
     # scan's restore called el.scrollTo({left, top}), which that reads as x 0, y 0, animated: the box glided to
-    # the top before the end screenshot.
+    # the top before the end screenshot. The button's own scrollIntoView does nothing, as a page's could.
     session, _ = page
     html = ('<div id="box" style="height:600px;overflow:auto"><div style="position:relative;height:1500px">'
-            '<button style="position:absolute;top:950px;left:20px;width:200px;height:48px">Covered</button>'
+            '<button id="covered" style="position:absolute;top:950px;left:20px;width:200px;height:48px">'
+            'Covered</button>'
             '<p id="target" style="position:absolute;top:1400px;margin:0">Target line</p></div></div>'
             '<div style="position:fixed;left:0;top:0;width:390px;height:120px;z-index:5">Bar</div>')
     rnw = """const box = document.querySelector('#box'); window.ownCalls = []; window.seen = [];
       box.scrollTo = (y, x, animated) => { window.ownCalls.push('scrollTo');
         if (typeof y !== 'number') ({x = 0, y = 0, animated = true} = y || {});
         box.scroll({top: y, left: x, behavior: animated === false ? 'auto' : 'smooth'}); };
-      box.scrollIntoView = () => window.ownCalls.push('scrollIntoView');
+      document.querySelector('#covered').scrollIntoView = () => window.ownCalls.push('scrollIntoView');
       box.scrollTop = box.scrollHeight;
       box.addEventListener('scroll', () => window.seen.push(box.scrollTop));"""
     observer = session.open_ux(site + "/ux-input-kind.html", ux_checks=["cover"],
