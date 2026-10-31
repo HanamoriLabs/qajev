@@ -98,18 +98,25 @@ def test_load_uses_one_prepared_dispatcher_for_hooks_and_jev_direct_input(monkey
                     ("Input.dispatchMouseEvent", "owned-headless", {"type": "mousePressed", "x": 3, "y": 4})]
 
 
+NEW_HEADLESS_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 "
+                   "Safari/537.36")
+
+
 @pytest.mark.parametrize("isolated", [False, True])
-@pytest.mark.parametrize("requested,product,registered", [
-    (True, "Chrome/153", True), (False, "HeadlessChrome/153", True), (False, "Chrome/153", False),
+@pytest.mark.parametrize("requested,product,user_agent,registered", [
+    (True, "Chrome/153", "fixture", True), (False, "HeadlessChrome/153", "fixture", True),
+    (False, "Chrome/153", "fixture", False),
+    # Chrome 153's new headless mode says "Chrome/153" as its product; only its user agent says headless (31 Oct)
+    (False, "Chrome/153.0.8010.52", NEW_HEADLESS_UA, True),
 ])
 def test_real_session_lifecycle_registers_only_headless_targets_and_removes_closed_ones(
-        monkeypatch, isolated, requested, product, registered):
+        monkeypatch, isolated, requested, product, user_agent, registered):
     sessions = set()
     monkeypatch.setattr(session_mod, "_HEADLESS_INPUT_SESSIONS", sessions)
 
     def cdp(method, **_params):
         return {"browserContextId": "owned-context", "targetId": "owned-target", "sessionId": "owned-headless",
-                "product": product, "userAgent": "fixture"}
+                "product": product, "userAgent": user_agent}
 
     browser = SimpleNamespace(session="owned-headless", target="owned-target", call=lambda *_a, **_k: {})
     jev = SimpleNamespace(cdp=cdp, browser=SimpleNamespace(MARKER="fixture"),

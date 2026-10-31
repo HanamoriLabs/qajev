@@ -1094,6 +1094,8 @@ def test_motion_full_leaves_the_media_query_alone(site, browser, tmp_path):
         out = subprocess.run(
             [sys.executable, "-m", "qajev", "check", site + "/", "--cdp-url", browser["cdp_url"], "--out",
              str(tmp_path), "--expect-js", REDUCED, "--says", "the page is told the visitor prefers reduced motion",
+             # without --about the check is NOT DESCRIBED, and its gate can never be PASS
+             "--about", "QAJev tells the page the visitor prefers reduced motion, unless --motion full",
              "--json", "--quiet", "--load-high", "0", "--no-shots", *extra],
             capture_output=True, text=True, timeout=120,
         )
@@ -1261,6 +1263,9 @@ def test_a_postcode_or_coupon_code_field_is_not_a_one_time_code(site, browser, t
     import subprocess
     import sys
 
+    # A password comes only from a seeded test account's fixture (seed:FILE#KEY): an env: password is refused.
+    (tmp_path / "qa_test_user.json").write_text(json.dumps(dict(zip(
+        ("test_account", "allowed_hosts", "password"), (True, ["127.0.0.1"], "fixture-pass-123")))))
     suite = tmp_path / "postcode.yaml"
     suite.write_text(f"""
 name: postcode
@@ -1268,7 +1273,7 @@ base_url: {site}
 devices: [desktop]
 account:
   email: tester@example.test
-  password: env:QAJEV_FIXTURE_PASS
+  password: seed:qa_test_user.json#password
   login: {{url: /login-postcode.html}}
 scenarios:
   - name: the account page knows who is signed in
@@ -1278,7 +1283,7 @@ scenarios:
 """)
     p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--cdp-url", browser["cdp_url"], "--out",
                         str(tmp_path / "out"), "--json", "--quiet", "--load-high", "0"], capture_output=True, text=True,
-                       timeout=180, env={**os.environ, "QAJEV_FIXTURE_PASS": "fixture-pass-123"})
+                       timeout=180)
     got = json.loads(p.stdout)
     assert got["sign_in"]["ok"] and "test_signin" not in got["sign_in"], got["sign_in"]
 
