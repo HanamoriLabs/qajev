@@ -478,8 +478,9 @@ async def qa_check(
     never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a dev server
     here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only tunnel, and a suite
     or project env with tunnel: through the full tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a
-    built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud
-    run's decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
+    built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT as Cloudflare
+    Pages does (_headers, _redirects, ETag). model: the cloud run's decision model (clef, clef-flash, clef-omni, jev,
+    jev-openrouter; default the dashboard's). A cloud run in the
     background returns its id (r_...) and address at once.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
@@ -573,8 +574,9 @@ async def qa_run_suite(
     never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a dev server
     here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only tunnel, and a suite
     or project env with tunnel: through the full tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a
-    built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud
-    run's decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
+    built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT as Cloudflare
+    Pages does (_headers, _redirects, ETag). model: the cloud run's decision model (clef, clef-flash, clef-omni, jev,
+    jev-openrouter; default the dashboard's). A cloud run in the
     background returns its id (r_...) and address at once.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
@@ -660,8 +662,9 @@ async def qa_smoke(
     never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a dev server
     here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only tunnel, and a suite
     or project env with tunnel: through the full tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a
-    built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud
-    run's decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
+    built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT as Cloudflare
+    Pages does (_headers, _redirects, ETag). model: the cloud run's decision model (clef, clef-flash, clef-omni, jev,
+    jev-openrouter; default the dashboard's). A cloud run in the
     background returns its id (r_...) and address at once.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
@@ -753,8 +756,9 @@ async def qa_project_run(
     never run here instead) or "auto" (the cloud when it can; a signed-in profile or a run that writes to a dev server
     here runs here, and runner_note says why; a read-only 127.0.0.1 run goes through the read-only tunnel, and a suite
     or project env with tunnel: through the full tunnel). Default: QAJEV_RUNNER, else local. serve: with a cloud run, a
-    built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT. model: the cloud
-    run's decision model (clef, clef-flash, clef-omni, jev, jev-openrouter; default the dashboard's). A cloud run in the
+    built site folder, "DIR" or "DIR:PORT", that the cloud machine serves on its own 127.0.0.1:PORT as Cloudflare
+    Pages does (_headers, _redirects, ETag). model: the cloud run's decision model (clef, clef-flash, clef-omni, jev,
+    jev-openrouter; default the dashboard's). A cloud run in the
     background returns its id (r_...) and address at once.
     plan: the approved test plan this run follows (a Markdown file; overrides a suite's `plan:`). Without an approved
     one the run warns, and with QAJEV_REQUIRE_PLAN=1 it is refused (see qa_plan).
