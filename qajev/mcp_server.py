@@ -11,6 +11,7 @@ import contextlib
 import io
 import json
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -350,11 +351,16 @@ class _Submission:
             return self._run_id
 
 
-def _stop_quietly(client, run_id):
+def _stop_unclaimed(client, run_id):
+    """Stop a run whose id no call has. A stop that fails leaves one line on stderr (the MCP client's log) with the
+    run's id, so the run is not lost again (#236 L1)."""
     from . import cloud
 
-    with contextlib.suppress(cloud.CloudError, OSError):
+    try:
         cloud.stop(client, run_id)
+    except (cloud.CloudError, OSError) as e:
+        print(config.redact(f"qajev: could not stop cloud run {run_id}, whose call was cancelled before it had the "
+                            f"id: {e}"), file=sys.stderr, flush=True)
 
 
 def _submit_for_call(client, plan, submission):
@@ -362,7 +368,7 @@ def _submit_for_call(client, plan, submission):
 
     run_id = cloud.submit(client, plan, ended=submission.ended)
     if not submission.made(run_id):
-        _stop_quietly(client, run_id)
+        _stop_unclaimed(client, run_id)
     return run_id
 
 
@@ -381,7 +387,7 @@ async def _cloud_report(plan, ctx):
     except asyncio.CancelledError:  # the thread goes on: it stops the run it makes, or this stops the one handed over
         handed = submission.end()
         if handed:
-            await asyncio.to_thread(_stop_quietly, client, handed)
+            await asyncio.to_thread(_stop_unclaimed, client, handed)
         raise
     url = cloud.run_url(client.base, run_id)
     out = {"runner": "cloud", "job": run_id, "run_id": run_id, "url": url, "state": "queued", "gate": None,

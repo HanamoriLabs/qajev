@@ -117,7 +117,8 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
   `{"runner": "cloud", "job", "run_id", "url", "state": "queued", "gate": null, "note", "next"}`. That result has no
   gate, so it is not a pass. Call `qa_job` with the id (`r_...`) until the run ends: it then gives `gate`, `counts`,
   `tests`, `report_url` and `reason`. The run goes on in the cloud when the call ends. Only `qa_stop` stops it. A
-  call cancelled before it has the id stops the run, because no agent could follow it. See
+  call cancelled before it has the id stops the run, because no agent could follow it. If that stop fails, one line
+  on the server's stderr names the run. See
   [CLI: QAJev Cloud](cli.md#qajev-cloud-where-a-run-goes).
 - `about`: what the test proves and why, in plain words. The server's instructions ask agents to give it on every
   test (and `about:` on each scenario or step of a suite); a result lists the tests without one, or with a check
