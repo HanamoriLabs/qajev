@@ -380,19 +380,10 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if measured_effect is not None:
                 checks.append(measured_effect)
             if scenario.expect.get("looks") and stop not in verdict.HARNESS_STOPS:
-                structured = any(isinstance(entry, dict) for entry in scenario.expect["looks"])
-                image = session.screen_image_png() if structured else session.screen_image()
-                blank = None if scenario.canvas_dark else looks_blank(session, image, result)
-                if blank:  # Clef never sees a blank capture: looks_blank_grade below
-                    result["looks_blank"] = blank
-                else:
-                    try:
-                        checks += vision.look(session.jev.model.post_json, image, scenario.expect["looks"],
-                                              {"page": {"url": observed.get("url"), "title": observed.get("title")}},
-                                              folder=getattr(session, "cwd", None), evidence_dir=run_dir)
-                        ran.add("looks")
-                    except (RuntimeError, ValueError) as e:  # Clef failed, not the browser
-                        stop, detail = "model_error", f"while judging looks: {e}"
+                looks, failed = judge_looks(session, scenario, observed, run_dir, result, ran)
+                checks += looks
+                if failed:  # Clef failed, not the browser
+                    stop, detail = "model_error", failed
             if stop not in verdict.HARNESS_STOPS:
                 ran.add("after")  # a hook that fails is named by the stop itself, not as never run
                 _run_hooks(session, "after", scenario.after, observed.get("url") or scenario.url)
@@ -541,6 +532,26 @@ def scroll_to_visible(session, expect):
         if not moved:
             break
     return {"after": "visible", "scrolled": screens, "found": False}
+
+
+def judge_looks(session, scenario, observed, run_dir, result, ran):
+    """expect.looks, judged by Clef on the screen now: -> (its checks, None), and "looks" joins ran. On a screen whose
+    main canvas is one flat dark colour (looks_blank) Clef is not asked: -> ([], None), with result["looks_blank"], and
+    looks_blank_grade grades it. When Clef fails: -> ([], why). A failed capture raises, as a browser error."""
+    structured = any(isinstance(entry, dict) for entry in scenario.expect["looks"])
+    image = session.screen_image_png() if structured else session.screen_image()
+    blank = None if scenario.canvas_dark else looks_blank(session, image, result)
+    if blank:
+        result["looks_blank"] = blank
+        return [], None
+    try:
+        checks = vision.look(session.jev.model.post_json, image, scenario.expect["looks"],
+                             {"page": {"url": observed.get("url"), "title": observed.get("title")}},
+                             folder=getattr(session, "cwd", None), evidence_dir=run_dir)
+    except (RuntimeError, ValueError) as e:
+        return [], f"while judging looks: {e}"
+    ran.add("looks")
+    return checks, None
 
 
 def looks_blank(session, image, result):
