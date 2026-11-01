@@ -84,7 +84,8 @@ three PNGs; Cloud publication needs the matching CLI and evidence-uploader versi
 ## A canvas the screenshot cannot show: `canvas_capture`
 
 QAJev reads the end screenshot of each web test. When the page's main canvas is one flat dark colour in that picture,
-the test is harness (see [Reports](reports.md)). Some browsers leave a WebGL or WebGPU canvas out of their screenshots
+the test is harness (see [Reports](reports.md)). The same holds for `expect.looks`: Clef never judges a screen whose
+main canvas is one flat dark colour, and the test is harness. Some browsers leave a WebGL or WebGPU canvas out of their screenshots
 while the page draws. Then give the suite (or one scenario) the canvas's own readback:
 
 ```yaml

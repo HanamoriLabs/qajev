@@ -22,6 +22,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Changed
 
+- `expect.looks` is no longer judged on a blank capture. When the screen Clef would judge shows the page's main canvas
+  as one flat dark colour, Clef is not asked and the test is harness ("the looks were not judged: ..."), with a
+  `looks_blank` record. Before, Clef judged the blank 3D view and the test failed. A check that ran and failed still
+  fails the test, and `canvas_dark` turns this off.
 - A page whose renderer crashes (Chrome's "Aw, Snap") now fails its test, with stop `page_crashed` and the reason
   "the page crashed at <URL>; last step: <step>". The gate is FAIL. Before, the test waited out its browser timeouts
   and graded harness. Every later browser call of that test now fails at once, and the next test starts on a new

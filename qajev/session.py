@@ -1484,9 +1484,12 @@ class Session:
         return base64.b64decode(data["data"], validate=True)
 
     def blank_canvas(self, path):
-        """The screenshot at path shows the page's main canvas as one flat dark colour (pixels.flat_dark), read at the
-        points of it no other element covers: {points, median, flat, canvas, share}, else None. A canvas under
-        pointer-events: none, or smaller than a fifth of the view, is not read."""
+        """The screenshot at path (or the image bytes, for the looks image) shows the page's main canvas as one flat
+        dark colour (pixels.flat_dark), read at the points of it no other element covers: {points, median, flat,
+        canvas, share}, else None. A canvas under pointer-events: none, or smaller than a fifth of the view, is not
+        read."""
+        import io
+
         from PIL import Image
 
         from . import pixels
@@ -1494,7 +1497,7 @@ class Session:
         seen = self.evaluate(CANVAS_POINTS, timeout_ms=5000)
         if not isinstance(seen, dict) or not seen.get("points") or not seen.get("width"):
             return None
-        with Image.open(path) as image, image.convert("L") as grey:
+        with Image.open(io.BytesIO(path) if isinstance(path, bytes) else path) as image, image.convert("L") as grey:
             scale = grey.width / seen["width"]
             lumas = [grey.getpixel((min(grey.width - 1, int(x * scale)), min(grey.height - 1, int(y * scale))))
                      for x, y in seen["points"]]

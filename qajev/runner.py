@@ -4,6 +4,8 @@ Parallelism is one process per worker: browser_harness reads BU_NAME at import, 
 own one daemon. Every worker opens its own tab in the same QAJev Chrome and stops its own daemon.
 """
 
+import base64
+import binascii
 import contextlib
 import dataclasses
 import json
@@ -380,13 +382,17 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if scenario.expect.get("looks") and stop not in verdict.HARNESS_STOPS:
                 structured = any(isinstance(entry, dict) for entry in scenario.expect["looks"])
                 image = session.screen_image_png() if structured else session.screen_image()
-                try:
-                    checks += vision.look(session.jev.model.post_json, image, scenario.expect["looks"],
-                                          {"page": {"url": observed.get("url"), "title": observed.get("title")}},
-                                          folder=getattr(session, "cwd", None), evidence_dir=run_dir)
-                    ran.add("looks")
-                except (RuntimeError, ValueError) as e:  # Clef failed, not the browser
-                    stop, detail = "model_error", f"while judging looks: {e}"
+                blank = None if scenario.canvas_dark else looks_blank(session, image, result)
+                if blank:  # Clef never sees a blank capture: looks_blank_grade below
+                    result["looks_blank"] = blank
+                else:
+                    try:
+                        checks += vision.look(session.jev.model.post_json, image, scenario.expect["looks"],
+                                              {"page": {"url": observed.get("url"), "title": observed.get("title")}},
+                                              folder=getattr(session, "cwd", None), evidence_dir=run_dir)
+                        ran.add("looks")
+                    except (RuntimeError, ValueError) as e:  # Clef failed, not the browser
+                        stop, detail = "model_error", f"while judging looks: {e}"
             if stop not in verdict.HARNESS_STOPS:
                 ran.add("after")  # a hook that fails is named by the stop itself, not as never run
                 _run_hooks(session, "after", scenario.after, observed.get("url") or scenario.url)
@@ -464,6 +470,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     result.update({k: v for k, v in (("stop_detail", detail), ("not_run", not_run)) if v})
     if result.get("canvas_blank") and scenario.canvas_dark:
         result["canvas_dark"] = scenario.canvas_dark
+    outcome, reason = looks_blank_grade(outcome, reason, result.get("looks_blank"), checks)
     outcome, reason = canvas_blank_grade(outcome, reason, result.get("canvas_blank"), dark=scenario.canvas_dark,
                                          error=result.get("canvas_blank_error"))
     outcome, reason = canvas_capture_grade(outcome, reason, result.get("canvas_capture"))
@@ -534,6 +541,34 @@ def scroll_to_visible(session, expect):
         if not moved:
             break
     return {"after": "visible", "scrolled": screens, "found": False}
+
+
+def looks_blank(session, image, result):
+    """The image Clef would judge for expect.looks (a data URL) shows the page's main canvas as one flat dark colour,
+    read now at the canvas points no other element covers: -> Session.blank_canvas's reading, else None. Clef is then
+    not asked: a blank capture says nothing about how the page looks, and Clef graded one as fail (rea's Crumble run on
+    workload-gpu, 1 Nov). A check that breaks is noted in looks_blank_error, and Clef judges the image as before."""
+    reader = getattr(session, "blank_canvas", None)
+    if reader is None:
+        return None
+    try:
+        return reader(base64.b64decode(image.split(",", 1)[1], validate=True))
+    except (RuntimeError, KeyError, TimeoutError, OSError, ValueError, IndexError, binascii.Error) as e:
+        result["looks_blank_error"] = f"{type(e).__name__}: {e}"
+        return None
+
+
+def looks_blank_grade(outcome, reason, blank, checks):
+    """expect.looks on a screen whose main canvas is one flat dark colour was not judged (looks_blank): harness, with
+    the words first. A check that ran and failed still fails the test, with the words. -> (outcome, reason)"""
+    if not blank:
+        return outcome, reason
+    words = (f"the looks were not judged: the screen shows the page's main canvas as one flat dark colour "
+             f"({blank['flat']:.0%} of the {blank['points']} points no other element covers), so Clef would only "
+             "judge a blank capture. The browser's capture may lack the canvas's GPU layer, or the page drew nothing")
+    if any(not c["ok"] for c in checks):
+        return outcome, f"{reason}; {words}"
+    return "harness", f"{words}; {reason}"
 
 
 def canvas_blank_grade(outcome, reason, blank, *, dark=None, error=None):

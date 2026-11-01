@@ -73,6 +73,9 @@ That is QAJev's side, not your product:
   WebGL and WebGPU canvas out of its screenshots: remove that flag from the browser you attach with `--cdp-url`. If the
   page really draws nothing there at the end, that is the page's bug: end the test on a drawn frame. If the browser
   cannot show the canvas in a screenshot, give the suite `canvas_capture: {page: ...}`, the canvas's own readback.
+- *the looks were not judged: the screen shows the page's main canvas as one flat dark colour*: Clef would only have
+  seen a blank 3D view, so QAJev did not ask it. The causes and fixes are the same as for the screenshot line above.
+  When the scene is dark on purpose, give the scenario `canvas_dark: "<why>"`.
 - *the canvas's own readback (canvas_capture: page) is one flat dark colour*: the page drew nothing into the canvas,
   or the readback is empty. A WebGL or WebGPU canvas needs `preserveDrawingBuffer: true`, or a read in the same frame.
 - *canvas_capture: page gave no readback image*: the expression failed, or gave no `data:image/...;base64` URL.
