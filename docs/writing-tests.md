@@ -809,7 +809,9 @@ show the values as escaped text; long returned values can be opened in the HTML 
 Normal diagnostics stay complete. Each reason, returned value and page-error finding keeps up to 64 KiB of
 UTF-8 text after privacy cleaning, plus a visible `[truncated N characters]` marker when needed. Whole
 characters are retained. An evidence object whose serialized JSON exceeds 64 KiB is replaced by
-`{"_qajev_truncated": "[truncated N characters]"}`; smaller objects keep their numbers and JSON types.
+`{"_qajev_truncated": "[truncated N characters]"}`; smaller objects keep their numbers and JSON types. A returned
+object or array over 64 KiB becomes the same marker, so the check's value still parses as JSON. A measured result
+over 64 KiB keeps `ok`, the start of `says` that fits, and the marker: a passing check has its `says` only there.
 
 Before CDP transfer, the browser also enforces a loose 1 MiB item bound. A larger diagnostic is omitted in
 full and replaced by `[truncated N characters before transfer; exceeds 1 MiB]`. No raw prefix is sent, so

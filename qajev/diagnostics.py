@@ -43,6 +43,24 @@ def bound_text(text: str) -> str:
     return kept + f"\n[truncated {len(text) - len(kept)} characters]"
 
 
+def bound_json(value: Any) -> str:
+    """An already cleaned JSON value as text within one item. A cut text would not parse (31 Oct: every calib5e click
+    run's value), so over the limit it stays valid JSON with a `_qajev_truncated` marker, as clean_evidence does. A
+    measured result keeps its ok and as much of its says as fits: a passing check has its says only here."""
+    shown = json.dumps(value)
+    if len(shown.encode("utf-8")) <= DIAGNOSTIC_BYTES:
+        return shown
+    marker = {"_qajev_truncated": f"[truncated {len(shown)} characters]"}
+    if not (isinstance(value, dict) and isinstance(value.get("says"), str) and "ok" in value):
+        return json.dumps(marker)
+    room = DIAGNOSTIC_BYTES - len(json.dumps({"ok": value["ok"], "says": "", **marker}))
+    says, low, high = value["says"], 0, min(len(value["says"]), room)  # a character is one byte or more
+    while low < high:  # the longest start of says whose JSON (ASCII, so one byte a character) fits in the room
+        middle = (low + high + 1) // 2
+        low, high = (middle, high) if len(json.dumps(says[:middle])) - 2 <= room else (low, middle - 1)
+    return json.dumps({"ok": value["ok"], "says": says[:low], **marker})
+
+
 def clean_evidence(value: dict) -> dict:
     """Keep typed measurements, or an explicit marker when the whole evidence object exceeds one item."""
     public = clean_data(value)

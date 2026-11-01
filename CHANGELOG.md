@@ -31,6 +31,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- A js check's value over 64 KiB still parses as JSON. Before, an object or a measured result was cut as text, with
+  `[truncated N characters]` after it. Now it is `{"_qajev_truncated": "[truncated N characters]"}`, and a measured
+  result also keeps `ok` and the start of its `says`.
 - An MCP cloud call that is cancelled before it has the run's id stops that run. Before, the run was made anyway,
   and only the dashboard showed it: no agent could follow or stop it, and a retry made a second one. A call cancelled
   before the run is made makes none, and one cancelled during the upload sends no more files. Once the call has the
