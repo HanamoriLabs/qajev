@@ -69,7 +69,9 @@ When a web scenario's end screenshot shows the page's main canvas (a fifth of th
 colour, the scenario keeps a `canvas_blank` record: the points of the canvas that no other element covers (`points`),
 their median grey level (`median`), the share within a few levels of it (`flat`), the canvas size and its share of the
 view. A see-through layer over the canvas (a game's input or HUD layer as large as the canvas, with no background,
-border or text of its own) does not cover it: `through` counts the points read through one. A pass, or a scenario with no checks, is then **harness**; a failure stays a failure, with the note. The check
+border, shadow, backdrop filter or text of its own, and no `::before`, `::after`, shadow tree or SVG) does not cover
+it: `through` counts the points read through one. A pass, or a scenario with no checks, is then **harness**; a
+failure stays a failure, with the note. The check
 needs the screenshot, so `--no-shots` skips it. When the check itself breaks, the scenario keeps `canvas_blank_error`
 (the error) and its reason says so; the outcome stays. A scenario with `canvas_dark` ([Writing tests](writing-tests.md))
 keeps its outcome on a flat dark canvas: it then keeps `canvas_dark` (the scenario's reason), and its reason ends with it.
