@@ -163,11 +163,18 @@ def _tally(notes):
     return counts
 
 
+def _notes(scenario):
+    """A test's UX note list. Its `ux` can instead be the deterministic UX result object, whose findings the report
+    counts apart (report_files.ux_details): that is not a list of notes."""
+    notes = scenario.get("ux")
+    return notes if isinstance(notes, list) else []
+
+
 def ux_counts(report):
     """A run's UX notes counted by what each rests on ({"measured": 3, "opinion": 1}): every test's notes and the
     run's design consistency."""
     consistency = (report.get("ux") or {}).get("consistency") or {}
-    return _tally([n for r in report.get("scenarios") or [] for n in r.get("ux") or []]
+    return _tally([n for r in report.get("scenarios") or [] for n in _notes(r)]
                   + [n for notes in consistency.values() for n in notes])
 
 
@@ -229,7 +236,7 @@ def explain(scenarios, add, width, indent=4):
                  f"{jev['actions']} Jev action(s)" if jev.get("actions") is not None else "",
                  f"${r['cost_usd']:.4f}" if r.get("cost_usd") else ""]
         facts = " · ".join(f for f in facts if f)
-        ux = ux_line(_tally(r.get("ux") or []))  # advice, never the outcome: a count here, the notes in the report
+        ux = ux_line(_tally(_notes(r)))  # advice, never the outcome: a count here, the notes in the report
         if r["outcome"] == "pass" and not findings:
             add((f"{pad}{'pass':<10} {r['name']}  ({len(checks)} check(s) passed{', ' + facts if facts else ''})"
                  [:width], "pass"))
