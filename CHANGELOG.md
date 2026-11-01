@@ -29,6 +29,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - The flat dark canvas check now reads a canvas through a see-through layer over it (a full-size input or HUD layer
   with no background, border or text of its own). Before, such a layer hid every point, so a blank 3D view was not
   seen. The `canvas_blank` record counts these points as `through`.
+- The see-through layer rule now counts a `::before` or `::after`, a shadow tree (also a custom element's closed one)
+  and SVG shapes as paint of the layer's own. Before, a dark cover drawn one of these ways read as a blank canvas.
 - A page whose renderer crashes (Chrome's "Aw, Snap") now fails its test, with stop `page_crashed` and the reason
   "the page crashed at <URL>; last step: <step>". The gate is FAIL. Before, the test waited out its browser timeouts
   and graded harness. Every later browser call of that test now fails at once, and the next test starts on a new
