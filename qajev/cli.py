@@ -2131,9 +2131,13 @@ def cmd_cloud(args, plan):
                                                                   "now_test": r.get("now_test"),
                                                                   "waiting": r.get("waiting")}))
     except KeyboardInterrupt:
-        with contextlib.suppress(cloud.CloudError):
+        try:
             cloud.stop(client, run_id)
-        print(f"qajev: stopped cloud run {run_id}: {url}", file=sys.stderr)
+        except (cloud.CloudError, OSError) as e:  # never "stopped" for a run that may go on (#237 N1)
+            print(config.redact(f"qajev: could not stop cloud run {run_id}, so it may still run: {e}\n  {url}\n"
+                                f"  stop:   qajev stop {run_id}"), file=sys.stderr)
+        else:
+            print(f"qajev: stopped cloud run {run_id}: {url}", file=sys.stderr)
         return EXIT_INTERRUPTED
     except cloud.CloudError as e:
         return _cloud_fail(args, str(e), e.code, run_id, url)

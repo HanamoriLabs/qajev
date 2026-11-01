@@ -395,6 +395,9 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
   top-up on the Credits page starts it, and QAJev Cloud ends it after 2 hours without one, with no charge.
 - **`--background`** returns the cloud run's id (`r_...`) and address at once. `qajev jobs r_...` shows its state;
   `qajev stop r_...` stops it.
+- **Ctrl-C** while QAJev follows a cloud run stops that run, says `stopped cloud run r_...`, and exits `130`. When the
+  stop fails, it says `could not stop cloud run r_..., so it may still run`, with the error, the address and
+  `qajev stop r_...`.
 - **From the MCP tools** (`qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run` with `runner: "cloud"`), a cloud
   run always returns its id, address and state `queued` at once, with or without `background`. That result has no
   gate, so it is not a pass: `qa_job(r_...)` gives the gate when the run ends. The run goes on in the cloud when the

@@ -1032,6 +1032,34 @@ def test_a_stop_that_fails_leaves_one_line_with_the_run_id(dash, monkeypatch, ca
     assert KEY not in lines[0] and "[redacted]" in lines[0]
 
 
+def _ctrl_c(monkeypatch):
+    def interrupted(*a, **k):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cloud, "wait", interrupted)
+    return cli.main(["check", "https://shop.example/", "--runner", "cloud"])
+
+
+def test_ctrl_c_on_a_cloud_run_stops_it_and_says_so(dash, monkeypatch, capsys):
+    assert _ctrl_c(monkeypatch) == cli.EXIT_INTERRUPTED
+    assert len(_stops(dash)) == 1
+    assert f"qajev: stopped cloud run {RUN}: " in capsys.readouterr().err
+
+
+def test_ctrl_c_on_a_cloud_run_whose_stop_fails_never_says_stopped(dash, monkeypatch, capsys):
+    # #237 N1: a failed stop was hidden, and the line said "stopped" for a run that may go on.
+    def down(client, run_id):
+        raise cloud.CloudError(f"the dashboard did not answer (key {KEY})")
+
+    monkeypatch.setattr(cloud, "stop", down)
+    assert _ctrl_c(monkeypatch) == cli.EXIT_INTERRUPTED
+    err = capsys.readouterr().err
+    assert "stopped cloud run" not in err
+    assert f"could not stop cloud run {RUN}, so it may still run: the dashboard did not answer" in err
+    assert f"qajev stop {RUN}" in err and f"run.html?id={RUN}" in err
+    assert KEY not in err and "[redacted]" in err
+
+
 def test_mcp_cloud_refuses_and_auto_runs_here_with_a_note(dash, monkeypatch):
     seen = []
 

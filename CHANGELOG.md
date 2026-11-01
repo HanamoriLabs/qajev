@@ -31,6 +31,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- Ctrl-C on a cloud run whose stop fails no longer says `stopped cloud run`. It says the stop failed, with the run's id,
+  the error, the address and `qajev stop r_...`, because the run may go on.
 - A js check's value over 64 KiB still parses as JSON. Before, an object or a measured result was cut as text, with
   `[truncated N characters]` after it. Now it is `{"_qajev_truncated": "[truncated N characters]"}`, and a measured
   result also keeps `ok` and the start of its `says`.
