@@ -45,6 +45,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- A web session in a process that ran a game step first starts its browser daemon. Before, it started the daemon
+  under a new name while the browser harness waited for the game step's name: "daemon qajev-native-N didn't come up".
 - Ctrl-C on a cloud run whose stop fails no longer says `stopped cloud run`. It says the stop failed, with the run's id,
   the error, the address and `qajev stop r_...`, because the run may go on.
 - A js check's value over 64 KiB still parses as JSON. Before, an object or a measured result was cut as text, with

@@ -201,6 +201,25 @@ def test_a_pooled_worker_keeps_one_daemon_name(monkeypatch):
         session.configure_env("http://127.0.0.1:9351")
 
 
+def test_a_daemon_name_the_harness_read_before_jev_loaded_is_kept(monkeypatch):
+    """A game step imports browser_harness under its own name before any web session. A new name after that started
+    the daemon under it while the harness waited for the old one: "daemon qajev-native-23 didn't come up" (1 Nov)."""
+    import os
+
+    from qajev import session
+
+    monkeypatch.setattr(session, "_jev", None)
+    monkeypatch.setenv("BU_NAME", "qajev-native-7")
+    monkeypatch.setenv("BU_CDP_URL", "http://127.0.0.1:9350")
+    monkeypatch.delitem(sys.modules, "browser_harness.admin", raising=False)
+    monkeypatch.setitem(sys.modules, "browser_harness.helpers", SimpleNamespace(NAME="qajev-native-7"))
+    assert session.configure_env("http://127.0.0.1:9351") == "qajev-native-7"
+    assert session.configure_env("http://127.0.0.1:9352", name="worker-2") == "qajev-native-7"
+    assert os.environ["BU_NAME"] == "qajev-native-7" and os.environ["BU_CDP_URL"] == "http://127.0.0.1:9352"
+    monkeypatch.delitem(sys.modules, "browser_harness.helpers")
+    assert session.configure_env("http://127.0.0.1:9353", name="worker-3") == "worker-3"  # not imported: a new name
+
+
 def test_load_wait_is_one_budget_for_the_whole_run(monkeypatch):
     from qajev import runner
 

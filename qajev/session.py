@@ -266,7 +266,10 @@ def configure_env(cdp_url, name=None):
             raise RuntimeError("this process is already bound to another Chrome; use a new process")
         return os.environ["BU_NAME"]
     os.environ["BU_CDP_URL"] = cdp_url
-    os.environ["BU_NAME"] = name or f"qajev-{os.getpid()}-{uuid.uuid4().hex[:6]}"
+    # A game step can import browser_harness before any web session: a new name would start a daemon it never finds.
+    harness = (sys.modules.get(part) for part in ("browser_harness.admin", "browser_harness.helpers"))
+    bound = next((module.NAME for module in harness if module is not None), None)
+    os.environ["BU_NAME"] = bound or name or f"qajev-{os.getpid()}-{uuid.uuid4().hex[:6]}"
     os.environ.setdefault("BH_UPDATE_CHECK", "0")
     return os.environ["BU_NAME"]
 
