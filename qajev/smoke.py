@@ -25,6 +25,7 @@ SKIP = re.compile(
     r"/api/|\.(pdf|zip|dmg|exe|pkg|msi|png|jpe?g|gif|svg|webp|mp4|webm|mp3|csv|xlsx?)(\?|$)",
     re.I,
 )
+HTML_TYPES = ("text/html", "application/xhtml+xml")
 
 
 def lint(facts, *, mobile, name):
@@ -49,19 +50,21 @@ def lint(facts, *, mobile, name):
         add("S2", "mixed content", src)
     if facts.get("horizontal_overflow"):
         add("S2" if mobile else "S3", "horizontal scroll", "page is wider than the viewport")
-    if not facts.get("title"):
-        add("S3", "missing <title>")
-    if not facts.get("lang"):
-        add("S3", "missing <html lang>")
-    if facts.get("h1", 0) == 0:
-        add("S3", "no <h1>")
-    elif facts.get("h1", 0) > 1:
-        hidden = facts.get("h1_hidden")
-        add("S3", "several <h1>", f"{facts['h1']}" + (f" (and {hidden} hidden)" if hidden else ""))
-    if not facts.get("viewport_meta"):
-        add("S3", "missing viewport meta")
-    if not facts.get("description"):
-        add("S3", "missing meta description")
+    # A text or JSON document (llms.txt, robots.txt) has no title, lang, h1 or meta tags to give.
+    if (facts.get("content_type") or "text/html") in HTML_TYPES:
+        if not facts.get("title"):
+            add("S3", "missing <title>")
+        if not facts.get("lang"):
+            add("S3", "missing <html lang>")
+        if facts.get("h1", 0) == 0:
+            add("S3", "no <h1>")
+        elif facts.get("h1", 0) > 1:
+            hidden = facts.get("h1_hidden")
+            add("S3", "several <h1>", f"{facts['h1']}" + (f" (and {hidden} hidden)" if hidden else ""))
+        if not facts.get("viewport_meta"):
+            add("S3", "missing viewport meta")
+        if not facts.get("description"):
+            add("S3", "missing meta description")
     if facts.get("images_without_alt"):
         srcs = facts["images_without_alt"]
         add("S3", "images without alt", f"{len(srcs)} visible image(s): " + ", ".join(srcs[:3]))

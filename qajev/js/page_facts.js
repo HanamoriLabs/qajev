@@ -62,6 +62,7 @@
   return {
     url: location.href,
     status: nav.responseStatus || null,
+    content_type: document.contentType,
     title: document.title,
     lang: document.documentElement.getAttribute('lang'),
     description: !!document.querySelector('meta[name=description][content]'),
