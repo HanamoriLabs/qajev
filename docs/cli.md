@@ -398,7 +398,7 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
 - **From the MCP tools** (`qa_check`, `qa_run_suite`, `qa_smoke` and `qa_project_run` with `runner: "cloud"`), a cloud
   run always returns its id, address and state `queued` at once, with or without `background`. That result has no
   gate, so it is not a pass: `qa_job(r_...)` gives the gate when the run ends. The run goes on in the cloud when the
-  call ends. Only `qa_stop(r_...)` stops it.
+  call ends. Only `qa_stop(r_...)` stops it. A call cancelled before it has the id stops the run.
 - **What stays on this Mac.** `--runner cloud` refuses these, with the reason and exit `3`, and runs nothing here.
   `--runner auto` runs them here, with one line saying why:
   - a signed-in run: `--profile`, or an account from `keychain:`, `op://` or `env:`. A seeded test account

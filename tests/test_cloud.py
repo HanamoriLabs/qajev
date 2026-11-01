@@ -8,6 +8,7 @@ import json
 import signal
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 
@@ -884,18 +885,17 @@ def test_a_stuck_cloud_run_never_holds_the_mcp_call(dash):
 
 
 def test_a_cloud_run_goes_on_when_the_mcp_call_ends(dash):
+    reached = asyncio.Event()
+
     class GoneClient:  # the client goes away while the call reports the run's id
         async def report_progress(self, *a, **k):
+            reached.set()
             await asyncio.Event().wait()
 
     async def call():
         task = asyncio.ensure_future(mcp_server.qa_check("https://shop.example/", GoneClient(), runner="cloud",
                                                          expect_text=["Hi"]))
-        for _ in range(500):
-            await asyncio.sleep(0.01)
-            if any(c[:2] == ("POST", "/api/v1/runs") for c in dash.calls):
-                break
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(reached.wait(), 5)  # the call has the id: a cancel from here on keeps the run
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -903,6 +903,110 @@ def test_a_cloud_run_goes_on_when_the_mcp_call_ends(dash):
     asyncio.run(call())
     assert dash.created()["args"][:2] == ["check", "https://shop.example/"]
     assert not [c for c in dash.calls if c[1].endswith("/stop")], "A call that ended must not stop the cloud run"
+
+
+# #232 N1: a call cancelled while the submit thread ran never got the run's id. The thread made the run anyway, and
+# only the dashboard showed it. Now a call that ends before it has the id stops that run, exactly once.
+
+
+def _stops(dash):
+    return [c for c in dash.calls if c[:2] == ("POST", f"/api/v1/runs/{RUN}/stop")]
+
+
+def _cancel_while_held(make_call, inside, go):
+    """Start the MCP call, cancel it once the submit thread is held at `inside`, then let the thread go on.
+    asyncio.run returns only after the thread has ended."""
+
+    async def call():
+        task = asyncio.ensure_future(make_call())
+        assert await asyncio.to_thread(inside.wait, 5), "the submit thread never reached the held point"
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        go.set()
+
+    asyncio.run(call())
+
+
+def test_a_call_cancelled_while_its_run_is_made_stops_that_run(dash, monkeypatch):
+    inside, go = threading.Event(), threading.Event()
+    post = cloud.Client.post
+
+    def held(self, path, body=None):
+        out = post(self, path, body)
+        if path == "/api/v1/runs":  # the run exists now, and the call is cancelled before it has the id
+            inside.set()
+            go.wait(5)
+        return out
+
+    monkeypatch.setattr(cloud.Client, "post", held)
+    _cancel_while_held(lambda: mcp_server.qa_check("https://shop.example/", None, runner="cloud",
+                                                   expect_text=["Hi"]), inside, go)
+    assert dash.created()["kind"] == "check"
+    assert len(_stops(dash)) == 1, "a run whose id no call has must be stopped"
+
+
+def test_a_call_cancelled_during_the_upload_stops_the_run_and_sends_no_more_files(dash, monkeypatch, tmp_path):
+    inside, go = threading.Event(), threading.Event()
+    put = cloud.Client._put_prepared_file
+
+    def held(self, run_id, remote, data):
+        out = put(self, run_id, remote, data)
+        inside.set()
+        go.wait(5)
+        return out
+
+    monkeypatch.setattr(cloud.Client, "_put_prepared_file", held)
+    folder = site(tmp_path, 3)
+    _cancel_while_held(lambda: mcp_server.qa_check("http://127.0.0.1:8877/", None, runner="cloud", serve=str(folder),
+                                                   expect_text=["Hi"]), inside, go)
+    assert len(dash.sent("PUT")) == 1, "the files after the cancel must not be sent"
+    assert len(_stops(dash)) == 1
+
+
+def test_a_call_cancelled_before_its_run_is_made_makes_none(dash, monkeypatch, tmp_path):
+    inside, go = threading.Event(), threading.Event()
+    files = cloud.site_files
+
+    def held(*a, **k):
+        inside.set()
+        go.wait(5)
+        return files(*a, **k)
+
+    monkeypatch.setattr(cloud, "site_files", held)
+    folder = site(tmp_path, 2)
+    _cancel_while_held(lambda: mcp_server.qa_check("http://127.0.0.1:8877/", None, runner="cloud", serve=str(folder),
+                                                   expect_text=["Hi"]), inside, go)
+    assert not [c for c in dash.calls if c[:2] == ("POST", "/api/v1/runs")], "no run may be made for an ended call"
+    assert not dash.sent("PUT")
+
+
+def test_a_call_cancelled_after_the_thread_handed_over_the_id_stops_the_run_itself(dash, monkeypatch):
+    # The thread has returned the id, but the cancel reaches the call before it reads it: the call must stop the run.
+    box = {}
+    post = cloud.Client.post
+
+    def late(self, path, body=None):
+        out = post(self, path, body)
+        if path == "/api/v1/runs":
+            def hold_then_cancel():  # runs on the event loop, so the thread finishes first, and the cancel lands next
+                time.sleep(1)
+                box["task"].cancel()
+
+            box["loop"].call_soon_threadsafe(hold_then_cancel)
+        return out
+
+    monkeypatch.setattr(cloud.Client, "post", late)
+
+    async def call():
+        box["loop"] = asyncio.get_running_loop()
+        box["task"] = asyncio.ensure_future(mcp_server.qa_check("https://shop.example/", None, runner="cloud",
+                                                                expect_text=["Hi"]))
+        with pytest.raises(asyncio.CancelledError):
+            await box["task"]
+
+    asyncio.run(call())
+    assert len(_stops(dash)) == 1, "a run whose id no call has must be stopped"
 
 
 def test_mcp_cloud_refuses_and_auto_runs_here_with_a_note(dash, monkeypatch):

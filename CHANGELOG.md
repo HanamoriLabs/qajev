@@ -31,6 +31,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- An MCP cloud call that is cancelled before it has the run's id stops that run. Before, the run was made anyway,
+  and only the dashboard showed it: no agent could follow or stop it, and a retry made a second one. A call cancelled
+  before the run is made makes none, and one cancelled during the upload sends no more files. Once the call has the
+  id, the run goes on as before.
 - A run or check on an IPv6 host keeps the host's brackets in its name: `smoke [::1]:8765`, not `smoke ::1:8765`,
   which reads as one address. `qajev jobs` and the Cloud show that name.
 - A run carries its project's name also when the project's URL has another case or user info (`https://alice@Shop.Example/`)
