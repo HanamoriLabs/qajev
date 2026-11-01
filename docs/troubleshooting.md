@@ -6,6 +6,11 @@ The page and its capture do not agree with the requested device geometry. Before
 checks or hooks, QAJev measures the page, takes a native capture, then measures again. A mismatch or a resize
 during capture stops that scenario as harness. This check also runs with `--no-shots`.
 
+When the page moved during the capture, QAJev waits for the page's fonts and two drawn frames, then takes the
+capture again, 3 captures at most (`retakes` in the `viewport` object). "page geometry changed during capture"
+means the page still moved during the last of them: for example, it loads more than one late font, or it
+animates its own size.
+
 Saved, reactive and vision images validate their own geometry at capture time. A correct startup cannot make
 a later mismatched frame pass. The full-frame capture stays within the native viewport, and a rejected frame
 is not saved or sent to the vision judge. Passing checks do not turn that capture failure into a product PASS.

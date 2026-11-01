@@ -10,6 +10,16 @@ MEASURE = """({innerWidth,innerHeight,devicePixelRatio,
   visualViewport:visualViewport?{width:visualViewport.width,height:visualViewport.height,
     scale:visualViewport.scale}:null})"""
 
+# A late web font or image can move the layout while a capture is taken: the page grows, and a scrollbar comes and
+# changes the client width. Such a capture is taken again after SETTLE, TRIES captures at most. SETTLE waits for the
+# page's fonts and two drawn frames, and never longer than 1.5 s (a background tab may draw no frame).
+TRIES = 3
+SETTLE = """new Promise(done => {
+  const frames = () => requestAnimationFrame(() => requestAnimationFrame(() => done(true)));
+  setTimeout(() => done(false), 1500);
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(frames, frames);
+})"""
+
 
 class ViewportMismatch(RuntimeError):
     def __init__(self, reason, evidence):
