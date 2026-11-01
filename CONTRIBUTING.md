@@ -44,6 +44,10 @@ QAJEV_LIVE=1 uv run pytest -q tests/test_native.py                  # needs Godo
 QAJEV_LIVE=1 QAJEV_ELECTRON=/path/to/electron uv run pytest -q tests/test_electron.py
 ```
 
+Some live files need a visible Chrome (`test_block_list`, `test_click_at`, `test_color_scheme`, `test_frame_console`,
+`test_user_agent`, `test_workers`). On Linux with no display they skip, and each skip says why. Run them under
+`xvfb-run -a` to include them.
+
 The demo site: `python3 tests/fixtures/serve.py` serves it on `http://127.0.0.1:8765`.
 
 ## Guidelines

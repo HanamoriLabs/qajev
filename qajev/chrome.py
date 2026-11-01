@@ -13,6 +13,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -370,6 +371,31 @@ def _disable_password_services(profile_dir: Path) -> None:
                 temporary.unlink(missing_ok=True)
 
 
+NO_DISPLAY = ("a visible Chrome needs a display, and this Linux has none (DISPLAY and WAYLAND_DISPLAY are unset): "
+              "run headless (--headless), or start an X server such as Xvfb")
+
+
+def display_missing(environ=None):
+    """NO_DISPLAY when a visible Chrome cannot start here (Linux with no X or Wayland display), else None."""
+    environ = os.environ if environ is None else environ
+    if not sys.platform.startswith("linux") or environ.get("DISPLAY") or environ.get("WAYLAND_DISPLAY"):
+        return None
+    return NO_DISPLAY
+
+
+def exit_reason(code, log, log_from=0):
+    """Why Chrome stopped before its debugging port opened. Linux Chrome with no display only logs "Missing X server
+    or $DISPLAY" and exits with 1, so that case is said in plain words."""
+    said = f"Chrome exited with {code} (see {log})"
+    try:
+        with open(log, "rb") as f:
+            f.seek(log_from)
+            written = f.read(65536).decode(errors="replace")
+    except OSError:
+        return said
+    return f"{said}: {NO_DISPLAY}" if "Missing X server or $DISPLAY" in written else said
+
+
 def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, *, temporary=None):
     _disable_password_services(profile_dir)
     isolated = port == 0 and ephemeral
@@ -389,6 +415,7 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, *, t
     launch_port = port
     env = child_env(temporary=temporary)
     with open(STATE / f"{state_key}.log", "ab") as log:
+        log_from = log.tell()  # a profile's log keeps earlier starts: read only what this one writes
         proc = subprocess.Popen(
             niced(args), stdout=subprocess.DEVNULL, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True,
             env=env,
@@ -407,7 +434,7 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, *, t
             if port and version(cdp_url, timeout=0.5):
                 break
             if proc.poll() is not None:
-                raise ChromeError(f"Chrome exited with {proc.returncode} (see {STATE / (state_key + '.log')})")
+                raise ChromeError(exit_reason(proc.returncode, STATE / f"{state_key}.log", log_from))
             time.sleep(0.2)
         else:
             raise ChromeError(f"Chrome did not open its debugging port within {wait}s")

@@ -139,6 +139,9 @@ def ports(tmp_path_factory):
 def browser():
     from qajev import chrome
 
+    if why := chrome.display_missing():  # a visible Chrome: with no display the tests skip and say why
+        pytest.skip(why)
+
     old = os.environ.get("QAJEV_CHROME_FLAGS")
     rules = f"MAP {CROSS_SITE} 127.0.0.1, MAP {OTHER_SITE} 127.0.0.1"
     os.environ["QAJEV_CHROME_FLAGS"] = f"{old or ''} '--host-resolver-rules={rules}'".strip()

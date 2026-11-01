@@ -227,3 +227,32 @@ def test_real_linux_chrome_starts_with_filtered_environment(monkeypatch, tmp_pat
         assert chrome.version(record["cdp_url"])
     finally:
         chrome.stop(record["state_key"])
+
+
+def test_display_missing_names_only_a_linux_with_no_display(monkeypatch):
+    monkeypatch.setattr(chrome.sys, "platform", "linux")
+    assert chrome.display_missing({}) == chrome.NO_DISPLAY
+    assert chrome.display_missing({"DISPLAY": ":0"}) is None
+    assert chrome.display_missing({"WAYLAND_DISPLAY": "wayland-0"}) is None
+    monkeypatch.setattr(chrome.sys, "platform", "darwin")
+    assert chrome.display_missing({}) is None
+
+
+def test_a_chrome_that_stops_with_no_display_says_so_and_only_for_its_own_start(monkeypatch, tmp_path, launch_env):
+    """Linux Chrome with no display logs "Missing X server or $DISPLAY" and exits with 1 (workload-cpu, 1 Nov)."""
+
+    def exits_saying(text):
+        executable = tmp_path / "exits"
+        executable.write_text(f"#!{sys.executable}\nimport sys\nsys.stderr.write({text!r})\nsys.exit(1)\n")
+        executable.chmod(0o700)
+        monkeypatch.setenv("QAJEV_CHROME", str(executable))
+        with pytest.raises(chrome.ChromeError) as error:
+            chrome.start("no-display", headless=False, wait=20)
+        assert str(error.value).startswith("Chrome exited with 1 (see ")
+        return str(error.value)
+
+    x11 = ("[13:13:1101/125536.716071:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:257] "
+           "Missing X server or $DISPLAY\n")
+    assert exits_saying(x11).endswith(": " + chrome.NO_DISPLAY)
+    # The profile's log still holds that line; this start wrote another, so it says nothing about a display
+    assert chrome.NO_DISPLAY not in exits_saying("some other failure\n")

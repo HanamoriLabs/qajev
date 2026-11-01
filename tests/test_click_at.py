@@ -67,6 +67,9 @@ def port(tmp_path_factory):
 def browser():
     from qajev import chrome
 
+    if why := chrome.display_missing():  # a visible Chrome: with no display the tests skip and say why
+        pytest.skip(why)
+
     record = chrome.start(f"click-at-{os.getpid()}", headless=False, ephemeral=True)
     yield record
     chrome.stop(record["state_key"])
@@ -137,6 +140,11 @@ def test_a_click_into_a_frame_right_after_the_page_loads_still_lands():
     import subprocess
     import sys
     from pathlib import Path
+
+    from qajev import chrome
+
+    if why := chrome.display_missing():  # the script starts a visible Chrome
+        pytest.skip(why)
 
     script = Path(__file__).parent / "fixtures" / "frame_click_repro.py"
     out = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=240)
