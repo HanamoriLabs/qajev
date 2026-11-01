@@ -5,6 +5,8 @@ import sys
 import time
 from types import SimpleNamespace
 
+import pytest
+
 from qajev import report
 from qajev.cli import build_parser, check_suite, main
 from qajev.config import redact_tree
@@ -430,6 +432,30 @@ def test_the_tap_target_finding_names_up_to_ten_and_what_wcag_let_off():
     assert smoke.small_targets({"small_targets": 2}) == "2 target(s)"  # an older page_facts: the count alone
     exempt_only = {"small_targets": 0, "small_targets_skipped": {"inline": 9}}  # nothing counted: no finding
     assert all(f["kind"] != "tap targets under 24 px" for f in smoke.lint(exempt_only, mobile=True, name="home"))
+
+
+HTML_PAGE_LINTS = {"missing <title>", "missing <html lang>", "no <h1>", "missing viewport meta",
+                   "missing meta description"}
+
+
+@pytest.mark.parametrize("kind", ["text/html", "application/xhtml+xml", None])
+def test_an_html_page_without_its_tags_gets_each_page_lint(kind):
+    from qajev import smoke
+
+    facts = {"status": 200, "text_chars": 400, **({"content_type": kind} if kind else {})}
+    kinds = {f["kind"] for f in smoke.lint(facts, mobile=False, name="home")}
+    assert HTML_PAGE_LINTS <= kinds  # with no content_type (an older page_facts), a page is HTML as before
+
+
+@pytest.mark.parametrize("kind", ["text/plain", "application/json", "text/markdown"])
+def test_a_text_document_gets_no_html_page_lint_but_keeps_its_status_and_blank_checks(kind):
+    from qajev import smoke
+
+    facts = {"status": 200, "text_chars": 400, "content_type": kind, "h1": 2}
+    assert not {f["kind"] for f in smoke.lint(facts, mobile=False, name="llms.txt")} & (HTML_PAGE_LINTS | {
+        "several <h1>"})
+    broken = smoke.lint({"status": 404, "text_chars": 3, "content_type": kind}, mobile=False, name="llms.txt")
+    assert {f["kind"] for f in broken} == {"HTTP 404", "blank page"}
 
 
 def test_a_report_names_the_qajev_commit_that_judged_it(tmp_path, monkeypatch):

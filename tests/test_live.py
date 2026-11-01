@@ -766,6 +766,22 @@ def test_smoke_crawls_and_lints_the_fixture(site, browser, tmp_path):
     assert tabs() <= tabs_before, "the run must close its own tabs"
 
 
+def test_smoke_reads_a_plain_text_page_without_html_page_lints(site, browser, tmp_path):
+    import subprocess
+    import sys
+
+    out = subprocess.run(
+        [sys.executable, "-m", "qajev", "smoke", site + "/notes.txt", "--cdp-url", browser["cdp_url"], "--out",
+         str(tmp_path), "--json", "--quiet", "--load-high", "0", "--max-pages", "1", "--device", "desktop"],
+        capture_output=True, text=True, timeout=180,
+    )
+    report = json.loads(out.stdout)
+    (page,) = report["scenarios"]
+    assert page["name"] == "/notes.txt" and page["outcome"] == "pass", page
+    assert not [f for f in report["findings"] if f["scenario"] == "/notes.txt"], report["findings"]
+    assert report["gate"] == "PASS" and out.returncode == 0
+
+
 def test_a_stored_test_account_signs_in_before_the_scenarios_and_its_password_goes_nowhere(site, browser, tmp_path):
     # The sign-in form posts (the read-only guard would block it), so QAJev signs in itself, unguarded, in its own
     # tab; the scenarios then run guarded and signed in. The password is read from the seeded test account's fixture

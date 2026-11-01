@@ -1,0 +1,3 @@
+# QAJev fixture notes
+
+A plain text file, like llms.txt: a smoke reads it, but it has no HTML tags to lint.

@@ -6,6 +6,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- `qajev smoke` no longer lists a missing title, language, h1, viewport tag or description on a page that
+  is not HTML, such as `llms.txt`. Such a page still gets the HTTP status, script error and blank page checks.
 - A page whose web font loads during a capture no longer stops as harness ("page geometry changed during capture").
   When the page moves during a capture, QAJev waits for its fonts and two drawn frames, then takes the capture again,
   3 captures at most. The `viewport` object counts them in `retakes`.
