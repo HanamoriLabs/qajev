@@ -441,6 +441,21 @@ def test_top_counts_a_tests_ux_notes_by_what_they_rest_on():
     assert ux == ["UX 2 measured · 1 model opinion", "UX 1 measured"]  # the report's words; /blog has none
 
 
+def test_top_counts_ux_notes_and_passes_over_a_deterministic_ux_result():
+    """A test's `ux` is a note list or the deterministic UX result (docs/ux-report-contract.md). top walked that
+    object's keys as notes: "'str' object has no attribute 'get'", and qajev top failed for the whole machine."""
+    from qajev import top
+
+    result = {"mode": "advisory", "status": "complete", "skipped": [], "notes": [],
+              "findings": [{"check": "UX-COVER", "severity": "advisory", "step": 2, "message": "Save is covered."}]}
+    scenarios = [{"name": "/", "outcome": "pass", "checks": [], "findings": [], "ux": UX_NOTES},
+                 {"name": "/cart", "outcome": "pass", "checks": [], "findings": [], "ux": result}]
+    assert top.ux_counts({"scenarios": scenarios}) == {"measured": 2, "opinion": 1}
+    lines = []
+    top.explain(scenarios, lines.append, 120)
+    assert [t.strip() for t, _ in lines if "UX" in t] == ["UX 2 measured · 1 model opinion"]
+
+
 def test_top_shows_a_runs_ux_count_from_its_report():
     from qajev import top
 

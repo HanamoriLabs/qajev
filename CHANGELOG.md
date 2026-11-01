@@ -16,6 +16,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - A visible Chrome on a Linux machine with no display now says why it stopped: "a visible Chrome needs a display, and
   this Linux has none (DISPLAY and WAYLAND_DISPLAY are unset)", with what to do. Before, it said only "Chrome exited
   with 1" and the path of Chrome's log.
+- `qajev top` no longer fails with "'str' object has no attribute 'get'" once a finished run has a test with a
+  deterministic UX result. It counted that result's keys as UX notes. It now counts only the notes, and the report
+  still shows the result's findings.
 
 ## 0.4.41: 1 Nov 2026
 
