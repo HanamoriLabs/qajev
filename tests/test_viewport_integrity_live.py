@@ -1,5 +1,6 @@
 """Real CLI negative control: a narrow page with a wider capture cannot pass scripted checks."""
 
+import glob
 import http.server
 import json
 import os
@@ -225,3 +226,114 @@ def test_real_cli_refuses_later_bad_frames_after_a_valid_startup(browser, viewpo
     assert row["outcome"] == "harness" and row["stop"] == "viewport_mismatch"
     assert row["capture_viewport"]["after"]["clientWidth"] == 205
     assert row["shot"] is None and not any(frame.get("path") for frame in row.get("react", []))
+
+
+FONT = next(iter(sorted(glob.glob("/usr/share/fonts/**/*.ttf", recursive=True))), None)
+
+
+@pytest.fixture
+def late_font_site():
+    """A page that starts a web font after load. The font comes only after GET /release, so it lands mid-capture."""
+    released = threading.Event()
+    words = " ".join(["Late font ready"] + ["word"] * 60)
+    page = ('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Late font</title>'
+            '<body style="margin:0;background:rgb(19,47,83);color:white"><p style="font:40px/1.2 Late,monospace;margin:0">'
+            f'{words}</p><script>addEventListener("load",()=>{{const face=new FontFace("Late","url(/late.ttf)",'
+            '{sizeAdjust:"900%"});document.fonts.add(face);face.load();});</script>').encode()
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            if self.path == "/release":
+                released.set()
+                body, kind = b"", "text/plain"
+            elif self.path == "/late.ttf":
+                released.wait(20)
+                body, kind = open(FONT, "rb").read(), "font/ttf"
+            else:
+                body, kind = page, "text/html"
+            self.send_response(200)
+            self.send_header("Content-Type", kind)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/"
+    finally:
+        released.set()
+        server.shutdown()
+        server.server_close()
+        worker.join(5)
+
+
+# Lets the held font go right after the scenario's first capture, before QAJev measures the page again. Only the
+# font's timing is set by the test: the font, its layout and the scrollbar are Chrome's own.
+LATE_FONT_CLI = r"""
+import json,sys,time,urllib.request
+from pathlib import Path
+from qajev import cli,session
+out,base=Path(sys.argv[1]),sys.argv[2]
+normal_call=session.Session.call
+state={'released':False}
+MEASURE=('({fonts:document.fonts.status,tall:document.documentElement.scrollHeight>innerHeight,'
+         'clientWidth:document.documentElement.clientWidth,innerWidth})')
+def call(self,method,**params):
+    first=method=='Page.captureScreenshot' and not state['released']
+    if first:
+        deadline=time.monotonic()+5  # the page starts the font from its load handler
+        while self.evaluate('document.fonts.status')!='loading' and time.monotonic()<deadline:
+            time.sleep(0.05)
+    result=normal_call(self,method,**params)
+    if first:
+        state['released']=True
+        before=self.evaluate(MEASURE)
+        urllib.request.urlopen(base+'release',timeout=5).read()
+        deadline=time.monotonic()+10
+        while True:
+            after=self.evaluate(MEASURE)
+            if after['fonts']=='loaded' and after['clientWidth']<after['innerWidth'] or time.monotonic()>deadline:
+                break
+            time.sleep(0.05)
+        (out/'font-release.json').write_text(json.dumps({'before':before,'after':after}))
+    return result
+session.Session.call=call
+raise SystemExit(cli.main(sys.argv[3:]))
+"""
+
+
+@pytest.mark.skipif(FONT is None, reason="no system TrueType font to serve as the late web font")
+def test_real_late_font_during_the_startup_capture_is_taken_again_and_passes(browser, late_font_site, tmp_path):
+    cdp, _ = browser
+    empty = tmp_path / "empty.env"
+    empty.touch(mode=0o600)
+    spec = tmp_path / "suite.json"
+    spec.write_text(json.dumps({"name": "Late font fixture", "base_url": late_font_site,
+                               "devices": ["desktop"], "scenarios": [
+        {"name": "late web font", "url": "/", "settle": 0,
+         "about": "A web font that lands during the startup capture moves the page, and the capture is taken again.",
+         "expect": {"text": "Late font ready", "js": "document.fonts.status==='loaded'",
+                    "says": "the late web font has loaded"}}]}))
+    env = {key: os.environ[key] for key in ("HOME", "PATH", "LANG", "PYTHONPATH") if key in os.environ}
+    env.update(QAJEV_HOME=str(tmp_path / "home"), QAJEV_OUTLIVE_PARENT="1", PYTHONDONTWRITEBYTECODE="1")
+    argv = [sys.executable, "-P", "-c", LATE_FONT_CLI, str(tmp_path), late_font_site, "run", str(spec),
+            "--runner", "local", "--headless", "--cdp-url", cdp.endpoint, "--devices", "desktop", "--cost-cap", "0",
+            "--ux", "off", "--no-shots", "--env-file", str(empty), "--out", str(tmp_path / "reports"), "--json",
+            "--quiet"]
+    with (tmp_path / "cli.stdout").open("w") as stdout, (tmp_path / "cli.stderr").open("w") as stderr:
+        result = subprocess.run(argv, env=env, stdout=stdout, stderr=stderr, timeout=90)
+    font = json.loads((tmp_path / "font-release.json").read_text())
+    assert font["before"]["fonts"] == "loading" and not font["before"]["tall"]
+    assert font["after"]["fonts"] == "loaded" and font["after"]["tall"], "the font must really move the page"
+    assert font["after"]["clientWidth"] < font["before"]["clientWidth"], "the font must bring a scrollbar"
+    report = json.loads((tmp_path / "cli.stdout").read_text())
+    row = report["scenarios"][0]
+    assert result.returncode == 0 and report["gate"] == "PASS", row.get("reason")
+    assert row["outcome"] == "pass" and row["viewport"]["retakes"] == 1
+    assert row["viewport"]["before"] == row["viewport"]["after"]
+    assert row["viewport"]["after"]["clientWidth"] == font["after"]["clientWidth"]

@@ -1227,10 +1227,21 @@ class Session:
         import base64
 
         before = after = None
+        retakes = 0
         try:
-            before = self._measure_viewport()
-            data = self.call("Page.captureScreenshot", **params)
-            after = self._measure_viewport()
+            while True:
+                before = self._measure_viewport()
+                data = self.call("Page.captureScreenshot", **params)
+                after = self._measure_viewport()
+                if before == after or retakes == viewport.TRIES - 1:
+                    break
+                retakes += 1
+                try:
+                    self.evaluate(viewport.SETTLE, timeout_ms=3000)
+                except TransportLost:
+                    raise
+                except (RuntimeError, TimeoutError):
+                    pass  # the next capture still measures the page before and after
             raw = base64.b64decode(data["data"], validate=True)
         except TransportLost:
             raise
@@ -1243,8 +1254,10 @@ class Session:
             evidence = viewport.verify(before, after, raw, self.device, target=getattr(self.browser, "target", None),
                                        session=getattr(self.browser, "session", None))
         except viewport.ViewportMismatch as error:
+            error.evidence["retakes"] = retakes
             self.last_capture_viewport = error.evidence
             raise
+        evidence["retakes"] = retakes
         self.last_capture_viewport = evidence
         return data["data"], evidence
 

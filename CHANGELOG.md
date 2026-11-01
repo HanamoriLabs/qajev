@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- A page whose web font loads during a capture no longer stops as harness ("page geometry changed during capture").
+  When the page moves during a capture, QAJev waits for its fonts and two drawn frames, then takes the capture again,
+  3 captures at most. The `viewport` object counts them in `retakes`.
+
 ### Changed
 
 - The docs say how to start Xvfb with no GPU device (`-extension GLX`), where it otherwise stops with signal 11.

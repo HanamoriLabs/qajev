@@ -3,6 +3,7 @@
 import base64
 import copy
 import io
+import itertools
 from types import SimpleNamespace
 
 import pytest
@@ -176,6 +177,82 @@ def test_a_resize_during_capture_and_a_broken_image_are_refused():
         viewport.verify(geometry(width=205), geometry(), png(), suite.DEVICES["desktop"])
     with pytest.raises(viewport.ViewportMismatch, match="no valid captured image"):
         viewport.verify(geometry(), geometry(), b"not an image", suite.DEVICES["desktop"])
+
+
+def scrolled(gutter=15):
+    """The desktop page once it is taller than the window: a classic scrollbar takes `gutter` CSS px."""
+    view = geometry()
+    view["clientWidth"] -= gutter
+    view["layoutViewport"]["clientWidth"] -= gutter
+    view["visualViewport"]["width"] -= gutter
+    return view
+
+
+def moving_page(monkeypatch, reads):
+    """A scenario page whose geometry reads come from `reads`, one per measure around each capture."""
+    page, seen = scenario_page(monkeypatch, inner=(1280, 900))
+    reads = iter(reads)
+    monkeypatch.setattr(page, "_measure_viewport", lambda: copy.deepcopy(next(reads)))
+    return page, seen
+
+
+def capture_steps(seen):
+    """The captures and layout settles, in order."""
+    return [method if method == "Page.captureScreenshot" else "settle" for method, params in seen["calls"]
+            if method == "Page.captureScreenshot" or params.get("expression") == viewport.SETTLE]
+
+
+def test_a_late_font_scrollbar_during_capture_is_taken_again_after_the_page_settles(monkeypatch):
+    page, seen = moving_page(monkeypatch, [geometry(), scrolled(), scrolled(), scrolled()])
+    result = run(page)
+    assert result["outcome"] == "pass", result["reason"]
+    assert capture_steps(seen) == ["Page.captureScreenshot", "settle", "Page.captureScreenshot"]
+    assert result["viewport"]["retakes"] == 1
+    assert result["viewport"]["before"] == result["viewport"]["after"] == scrolled()
+    assert seen["checks"] > 0
+
+
+def test_a_page_that_keeps_moving_is_refused_after_three_captures(monkeypatch):
+    page, seen = moving_page(monkeypatch, itertools.cycle([geometry(), scrolled()]))
+    result = run(page)
+    assert result["outcome"] == "harness" and result["stop"] == "viewport_mismatch"
+    assert "page geometry changed during capture" in result["reason"]
+    assert capture_steps(seen) == ["Page.captureScreenshot", "settle"] * 2 + ["Page.captureScreenshot"]
+    assert result["viewport"]["retakes"] == 2
+    assert seen["checks"] == seen["hooks"] == 0
+
+
+def test_a_stable_capture_is_taken_once(monkeypatch):
+    page, seen = moving_page(monkeypatch, [scrolled(), scrolled()])
+    result = run(page)
+    assert result["outcome"] == "pass", result["reason"]
+    assert capture_steps(seen) == ["Page.captureScreenshot"]
+    assert result["viewport"]["retakes"] == 0
+
+
+def test_a_settle_that_fails_still_takes_the_capture_again_but_a_lost_browser_stops(monkeypatch):
+    page, seen = moving_page(monkeypatch, [geometry(), scrolled(), scrolled(), scrolled()])
+    evaluate = page.evaluate
+
+    def settle_fails(expression, **kwargs):
+        if expression == viewport.SETTLE:
+            raise RuntimeError("page script failed: navigating")
+        return evaluate(expression, **kwargs)
+
+    monkeypatch.setattr(page, "evaluate", settle_fails)
+    result = run(page)
+    assert result["outcome"] == "pass", result["reason"]
+    assert capture_steps(seen) == ["Page.captureScreenshot"] * 2
+
+    page, _ = moving_page(monkeypatch, [geometry(), scrolled()])
+    page.set_device(suite.DEVICES["desktop"])
+
+    def lost(*_args, **_kwargs):
+        raise session.TransportLost("the browser went away")
+
+    monkeypatch.setattr(page, "evaluate", lost)
+    with pytest.raises(session.TransportLost):
+        page.verify_viewport()
 
 
 def test_mobile_layout_zoom_is_normalized_without_changing_the_image_or_device(monkeypatch):
