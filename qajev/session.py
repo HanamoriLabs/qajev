@@ -722,9 +722,10 @@ def page_changes(before, after, now=None, node=None):
 
 # The page's largest canvas on screen, when it covers a fifth of the view or more, and a 24 x 16 grid of its points
 # that no other element covers, in CSS pixels: Session.blank_canvas reads them in the end screenshot. A see-through
-# layer over the canvas (nine tenths of its size or more, no background, border, shadow or text of its own, such as a
-# game's input or HUD layer) does not cover it: rea's Crumble page on workload-gpu, 1 Nov, had one, so no point was read
-# and its blank canvas went to Clef. `through` counts the points read through such a layer.
+# layer over the canvas (nine tenths of its size or more, no background, border, shadow or text of its own, no
+# ::before or ::after, shadow tree or SVG, such as a game's input or HUD layer) does not cover it: rea's Crumble page on
+# workload-gpu, 1 Nov, had one, so no point was read and its blank canvas went to Clef. `through` counts the points
+# read through such a layer.
 CANVAS_POINTS = """(() => {
   const W = innerWidth, H = innerHeight;
   let best = null, most = 0;
@@ -741,11 +742,14 @@ CANVAS_POINTS = """(() => {
       const s = getComputedStyle(e), r = e.getBoundingClientRect();
       const big = Math.max(0, Math.min(x1, r.right) - Math.max(x0, r.left)) *
                   Math.max(0, Math.min(y1, r.bottom) - Math.max(y0, r.top)) >= 0.9 * most;
+      // paint the hit test does not show: a ::before or ::after, a shadow tree (only its host is hit), SVG shapes
+      const hidden = ['::before', '::after'].some(p => !['none', 'normal'].includes(getComputedStyle(e, p).content)) ||
+        !!e.shadowRoot || e.tagName.includes('-') || e instanceof SVGElement;
       const bare = s.opacity === '0' || (/^(transparent|rgba\\(.*,\\s*0\\))$/.test(s.backgroundColor) &&
         s.backgroundImage === 'none' && s.boxShadow === 'none' && (s.backdropFilter || 'none') === 'none' &&
         !['Top', 'Right', 'Bottom', 'Left'].some(k => parseFloat(s['border' + k + 'Width']) > 0) &&
-        ![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()));
-      seen.set(e, big && bare && !['IMG', 'VIDEO', 'IFRAME', 'SVG', 'svg', 'CANVAS'].includes(e.tagName));
+        ![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && !hidden);
+      seen.set(e, big && bare && !['IMG', 'VIDEO', 'IFRAME', 'CANVAS'].includes(e.tagName));
     }
     return seen.get(e);
   };

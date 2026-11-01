@@ -6,16 +6,47 @@
   body { margin: 0; background: #0b0b10; color: #ddd; font: 16px/1.4 sans-serif; }
   canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
   .layer { position: fixed; inset: 0; }
+  .layer.half { right: 50%; }
   .layer.cover { background: #101014; }
-  .panel { position: absolute; left: 8px; bottom: 8px; padding: 8px; background: #f4f1ea; color: #222; }
+  .layer.border { border: 4px solid #101014; box-sizing: border-box; }
+  .layer.boxshadow { box-shadow: inset 0 0 0 2000px #101014; }
+  .layer.backdrop { backdrop-filter: blur(4px); }
+  .layer.pseudo::after { content: ""; position: absolute; inset: 0; background: #101014; }
+  .layer img, .layer svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .panel { position: absolute; left: 8px; bottom: 8px; padding: 8px; background: #f4f1ea; color: #222; z-index: 1; }
 </style></head>
 <body>
   <!-- A full-screen canvas that draws nothing, under a full-screen input layer that takes the pointer (a game's HUD or
        controls layer) and holds a lit panel (rea's Crumble page on workload-gpu, 1 Nov). The layer has no background
-       of its own, so the screen shows the canvas through it. ?cover gives the layer a dark background, as a loading
-       screen has: it then covers the canvas, and its flat dark colour is not the canvas's. -->
+       of its own, so the screen shows the canvas through it.
+       ?kind=K gives the layer one kind of paint that covers the canvas, as a dark loading screen does, so the
+       canvas is not read there: cover (a background), border, boxshadow, backdrop, text (its own text), pseudo
+       (an ::after), shadow (an opaque child in an open shadow tree), closed (one in a custom element's closed
+       shadow tree, which the page cannot see), svg (a filled rect), img (a full-size image).
+       ?kind=half makes the layer half the canvas's size: it is then not a layer, and covers the points under it. -->
   <canvas id="view"></canvas>
   <div class="layer"><div class="panel">the hall stands</div></div>
-  <script>if (location.search.includes("cover")) document.querySelector(".layer").classList.add("cover");</script>
+  <script>
+    const kind = new URLSearchParams(location.search).get("kind") || "", layer = document.querySelector(".layer");
+    const dark = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4">' +
+                 '<rect width="4" height="4" fill="#101014"/></svg>');
+    if (["half", "cover", "border", "boxshadow", "backdrop", "pseudo"].includes(kind)) layer.classList.add(kind);
+    if (kind === "text") layer.append("Loading the hall");
+    if (kind === "svg") layer.insertAdjacentHTML("afterbegin",
+      '<svg viewBox="0 0 4 4" preserveAspectRatio="none"><rect width="4" height="4" fill="#101014"/></svg>');
+    if (kind === "img") { const img = new Image(); img.src = dark; img.alt = ""; layer.prepend(img); }
+    if (kind === "shadow") {
+      const host = document.createElement("div");
+      host.style.cssText = "position:absolute;inset:0";
+      host.attachShadow({mode: "open"}).innerHTML = '<div style="position:absolute;inset:0;background:#101014"></div>';
+      layer.prepend(host);
+    }
+    if (kind === "closed") {
+      const host = document.createElement("dark-cover");
+      host.style.cssText = "position:absolute;inset:0";
+      host.attachShadow({mode: "closed"}).innerHTML = '<div style="position:absolute;inset:0;background:#101014"></div>';
+      layer.prepend(host);
+    }
+  </script>
 </body>
 </html>

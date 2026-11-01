@@ -49,6 +49,10 @@ def test_a_flat_dark_canvas_turns_a_pass_into_harness_and_keeps_a_failure(outcom
     assert runner.canvas_blank_grade(outcome, "x", None) == (outcome, "x")
 
 
+# The kinds of paint that make a full-size layer over the canvas a cover (tests/fixtures/site/canvas-layer.html)
+COVERS = ["cover", "border", "boxshadow", "backdrop", "text", "pseudo", "shadow", "closed", "svg", "img"]
+
+
 @LIVE
 def test_a_page_whose_3d_view_is_not_in_the_screenshot_is_harness_and_a_drawn_one_passes(site, tmp_path):  # noqa: F811
     suite = tmp_path / "canvas.qajev.yaml"
@@ -87,11 +91,15 @@ scenarios:
     about: fixture
     url: /canvas-layer.html
     expect: {{text: ["the hall stands"]}}
-  - name: a dark canvas under a dark cover
+  - name: half a canvas under a smaller see-through box
     about: fixture
-    url: /canvas-layer.html?cover
+    url: /canvas-layer.html?kind=half
     expect: {{text: ["the hall stands"]}}
-""")
+""" + "".join(f"""  - name: a dark canvas under a {kind} cover
+    about: fixture
+    url: /canvas-layer.html?kind={kind}
+    expect: {{text: ["the hall stands"]}}
+""" for kind in COVERS))
     p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--headless", "--ephemeral",
                         "--profile", f"canvas-{os.getpid()}", "--out", str(tmp_path / "out"), "--json", "--quiet",
                         "--load-high", "0"], capture_output=True, text=True, timeout=300,
@@ -116,8 +124,12 @@ scenarios:
     # A see-through layer that takes the pointer does not hide the canvas (rea's Crumble page, workload-gpu, 1 Nov)
     layer = got["a dark canvas under a see-through layer"]
     assert layer["outcome"] == "harness" and layer["canvas_blank"]["through"] >= 300, layer
-    cover = got["a dark canvas under a dark cover"]  # a layer with a background covers the canvas: not read
-    assert cover["outcome"] == "pass" and not cover.get("canvas_blank"), cover
+    half = got["half a canvas under a smaller see-through box"]  # only a layer the canvas's size is looked through
+    assert half["outcome"] == "harness" and not half["canvas_blank"].get("through"), half
+    assert half["canvas_blank"]["points"] < 0.6 * 384, half
+    for kind in COVERS:  # a layer with any paint of its own covers the canvas: not read (redteam-1 L1/L2 on #240)
+        cover = got[f"a dark canvas under a {kind} cover"]
+        assert cover["outcome"] == "pass" and not cover.get("canvas_blank"), (kind, cover)
     # expect.looks reads the same points (tests/test_looks_blank.py); a looks suite needs Clef set up to start at all
 
 
