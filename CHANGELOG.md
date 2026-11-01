@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.43: 2 Nov 2026
+
 ### Fixed
 
 - `qajev smoke` no longer lists a missing title, language, h1, viewport tag or description on a page that
