@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.42: 1 Nov 2026
+
 ### Changed
 
 - The see-through layer rule now counts a `::before` or `::after`, a shadow tree (also a custom element's closed one)
@@ -19,6 +21,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `qajev top` no longer fails with "'str' object has no attribute 'get'" once a finished run has a test with a
   deterministic UX result. It counted that result's keys as UX notes. It now counts only the notes, and the report
   still shows the result's findings.
+
+### Known limits
+
+- With these fixes, the whole test suite in one process, live Chrome tests too, gives 0 failed and 0 errors on a
+  Linux test box. 17 of its tests need a visible Chrome, and they skip there with the reason: that box has no
+  display. In its test sandbox, Xvfb stops with signal 11 before Chrome starts, though it runs outside the sandbox.
+  So these 17 tests have not yet run with a display on that box.
 
 ## 0.4.41: 1 Nov 2026
 
