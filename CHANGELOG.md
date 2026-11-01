@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.41: 1 Nov 2026
+
 ### Added
 
 - `canvas_dark: "<why>"` on a scenario whose canvas is dark on purpose. A flat dark canvas then keeps the test's
