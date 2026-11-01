@@ -12,6 +12,7 @@ import io
 import json
 import os
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -323,15 +324,65 @@ CLOUD_QUEUED = ("The run is queued in QAJev Cloud. This result has no gate, so i
                  "Call qa_job(job) until its state is no longer queued or running: that result has the gate.")
 
 
+class _Submission:
+    """One cloud submit that its MCP call may give up on. A call that ends before it has the run's id stops that run:
+    nobody could follow or stop it, and a retry makes a second one (#232 N1). Exactly one side stops it: the submit
+    thread when the call ended first, else the call."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._ended = False
+        self._run_id = None
+
+    def ended(self):
+        return self._ended
+
+    def made(self, run_id):
+        """The submit thread has the run's id. -> False when the call has ended: the thread then stops the run."""
+        with self._lock:
+            self._run_id = run_id
+            return not self._ended
+
+    def end(self):
+        """The call is cancelled. -> the id the thread already handed over (the call then stops that run), or None."""
+        with self._lock:
+            self._ended = True
+            return self._run_id
+
+
+def _stop_quietly(client, run_id):
+    from . import cloud
+
+    with contextlib.suppress(cloud.CloudError, OSError):
+        cloud.stop(client, run_id)
+
+
+def _submit_for_call(client, plan, submission):
+    from . import cloud
+
+    run_id = cloud.submit(client, plan, ended=submission.ended)
+    if not submission.made(run_id):
+        _stop_quietly(client, run_id)
+    return run_id
+
+
 async def _cloud_report(plan, ctx):
-    """Send the run to QAJev Cloud and return its id at once, background or not. The run goes on in the cloud whatever
-    happens to this call: qa_job follows it, qa_stop stops it. Before, a call waited up to 2 hours for the gate, and
-    the agent saw the id only when it ended. A run stuck at "running, 0 of 0 tests" then held the agent with no id, and
-    a call that ended stopped the run."""
+    """Send the run to QAJev Cloud and return its id at once, background or not. Once the call has the id, the run goes
+    on in the cloud whatever happens to this call: qa_job follows it, qa_stop stops it. A call cancelled before then
+    stops the run (_Submission). Before, a call waited up to 2 hours for the gate, and the agent saw the id only when
+    it ended. A run stuck at "running, 0 of 0 tests" then held the agent with no id, and a call that ended stopped the
+    run."""
     from . import cloud
 
     client = await asyncio.to_thread(cloud.connect)
-    run_id = await asyncio.to_thread(cloud.submit, client, plan)
+    submission = _Submission()
+    try:
+        run_id = await asyncio.to_thread(_submit_for_call, client, plan, submission)
+    except asyncio.CancelledError:  # the thread goes on: it stops the run it makes, or this stops the one handed over
+        handed = submission.end()
+        if handed:
+            await asyncio.to_thread(_stop_quietly, client, handed)
+        raise
     url = cloud.run_url(client.base, run_id)
     out = {"runner": "cloud", "job": run_id, "run_id": run_id, "url": url, "state": "queued", "gate": None,
            "note": CLOUD_QUEUED, "warnings": plan.warnings,

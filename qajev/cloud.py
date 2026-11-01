@@ -766,9 +766,10 @@ def _known_project(client, name):
         return None
 
 
-def submit(client, plan):
+def submit(client, plan, ended=None):
     """Queue the run and upload its files. -> the run id. An upload that fails stops the run (it would sit queued for
-    ever) and raises CloudError with the run's id and address."""
+    ever) and raises CloudError with the run's id and address. ended: a callable that says the caller gave up (a
+    cancelled MCP call). Then no run is made, or the run is stopped before its next file."""
     import tempfile  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory(prefix="qajev-cloud-") as temporary:
@@ -811,6 +812,8 @@ def submit(client, plan):
             except (OSError, ValueError):
                 raise CloudError("could not keep private local tunnel references; no run was created",
                                  EXIT_CONFIG) from None
+        if ended and ended():
+            raise CloudError("the call ended before the run was made; no run was created", EXIT_TROUBLE)
         created = client.post("/api/v1/runs", body) or {}
         run = created.get("run") if isinstance(created, dict) else None
         run_id = run.get("id") if isinstance(run, dict) else run
@@ -819,6 +822,8 @@ def submit(client, plan):
         remote = None
         try:
             for (remote, local), declaration in zip(files, declared):
+                if ended and ended():
+                    raise CloudError("the call that sent this run ended")
                 data = local.read_bytes()
                 if len(data) != declaration["size"] or hashlib.sha256(data).hexdigest() != declaration["sha256"]:
                     raise CloudError("a public upload copy changed after preflight", EXIT_CONFIG)
