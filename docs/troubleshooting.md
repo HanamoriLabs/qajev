@@ -31,6 +31,11 @@ A Linux machine with no X or Wayland display (a server, a container, a CI runner
 Run headless (`--headless`), or start an X server such as Xvfb and set `DISPLAY` (for example `xvfb-run -a qajev run
 ...`). The other "Chrome exited with N" errors name Chrome's own log: read its last lines.
 
+**Xvfb stops at once with "Caught signal 11 (Segmentation fault)"**
+On a machine with no GPU device (no `/dev/dri`, as in many containers and sandboxes), a GPU driver's EGL library can
+crash Xvfb while it starts GLX. Chrome then says it has no display. Start Xvfb without GLX:
+`xvfb-run -a -s '-screen 0 1280x800x24 -extension GLX' qajev run ...`.
+
 **"goals need TYPESAFE_API_KEY or an OpenRouter key ... or QAJEV_JEV_PROVIDER=cloudflare ..."**
 Add one key to `~/.qajev/.env` ([Getting started](getting-started.md)). `qajev smoke` needs no key. Cloudflare
 credentials alone are not used: Clef needs `QAJEV_JEV_PROVIDER=cloudflare` too.

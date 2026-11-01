@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Changed
+
+- The docs say how to start Xvfb with no GPU device (`-extension GLX`), where it otherwise stops with signal 11.
+  With that, the 17 visible-Chrome tests that 0.4.42 lists as a known limit pass on a Linux test machine.
+
 ## 0.4.42: 1 Nov 2026
 
 ### Changed
