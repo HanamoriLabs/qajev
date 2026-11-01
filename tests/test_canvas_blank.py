@@ -82,7 +82,19 @@ scenarios:
     url: /canvas-dark.html
     expect: {{text: ["the hall stands"]}}
     after:
-      - js: "document.elementFromPoint = () => {{ throw new Error('planted elementFromPoint') }}"
+      - js: "document.elementsFromPoint = () => {{ throw new Error('planted elementsFromPoint') }}"
+  - name: a dark canvas under a see-through layer
+    about: fixture
+    url: /canvas-layer.html
+    expect: {{text: ["the hall stands"]}}
+  - name: a dark canvas under a tinted layer
+    about: fixture
+    url: /canvas-layer.html?tinted
+    expect: {{text: ["the hall stands"]}}
+  - name: looks on a dark canvas under a see-through layer
+    about: fixture
+    url: /canvas-layer.html
+    expect: {{looks: ["The hall stands on its pillars."]}}
 """)
     p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--headless", "--ephemeral",
                         "--profile", f"canvas-{os.getpid()}", "--out", str(tmp_path / "out"), "--json", "--quiet",
@@ -103,8 +115,17 @@ scenarios:
     assert purpose["reason"].endswith("(canvas_dark: the hall is shown at night)"), purpose
     broke = got["the canvas check breaks"]
     assert broke["outcome"] == "pass" and not broke.get("canvas_blank"), broke
-    assert "planted elementFromPoint" in (broke.get("canvas_blank_error") or ""), broke
+    assert "planted elementsFromPoint" in (broke.get("canvas_blank_error") or ""), broke
     assert "the canvas check could not read the end screenshot" in broke["reason"], broke
+    # A see-through layer that takes the pointer does not hide the canvas (rea's Crumble page, workload-gpu, 1 Nov)
+    layer = got["a dark canvas under a see-through layer"]
+    assert layer["outcome"] == "harness" and layer["canvas_blank"]["through"] >= 300, layer
+    tinted = got["a dark canvas under a tinted layer"]  # a layer with a background covers the canvas: not read
+    assert tinted["outcome"] == "pass" and not tinted.get("canvas_blank"), tinted
+    looks = got["looks on a dark canvas under a see-through layer"]  # Clef is never asked, so no key is needed
+    assert looks["outcome"] == "harness" and looks["reason"].startswith("the looks were not judged"), looks
+    assert looks["looks_blank"]["through"] >= 300, looks
+    assert not any(c["check"].startswith("looks") for c in looks["checks"]), looks
 
 
 # canvas_capture: page (the Orchestrator, 31 Oct): a suite whose canvas the browser cannot screenshot proves it by the
