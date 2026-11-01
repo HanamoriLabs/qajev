@@ -928,7 +928,8 @@ def _cancel_while_held(make_call, inside, go):
     asyncio.run(call())
 
 
-def test_a_call_cancelled_while_its_run_is_made_stops_that_run(dash, monkeypatch):
+def _cancel_while_made(monkeypatch):
+    """The thread stops the run: the call is cancelled after the run exists and before the thread has its id."""
     inside, go = threading.Event(), threading.Event()
     post = cloud.Client.post
 
@@ -942,6 +943,37 @@ def test_a_call_cancelled_while_its_run_is_made_stops_that_run(dash, monkeypatch
     monkeypatch.setattr(cloud.Client, "post", held)
     _cancel_while_held(lambda: mcp_server.qa_check("https://shop.example/", None, runner="cloud",
                                                    expect_text=["Hi"]), inside, go)
+
+
+def _cancel_after_hand_over(monkeypatch):
+    """The call stops the run: the thread has returned the id, but the cancel reaches the call before it reads it."""
+    box = {}
+    post = cloud.Client.post
+
+    def late(self, path, body=None):
+        out = post(self, path, body)
+        if path == "/api/v1/runs":
+            def hold_then_cancel():  # runs on the event loop, so the thread finishes first, and the cancel lands next
+                time.sleep(1)
+                box["task"].cancel()
+
+            box["loop"].call_soon_threadsafe(hold_then_cancel)
+        return out
+
+    monkeypatch.setattr(cloud.Client, "post", late)
+
+    async def call():
+        box["loop"] = asyncio.get_running_loop()
+        box["task"] = asyncio.ensure_future(mcp_server.qa_check("https://shop.example/", None, runner="cloud",
+                                                                expect_text=["Hi"]))
+        with pytest.raises(asyncio.CancelledError):
+            await box["task"]
+
+    asyncio.run(call())
+
+
+def test_a_call_cancelled_while_its_run_is_made_stops_that_run(dash, monkeypatch):
+    _cancel_while_made(monkeypatch)
     assert dash.created()["kind"] == "check"
     assert len(_stops(dash)) == 1, "a run whose id no call has must be stopped"
 
@@ -982,31 +1014,22 @@ def test_a_call_cancelled_before_its_run_is_made_makes_none(dash, monkeypatch, t
 
 
 def test_a_call_cancelled_after_the_thread_handed_over_the_id_stops_the_run_itself(dash, monkeypatch):
-    # The thread has returned the id, but the cancel reaches the call before it reads it: the call must stop the run.
-    box = {}
-    post = cloud.Client.post
-
-    def late(self, path, body=None):
-        out = post(self, path, body)
-        if path == "/api/v1/runs":
-            def hold_then_cancel():  # runs on the event loop, so the thread finishes first, and the cancel lands next
-                time.sleep(1)
-                box["task"].cancel()
-
-            box["loop"].call_soon_threadsafe(hold_then_cancel)
-        return out
-
-    monkeypatch.setattr(cloud.Client, "post", late)
-
-    async def call():
-        box["loop"] = asyncio.get_running_loop()
-        box["task"] = asyncio.ensure_future(mcp_server.qa_check("https://shop.example/", None, runner="cloud",
-                                                                expect_text=["Hi"]))
-        with pytest.raises(asyncio.CancelledError):
-            await box["task"]
-
-    asyncio.run(call())
+    _cancel_after_hand_over(monkeypatch)
     assert len(_stops(dash)) == 1, "a run whose id no call has must be stopped"
+
+
+@pytest.mark.parametrize("cancel", [_cancel_while_made, _cancel_after_hand_over], ids=["thread-stops", "call-stops"])
+def test_a_stop_that_fails_leaves_one_line_with_the_run_id(dash, monkeypatch, capsys, cancel):
+    # #236 L1: a failed stop left no trace, so the run was lost again. The call still ends with only its cancel.
+    def down(client, run_id):
+        raise cloud.CloudError(f"the dashboard did not answer (key {KEY})")
+
+    monkeypatch.setattr(cloud, "stop", down)
+    cancel(monkeypatch)
+    lines = [line for line in capsys.readouterr().err.splitlines() if RUN in line]
+    assert len(lines) == 1, lines
+    assert "could not stop cloud run" in lines[0] and "the dashboard did not answer" in lines[0]
+    assert KEY not in lines[0] and "[redacted]" in lines[0]
 
 
 def test_mcp_cloud_refuses_and_auto_runs_here_with_a_note(dash, monkeypatch):
