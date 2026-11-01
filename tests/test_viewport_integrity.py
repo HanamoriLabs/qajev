@@ -3,7 +3,6 @@
 import base64
 import copy
 import io
-import itertools
 from types import SimpleNamespace
 
 import pytest
@@ -213,12 +212,15 @@ def test_a_late_font_scrollbar_during_capture_is_taken_again_after_the_page_sett
 
 
 def test_a_page_that_keeps_moving_is_refused_after_three_captures(monkeypatch):
-    page, seen = moving_page(monkeypatch, itertools.cycle([geometry(), scrolled()]))
+    # 8 reads: room for a 4th capture, so a loop without its cap fails here on its asserts instead of running forever
+    reads = iter([geometry(), scrolled()] * 4)
+    page, seen = moving_page(monkeypatch, reads)
     result = run(page)
     assert result["outcome"] == "harness" and result["stop"] == "viewport_mismatch"
     assert "page geometry changed during capture" in result["reason"]
     assert capture_steps(seen) == ["Page.captureScreenshot", "settle"] * 2 + ["Page.captureScreenshot"]
     assert result["viewport"]["retakes"] == 2
+    assert len(list(reads)) == 2, "3 captures take 6 of the 8 reads"
     assert seen["checks"] == seen["hooks"] == 0
 
 
