@@ -82,7 +82,15 @@ scenarios:
     url: /canvas-dark.html
     expect: {{text: ["the hall stands"]}}
     after:
-      - js: "document.elementFromPoint = () => {{ throw new Error('planted elementFromPoint') }}"
+      - js: "document.elementFromPoint = document.elementsFromPoint = () => {{ throw new Error('planted hit test') }}"
+  - name: a dark canvas under a see-through layer
+    about: fixture
+    url: /canvas-layer.html
+    expect: {{text: ["the hall stands"]}}
+  - name: a dark canvas under a dark cover
+    about: fixture
+    url: /canvas-layer.html?cover
+    expect: {{text: ["the hall stands"]}}
 """)
     p = subprocess.run([sys.executable, "-m", "qajev", "run", str(suite), "--headless", "--ephemeral",
                         "--profile", f"canvas-{os.getpid()}", "--out", str(tmp_path / "out"), "--json", "--quiet",
@@ -103,8 +111,14 @@ scenarios:
     assert purpose["reason"].endswith("(canvas_dark: the hall is shown at night)"), purpose
     broke = got["the canvas check breaks"]
     assert broke["outcome"] == "pass" and not broke.get("canvas_blank"), broke
-    assert "planted elementFromPoint" in (broke.get("canvas_blank_error") or ""), broke
+    assert "planted hit test" in (broke.get("canvas_blank_error") or ""), broke
     assert "the canvas check could not read the end screenshot" in broke["reason"], broke
+    # A see-through layer that takes the pointer does not hide the canvas (rea's Crumble page, workload-gpu, 1 Nov)
+    layer = got["a dark canvas under a see-through layer"]
+    assert layer["outcome"] == "harness" and layer["canvas_blank"]["through"] >= 300, layer
+    cover = got["a dark canvas under a dark cover"]  # a layer with a background covers the canvas: not read
+    assert cover["outcome"] == "pass" and not cover.get("canvas_blank"), cover
+    # expect.looks reads the same points (tests/test_looks_blank.py); a looks suite needs Clef set up to start at all
 
 
 # canvas_capture: page (the Orchestrator, 31 Oct): a suite whose canvas the browser cannot screenshot proves it by the

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="description" content="A layered canvas">
+<title>A dark canvas under a see-through layer</title>
+<style>
+  body { margin: 0; background: #0b0b10; color: #ddd; font: 16px/1.4 sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  .layer { position: fixed; inset: 0; }
+  .layer.cover { background: #101014; }
+  .panel { position: absolute; left: 8px; bottom: 8px; padding: 8px; background: #f4f1ea; color: #222; }
+</style></head>
+<body>
+  <!-- A full-screen canvas that draws nothing, under a full-screen input layer that takes the pointer (a game's HUD or
+       controls layer) and holds a lit panel (rea's Crumble page on workload-gpu, 1 Nov). The layer has no background
+       of its own, so the screen shows the canvas through it. ?cover gives the layer a dark background, as a loading
+       screen has: it then covers the canvas, and its flat dark colour is not the canvas's. -->
+  <canvas id="view"></canvas>
+  <div class="layer"><div class="panel">the hall stands</div></div>
+  <script>if (location.search.includes("cover")) document.querySelector(".layer").classList.add("cover");</script>
+</body>
+</html>

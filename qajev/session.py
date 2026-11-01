@@ -721,7 +721,10 @@ def page_changes(before, after, now=None, node=None):
 
 
 # The page's largest canvas on screen, when it covers a fifth of the view or more, and a 24 x 16 grid of its points
-# that no other element covers, in CSS pixels: Session.blank_canvas reads them in the end screenshot.
+# that no other element covers, in CSS pixels: Session.blank_canvas reads them in the end screenshot. A see-through
+# layer over the canvas (nine tenths of its size or more, no background, border, shadow or text of its own, such as a
+# game's input or HUD layer) does not cover it: rea's Crumble page on workload-gpu, 1 Nov, had one, so no point was read
+# and its blank canvas went to Clef. `through` counts the points read through such a layer.
 CANVAS_POINTS = """(() => {
   const W = innerWidth, H = innerHeight;
   let best = null, most = 0;
@@ -732,12 +735,27 @@ CANVAS_POINTS = """(() => {
     if (area > most) { best = [c, box]; most = area; }
   }
   if (!best || most < 0.2 * W * H) return null;
-  const [c, [x0, y0, x1, y1]] = best, points = [];
+  const [c, [x0, y0, x1, y1]] = best, points = [], seen = new Map();
+  const clear = e => {
+    if (!seen.has(e)) {
+      const s = getComputedStyle(e), r = e.getBoundingClientRect();
+      const big = Math.max(0, Math.min(x1, r.right) - Math.max(x0, r.left)) *
+                  Math.max(0, Math.min(y1, r.bottom) - Math.max(y0, r.top)) >= 0.9 * most;
+      const bare = s.opacity === '0' || (/^(transparent|rgba\\(.*,\\s*0\\))$/.test(s.backgroundColor) &&
+        s.backgroundImage === 'none' && s.boxShadow === 'none' && (s.backdropFilter || 'none') === 'none' &&
+        !['Top', 'Right', 'Bottom', 'Left'].some(k => parseFloat(s['border' + k + 'Width']) > 0) &&
+        ![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()));
+      seen.set(e, big && bare && !['IMG', 'VIDEO', 'IFRAME', 'SVG', 'svg', 'CANVAS'].includes(e.tagName));
+    }
+    return seen.get(e);
+  };
+  let through = 0;
   for (let i = 0; i < 24; i++) for (let j = 0; j < 16; j++) {
     const x = x0 + (x1 - x0) * (i + 0.5) / 24, y = y0 + (y1 - y0) * (j + 0.5) / 16;
-    if (document.elementFromPoint(x, y) === c) points.push([x, y]);
+    const stack = document.elementsFromPoint(x, y), k = stack.findIndex(e => e === c || !clear(e));
+    if (stack[k] === c) { points.push([x, y]); if (k) through++; }
   }
-  return {size: [c.width, c.height], share: most / (W * H), width: W, points};
+  return {size: [c.width, c.height], share: most / (W * H), width: W, points, through};
 })()"""
 
 # The page's WebGPU adapter as the page gets it, for canvas_capture's gpu: hardware. No device is made.
@@ -1484,9 +1502,12 @@ class Session:
         return base64.b64decode(data["data"], validate=True)
 
     def blank_canvas(self, path):
-        """The screenshot at path shows the page's main canvas as one flat dark colour (pixels.flat_dark), read at the
-        points of it no other element covers: {points, median, flat, canvas, share}, else None. A canvas under
-        pointer-events: none, or smaller than a fifth of the view, is not read."""
+        """The screenshot at path (or the image bytes, for the looks image) shows the page's main canvas as one flat
+        dark colour (pixels.flat_dark), read at the points of it no other element covers (CANVAS_POINTS): {points,
+        median, flat, canvas, share}, plus `through` when some were read through a see-through layer, else None. A
+        canvas under pointer-events: none, or smaller than a fifth of the view, is not read."""
+        import io
+
         from PIL import Image
 
         from . import pixels
@@ -1494,12 +1515,15 @@ class Session:
         seen = self.evaluate(CANVAS_POINTS, timeout_ms=5000)
         if not isinstance(seen, dict) or not seen.get("points") or not seen.get("width"):
             return None
-        with Image.open(path) as image, image.convert("L") as grey:
+        with Image.open(io.BytesIO(path) if isinstance(path, bytes) else path) as image, image.convert("L") as grey:
             scale = grey.width / seen["width"]
             lumas = [grey.getpixel((min(grey.width - 1, int(x * scale)), min(grey.height - 1, int(y * scale))))
                      for x, y in seen["points"]]
         flat = pixels.flat_dark(lumas)
-        return {**flat, "canvas": seen["size"], "share": round(seen["share"], 2)} if flat else None
+        if not flat:
+            return None
+        through = {"through": seen["through"]} if seen.get("through") else {}
+        return {**flat, "canvas": seen["size"], "share": round(seen["share"], 2), **through}
 
     def page_canvas(self, spec, path):
         """canvas_capture: page. Runs the suite's readback expression, saves the image at path and reads it as

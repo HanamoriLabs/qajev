@@ -68,10 +68,17 @@ The initial preflight measurement stays in the scenario's original `viewport` ob
 When a web scenario's end screenshot shows the page's main canvas (a fifth of the view or more) as one flat dark
 colour, the scenario keeps a `canvas_blank` record: the points of the canvas that no other element covers (`points`),
 their median grey level (`median`), the share within a few levels of it (`flat`), the canvas size and its share of the
-view. A pass, or a scenario with no checks, is then **harness**; a failure stays a failure, with the note. The check
+view. A see-through layer over the canvas (a game's input or HUD layer as large as the canvas, with no background,
+border or text of its own) does not cover it: `through` counts the points read through one. A pass, or a scenario with no checks, is then **harness**; a failure stays a failure, with the note. The check
 needs the screenshot, so `--no-shots` skips it. When the check itself breaks, the scenario keeps `canvas_blank_error`
 (the error) and its reason says so; the outcome stays. A scenario with `canvas_dark` ([Writing tests](writing-tests.md))
 keeps its outcome on a flat dark canvas: it then keeps `canvas_dark` (the scenario's reason), and its reason ends with it.
+
+`expect.looks` is never judged on a blank capture. Before Clef sees the screen, QAJev reads the same image for a main
+canvas that is one flat dark colour. If it is, Clef is not asked: the scenario keeps a `looks_blank` record (as
+`canvas_blank`), the looks are not among its checks, and it is **harness**, with the reason "the looks were not
+judged: ...". A check that ran and failed still makes it a failure, with the note. `canvas_dark` turns this off too.
+When this check breaks, the scenario keeps `looks_blank_error`, and Clef judges the image as before.
 
 A scenario whose page crashed (Chrome's "Aw, Snap") is **fail**, with stop `page_crashed` and a `page_crashed` record:
 the crashed page's `url` and the `last_step`. A scenario with `cache: cold` keeps `cache: "cold"`. The lines that its
