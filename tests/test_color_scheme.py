@@ -75,6 +75,9 @@ def site(tmp_path_factory):
 def browser():
     from qajev import chrome
 
+    if why := chrome.display_missing():  # a visible Chrome: with no display the tests skip and say why
+        pytest.skip(why)
+
     record = chrome.start(f"color-scheme-{os.getpid()}", headless=False, ephemeral=True)  # visible, never headless
     yield record
     chrome.stop(record["state_key"])

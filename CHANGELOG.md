@@ -13,6 +13,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 - A web session in a process that ran a game step first starts its browser daemon. Before, it started the daemon
   under a new name while the browser harness waited for the game step's name: "daemon qajev-native-N didn't come up".
+- A visible Chrome on a Linux machine with no display now says why it stopped: "a visible Chrome needs a display, and
+  this Linux has none (DISPLAY and WAYLAND_DISPLAY are unset)", with what to do. Before, it said only "Chrome exited
+  with 1" and the path of Chrome's log.
 
 ## 0.4.41: 1 Nov 2026
 

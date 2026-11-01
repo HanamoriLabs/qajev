@@ -26,6 +26,11 @@ Start with `qajev doctor`: it checks keys, Chrome, ports and load, and says what
 Set `QAJEV_CHROME` to your Chrome or Chromium binary, e.g.
 `export QAJEV_CHROME=/usr/bin/chromium`.
 
+**"Chrome exited with 1 (see ...): a visible Chrome needs a display, and this Linux has none ..."**
+A Linux machine with no X or Wayland display (a server, a container, a CI runner) cannot show a Chrome window.
+Run headless (`--headless`), or start an X server such as Xvfb and set `DISPLAY` (for example `xvfb-run -a qajev run
+...`). The other "Chrome exited with N" errors name Chrome's own log: read its last lines.
+
 **"goals need TYPESAFE_API_KEY or an OpenRouter key ... or QAJEV_JEV_PROVIDER=cloudflare ..."**
 Add one key to `~/.qajev/.env` ([Getting started](getting-started.md)). `qajev smoke` needs no key. Cloudflare
 credentials alone are not used: Clef needs `QAJEV_JEV_PROVIDER=cloudflare` too.
