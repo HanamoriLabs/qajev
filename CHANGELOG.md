@@ -47,6 +47,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 - A web session in a process that ran a game step first starts its browser daemon. Before, it started the daemon
   under a new name while the browser harness waited for the game step's name: "daemon qajev-native-N didn't come up".
+  With the fix below, the one-process test run (live tests too) no longer fails 49 live tests and 21 unit tests that
+  pass on their own.
+- A test of cut daemon replies no longer trips the process's own lost-browser fuse when a live test ran before it in
+  the same process. It now wraps the harness's own send.
 - Ctrl-C on a cloud run whose stop fails no longer says `stopped cloud run`. It says the stop failed, with the run's id,
   the error, the address and `qajev stop r_...`, because the run may go on.
 - A js check's value over 64 KiB still parses as JSON. Before, an object or a measured result was cut as text, with

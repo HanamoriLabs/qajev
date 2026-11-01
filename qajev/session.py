@@ -241,6 +241,7 @@ def _patient_cdp(raw_cdp, timeout, transport, pending=None):
 
 
 def _checked_send(raw_send, transport):
+    @functools.wraps(raw_send)  # inspect.unwrap reaches the harness's own send, as a test of its replies must
     def send(request, **kwargs):
         if transport.error is not None:
             raise transport.error
