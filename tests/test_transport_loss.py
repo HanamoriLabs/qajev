@@ -1,6 +1,7 @@
 """A lost browser/daemon transport never silently replays a scenario or reuses its session."""
 
 import contextlib
+import inspect
 import sys
 from types import SimpleNamespace
 
@@ -282,8 +283,10 @@ def test_load_wires_the_same_fuse_into_jev_and_the_runner(monkeypatch, lost_repl
     monkeypatch.setenv("BU_NAME", "fixture")
     monkeypatch.setattr(session.providers, "apply", lambda: {})
     monkeypatch.setattr(session.providers, "route", lambda raw, _resolved: raw)
+    harness_send = helpers._send
     loaded = session.load(runner.Ledger(0.0))
     assert loaded.cdp is browser.cdp
+    assert helpers._send is not harness_send and inspect.unwrap(helpers._send) is harness_send
     why = "acknowledgement missing" if lost_reply else "no close frame"
     with pytest.raises(RuntimeError, match=why):
         loaded.cdp("Input.dispatchMouseEvent")
@@ -363,7 +366,9 @@ def test_empty_cut_or_invalid_daemon_reply_never_acknowledges_an_action_or_recon
         return Socket(), None
 
     monkeypatch.setattr(helpers.ipc, "connect", connect)
-    send = session._checked_send(helpers._send, state)
+    # The harness's own send: after a live test's load() in this process, helpers._send is the wrapped one, and a
+    # cut reply here tripped that process-wide fuse, so every later test failed "daemon closed" (1 Nov).
+    send = session._checked_send(inspect.unwrap(helpers._send), state)
     for _ in range(2):
         with pytest.raises(RuntimeError, match="acknowledgement missing"):
             send({"method": "Input.dispatchMouseEvent", "params": {"type": "mousePressed"}})

@@ -9,6 +9,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - The see-through layer rule now counts a `::before` or `::after`, a shadow tree (also a custom element's closed one)
   and SVG shapes as paint of the layer's own. Before, a dark cover drawn one of these ways read as a blank canvas.
 
+### Fixed
+
+- A web session in a process that ran a game step first starts its browser daemon. Before, it started the daemon
+  under a new name while the browser harness waited for the game step's name: "daemon qajev-native-N didn't come up".
+
 ## 0.4.41: 1 Nov 2026
 
 ### Added
