@@ -9,7 +9,7 @@ import re
 from typing import Any, TypeGuard
 from urllib.parse import urlsplit
 
-from .diagnostics import bound_text, clean_data, clean_evidence
+from .diagnostics import bound_json, bound_text, clean_data, clean_evidence
 
 OUTCOMES = ("pass", "fail", "stuck", "harness", "unverified", "skipped")
 # Stop reasons that mean the harness, not the product, ended the scenario.
@@ -139,7 +139,7 @@ def js_result(r):
     value = r.get("value")
     if _measured_result(value):
         public = clean_data(value)
-        return value["ok"], None if value["ok"] else bound_text(public["says"]), bound_text(json.dumps(public))
+        return value["ok"], None if value["ok"] else bound_text(public["says"]), bound_json(public)
     if value is True:
         return True, None, "true"
     if isinstance(value, str):
@@ -149,7 +149,7 @@ def js_result(r):
         said = json.dumps(value)
         return False, f"returned {said}", said
     kind = "number" if isinstance(value, (int, float)) else "array" if isinstance(value, list) else "object"
-    return False, f"check must return true, got {kind}", bound_text(json.dumps(clean_data(value)))
+    return False, f"check must return true, got {kind}", bound_json(clean_data(value))
 
 
 def _check(name, ok, detail=None):

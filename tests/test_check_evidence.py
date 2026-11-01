@@ -117,6 +117,48 @@ def test_item_bound_cleans_the_whole_secret_and_path_before_cutting(monkeypatch)
     assert "SYNTHETIC" not in value and "DiagnosticPerson" not in value
 
 
+def _json(text):
+    """The value as JSON. A value that does not parse fails the test, as an assertion."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise AssertionError(f"the check value is not JSON: {e}") from None
+
+
+@pytest.mark.parametrize("length,kept", [(65527, True), (65528, False), (2_000_000, False)])
+def test_an_object_value_over_one_item_stays_valid_json(length, kept):
+    # 31 Oct: every calib5e click run's value was cut as text, with "[truncated N characters]" after it, so it did not
+    # parse. {"m": "x" * 65527} is exactly 65536 characters of JSON.
+    obj = {"m": "x" * length}
+    ok, detail, value = verdict.js_result({"value": obj})
+    assert ok is False and detail == "check must return true, got object"
+    if kept:
+        assert _json(value) == obj
+    else:
+        assert _json(value) == {"_qajev_truncated": f"[truncated {length + 9} characters]"}
+
+
+@pytest.mark.parametrize("ok", [True, False])
+def test_an_oversized_measured_value_stays_valid_json_and_keeps_its_says(ok):
+    # A passing check has its says only in its value: big evidence must not take the says with it.
+    says = "the 5 clicks each moved the camera by under 2 px"
+    measured = {"ok": ok, "says": says, "evidence": {"frames": ["x" * 100] * 2000}}
+    [check] = verdict.page_checks({"js": "fixture"}, {"js": {"value": measured}})
+    value = _json(check["value"])
+    assert set(value) == {"ok", "says", "_qajev_truncated"}
+    assert value["ok"] is ok and value["says"] == says and value["_qajev_truncated"].startswith("[truncated ")
+    assert len(check["value"].encode()) <= 65536
+    assert check["evidence"]["_qajev_truncated"].startswith("[truncated ")
+
+
+@pytest.mark.parametrize("says", ["x" * 2_000_000, "🧪" * 30_000, 'a "quote" and a \\ ' * 8000])
+def test_a_measured_value_with_a_huge_says_keeps_its_start_in_one_item(says):
+    _, _, text = verdict.js_result({"value": {"ok": True, "says": says, "evidence": {}}})
+    value = _json(text)
+    assert len(text.encode()) <= 65536 and len(value["says"]) > 4000 and says.startswith(value["says"])
+    assert value["ok"] is True and value["_qajev_truncated"].startswith("[truncated ")
+
+
 @pytest.mark.parametrize("length,kept", [(65520, True), (65521, True), (65522, False), (2_000_000, False)])
 def test_structured_evidence_has_its_own_item_boundary(length, kept):
     evidence = {"message": "x" * length}
