@@ -889,13 +889,45 @@ def _stalled_result(scenario, stalled, started, result=None):
                    "harness", f"{stalled}; the next test tries the browser again", started)
 
 
+NVIDIA_GPUS = Path("/proc/driver/nvidia/gpus")  # one folder per NVIDIA GPU the Linux driver sees
+
+
+def lift_gpu(browser, results):
+    """The renderer each Chrome drew with (run_group puts it on the chain's first result) -> browser["gpu"]: {device}
+    or {none}, plus `software` when it is SwiftShader, llvmpipe... and a `note` when this machine has an NVIDIA GPU
+    all the same: WebGL and WebGPU pages then ran on the CPU (rea's looks on workload-gpu, 2 Nov). A fresh Chrome per
+    test that drew with another renderer is listed under `others`."""
+    from .session import _SOFTWARE_GPU
+
+    seen = []
+    for result in results:
+        gpu = result.pop("browser_gpu", None)
+        if isinstance(gpu, dict) and gpu not in seen:
+            seen.append(gpu)
+    if not seen:
+        return
+    gpu = dict(seen[0])
+    if soft := _SOFTWARE_GPU.search(str(gpu.get("device") or "")):
+        gpu["software"] = soft.group(0)
+        try:
+            nvidia = any(NVIDIA_GPUS.iterdir())
+        except OSError:
+            nvidia = False
+        if nvidia:
+            gpu["note"] = (f"Chrome drew with a software renderer ({soft.group(0)}) on a machine with an NVIDIA GPU: "
+                           "WebGL and WebGPU pages ran on the CPU. Give Chrome the GPU (docs/troubleshooting.md).")
+    if seen[1:]:
+        gpu["others"] = seen[1:]
+    browser["gpu"] = gpu
+
+
 def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=None):
     from . import session as session_mod
 
     results = []
     outcomes = dict(prior or {})
     name = session_mod.configure_env(cdp_url)
-    session = None
+    session = gpu = None
     lost_after = "an earlier scenario" if session_mod.transport_error() is not None else None
     try:
         for scenario in scenarios:
@@ -929,6 +961,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                                 cwd=suite_meta["cwd"], motion=suite_meta.get("motion", "reduce"),
                                 cpu_throttle=suite_meta.get("cpu_throttle", 1),
                             )
+                            gpu = session.gpu_info()  # the report names the renderer this Chrome draws with
                             if getattr(opts, "sign_in_here", None):
                                 opts.signed_here = sign_in_here(session, opts.sign_in_here, opts)
                         if (startup_error := session_mod.transport_error()) is not None:
@@ -964,6 +997,8 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                     result = _stalled_result(scenario, stalled, started, result)
             if not blocked_by:
                 result["cost_usd"] = round(ledger.spent() - spent_before, 5)
+            if gpu is not None:  # once per Chrome: lift_gpu moves it to the report's browser record
+                result["browser_gpu"], gpu = gpu, None
             outcomes[scenario.name] = result["outcome"]
             results.append(result)
             _emit(opts, "scenario", result=result)
@@ -1520,6 +1555,7 @@ def run(suite, opts):
     for r in partial.results:  # an interrupt must not throw away scenarios that already finished
         results_by_name.setdefault(r["name"], r)
     results = [results_by_name[s.name] for s in scenarios if s.name in results_by_name]
+    lift_gpu(browser, results)
     interrupted = interrupted or any(r.get("interrupted") for r in results)
     if not interrupted:  # opt-in: the same scenarios in a real device browser (iOS Safari, Android Chrome)
         for platform in getattr(suite, "real_devices", None) or []:

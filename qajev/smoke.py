@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 from . import chrome, live, ux, verdict
 from .config import is_loopback, redact_tree, secret_values
 from .ledger import Ledger
-from .runner import ConfigError, slug, wait_for_quiet
+from .runner import ConfigError, lift_gpu, slug, wait_for_quiet
 
 FACTS = (Path(__file__).parent / "js" / "page_facts.js").read_text()
 SKIP = re.compile(
@@ -284,7 +284,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     results, queue, seen, discovered, disallowed = [], deque([start_url]), {start_url}, set(), set()
     last_load = 0.0
     interrupted = False
-    session = None
+    session = gpu = None
     watching = contextlib.ExitStack()  # the live screen, as a check or a suite has it (José, 12 Oct)
     try:
         session = session_mod.Session(ledger, headless=browser.get("headless", False), hosts={host},
@@ -295,6 +295,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
             session.set_cache(opts.cache)
         session.set_device(dev)
         session.arm("readonly")
+        gpu = session.gpu_info()  # the report names the renderer this Chrome draws with
         watching.enter_context(live.frames(run_dir, session.page_socket()))
         while queue and len(results) < max_pages:
             url = queue.popleft()
@@ -409,6 +410,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
     for r in results:  # a crawl's tests are QAJev's own: each says what it proves (the test plan, 6 Oct)
         r.setdefault("about", "Every link found answers without an HTTP error." if r["name"].startswith("links")
                      else "The page loads without an HTTP error or a script error.")
+    lift_gpu(browser, [{"browser_gpu": gpu}] if gpu else [])
     suite = SimpleNamespace(name=name)
     built = report.build(suite, results, [ledger.summary()], browser=browser, started_at=started_at,
                          strict=opts.strict, interrupted=interrupted, run_dir=run_dir)

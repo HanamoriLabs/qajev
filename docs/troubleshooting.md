@@ -103,6 +103,13 @@ That is QAJev's side, not your product:
   applies to *the browser's GPU is software*.
 - *... gives no vendor or architecture ...: the GPU could not be read*: the page's adapter does not say what it is, and
   WebGL names no GPU either (why is in brackets). Run the test on a machine with a GPU.
+- *Chrome drew with a software renderer (SwiftShader) on a machine with an NVIDIA GPU*: the report's `browser.gpu`
+  names the renderer the run's Chrome drew with, and this one is the CPU. WebGL and WebGPU pages then draw slowly or
+  not at all. QAJev adds no GPU flags on Linux. Give its Chrome the GPU in the environment QAJev runs in:
+  `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json` and
+  `QAJEV_CHROME_FLAGS="--enable-unsafe-webgpu --ignore-gpu-blocklist --enable-features=Vulkan --use-angle=vulkan"`.
+  Headless, add `--disable-vulkan-surface` only when you read the canvas with `canvas_capture: page`: that flag leaves
+  WebGL and WebGPU canvases out of screenshots.
 - *the canvas check could not read the end screenshot*: the flat dark check broke (the error is in brackets), so the
   result says nothing about the canvas either way. The outcome stays. Run the test again; if it repeats, report it.
 - *the machine stayed busy past the run's load budget*: the test waited for a quiet machine longer than
