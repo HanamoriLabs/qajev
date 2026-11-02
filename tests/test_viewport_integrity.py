@@ -26,6 +26,10 @@ def scenario_page(monkeypatch, *, inner=(205, 900), image_size=(1280, 900), scal
             return {"cssLayoutViewport": view.get("layoutViewport")}
         if method == "Page.captureScreenshot":
             return {"data": encoded}
+        if method == "Page.getFrameTree":
+            return {"frameTree": {"frame": {"id": "fixture-frame"}}}
+        if method == "Page.createIsolatedWorld":
+            return {"executionContextId": 7}
         return {}
 
     class Page(session.Session):
@@ -258,8 +262,13 @@ def test_a_settle_that_fails_still_takes_the_capture_again_but_a_lost_browser_st
 
 
 def settling(monkeypatch, page, seen, reply):
-    """The page's answer to the wait for stable geometry: `reply`, or raised when it is an exception."""
-    evaluate = page.evaluate
+    """The page's answer to the wait for stable geometry: `reply`, or raised when it is an exception. The wait runs in
+    QAJev's isolated world, never in the page's own."""
+    evaluate, isolated = page.evaluate, page.isolated_evaluate
+
+    def page_world(expression, **kwargs):
+        assert expression != viewport.STABLE, "the wait must not run in the page's own JS world"
+        return evaluate(expression, **kwargs)
 
     def answer(expression, **kwargs):
         if expression == viewport.STABLE:
@@ -267,9 +276,10 @@ def settling(monkeypatch, page, seen, reply):
             if isinstance(reply, Exception):
                 raise reply
             return copy.deepcopy(reply)
-        return evaluate(expression, **kwargs)
+        return isolated(expression, **kwargs)
 
-    monkeypatch.setattr(page, "evaluate", answer)
+    monkeypatch.setattr(page, "evaluate", page_world)
+    monkeypatch.setattr(page, "isolated_evaluate", answer)
 
 
 def test_the_first_capture_waits_until_the_page_holds_still(monkeypatch):
@@ -294,7 +304,8 @@ def test_a_page_that_never_holds_still_says_so_when_its_capture_fails(monkeypatc
     assert seen["checks"] == seen["hooks"] == 0
 
 
-@pytest.mark.parametrize("reply", [RuntimeError("page script failed: navigating"), TimeoutError("no answer"), None])
+@pytest.mark.parametrize("reply", [RuntimeError("page script failed: navigating"), TimeoutError("no answer"), None,
+                                   KeyError("frameTree")])
 def test_a_wait_that_cannot_run_still_takes_the_checked_capture(monkeypatch, reply):
     page, seen = moving_page(monkeypatch, [scrolled(), scrolled()])
     settling(monkeypatch, page, seen, reply)

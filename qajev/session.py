@@ -1265,12 +1265,14 @@ class Session:
         return data["data"], evidence
 
     def _settle_geometry(self):
-        """Wait until the page holds still (viewport.STABLE). None when the wait itself could not run."""
+        """Wait until the page holds still (viewport.STABLE). None when the wait itself could not run. It runs in QAJev's
+        own JS world: the DOM is the page's, the timers are QAJev's, so a page that replaces setInterval cannot stall it
+        (redteam L1, #255)."""
         try:
-            result = self.evaluate(viewport.STABLE, timeout_ms=viewport.STABLE_MAX_MS + 2000)
+            result = self.isolated_evaluate(viewport.STABLE, timeout_ms=viewport.STABLE_MAX_MS + 2000)
         except TransportLost:
             raise
-        except (RuntimeError, TimeoutError):
+        except (RuntimeError, TimeoutError, KeyError, TypeError):
             return None  # the capture still measures the page before and after
         if not isinstance(result, dict):
             return None

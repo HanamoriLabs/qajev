@@ -351,15 +351,15 @@ FLASH_PAGE = (b'<!doctype html><meta name="viewport" content="width=device-width
               b'</script>')
 
 
-@pytest.fixture
-def flash_site():
+def serve(page):
+    """A local server that answers every GET with `page`."""
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
-            self.send_header("Content-Length", str(len(FLASH_PAGE)))
+            self.send_header("Content-Length", str(len(page)))
             self.end_headers()
-            self.wfile.write(FLASH_PAGE)
+            self.wfile.write(page)
 
         def log_message(self, *_args):
             pass
@@ -373,6 +373,11 @@ def flash_site():
         server.shutdown()
         server.server_close()
         worker.join(5)
+
+
+@pytest.fixture
+def flash_site():
+    yield from serve(FLASH_PAGE)
 
 
 # The page's own flash can fall between a capture's two measures or not, by chance, and two flashes cancel. So that
@@ -428,3 +433,39 @@ def test_real_scrollbar_flash_at_start_up_is_waited_out_before_the_first_capture
     settle = row["viewport"]["settle"]
     assert settle["stable"] is True and settle["changes"] >= 10, "the wait must really see the flash"
     assert captures[0] == {"startup_done": True}, "the first capture comes after the flash"
+
+
+# A page that replaces the timers the wait for stable geometry would use in the page's own JS world (redteam L1, #255).
+FROZEN_PAGE = (b'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Frozen</title>'
+               b'<script>window.setInterval=()=>0;</script>'
+               b'<body style="margin:0;background:rgb(19,47,83);color:white"><p>Timers replaced</p>')
+
+
+@pytest.fixture
+def frozen_site():
+    yield from serve(FROZEN_PAGE)
+
+
+def test_real_page_that_replaces_set_interval_still_gets_its_checked_first_capture(browser, frozen_site, tmp_path):
+    cdp, _ = browser
+    empty = tmp_path / "empty.env"
+    empty.touch(mode=0o600)
+    spec = tmp_path / "suite.json"
+    spec.write_text(json.dumps({"name": "Replaced timers fixture", "base_url": frozen_site,
+                               "devices": ["desktop"], "scenarios": [
+        {"name": "page replaces setInterval", "url": "/", "settle": 0,
+         "about": "A page's own timers cannot stall QAJev's wait for stable geometry before the first capture.",
+         "expect": {"text": "Timers replaced", "js": "window.setInterval() === 0",
+                    "says": "the page's setInterval is the page's stub"}}]}))
+    env = {key: os.environ[key] for key in ("HOME", "PATH", "LANG", "PYTHONPATH") if key in os.environ}
+    env.update(QAJEV_HOME=str(tmp_path / "home"), QAJEV_OUTLIVE_PARENT="1", PYTHONDONTWRITEBYTECODE="1")
+    argv = [sys.executable, "-P", "-m", "qajev", "run", str(spec), "--runner", "local", "--headless",
+            "--cdp-url", cdp.endpoint, "--devices", "desktop", "--cost-cap", "0", "--ux", "off", "--no-shots",
+            "--env-file", str(empty), "--out", str(tmp_path / "reports"), "--json", "--quiet"]
+    with (tmp_path / "cli.stdout").open("w") as stdout, (tmp_path / "cli.stderr").open("w") as stderr:
+        result = subprocess.run(argv, env=env, stdout=stdout, stderr=stderr, timeout=90)
+    report = json.loads((tmp_path / "cli.stdout").read_text())
+    row = report["scenarios"][0]
+    assert result.returncode == 0 and report["gate"] == "PASS", row.get("reason")
+    assert row["outcome"] == "pass" and row["viewport"]["settle"]["stable"] is True
+    assert row["viewport"]["settle"]["waited_ms"] < 2000, "a still page settles at once"
