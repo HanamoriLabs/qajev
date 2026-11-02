@@ -130,6 +130,10 @@ The text is on the page, inside a control QAJev's guard hid because it holds a r
 control is safe to show (a plain link whose name holds the word), allow it in the suite:
 `guard: {allow: ["billing, signed in"]}`.
 
+The same reason on a `page lacks` (`absent`) check means the words are only in a control the guard hid. A read-only
+run hides controls such as "Save", "Approve" and "Add", so QAJev cannot tell whether the page has them. Such a check
+never passes. Allow the control in the suite, or run the test on a local dev host, where those controls stay.
+
 **"hook failed: refused: the guard hid this control (danger: Sign out); your selector matches 2 elements …"**
 A hook's selector found a guarded control first, such as a Sign out button in a sidebar before the form's Save.
 QAJev clicked nothing. Make the selector match only the control you mean, for example `form#agreement

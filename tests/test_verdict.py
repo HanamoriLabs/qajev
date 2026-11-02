@@ -44,6 +44,27 @@ def test_a_check_that_failed_only_because_the_guard_hid_its_text_is_harness_not_
     assert V.classify("checked", [hid, page], has_checks=True)[0] == "fail"  # the page is wrong as well
 
 
+def test_an_absent_text_only_the_guard_hid_cannot_pass_and_is_harness():
+    # redteam N1 (2 Nov): read-only hides "Save", "Approve" and "Add" controls, so "page lacks 'Save'" held on any
+    # build. The guard took the control away, not the product.
+    seen = {**observed(absent=(False, False)), "absent_guarded": ["write: Save draft", None]}
+    checks = V.page_checks({"absent": ["Save", "Something went wrong"]}, seen)
+    save, error = checks
+    assert save["check"] == "page lacks 'Save'" and save["ok"] is False
+    assert save["detail"].startswith("hidden by QAJev's guard (write: Save draft)")
+    assert "cannot tell" in save["detail"] and "guard: {allow:" in save["detail"]
+    assert error["ok"] is True and error.get("detail") is None
+    outcome, reason = V.classify("checked", checks, has_checks=True)
+    assert outcome == "harness" and "guard" in reason
+
+
+def test_an_absent_text_still_shown_fails_even_when_a_hidden_control_also_holds_it():
+    seen = {**observed(absent=(True,)), "absent_guarded": [None]}
+    (check,) = V.page_checks({"absent": ["Save"]}, seen)
+    assert check["ok"] is False and check["detail"] == "still shown"
+    assert V.classify("checked", [check], has_checks=True)[0] == "fail"
+
+
 def test_js_must_be_exactly_true():
     assert not V.all_ok(V.page_checks({"js": "x"}, {"js": "error: boom"}))
     assert not V.all_ok(V.page_checks({"js": "x"}, {"js": False}))
