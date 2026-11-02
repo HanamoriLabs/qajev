@@ -70,11 +70,12 @@ def test_a_goal_the_guard_never_blinds_runs_as_before():
 
 class ReadOnlyPage:
     """A read-only page whose Save button QAJev's guard hid. probe answers as session.probe does; `account` says if
-    the page's other check holds. Each Jev move is counted, and it says DONE after its first."""
+    the page's other check holds. Each Jev move is counted, and it says DONE after its first. hooks: the hooks run."""
     assists = []
 
     def __init__(self, account=True):
         self.account = account
+        self.hooks = []
         self.agent = SimpleNamespace(state={"status": "ready", "history": [], "decisions": [], "text_calls": [],
                                             "elapsed_ms": 0})
         self.ledger = SimpleNamespace(spent=lambda: 0.0)
@@ -86,6 +87,7 @@ class ReadOnlyPage:
     def reset_agent(self, task): pass
     def why_failed(self, url): return None
     def observe(self): pass
+    def run_hook(self, hook, url): self.hooks.append(hook)
 
     def probe(self, expect):
         return {"url": self.url, "status": 200, "text": [self.account], "absent": [False],
@@ -96,11 +98,11 @@ class ReadOnlyPage:
         self.agent.state["status"] = "done"
 
 
-def run(page):
+def run(page, after=(), **expect):
     scenario = suite.parse({"scenarios": [{
         "name": "account", "url": "http://127.0.0.1:8765/", "settle": 0, "mode": "readonly",
-        "goal": "Open the account page. Stop when you see Account.",
-        "expect": {"text": "Account", "absent": ["Save"]}}]}).scenarios[0]
+        "goal": "Open the account page. Stop when you see Account.", "after": list(after),
+        "expect": {"text": "Account", "absent": ["Save"], **expect}}]}).scenarios[0]
     return runner.run_scenario(page, scenario, opts=runner.Options(), hosts={"127.0.0.1"}, run_dir=None)
 
 
@@ -111,6 +113,18 @@ def test_a_goal_scenario_whose_absent_check_the_guard_blinds_makes_0_jev_calls(m
     assert (result["stop"], result["jev"]["decisions"]) == ("guard_blind", 0), result["reason"]
     assert result["outcome"] == "harness", result["reason"]
     assert "read-only: Save" in result["reason"], result["reason"]
+
+
+def test_a_guard_blind_stop_skips_the_paid_looks_judge_and_the_after_hooks(monkeypatch):
+    # redteam B1 on #257: guard_blind is a harness stop, so nothing after Jev's loop spends more. The looks judge is a
+    # paid Clef call, and the after hooks judge nothing on a page no check can judge.
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda opts: (True, 1.0))
+    judged = []
+    monkeypatch.setattr(runner, "judge_looks", lambda *a, **k: judged.append("looks") or ([], None))
+    page = ReadOnlyPage()
+    result = run(page, after=[{"js": "account.close()"}], looks=["The account page shows the plan."])
+    assert (result["stop"], judged, page.hooks) == ("guard_blind", [], []), result["reason"]
+    assert result["outcome"] == "harness", result["reason"]
 
 
 def test_a_goal_with_another_unmet_check_still_asks_jev(monkeypatch):
