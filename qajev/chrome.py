@@ -12,6 +12,7 @@ import shlex
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -449,6 +450,7 @@ def _launch(profile, profile_dir, port, headless, visible, ephemeral, wait, *, t
         "background_services_disabled": True,
         "environment_isolated": True,
         "launch_port": launch_port, "temp_dir": str(temporary) if temporary else None,
+        "pid_ns": pid_namespace(),  # its pids mean these processes only in this namespace (reap)
     }
     try:
         _write_state(state_key, record)
@@ -530,38 +532,87 @@ def alive(pid):
     return True
 
 
-EPHEMERAL = re.compile(r"--user-data-dir=(\S*/qajev-[\w.]+?-(\d+)-[\w]+)\b")
+def pid_namespace(pid="self"):
+    """The PID namespace process `pid` lives in (Linux), or None where there are none or it cannot be read."""
+    try:
+        return os.readlink(PROC / str(pid) / "ns" / "pid")
+    except OSError:
+        return None
+
+
+def user_of(pid):
+    """The user id process `pid` runs as, or None when it is gone or hidden from this user."""
+    try:
+        return (PROC / str(pid)).stat().st_uid
+    except OSError:
+        pass
+    try:  # no /proc (macOS)
+        out = subprocess.run(["ps", "-o", "uid=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout
+        return int(out.strip())
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def ours(pid):
+    """Process `pid` runs as this user and in this PID namespace: only then is it QAJev's to stop. Seen from another
+    namespace, a live run's owner pid can look dead (dash, 2 Nov: a boxtest job's Chrome, as another user)."""
+    return user_of(pid) == os.getuid() and pid_namespace(pid) == pid_namespace()
+
+
+def _stop_orphan(pid):
+    """Stop a process a dead run left; False when the system refuses it. A refusal never aborts the run that cleans
+    up (dash, 2 Nov: a PermissionError on another user's Chrome stopped a QAJev run)."""
+    try:
+        _kill(pid)
+    except PermissionError:
+        return False
+    return True
+
+
+def _own_folder(folder):
+    """A real folder (not a link) of this user: another user's leftovers in a shared /tmp are not ours to delete."""
+    try:
+        info = folder.lstat()
+    except OSError:
+        return False
+    return stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid()
+
+
 DAEMON_FILE = re.compile(r"^bu-(qajev-(\d+)-[0-9a-f]+)\.pid$")
 
 
 def reap():
     """Stop what a dead QAJev run left behind: ephemeral Chromes and harness daemons whose owning process is gone
-    (killed, crashed, or interrupted twice mid-cleanup). Only QAJev-named resources whose owner pid is dead."""
-    reaped = []
-    for pid_num, command in processes():
-        pid_text = str(pid_num)
-        match = EPHEMERAL.search(command)
-        if not match or "--type=" in command or "--remote-debugging-port=" not in command:
-            continue  # helpers die with their browser; only the main process is ours to stop
-        profile_dir, owner = match.group(1), int(match.group(2))
-        if alive(owner):
-            continue
-        _kill(int(pid_text))
-        shutil.rmtree(profile_dir, ignore_errors=True)
-        reaped.append(f"chrome {pid_text} ({Path(profile_dir).name})")
+    (killed, crashed, or interrupted twice mid-cleanup). A Chrome is stopped only by the pid in its own run's state
+    record, never found by its command line, and only when it runs as this user in this PID namespace."""
+    reaped, kept = [], set()
+    here = pid_namespace()
+    for path in STATE.glob("*.ephemeral-*.json") if STATE.exists() else []:
+        try:
+            record = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue  # another run's reaper took it first
+        files = {record.get("profile_dir"), record.get("temp_dir")} - {None}
+        if record.get("pid_ns", here) != here or alive(record.get("owner_pid", 0)):
+            kept |= files
+            continue  # a live run's, or one written in another PID namespace: its pids mean nothing here
+        if owns(record):
+            if not ours(record["pid"]) or not _stop_orphan(record["pid"]):
+                kept |= files
+                continue  # still up, and not this user's or namespace's to stop
+            reaped.append(f"chrome {record['pid']} ({Path(record['profile_dir']).name})")
+        shutil.rmtree(record["profile_dir"], ignore_errors=True)
+        _remove_temp(record)
+        path.unlink(missing_ok=True)
     stray = [*EPHEMERAL_ROOT.glob("qajev-*-*-*")] if EPHEMERAL_ROOT.exists() else []
     short = [*TEMP_ROOT.glob("qajev-tmp-*-*")]
     for folder in stray + short + [*Path(tempfile.gettempdir()).glob("qajev-*-*-*")]:
         match = re.fullmatch(r"qajev-[\w.]+?-(\d+)-\w+", folder.name)
-        if match and folder.is_dir() and not alive(int(match.group(1))):
+        if not match or str(folder) in kept or not _own_folder(folder):
+            continue
+        if not alive(int(match.group(1))):
             shutil.rmtree(folder, ignore_errors=True)
             reaped.append(f"profile {folder.name}")
-    for path in STATE.glob("*.ephemeral-*.json") if STATE.exists() else []:
-        record = json.loads(path.read_text())
-        if not alive(record.get("owner_pid", 0)):
-            shutil.rmtree(record["profile_dir"], ignore_errors=True)
-            _remove_temp(record)
-            path.unlink(missing_ok=True)
     runtime = Path(os.environ.get("BH_RUNTIME_DIR") or Path.home() / ".config" / "browser-harness" / "runtime")
     for path in runtime.glob("bu-qajev-*.pid") if runtime.exists() else []:
         match = DAEMON_FILE.match(path.name)
@@ -574,11 +625,13 @@ def reap():
         except (ValueError, OSError, AttributeError):
             daemon_pid = None
         if daemon_pid and alive(daemon_pid) and "browser_harness.daemon" in cmdline(daemon_pid):
-            _kill(daemon_pid)
+            if not ours(daemon_pid) or not _stop_orphan(daemon_pid):
+                continue  # not this user's or namespace's: its files stay too
             reaped.append(f"daemon {daemon_pid} ({name})")
         for leftover in runtime.glob(f"bu-{name}.*"):
             leftover.unlink(missing_ok=True)
-    # A daemon can outlive its run and its runtime files; then only the process itself is left to find.
+    # A daemon can outlive its run and its runtime files; then only the process itself is left to find, by the
+    # BU_NAME its run gave it (its owner pid and a random part), which only this user's processes show.
     for pid, command in processes():
         if "browser_harness.daemon" not in command:
             continue
@@ -586,8 +639,7 @@ def reap():
             continue
         name = _daemon_name(pid)
         match = re.fullmatch(r"qajev-(\d+)-\w+", name or "")
-        if match and not alive(int(match.group(1))) and alive(pid):
-            _kill(pid)
+        if match and ours(pid) and not alive(int(match.group(1))) and alive(pid) and _stop_orphan(pid):
             reaped.append(f"daemon {pid} ({name})")
     return reaped
 

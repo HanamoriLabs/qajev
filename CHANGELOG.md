@@ -6,6 +6,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- A dark scene with a few lights in it no longer reads as a blank canvas, which made a pass harness. When 2 sample
+  points or more are 64 grey levels or more over the rest, the canvas drew. A HUD under `pointer-events: none` is
+  drawn over the canvas, so QAJev does not read the points under it: its lit marks cannot pass for lights.
+
+## 0.4.44: 2 Nov 2026
+
+### Fixed
+
 - A scrollbar that comes and goes while a page starts no longer stops a test as harness ("page geometry changed
   during capture"). Before the first capture, QAJev now waits until the page geometry stays the same for 200 ms,
   5 s at most. The `viewport` object says so in `settle`. The wait runs in QAJev's own JS world, so a page that
@@ -17,9 +25,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - A `react` hook whose policy takes longer than the CDP timeout no longer stops as "the browser stopped answering".
   QAJev sent the tick again, so the policy ran twice at once. Now QAJev waits for the same policy call, and never
   calls the policy again while it runs.
-- A dark scene with a few lights in it no longer reads as a blank canvas, which made a pass harness. When 2 sample
-  points or more are 64 grey levels or more over the rest, the canvas drew. A HUD under `pointer-events: none` is
-  drawn over the canvas, so QAJev does not read the points under it: its lit marks cannot pass for lights.
+- QAJev's cleanup of dead runs no longer finds a Chrome by its command line. On a shared machine, it sent a stop
+  signal to another user's Chrome, and the refusal ended the QAJev run. QAJev now stops a dead run's Chrome only by
+  the process id in that run's own record. The process must run as the same user, in the same PID namespace. A
+  refused stop no longer ends a run, and a folder in `/tmp` that another user owns stays.
 
 ## 0.4.43: 2 Nov 2026
 
