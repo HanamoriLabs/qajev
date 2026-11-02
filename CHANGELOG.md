@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- Each report names the GPU renderer the run's Chrome drew with (`browser.gpu`, and a GPU line in report.html and
+  report.md). A software renderer such as SwiftShader is marked. On a machine with an NVIDIA GPU, a software one also
+  gives a note, which the CLI prints as a warning: WebGL and WebGPU pages then ran on the CPU.
+
 ### Fixed
 
 - A cloud run no longer stops on one 5xx answer to a file upload. QAJev sends a file again after a 500, 502, 503 or

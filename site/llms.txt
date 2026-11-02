@@ -107,7 +107,9 @@ the gate, each non-pass outcome with its reason, the findings, the cost and the 
 crashes ("Aw, Snap") is `fail`: "the page crashed at <URL>; last step: <step>". To chase a crash, run with
 `cache: cold` (CLI `--cold-cache`, tool `cold_cache: true`): every load skips the cache and the service worker. Give
 `console_keep: [pattern]` (CLI `--console-keep`, tool `console_keep`) to keep the page's matching console lines
-apart from the 50-line cap, under `page_console_kept`.
+apart from the 50-line cap, under `page_console_kept`. `browser.gpu` names the GPU renderer the run's Chrome drew
+with; a `note` there says Chrome drew in software on a machine with an NVIDIA GPU, so a WebGL or WebGPU result may
+not say much about the page: tell the person.
 
 Long runs: pass `background: true` (CLI `--background`), then follow with `qa_job` and stop with `qa_stop`. Runs
 take turns, one at a time per machine; never start a second copy of a queued run. A run also waits while another

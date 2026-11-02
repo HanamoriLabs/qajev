@@ -21,6 +21,9 @@ class FakeSession:
     def page_socket(self):
         return None
 
+    def gpu_info(self):
+        return {"none": "a fake session draws nothing"}
+
 
 @pytest.fixture
 def group(monkeypatch, tmp_path):
