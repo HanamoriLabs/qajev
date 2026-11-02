@@ -10,6 +10,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   report.md). A software renderer such as SwiftShader is marked. On a machine with an NVIDIA GPU, a software one also
   gives a note, which the CLI prints as a warning: WebGL and WebGPU pages then ran on the CPU.
 
+### Changed
+
+- A test with `canvas_capture: {gpu: hardware}` no longer starts when the run's Chrome has no hardware GPU for
+  WebGPU: it is harness at once (`stop: software_gpu`), before its page loads and before Jev spends a step. QAJev
+  reads the WebGPU adapter once per Chrome and judges it by the end check's own rule. A named hardware adapter starts
+  the test even when WebGL draws with SwiftShader. No adapter, or one that cannot be read, starts the test, and the end
+  check decides. Before, the test always ran to its end and was graded harness only then.
+
 ### Fixed
 
 - A cloud run no longer stops on one 5xx answer to a file upload. QAJev sends a file again after a 500, 502, 503 or

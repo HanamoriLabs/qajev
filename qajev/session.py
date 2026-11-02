@@ -1650,13 +1650,19 @@ class Session:
         elif out["problem"] is None:
             out["problem"] = "the readback expression gave nothing"
         if spec.get("gpu") == "hardware":
-            try:
-                out["adapter"] = self.isolated_evaluate(WEBGPU_ADAPTER_JS, timeout_ms=10000)
-            except (RuntimeError, TimeoutError) as error:
-                out["adapter"] = {"none": f"the WebGPU adapter could not be read: {error}"}
+            out["adapter"] = self.webgpu_adapter()
             out["gpu"] = self.gpu_info()
             out["software"] = software_adapter(out["adapter"], out["gpu"])
         return out
+
+    def webgpu_adapter(self):
+        """The page's WebGPU adapter, read in QAJev's own JS world (WEBGPU_ADAPTER_JS, no device is made): {vendor,
+        architecture, description, fallback}, else {none: why}."""
+        try:
+            got = self.isolated_evaluate(WEBGPU_ADAPTER_JS, timeout_ms=10000)
+        except (RuntimeError, TimeoutError) as error:
+            return {"none": f"the WebGPU adapter could not be read: {error}"}
+        return got if isinstance(got, dict) else {"none": "the WebGPU adapter could not be read"}
 
     def gpu_info(self):
         """The GPU the browser draws the page with (GPU_NAME_JS): {device}, else {none: why}."""
