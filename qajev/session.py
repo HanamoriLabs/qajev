@@ -366,11 +366,25 @@ def awaited(expression, timeout_ms=JS_WAIT_MS):
 
 
 # One tick of a react hook: done when `until` holds, else the policy's key actions. A throw is the policy's error.
+# The tick's promise stays in the page under its id. One that has not settled within $wait_ms answers {pending}, and
+# the next call with the same id waits on that promise again: the policy is never called twice at once, and no CDP
+# call waits on a slow policy long enough to read as a browser that stopped answering (Twilight, 2 Nov: a page's
+# next() took up to 60 s by design, QAJev sent the tick again at 30 s, then called the browser stalled).
 REACT_JS = Template("""(async () => {
-  try {
-    if (await (async () => ($until))()) return { done: true };
-    return { actions: await (async () => ($js))() };
-  } catch (e) { return { error: String(e && e.message || e) }; }
+  const slot = "__qajevReactTick", id = $id;
+  let tick = window[slot];
+  if (!tick || tick.id !== id) {
+    tick = window[slot] = { id, result: (async () => {
+      try {
+        if (await (async () => ($until))()) return { done: true };
+        return { actions: await (async () => ($js))() };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })() };
+  }
+  const out = await Promise.race([tick.result, new Promise((r) => setTimeout(() => r(null), $wait_ms))]);
+  if (out === null) return { pending: true };
+  if (window[slot] === tick) window[slot] = undefined;
+  return out;
 })()""")
 
 
@@ -1823,20 +1837,31 @@ class Session:
             p = keys.react_plan(value)
         except ValueError as e:
             raise HookFailed(str(e)) from None
-        tick = REACT_JS.substitute(until=p["until"] or "false", js=p["js"])
         log = self.react_log = getattr(self, "react_log", [])
         held, start, shots, capped = {}, time.monotonic(), 0, False
         deadline = start + p["for_s"]
+        # A tick waits at most half the CDP timeout before it answers {pending} (REACT_JS)
+        cdp_half_ms = int(float(os.environ.get("QAJEV_CDP_TIMEOUT", "30")) * 500)
+        ticks, tick_id = 0, None
         try:
             while True:
                 began = time.monotonic()
                 if began > deadline:
                     if p["until"]:
-                        raise HookFailed(f"react: {p['until']!r} did not hold within {p['for_s']:g} s")
+                        running = "; the policy's last call was still running" if tick_id else ""
+                        raise HookFailed(f"react: {p['until']!r} did not hold within {p['for_s']:g} s{running}")
                     return
+                if tick_id is None:  # a new tick; a pending one keeps its id, so its policy call is not made again
+                    ticks += 1
+                    tick_id = f"{os.getpid()}-{start:.6f}-{ticks}"
                 # a policy awaiting a promise that never settles must not outlast for_s
                 left_ms = int((deadline - began) * 1000)
-                out = self.evaluate(tick, timeout_ms=max(1, min(left_ms, max(4 * p["every_ms"], 1000)))) or {}
+                wait_ms = max(1, min(left_ms, max(4 * p["every_ms"], 1000), cdp_half_ms))
+                tick = REACT_JS.substitute(until=p["until"] or "false", js=p["js"], id=json.dumps(tick_id),
+                                           wait_ms=wait_ms)
+                out = self.evaluate(tick, timeout_ms=wait_ms) or {}
+                if not out.get("pending"):
+                    tick_id = None
                 if out.get("error"):
                     raise HookFailed(f"react policy: {out['error']}"[:300])
                 if out.get("done"):
