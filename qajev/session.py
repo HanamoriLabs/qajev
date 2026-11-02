@@ -744,25 +744,40 @@ CANVAS_POINTS = """(() => {
   }
   if (!best || most < 0.2 * W * H) return null;
   const [c, [x0, y0, x1, y1]] = best, points = [], seen = new Map();
+  const bare = (e, s) => {
+    // paint the hit test does not show: a ::before or ::after, a shadow tree (only its host is hit), SVG shapes
+    const hidden = ['::before', '::after'].some(p => !['none', 'normal'].includes(getComputedStyle(e, p).content)) ||
+      !!e.shadowRoot || e.tagName.includes('-') || e instanceof SVGElement;
+    return s.opacity === '0' || (/^(transparent|rgba\\(.*,\\s*0\\))$/.test(s.backgroundColor) &&
+      s.backgroundImage === 'none' && s.boxShadow === 'none' && (s.backdropFilter || 'none') === 'none' &&
+      !['Top', 'Right', 'Bottom', 'Left'].some(k => parseFloat(s['border' + k + 'Width']) > 0) &&
+      ![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && !hidden);
+  };
   const clear = e => {
     if (!seen.has(e)) {
-      const s = getComputedStyle(e), r = e.getBoundingClientRect();
+      const r = e.getBoundingClientRect();
       const big = Math.max(0, Math.min(x1, r.right) - Math.max(x0, r.left)) *
                   Math.max(0, Math.min(y1, r.bottom) - Math.max(y0, r.top)) >= 0.9 * most;
-      // paint the hit test does not show: a ::before or ::after, a shadow tree (only its host is hit), SVG shapes
-      const hidden = ['::before', '::after'].some(p => !['none', 'normal'].includes(getComputedStyle(e, p).content)) ||
-        !!e.shadowRoot || e.tagName.includes('-') || e instanceof SVGElement;
-      const bare = s.opacity === '0' || (/^(transparent|rgba\\(.*,\\s*0\\))$/.test(s.backgroundColor) &&
-        s.backgroundImage === 'none' && s.boxShadow === 'none' && (s.backdropFilter || 'none') === 'none' &&
-        !['Top', 'Right', 'Bottom', 'Left'].some(k => parseFloat(s['border' + k + 'Width']) > 0) &&
-        ![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && !hidden);
-      seen.set(e, big && bare && !['IMG', 'VIDEO', 'IFRAME', 'CANVAS'].includes(e.tagName));
+      seen.set(e, big && bare(e, getComputedStyle(e)) && !['IMG', 'VIDEO', 'IFRAME', 'CANVAS'].includes(e.tagName));
     }
     return seen.get(e);
   };
+  // The hit test skips an element under pointer-events: none (a game's HUD), but it is drawn over the canvas: the
+  // points under one with paint of its own are not the canvas's. Its lit text must not read as the scene's lights.
+  const ghosts = [];
+  let looked = 0;
+  for (const e of document.querySelectorAll('body *')) {
+    if (++looked > 5000) break;
+    if (e === c || e.contains(c)) continue;
+    const s = getComputedStyle(e);
+    if (s.pointerEvents !== 'none' || s.visibility !== 'visible' || bare(e, s)) continue;
+    const r = e.getBoundingClientRect();
+    if (r.right > x0 && r.left < x1 && r.bottom > y0 && r.top < y1) ghosts.push(r);
+  }
   let through = 0;
   for (let i = 0; i < 24; i++) for (let j = 0; j < 16; j++) {
     const x = x0 + (x1 - x0) * (i + 0.5) / 24, y = y0 + (y1 - y0) * (j + 0.5) / 16;
+    if (ghosts.some(r => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)) continue;
     const stack = document.elementsFromPoint(x, y), k = stack.findIndex(e => e === c || !clear(e));
     if (stack[k] === c) { points.push([x, y]); if (k) through++; }
   }

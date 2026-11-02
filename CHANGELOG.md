@@ -14,6 +14,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   run hides controls such as "Save", "Approve" and "Add", so such a check passed on any build. It is now harness,
   and its detail names the hidden control. In a goal test, QAJev stops Jev as soon as every other check holds,
   with no more paid calls (`stop`: `guard_blind`).
+- A dark scene with a few lights in it no longer reads as a blank canvas, which made a pass harness. When 2 sample
+  points or more are 64 grey levels or more over the rest, the canvas drew. A HUD under `pointer-events: none` is
+  drawn over the canvas, so QAJev does not read the points under it: its lit marks cannot pass for lights.
 
 ## 0.4.43: 2 Nov 2026
 
