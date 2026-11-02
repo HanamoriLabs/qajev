@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.44: 2 Nov 2026
+
 ### Fixed
 
 - A scrollbar that comes and goes while a page starts no longer stops a test as harness ("page geometry changed
