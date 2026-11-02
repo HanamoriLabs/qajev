@@ -17,13 +17,18 @@ POLICY = ("(async () => { window.__calls++; window.__running++;"
           " await new Promise((r) => setTimeout(r, 7000)); window.__running--; return null; })()")
 
 
-def test_a_policy_slower_than_the_cdp_timeout_runs_one_call_at_a_time(browser, site, tmp_path):  # noqa: F811
+LAST = {"react": {"js": POLICY, "until": "window.__calls >= 2", "every_ms": 50, "for_s": 40}}
+# redteam L1 on #261: a first hook with no until ends at 2 s on its running call; the next hook must wait for it.
+FIRST = {"react": {"js": POLICY, "every_ms": 50, "for_s": 2}}
+
+
+@pytest.mark.parametrize("hooks", [[LAST], [FIRST, LAST]], ids=["one hook", "two hooks back to back"])
+def test_a_policy_slower_than_the_cdp_timeout_runs_one_call_at_a_time(browser, site, tmp_path, hooks):  # noqa: F811
     spec = tmp_path / "suite.json"
     spec.write_text(json.dumps({"name": "Slow react policy", "base_url": site, "scenarios": [{
         "name": "slow policy", "url": "/", "settle": 0,
         "about": "A policy that takes 7 s a call is waited on, one call at a time, with a 3 s CDP timeout.",
-        "before": [{"js": "window.__calls = 0; window.__running = 0; window.__most = 0"},
-                   {"react": {"js": POLICY, "until": "window.__calls >= 2", "every_ms": 50, "for_s": 40}}],
+        "before": [{"js": "window.__calls = 0; window.__running = 0; window.__most = 0"}, *hooks],
         "expect": {"js": "window.__calls === 2 && window.__most === 1",
                    "says": "the slow policy ran twice, never two calls at once"}}]}))
     empty = tmp_path / "empty.env"
@@ -42,3 +47,5 @@ def test_a_policy_slower_than_the_cdp_timeout_runs_one_call_at_a_time(browser, s
     assert row["outcome"] == "pass" and all(check["ok"] for check in row["checks"]), row
     assert result.returncode == 0 and report["gate"] == "PASS"
     assert report["cost"]["calls"] == {"typesafe": 0, "text": 0}
+    notes = [e["note"] for e in row.get("react") or [] if "note" in e]
+    assert notes == (["the hook ended while its policy's last call was still running"] if len(hooks) == 2 else [])

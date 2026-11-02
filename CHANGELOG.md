@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- The next `react` hook on a page now waits for a policy call that the hook before it left running, so the
+  policy never runs twice at once across hooks. A hook without `until` that ends while its policy's call still
+  runs adds a note to its log.
+
 ## 0.4.44: 2 Nov 2026
 
 ### Fixed

@@ -513,7 +513,9 @@ policy, as above: then the test shows how fast a player had to be.
 
 A policy can return a promise, and a call can take longer than `every_ms`. QAJev then waits for that same call and
 never calls the policy again while it runs. A slow call does not make QAJev say that the browser stopped
-answering. If `until` does not hold by `for_s`, the failure says whether the last call was still running.
+answering. If `until` does not hold by `for_s`, the failure says whether the last call was still running. A hook
+without `until` that ends on a running call says so in the report. The next `react` hook on that page waits for that
+call to end, inside its own `for_s`, before it calls its own policy.
 
 ## Guard options
 
