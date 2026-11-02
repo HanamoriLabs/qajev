@@ -40,7 +40,8 @@ def group(monkeypatch, tmp_path):
 
     monkeypatch.setattr(runner, "run_scenario", scenario)
     meta = {"headless": True, "hosts": ["localhost:5284"], "guard": {}, "cwd": str(tmp_path)}
-    scenarios = [SimpleNamespace(name=n, url="/", goal=None, mode="mutate", depends_on=[], clients=None)
+    scenarios = [SimpleNamespace(name=n, url="/", goal=None, mode="mutate", depends_on=[], clients=None,
+                                 canvas_capture=None)
                  for n in ("one", "two")]
     account = {"name": "A", "email": "a@foley.test", "password": "seed:x#A.password",
                "login": {"url": "/", "tab": "same"}}
