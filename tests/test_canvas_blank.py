@@ -407,18 +407,16 @@ scenarios:
     none = got["no readback"]
     assert none["outcome"] == "harness", none
     assert none["reason"].startswith("canvas_capture: page gave no readback image: the readback expression gave"), none
-    # QAJev's headless Chrome on a test machine draws with SwiftShader: a test that asks for a hardware GPU stops
-    # before its page loads (runner.software_gpu), so a page that says it has a GPU cannot change that either.
-    for name in ("hardware asked", "a page that says it has a GPU"):
-        hardware = got[name]
-        assert hardware["outcome"] == "harness" and hardware["stop"] == "software_gpu", hardware
-        assert hardware["reason"] == ("canvas_capture asks for a hardware GPU, but this Chrome draws with a software "
-                                      "renderer (SwiftShader): the test did not start, so it says nothing about the "
-                                      "page"), hardware
-        assert not hardware["checks"] and "canvas_capture" not in hardware, hardware
-    assert "SwiftShader" in built["browser"]["gpu"]["device"], built["browser"]
+    hardware = got["hardware asked"]  # QAJev's headless Chrome on a test machine has no hardware WebGPU
+    assert hardware["outcome"] == "harness" and "asks for a hardware GPU" in hardware["reason"], hardware
+    assert "SwiftShader" in hardware["canvas_capture"]["gpu"]["device"], hardware  # the test machine's software GL
+    # The adapter is read in QAJev's own JS world, which still has navigator.gpu: no adapter, not "no WebGPU".
+    assert hardware["canvas_capture"]["adapter"] == {"none": "the page got no WebGPU adapter"}, hardware
     unnamed = got["WebGL without the renderer name"]
     assert unnamed["outcome"] == "pass", unnamed
+    lying = got["a page that says it has a GPU"]["canvas_capture"]  # the page's patches do not reach QAJev's world
+    assert "SwiftShader" in lying["gpu"]["device"] and "planted" not in json.dumps(lying), lying
+    assert lying["adapter"] == {"none": "the page got no WebGPU adapter"}, lying
     skipped = got["dark screen, lit readback"]  # with canvas_capture, the dark screenshot is not graded
     assert skipped["outcome"] == "pass" and not skipped.get("canvas_blank"), skipped
 

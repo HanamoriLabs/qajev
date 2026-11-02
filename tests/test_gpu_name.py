@@ -90,24 +90,45 @@ def test_the_terminal_warns_when_chrome_drew_in_software_on_a_gpu_machine(tmp_pa
     assert "warning" not in capsys.readouterr().err
 
 
-def test_a_test_that_asks_for_a_hardware_gpu_does_not_start_on_a_software_renderer():
-    hardware, plain = (SimpleNamespace(canvas_capture={"page": "x", "gpu": gpu}) for gpu in ("hardware", None))
-    why = runner.software_gpu(hardware, SWIFT)
-    assert why == ("canvas_capture asks for a hardware GPU, but this Chrome draws with a software renderer "
-                   "(SwiftShader): the test did not start, so it says nothing about the page")
-    assert "(llvmpipe)" in runner.software_gpu(hardware, {"device": "llvmpipe (LLVM 17.0.6, 256 bits)"})
-    assert runner.software_gpu(hardware, L4) is None
-    assert runner.software_gpu(hardware, {"none": "the page has no WebGL to name its GPU"}) is None  # the end check
-    assert runner.software_gpu(hardware, None) is None  # no Chrome read: the end check decides
-    assert runner.software_gpu(plain, SWIFT) is None
-    assert runner.software_gpu(SimpleNamespace(canvas_capture=None), SWIFT) is None
+NVIDIA = {"vendor": "nvidia", "architecture": "ada", "description": "", "fallback": False}  # WebGPU on Vulkan
+FALLBACK = {"vendor": "", "architecture": "", "description": "", "fallback": True}
+NAMELESS = {"vendor": "", "architecture": "", "description": "", "fallback": False}
+SOFT_ADAPTER = {"vendor": "google", "architecture": "swiftshader", "description": "", "fallback": False}
+UNREAD = {"none": "the WebGPU adapter could not be read: the page stopped answering"}
 
 
-@pytest.mark.parametrize("drew, stopped", [(SWIFT, ["hardware 1", "hardware 2"]), (L4, [])])
+def stops(why):
+    return (f"canvas_capture asks for a hardware GPU, but {why}: the test did not start, so it says nothing about "
+            "the page")
+
+
+# The early stop follows the end check's own rule (session.software_adapter): the WebGPU adapter first, and WebGL's
+# renderer only when the adapter names no vendor or architecture (redteam-1 B1 on #266).
+@pytest.mark.parametrize("adapter, drew, why", [
+    (NVIDIA, SWIFT, None),  # a: WebGPU on the GPU, WebGL on SwiftShader: it passed the end check before, so it starts
+    (FALLBACK, L4, "the page's WebGPU adapter is software (a fallback adapter)"),  # b
+    (NAMELESS, SWIFT, "the browser's GPU is software (SwiftShader)"),  # c
+    (UNREAD, SWIFT, None),  # d: the adapter read failed: the test starts, and the end check decides
+    ({"none": "the page got no WebGPU adapter"}, SWIFT, None),  # no adapter at the start: the end check decides
+    (SOFT_ADAPTER, L4, "the page's WebGPU adapter is software (swiftshader)"),
+    (NVIDIA, L4, None),
+    (None, SWIFT, None),  # nothing read
+])
+def test_a_test_that_asks_for_a_hardware_gpu_stops_only_on_a_readable_software_adapter(adapter, drew, why):
+    hardware = SimpleNamespace(canvas_capture={"page": "x", "gpu": "hardware"})
+    assert runner.software_gpu(hardware, drew, adapter) == (stops(why) if why else None)
+    for plain in (SimpleNamespace(canvas_capture={"page": "x", "gpu": None}), SimpleNamespace(canvas_capture=None)):
+        assert runner.software_gpu(plain, drew, adapter) is None
+
+
+@pytest.mark.parametrize("drew, adapter, stopped", [(SWIFT, NAMELESS, ["hardware 1", "hardware 2"]),
+                                                     (L4, FALLBACK, ["hardware 1", "hardware 2"]),
+                                                     (SWIFT, NVIDIA, []), (SWIFT, UNREAD, []), (L4, NVIDIA, [])])
 def test_every_test_on_a_software_chrome_that_asks_for_the_gpu_stops_before_it_starts(monkeypatch, tmp_path,
-                                                                                      drew, stopped):
-    # One Chrome for the whole group: the renderer is read once, and each later test that asks is checked against it.
-    made, started = [], []
+                                                                                      drew, adapter, stopped):
+    # One Chrome for the whole group: the renderer is read once, the WebGPU adapter once when the first test asks, and
+    # each test that asks is checked against them.
+    made, started, adapter_reads = [], [], []
 
     class FakeSession:
         def __init__(self, *_a, **_kw):
@@ -115,6 +136,10 @@ def test_every_test_on_a_software_chrome_that_asks_for_the_gpu_stops_before_it_s
 
         def gpu_info(self):
             return dict(drew)
+
+        def webgpu_adapter(self):
+            adapter_reads.append(started[:])
+            return dict(adapter)
 
         def page_socket(self):
             return None
@@ -137,9 +162,12 @@ def test_every_test_on_a_software_chrome_that_asks_for_the_gpu_stops_before_it_s
                            ledger=runner.Ledger(1.0))
     got = {r["name"]: r for r in out["results"]}
     assert len(made) == 1 and started == [n for n in ("plain", "hardware 1", "hardware 2") if n not in stopped]
+    assert adapter_reads == [["plain"]]  # once, when "hardware 1" was next; "plain" did not ask
     for name in stopped:
         assert got[name]["outcome"] == "harness" and got[name]["stop"] == "software_gpu", got[name]
-        assert got[name]["reason"] == runner.software_gpu(scenarios[1], drew) and got[name]["cost_usd"] == 0.0
+        assert got[name]["reason"] == runner.software_gpu(scenarios[1], drew, adapter), got[name]
+        assert got[name]["reason"].startswith("canvas_capture asks for a hardware GPU, but ") and not got[name]["checks"]
+        assert got[name]["cost_usd"] == 0.0
     assert got["plain"]["browser_gpu"] == drew and all("browser_gpu" not in got[n] for n in stopped)
 
 

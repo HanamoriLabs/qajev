@@ -12,9 +12,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Changed
 
-- A test with `canvas_capture: {gpu: hardware}` no longer starts when the run's Chrome draws with a software
-  renderer: it is harness at once (`stop: software_gpu`), before its page loads and before Jev spends a step. Before,
-  the test ran to its end on the CPU and was graded harness only then.
+- A test with `canvas_capture: {gpu: hardware}` no longer starts when the run's Chrome has no hardware GPU for
+  WebGPU: it is harness at once (`stop: software_gpu`), before its page loads and before Jev spends a step. QAJev
+  reads the WebGPU adapter once per Chrome and judges it by the end check's own rule. A named hardware adapter starts
+  the test even when WebGL draws with SwiftShader. No adapter, or one that cannot be read, starts the test, and the end
+  check decides. Before, the test always ran to its end and was graded harness only then.
 
 ### Fixed
 

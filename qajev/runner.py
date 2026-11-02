@@ -921,18 +921,20 @@ def lift_gpu(browser, results):
     browser["gpu"] = gpu
 
 
-def software_gpu(scenario, drew):
-    """A test whose canvas_capture asks for gpu: hardware, on a Chrome that draws with a software renderer (drew:
-    Session.gpu_info): why it must not start, else None. Its end check would grade it harness all the same, after Jev
-    spent the whole test on the CPU (rea's looks on workload-gpu, 2 Nov). A renderer that cannot be read starts the
-    test: the end check reads the page's own WebGPU adapter."""
-    from .session import _SOFTWARE_GPU
+def software_gpu(scenario, drew, adapter):
+    """A test whose canvas_capture asks for gpu: hardware, on a Chrome whose WebGPU adapter (adapter:
+    Session.webgpu_adapter, read once per Chrome) is no hardware GPU by the end check's own rule
+    (session.software_adapter, with drew: Session.gpu_info): why it must not start, else None. Jev then spends no step
+    on a test whose end check grades it harness (rea's looks on workload-gpu, 2 Nov). A named hardware adapter starts
+    the test whatever WebGL draws with: WebGPU can run on Vulkan while WebGL runs on SwiftShader (redteam-1 B1 on
+    #266). No adapter, or one that could not be read, starts the test too: the end check decides."""
+    from .session import software_adapter
 
-    if (scenario.canvas_capture or {}).get("gpu") != "hardware" or not isinstance(drew, dict):
+    if (scenario.canvas_capture or {}).get("gpu") != "hardware" or not isinstance(adapter, dict) or adapter.get("none"):
         return None
-    if soft := _SOFTWARE_GPU.search(str(drew.get("device") or "")):
-        return (f"canvas_capture asks for a hardware GPU, but this Chrome draws with a software renderer "
-                f"({soft.group(0)}): the test did not start, so it says nothing about the page")
+    if why := software_adapter(adapter, drew):
+        return (f"canvas_capture asks for a hardware GPU, but {why}: the test did not start, so it says nothing about "
+                "the page")
     return None
 
 
@@ -942,7 +944,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
     results = []
     outcomes = dict(prior or {})
     name = session_mod.configure_env(cdp_url)
-    session = gpu = drew = None
+    session = gpu = drew = adapter = None
     lost_after = "an earlier scenario" if session_mod.transport_error() is not None else None
     try:
         for scenario in scenarios:
@@ -991,7 +993,9 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                             outcomes[scenario.name] = result["outcome"]
                             _emit(opts, "scenario", result=result)
                             continue
-                        if (software := software_gpu(scenario, drew)) is not None:
+                        if (scenario.canvas_capture or {}).get("gpu") == "hardware" and adapter is None:
+                            adapter = session.webgpu_adapter()  # once per Chrome, and only when a test asks
+                        if (software := software_gpu(scenario, drew, adapter)) is not None:
                             result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
                                               "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
                                               "stop": "software_gpu"}, "harness", software, time.monotonic())
