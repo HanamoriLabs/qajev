@@ -170,6 +170,22 @@ def test_guard_hides_danger_before_jev_sees_the_first_page(session, site):
     assert "Pricing" in labels
 
 
+def test_an_absent_check_on_a_control_the_guard_hid_cannot_pass(session, site):
+    # redteam N1 (2 Nov): read-only hides the fixture's Save button, so "page lacks 'Save'" held on any build.
+    from qajev import verdict
+    session.arm("readonly")
+    assert session.navigate(site + "/") is None
+    assert hidden(session, "#save")
+    expect = {"absent": ["Save", "Something went wrong"]}
+    seen = session.probe(expect)
+    assert seen["absent"] == [False, False], "the guard takes Save out of the page text"
+    save, missing = verdict.page_checks(expect, seen)
+    assert save["ok"] is False and save["detail"].startswith("hidden by QAJev's guard ("), save
+    assert "Save" in seen["absent_guarded"][0], seen["absent_guarded"]
+    assert missing["ok"] is True and seen["absent_guarded"][1] is None
+    assert verdict.classify("checked", [save, missing], has_checks=True)[0] == "harness"
+
+
 def test_an_email_link_and_a_store_badge_read_as_visitors_see_them(session, site):
     # Issue #1: a Cloudflare-obfuscated address became a mailto: link once decoded, and the guard took it off the
     # page as off-site, so expectations on the address failed; store badges vanished from screenshots the same way.

@@ -56,8 +56,14 @@ def page_checks(expect, observed):
                 if hid else f"closest on the page: {closest}" if closest
                 else f"not on the page; it begins: {observed.get('says')}")
         checks.append(_check(f"page shows {needle!r}{case}", bool(seen), None if seen else miss))
-    for needle, seen in zip(expect.get("absent", []), observed.get("absent") or []):
-        checks.append(_check(f"page lacks {needle!r}{case}", not seen, "still shown" if seen else None))
+    hidden = observed.get("absent_guarded") or []  # an absent text that only a control the guard hid holds
+    for i, (needle, seen) in enumerate(zip(expect.get("absent", []), observed.get("absent") or [])):
+        hid = hidden[i] if i < len(hidden) else None
+        # Read-only hides "Save", "Approve" and "Add" controls, so "the page lacks it" would hold on any build
+        # (2 Nov). Such a check cannot pass, and the detail makes it harness (classify).
+        miss = ("still shown" if seen else f"hidden by QAJev's guard ({hid}), so QAJev cannot tell if the page has "
+                "it; if it is safe, allow it in the suite: guard: {allow: [...]}" if hid else None)
+        checks.append(_check(f"page lacks {needle!r}{case}", not seen and not hid, miss))
     whys = observed.get("visible_why") or []
     for i, (needle, seen) in enumerate(zip(expect.get("visible", []), observed.get("visible") or [])):
         why = whys[i] if i < len(whys) and whys[i] else "in the page but not visible in the viewport, or absent"

@@ -10,6 +10,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   during capture"). Before the first capture, QAJev now waits until the page geometry stays the same for 200 ms,
   5 s at most. The `viewport` object says so in `settle`. The wait runs in QAJev's own JS world, so a page that
   replaces its timers cannot stall it.
+- A `page lacks` (`absent`) check no longer passes when its words are only in a control the guard hid. A read-only
+  run hides controls such as "Save", "Approve" and "Add", so such a check passed on any build. It is now harness,
+  and its detail names the hidden control.
 
 ## 0.4.43: 2 Nov 2026
 
