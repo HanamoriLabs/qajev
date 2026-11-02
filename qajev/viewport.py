@@ -20,6 +20,26 @@ SETTLE = """new Promise(done => {
   (document.fonts ? document.fonts.ready : Promise.resolve()).then(frames, frames);
 })"""
 
+# Before a scenario's first capture the page must hold still. A scrollbar that comes and goes at start-up can move the
+# page during all TRIES captures (9 of 11 runs on one product page). STABLE reads MEASURE every 25 ms, and resolves
+# once the values stay the same for QUIET_MS, or at STABLE_MAX_MS. `changes` counts the moves it saw.
+QUIET_MS = 200
+STABLE_MAX_MS = 5000
+STABLE = f"""new Promise(done => {{
+  const read = () => JSON.stringify({MEASURE});
+  const start = performance.now();
+  let last = read(), since = start, changes = 0;
+  const tick = setInterval(() => {{
+    const now = performance.now(), next = read();
+    if (next !== last) {{ last = next; since = now; changes++; }}
+    const stable = now - since >= {QUIET_MS};
+    if (stable || now - start >= {STABLE_MAX_MS}) {{
+      clearInterval(tick);
+      done({{stable, waited_ms: Math.round(now - start), changes}});
+    }}
+  }}, 25);
+}})"""
+
 
 class ViewportMismatch(RuntimeError):
     def __init__(self, reason, evidence):

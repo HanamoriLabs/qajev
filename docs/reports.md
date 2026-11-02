@@ -56,9 +56,11 @@ the guard's own. A run with `allow_destructive` opens with a red banner saying d
 Chrome web scenarios keep a `viewport` record before their checks and hooks, even with `--no-shots`.
 `requested` is the device profile; `before` and `after` contain actual page layout dimensions, DPR and the
 visual viewport and Chrome layout metrics around an actual capture. `capture_pixels` is the decoded image size. Device scale and
-mobile visual zoom are accounted for before comparison. When the page moves during a capture (a late web font
-can bring a scrollbar), QAJev waits for the page's fonts and two drawn frames, then takes the capture again, 3
-captures at most. `retakes` counts the captures taken again. Missing geometry, disagreement or a resize during
+mobile visual zoom are accounted for before comparison. Before the first capture, QAJev waits until the page holds
+still: its geometry stays the same for 200 ms, 5 s at most. `settle` says if it held still (`stable`), how long QAJev
+waited (`waited_ms`) and how often the page moved in that time (`changes`). When the page moves during a capture (a
+late web font can bring a scrollbar), QAJev waits for the page's fonts and two drawn frames, then takes the capture
+again, 3 captures at most. `retakes` counts the captures taken again. Missing geometry, disagreement or a resize during
 the last capture is **harness**, with no scenario actions or checks accepted. A clients scenario keeps this record
 under each client. This validates page/capture geometry; it does not judge a canvas or container's layout.
 
