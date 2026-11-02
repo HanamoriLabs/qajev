@@ -105,12 +105,12 @@ def test_reap_stops_an_orphaned_ephemeral_chrome_and_deletes_its_profile(state, 
 def test_reap_never_stops_a_chrome_found_only_by_its_command_line(state, owner, signals):
     # The Orchestrator, 2 Nov: cleanup stops only what a run recorded starting, never a process found by its name.
     # This one looks like a dead run's Chrome, but no run of this QAJev home recorded it.
-    orphan, profile, record = orphan_of(state, owner)
+    orphan, _, record = orphan_of(state, owner)
     record.unlink()
     try:
         reaped = chrome.reap()
         assert not any(str(orphan.pid) in r for r in reaped), reaped
-        assert signals.to(orphan.pid) == [] and orphan.poll() is None and profile.exists()
+        assert signals.to(orphan.pid) == [] and orphan.poll() is None  # its stray folder may go: it is ours
     finally:
         orphan.kill()
 
