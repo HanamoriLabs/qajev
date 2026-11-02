@@ -305,7 +305,9 @@ def test_a_page_that_never_holds_still_says_so_when_its_capture_fails(monkeypatc
 
 
 @pytest.mark.parametrize("reply", [RuntimeError("page script failed: navigating"), TimeoutError("no answer"), None,
-                                   KeyError("frameTree")])
+                                   KeyError("frameTree"),
+                                   # a CDP reply of None: isolated_evaluate subscripts it (redteam L1, #258)
+                                   TypeError("'NoneType' object is not subscriptable")])
 def test_a_wait_that_cannot_run_still_takes_the_checked_capture(monkeypatch, reply):
     page, seen = moving_page(monkeypatch, [scrolled(), scrolled()])
     settling(monkeypatch, page, seen, reply)
