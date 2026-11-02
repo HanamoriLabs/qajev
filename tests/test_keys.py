@@ -1,6 +1,8 @@
 """Key hooks (keys.py): real key names only, a sequence repeated, a key held, all within bounds. test_live.py presses
 them in a real page."""
 
+import re
+
 import pytest
 
 from qajev import keys
@@ -76,9 +78,10 @@ class FakePage:
         self.answers, self.log, self.now = list(answers), [], 0.0
         self.page = Session.__new__(Session)
         self.page.call = lambda method, **p: self.log.append((round(self.now, 2), p["type"], p["code"]))
-        self.timeouts = []
+        self.timeouts, self.expressions = [], []
         self.page.evaluate = lambda expression, timeout_ms=15000: (
-            self.timeouts.append(timeout_ms), self.answers.pop(0) if self.answers else {})[1]
+            self.timeouts.append(timeout_ms), self.expressions.append(expression),
+            self.answers.pop(0) if self.answers else {})[2]
         self.page.screenshot = lambda path, marked=True: (path.parent.mkdir(parents=True, exist_ok=True),
                                                           path.write_bytes(b"jpg"), path)[2]
         monkeypatch.setattr("qajev.session.time.monotonic", lambda: self.now)
@@ -222,3 +225,33 @@ def test_a_chord_carries_its_modifiers_and_a_browser_shortcut_is_refused():
             keys.spec(bad)
     assert keys.plan({"press": ["Shift+A", "Escape"]})["keys"] == ["Shift+A", "Escape"]
     assert keys.actions([{"down": "Shift+w"}, {"up": "Shift+w"}]) == [("down", "Shift+w"), ("up", "Shift+w")]
+
+
+def tick_ids(f):
+    return [re.search(r'id = ("[^"]+")', e).group(1) for e in f.expressions]
+
+
+def test_a_slow_policy_is_waited_on_and_never_called_twice_at_once(monkeypatch):
+    # Twilight, 2 Nov: a page's policy took up to 60 s by design. QAJev sent the tick again when the CDP call timed
+    # out (a second policy call while the first ran), then called the browser stalled. A tick still running now
+    # answers {pending}, and the next call waits on that same tick.
+    f = FakePage(monkeypatch, [{"pending": True}, {"pending": True}, {"actions": ["f"]}, {"pending": True},
+                               {"done": True}])
+    f.page.react({"js": "p()", "until": "d()"})
+    ids = tick_ids(f)
+    assert ids[0] == ids[1] == ids[2] != ids[3] == ids[4]
+    assert [e[1:] for e in f.log] == [("keyDown", "KeyF"), ("keyUp", "KeyF")]  # its keys, once, when it settled
+
+
+def test_a_ticks_wait_stays_under_half_the_cdp_timeout(monkeypatch):
+    monkeypatch.setenv("QAJEV_CDP_TIMEOUT", "3")
+    f = FakePage(monkeypatch, [{"done": True}])
+    f.page.react({"js": "p()", "until": "d()", "every_ms": 1000})  # 4 x every_ms would be 4 s, past the 3 s timeout
+    assert f.timeouts == [1500] and "r(null), 1500)" in f.expressions[0]  # the page answers {pending} by then
+
+
+def test_a_hook_that_ends_on_a_running_policy_says_so(monkeypatch):
+    f = FakePage(monkeypatch, [{"pending": True}] * 100, tick_s=0.25)
+    with pytest.raises(HookFailed, match=r"did not hold within 2 s; the policy's last call was still running"):
+        f.page.react({"js": "p()", "until": "won()", "for_s": 2})
+    assert len(set(tick_ids(f))) == 1  # one policy call the whole time

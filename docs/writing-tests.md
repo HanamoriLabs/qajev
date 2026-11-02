@@ -511,6 +511,10 @@ the same allow-list as `key`, at most 10 actions a tick. A key held 5 s is relea
 every key still down is released when the hook ends, fails or the policy throws. Keep the reaction delay in the
 policy, as above: then the test shows how fast a player had to be.
 
+A policy can return a promise, and a call can take longer than `every_ms`. QAJev then waits for that same call and
+never calls the policy again while it runs. A slow call does not make QAJev say that the browser stopped
+answering. If `until` does not hold by `for_s`, the failure says whether the last call was still running.
+
 ## Guard options
 
 The guard hides dangerous controls and blocks writes (see [Safety](safety.md)). Destructive controls (delete,
