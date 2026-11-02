@@ -49,6 +49,9 @@ def group(monkeypatch, tmp_path):
         def arm(self, *_a):
             pass
 
+        def gpu_info(self):
+            return {"none": "a fake session draws nothing"}
+
         def check_host(self, *_a):
             pass
 
