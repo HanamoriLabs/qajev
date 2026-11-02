@@ -15,7 +15,7 @@ OUTCOMES = ("pass", "fail", "stuck", "harness", "unverified", "skipped")
 # Stop reasons that mean the harness, not the product, ended the scenario.
 HARNESS_STOPS = {
     "budget_actions", "budget_seconds", "stale", "cost_cap", "guard_missing", "model_error", "browser_error",
-    "left_site", "hook_failed", "interrupted", "machine_busy", "viewport_mismatch", "loop", "cap",
+    "left_site", "hook_failed", "interrupted", "machine_busy", "viewport_mismatch", "loop", "cap", "guard_blind",
 }
 PRODUCT_STOPS = {"done", "reached", "checked", "unreachable"}
 # Stops that mean the run broke before it finished: the checks that did run can never make it a pass. A budget or a
@@ -82,6 +82,16 @@ def page_checks(expect, observed):
         if kind and says.get(kind):
             c["says"] = says[kind]
     return checks
+
+
+def guard_blind(checks):
+    """The failed checks, when each is a `page lacks` check whose words only a control the guard hid holds; else [].
+    Such a check can never hold while the hidden control is there, so Jev's further moves cannot judge it (redteam
+    L1, #256). A `page shows` check is left out: its words can still show in the page's own text."""
+    failed = [c for c in checks if not c["ok"]]
+    blind = [c for c in failed if c["check"].startswith("page lacks ")
+             and str(c.get("detail") or "").startswith("hidden by QAJev's guard")]
+    return failed if failed and blind == failed else []
 
 
 def planned(expect):
@@ -373,6 +383,7 @@ def _stop_text(stop, detail) -> str:
         "hook_failed": "hook failed", "interrupted": "interrupted", "machine_busy": "machine too busy",
         "loop": "Jev clicked one target again and again",
         "cap": "the test ran past its cap and QAJev stopped its Chrome",
+        "guard_blind": "every other check holds, and QAJev's guard hid what an absent check looks for",
     }.get(stop, str(stop))
     if stop == "model_error" and detail and re.search(r"\b40[13]\b", str(detail)):  # a key the provider refused
         detail = f"{detail} (the model's key was refused: `qajev doctor` says which file or variable it came from)"
