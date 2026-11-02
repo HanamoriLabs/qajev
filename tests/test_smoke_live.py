@@ -22,6 +22,9 @@ class FakeSession:
     def arm(self, *_):
         pass
 
+    def gpu_info(self):
+        return {"none": "a fake session draws nothing"}
+
     def page_socket(self):
         return "ws://127.0.0.1:9/devtools/page/fake"
 
