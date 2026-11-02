@@ -763,29 +763,53 @@ CANVAS_POINTS = """(() => {
   }
   if (!best || most < 0.2 * W * H) return null;
   const [c, [x0, y0, x1, y1]] = best, points = [], seen = new Map();
+  const paints = e => ['IMG', 'VIDEO', 'IFRAME', 'CANVAS'].includes(e.tagName);  // their own pixels, whatever the style
+  const bare = (e, s) => {
+    // paint the hit test does not show: a ::before or ::after, a shadow tree (only its host is hit), SVG shapes
+    const hidden = ['::before', '::after'].some(p => !['none', 'normal'].includes(getComputedStyle(e, p).content)) ||
+      !!e.shadowRoot || e.tagName.includes('-') || e instanceof SVGElement;
+    return s.opacity === '0' || (/^(transparent|rgba\\(.*,\\s*0\\))$/.test(s.backgroundColor) &&
+      s.backgroundImage === 'none' && s.boxShadow === 'none' && (s.backdropFilter || 'none') === 'none' &&
+      !['Top', 'Right', 'Bottom', 'Left'].some(k => parseFloat(s['border' + k + 'Width']) > 0) &&
+      ![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && !hidden);
+  };
   const clear = e => {
     if (!seen.has(e)) {
-      const s = getComputedStyle(e), r = e.getBoundingClientRect();
+      const r = e.getBoundingClientRect();
       const big = Math.max(0, Math.min(x1, r.right) - Math.max(x0, r.left)) *
                   Math.max(0, Math.min(y1, r.bottom) - Math.max(y0, r.top)) >= 0.9 * most;
-      // paint the hit test does not show: a ::before or ::after, a shadow tree (only its host is hit), SVG shapes
-      const hidden = ['::before', '::after'].some(p => !['none', 'normal'].includes(getComputedStyle(e, p).content)) ||
-        !!e.shadowRoot || e.tagName.includes('-') || e instanceof SVGElement;
-      const bare = s.opacity === '0' || (/^(transparent|rgba\\(.*,\\s*0\\))$/.test(s.backgroundColor) &&
-        s.backgroundImage === 'none' && s.boxShadow === 'none' && (s.backdropFilter || 'none') === 'none' &&
-        !['Top', 'Right', 'Bottom', 'Left'].some(k => parseFloat(s['border' + k + 'Width']) > 0) &&
-        ![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && !hidden);
-      seen.set(e, big && bare && !['IMG', 'VIDEO', 'IFRAME', 'CANVAS'].includes(e.tagName));
+      seen.set(e, big && bare(e, getComputedStyle(e)) && !paints(e));
     }
     return seen.get(e);
   };
+  // The hit test skips an element under pointer-events: none (a game's HUD), but it is drawn over the canvas: the
+  // points under one with paint of its own are not the canvas's. Its lit text must not read as the scene's lights. A
+  // HUD canvas (a spark or particle layer) may paint any pixel on any frame, and the screenshot was taken earlier: its
+  // points are read, but never count as lights (`hud`, the indexes in points). A full-view one cannot hide a blank
+  // scene that way, and a moving or WebGL one cannot fake lights (redteam-1 B1 on #263).
+  const covers = [], huds = [];
+  let looked = 0;
+  for (const e of document.querySelectorAll('body *')) {
+    if (++looked > 5000) break;
+    if (e === c || e.contains(c)) continue;
+    const s = getComputedStyle(e);
+    if (s.pointerEvents !== 'none' || s.visibility !== 'visible' || (bare(e, s) && !paints(e))) continue;
+    const r = e.getBoundingClientRect();
+    if (r.right > x0 && r.left < x1 && r.bottom > y0 && r.top < y1) (e.tagName === 'CANVAS' ? huds : covers).push(r);
+  }
+  const inside = (r, x, y) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  const hud = [];
   let through = 0;
   for (let i = 0; i < 24; i++) for (let j = 0; j < 16; j++) {
     const x = x0 + (x1 - x0) * (i + 0.5) / 24, y = y0 + (y1 - y0) * (j + 0.5) / 16;
+    if (covers.some(r => inside(r, x, y))) continue;
     const stack = document.elementsFromPoint(x, y), k = stack.findIndex(e => e === c || !clear(e));
-    if (stack[k] === c) { points.push([x, y]); if (k) through++; }
+    if (stack[k] !== c) continue;
+    if (huds.some(r => inside(r, x, y))) hud.push(points.length);
+    points.push([x, y]);
+    if (k) through++;
   }
-  return {size: [c.width, c.height], share: most / (W * H), width: W, points, through};
+  return {size: [c.width, c.height], share: most / (W * H), width: W, points, through, hud};
 })()"""
 
 # The page's WebGPU adapter as the page gets it, for canvas_capture's gpu: hardware. No device is made.
@@ -1573,7 +1597,8 @@ class Session:
     def blank_canvas(self, path):
         """The screenshot at path (or the image bytes, for the looks image) shows the page's main canvas as one flat
         dark colour (pixels.flat_dark), read at the points of it no other element covers (CANVAS_POINTS): {points,
-        median, flat, canvas, share}, plus `through` when some were read through a see-through layer, else None. A
+        median, flat, canvas, share}, plus `through` when some were read through a see-through layer and `hud` when
+        some lie under a HUD canvas (read, never lights), else None. A
         canvas under pointer-events: none, or smaller than a fifth of the view, is not read."""
         import io
 
@@ -1588,11 +1613,12 @@ class Session:
             scale = grey.width / seen["width"]
             lumas = [grey.getpixel((min(grey.width - 1, int(x * scale)), min(grey.height - 1, int(y * scale))))
                      for x, y in seen["points"]]
-        flat = pixels.flat_dark(lumas)
+        flat = pixels.flat_dark(lumas, unlit=seen.get("hud") or ())  # a HUD canvas's sparks are no lights
         if not flat:
             return None
         through = {"through": seen["through"]} if seen.get("through") else {}
-        return {**flat, "canvas": seen["size"], "share": round(seen["share"], 2), **through}
+        hud = {"hud": len(seen["hud"])} if seen.get("hud") else {}  # points under a HUD canvas
+        return {**flat, "canvas": seen["size"], "share": round(seen["share"], 2), **through, **hud}
 
     def page_canvas(self, spec, path):
         """canvas_capture: page. Runs the suite's readback expression, saves the image at path and reads it as
