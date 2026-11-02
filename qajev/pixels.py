@@ -117,15 +117,20 @@ def compare(off_png: bytes, on_png: bytes, *, tolerance: int, min_changed: float
     }, output.getvalue()
 
 
-def flat_dark(lumas, *, dark=24, spread=6, share=0.97, least=40):
+def flat_dark(lumas, *, dark=24, spread=6, share=0.97, least=40, lit=64, lights=2, unlit=()):
     """A canvas read at sample points (grey levels 0-255) as one flat dark colour: nothing drawn, or a capture without
     its GPU layer. -> {points, median, flat} when at least `least` points were read, their median is under `dark` and
-    at least `share` of them are within `spread` of it; else None."""
+    at least `share` of them are within `spread` of it; else None. A dark scene with highlights in it is drawn: when
+    `lights` points or more are `lit` levels or more over the median (a lamp, a lit window), a missing layer cannot
+    have made them (Twilight, 2 Nov: a night stage with a few lights read as blank). The indexes in `unlit` (points
+    under a HUD canvas, which paints its own sparks) count for the median and the share, never as lights."""
     if len(lumas) < least:
         return None
     middle = sorted(lumas)[len(lumas) // 2]
     near = sum(1 for value in lumas if abs(value - middle) <= spread) / len(lumas)
-    if middle >= dark or near < share:
+    skip = set(unlit)
+    shine = sum(1 for i, value in enumerate(lumas) if value - middle >= lit and i not in skip)
+    if middle >= dark or near < share or shine >= lights:
         return None
     return {"points": len(lumas), "median": middle, "flat": round(near, 3)}
 
