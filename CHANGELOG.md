@@ -16,7 +16,7 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   with no more paid calls (`stop`: `guard_blind`).
 - A `react` hook whose policy takes longer than the CDP timeout no longer stops as "the browser stopped answering".
   QAJev sent the tick again, so the policy ran twice at once. Now QAJev waits for the same policy call, and never
-  calls the policy again while it runs.
+  calls the policy again while it runs. The next `react` hook on the page waits for that call too.
 
 ## 0.4.43: 2 Nov 2026
 
