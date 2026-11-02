@@ -275,6 +275,13 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     def page_ok():
         return has_page_checks(scenario.expect) and verdict.all_ok(verdict.page_checks(scenario.expect, observed))
 
+    def blind():
+        """What the guard hides from the absent checks once every other check holds, else None."""
+        if not has_page_checks(scenario.expect):
+            return None
+        hid = verdict.guard_blind(verdict.page_checks(scenario.expect, observed))
+        return "; ".join(c["check"] for c in hid) or None
+
     try:
         if hasattr(session, "set_color_scheme"):  # a stand-in session in tests may not have it
             session.set_color_scheme(scheme)
@@ -327,7 +334,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
 
                 held = bool(before) and verdict.all_ok(before)
                 with vision.seeing(session.screen_image if scenario.vision else None):
-                    stop, detail = drive(session, scenario, read, page_ok, started, step, decided, held=held)
+                    stop, detail = drive(session, scenario, read, page_ok, started, step, decided, held=held,
+                                         blind=blind)
             else:
                 stop = "checked"
     except ViewportMismatch as e:
@@ -685,10 +693,11 @@ def _last_stale(session):
     return f"; the last: {words}" if words else ""
 
 
-def drive(session, scenario, read, page_ok, started, step=None, decided=None, held=False):
+def drive(session, scenario, read, page_ok, started, step=None, decided=None, held=False, blind=None):
     """Jev's loop with QAJev's judgment around it. Returns (stop, detail). step(doing, **extra) hears each move;
     decided(decision) hears each of the model's decisions as it is made, stale ones too (qajev top's decisions view).
-    held: the page's checks already held before Jev's first move, so they count as reached only after one."""
+    held: the page's checks already held before Jev's first move, so they count as reached only after one.
+    blind() names the absent checks the guard hides once every other check holds: no move of Jev's can judge them."""
     _doing(session, "Jev's goal")
     agent = session.agent
     state = agent.state
@@ -704,6 +713,8 @@ def drive(session, scenario, read, page_ok, started, step=None, decided=None, he
         # ended "reached" in 5 s with 0 decisions, its url check matching the sign-in page's ?next= (14 Oct).
         if page_ok() and (state["history"] or not held):
             return "reached", None
+        if blind is not None and (hid := blind()):
+            return "guard_blind", hid
         if state["status"] == "done":
             step("said DONE", n=len(state["history"]) + 1)
             return "done", None
