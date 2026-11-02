@@ -921,13 +921,28 @@ def lift_gpu(browser, results):
     browser["gpu"] = gpu
 
 
+def software_gpu(scenario, drew):
+    """A test whose canvas_capture asks for gpu: hardware, on a Chrome that draws with a software renderer (drew:
+    Session.gpu_info): why it must not start, else None. Its end check would grade it harness all the same, after Jev
+    spent the whole test on the CPU (rea's looks on workload-gpu, 2 Nov). A renderer that cannot be read starts the
+    test: the end check reads the page's own WebGPU adapter."""
+    from .session import _SOFTWARE_GPU
+
+    if (scenario.canvas_capture or {}).get("gpu") != "hardware" or not isinstance(drew, dict):
+        return None
+    if soft := _SOFTWARE_GPU.search(str(drew.get("device") or "")):
+        return (f"canvas_capture asks for a hardware GPU, but this Chrome draws with a software renderer "
+                f"({soft.group(0)}): the test did not start, so it says nothing about the page")
+    return None
+
+
 def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=None):
     from . import session as session_mod
 
     results = []
     outcomes = dict(prior or {})
     name = session_mod.configure_env(cdp_url)
-    session = gpu = None
+    session = gpu = drew = None
     lost_after = "an earlier scenario" if session_mod.transport_error() is not None else None
     try:
         for scenario in scenarios:
@@ -961,7 +976,7 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                                 cwd=suite_meta["cwd"], motion=suite_meta.get("motion", "reduce"),
                                 cpu_throttle=suite_meta.get("cpu_throttle", 1),
                             )
-                            gpu = session.gpu_info()  # the report names the renderer this Chrome draws with
+                            gpu = drew = session.gpu_info()  # the report names the renderer this Chrome draws with
                             if getattr(opts, "sign_in_here", None):
                                 opts.signed_here = sign_in_here(session, opts.sign_in_here, opts)
                         if (startup_error := session_mod.transport_error()) is not None:
@@ -976,10 +991,15 @@ def run_group(scenarios, *, opts, cdp_url, suite_meta, run_dir, ledger, prior=No
                             outcomes[scenario.name] = result["outcome"]
                             _emit(opts, "scenario", result=result)
                             continue
-                        _emit(opts, "start", scenario=scenario.name)
-                        with live.frames(run_dir, session.page_socket(), managed=suite_meta.get("managed", False)):
-                            result = run_scenario(session, scenario, opts=opts, hosts=set(suite_meta["hosts"]),
-                                                  run_dir=run_dir)
+                        if (software := software_gpu(scenario, drew)) is not None:
+                            result = _finish({"name": scenario.name, "url": scenario.url, "goal": scenario.goal,
+                                              "mode": scenario.mode, "checks": [], "findings": [], "screens": [],
+                                              "stop": "software_gpu"}, "harness", software, time.monotonic())
+                        else:
+                            _emit(opts, "start", scenario=scenario.name)
+                            with live.frames(run_dir, session.page_socket(), managed=suite_meta.get("managed", False)):
+                                result = run_scenario(session, scenario, opts=opts, hosts=set(suite_meta["hosts"]),
+                                                      run_dir=run_dir)
                 except session_mod.TransportLost as error:
                     result = _transport_result(scenario, error, started)
                     lost_after = scenario.name

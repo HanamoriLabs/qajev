@@ -100,7 +100,8 @@ That is QAJev's side, not your product:
 - *canvas_capture: page gave no readback image*: the expression failed, or gave no `data:image/...;base64` URL.
 - *canvas_capture asks for a hardware GPU, but the page's WebGPU adapter is software*: the browser gives the page
   SwiftShader or another software adapter. Run the test on a machine with a GPU, with Chrome's GPU flags. The same
-  applies to *the browser's GPU is software*.
+  applies to *the browser's GPU is software*, and to *this Chrome draws with a software renderer ...: the test did not
+  start*, which stops the test before its page loads.
 - *... gives no vendor or architecture ...: the GPU could not be read*: the page's adapter does not say what it is, and
   WebGL names no GPU either (why is in brackets). Run the test on a machine with a GPU.
 - *Chrome drew with a software renderer (SwiftShader) on a machine with an NVIDIA GPU*: the report's `browser.gpu`

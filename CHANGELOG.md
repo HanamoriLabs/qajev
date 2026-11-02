@@ -10,6 +10,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   report.md). A software renderer such as SwiftShader is marked. On a machine with an NVIDIA GPU, a software one also
   gives a note, which the CLI prints as a warning: WebGL and WebGPU pages then ran on the CPU.
 
+### Changed
+
+- A test with `canvas_capture: {gpu: hardware}` no longer starts when the run's Chrome draws with a software
+  renderer: it is harness at once (`stop: software_gpu`), before its page loads and before Jev spends a step. Before,
+  the test ran to its end on the CPU and was graded harness only then.
+
 ### Fixed
 
 - The next `react` hook on a page now waits for a policy call that the hook before it left running, so the

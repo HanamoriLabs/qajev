@@ -101,7 +101,9 @@ It keeps a `canvas_capture` record: `image` (the saved readback, relative to the
 no image), `blank` (as `canvas_blank`), and with `gpu: hardware` the WebGPU `adapter` (`vendor`, `architecture`,
 `description`, `fallback`), the browser's `gpu` (`device`: the GPU WebGL names to the page) and
 `software` (why it is no hardware GPU). A flat dark readback also gives a `canvas_blank`
-record with `readback: true`. A problem, a software adapter or a flat dark readback makes a pass **harness**.
+record with `readback: true`. A problem, a software adapter or a flat dark readback makes a pass **harness**. A test
+with `gpu: hardware` on a Chrome that draws with a software renderer (`browser.gpu`) does not start: it is harness
+with `stop: software_gpu` and no `canvas_capture` record.
 
 Each scenario ends with one outcome. The most important idea in QAJev: **a failure of the product and a failure of
 the test tool are kept apart.**

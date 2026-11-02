@@ -90,6 +90,19 @@ def test_the_terminal_warns_when_chrome_drew_in_software_on_a_gpu_machine(tmp_pa
     assert "warning" not in capsys.readouterr().err
 
 
+def test_a_test_that_asks_for_a_hardware_gpu_does_not_start_on_a_software_renderer():
+    hardware, plain = (SimpleNamespace(canvas_capture={"page": "x", "gpu": gpu}) for gpu in ("hardware", None))
+    why = runner.software_gpu(hardware, SWIFT)
+    assert why == ("canvas_capture asks for a hardware GPU, but this Chrome draws with a software renderer "
+                   "(SwiftShader): the test did not start, so it says nothing about the page")
+    assert "(llvmpipe)" in runner.software_gpu(hardware, {"device": "llvmpipe (LLVM 17.0.6, 256 bits)"})
+    assert runner.software_gpu(hardware, L4) is None
+    assert runner.software_gpu(hardware, {"none": "the page has no WebGL to name its GPU"}) is None  # the end check
+    assert runner.software_gpu(hardware, None) is None  # no Chrome read: the end check decides
+    assert runner.software_gpu(plain, SWIFT) is None
+    assert runner.software_gpu(SimpleNamespace(canvas_capture=None), SWIFT) is None
+
+
 @LIVE
 def test_a_run_and_a_smoke_name_the_renderer_their_chrome_drew_with(site, tmp_path):  # noqa: F811
     suite = tmp_path / "gpu.qajev.yaml"

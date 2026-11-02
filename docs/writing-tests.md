@@ -97,7 +97,9 @@ canvas_capture:
 At the end of the test QAJev runs `page` itself, saves the image in the report (`shots/<test>-canvas.png`) and grades
 that image, not the screenshot. A readback that is one flat dark colour is harness: the page drew nothing. An empty
 canvas's readback is transparent, and QAJev reads it as black. If the expression fails, gives nothing or gives no image,
-the test is harness too. With `gpu: hardware`, QAJev also reads the page's WebGPU adapter. No adapter, a fallback
+the test is harness too. With `gpu: hardware`, a test does not start when the run's Chrome draws with a software
+renderer (SwiftShader, llvmpipe...): it is harness at once, before its page loads and before Jev spends a step. At the
+end of a test that ran, QAJev also reads the page's WebGPU adapter. No adapter, a fallback
 adapter, or a software one (SwiftShader, llvmpipe, lavapipe...) makes the test harness. An adapter that gives no vendor
 and no architecture proves nothing, so QAJev then asks WebGL for the GPU the browser draws with: it must name a GPU
 that is not a software one, else the test is harness. QAJev reads both in a JS world of its own, beside the page's,
