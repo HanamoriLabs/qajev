@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.45: 2 Nov 2026
+
 ### Added
 
 - Each report names the GPU renderer the run's Chrome drew with (`browser.gpu`, and a GPU line in report.html and
