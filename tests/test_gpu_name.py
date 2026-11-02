@@ -103,6 +103,46 @@ def test_a_test_that_asks_for_a_hardware_gpu_does_not_start_on_a_software_render
     assert runner.software_gpu(SimpleNamespace(canvas_capture=None), SWIFT) is None
 
 
+@pytest.mark.parametrize("drew, stopped", [(SWIFT, ["hardware 1", "hardware 2"]), (L4, [])])
+def test_every_test_on_a_software_chrome_that_asks_for_the_gpu_stops_before_it_starts(monkeypatch, tmp_path,
+                                                                                      drew, stopped):
+    # One Chrome for the whole group: the renderer is read once, and each later test that asks is checked against it.
+    made, started = [], []
+
+    class FakeSession:
+        def __init__(self, *_a, **_kw):
+            made.append(self)
+
+        def gpu_info(self):
+            return dict(drew)
+
+        def page_socket(self):
+            return None
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("qajev.session.Session", FakeSession)
+    monkeypatch.setattr("qajev.session.configure_env", lambda cdp_url: "x")
+    monkeypatch.setattr("qajev.session.stop_daemon", lambda: None)
+    monkeypatch.setattr(runner.live, "frames", lambda *a, **kw: __import__("contextlib").nullcontext())
+    monkeypatch.setattr(runner, "run_scenario", lambda session, sc, **kw: started.append(sc.name) or {
+        "name": sc.name, "outcome": "pass", "checks": [], "findings": [], "screens": []})
+    scenarios = [SimpleNamespace(name=n, url="/", goal=None, mode="readonly", depends_on=[], clients=None,
+                                 canvas_capture={"page": "x", "gpu": "hardware"} if n.startswith("hardware") else None)
+                 for n in ("plain", "hardware 1", "hardware 2")]
+    meta = {"headless": True, "hosts": ["127.0.0.1:9"], "guard": {}, "cwd": str(tmp_path)}
+    opts = SimpleNamespace(allow_commands=False, emit=None, sign_in_here=None, account=None)
+    out = runner.run_group(scenarios, opts=opts, cdp_url=None, suite_meta=meta, run_dir=tmp_path,
+                           ledger=runner.Ledger(1.0))
+    got = {r["name"]: r for r in out["results"]}
+    assert len(made) == 1 and started == [n for n in ("plain", "hardware 1", "hardware 2") if n not in stopped]
+    for name in stopped:
+        assert got[name]["outcome"] == "harness" and got[name]["stop"] == "software_gpu", got[name]
+        assert got[name]["reason"] == runner.software_gpu(scenarios[1], drew) and got[name]["cost_usd"] == 0.0
+    assert got["plain"]["browser_gpu"] == drew and all("browser_gpu" not in got[n] for n in stopped)
+
+
 @LIVE
 def test_a_run_and_a_smoke_name_the_renderer_their_chrome_drew_with(site, tmp_path):  # noqa: F811
     suite = tmp_path / "gpu.qajev.yaml"
