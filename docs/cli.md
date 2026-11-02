@@ -427,7 +427,9 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
 - **Transport recovery.** A file PUT or GET that times out or loses its connection gets up to three attempts,
   with waits of 2 and 5 seconds. Upload attempts keep the same run, path, bytes and hash. The per-attempt timeout
   stays 30 seconds for small files and grows with large files. Run-creation and other POSTs are never replayed.
-  An HTTP refusal or malformed JSON is an answer, so it fails at once. If upload attempts are exhausted, QAJev
+  A file PUT that the dashboard answers with 500, 502, 503 or 504 (a failed storage call in the Worker) gets the
+  same three attempts and waits. Any other HTTP refusal, a 5xx to a GET or a POST, and malformed JSON are answers,
+  so they fail at once. If upload attempts are exhausted, QAJev
   stops that run and reports the operation, timeout and attempt count. A transient report GET can recover too.
   After an uncertain reply, a final same-file read can confirm the exact input bytes already arrived.
   This also handles a run that started before its last upload reply reached the CLI. Permission refusals

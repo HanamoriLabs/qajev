@@ -20,6 +20,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- A cloud run no longer stops on one 5xx answer to a file upload. QAJev sends a file again after a 500, 502, 503 or
+  504, with waits of 2 and 5 seconds, as it already did after a lost connection. After three attempts it stops the
+  run, with the dashboard's error and the attempt count. Other HTTP answers still fail at once.
 - A dark scene with a few lights in it no longer reads as a blank canvas, which made a pass harness. When 2 sample
   points or more are 64 grey levels or more over the rest, the canvas drew. A HUD under `pointer-events: none` is
   drawn over the canvas, so QAJev does not read the points under it: its lit marks cannot pass for lights. A HUD
