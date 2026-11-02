@@ -14,6 +14,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   run hides controls such as "Save", "Approve" and "Add", so such a check passed on any build. It is now harness,
   and its detail names the hidden control. In a goal test, QAJev stops Jev as soon as every other check holds,
   with no more paid calls (`stop`: `guard_blind`).
+- A `react` hook whose policy takes longer than the CDP timeout no longer stops as "the browser stopped answering".
+  QAJev sent the tick again, so the policy ran twice at once. Now QAJev waits for the same policy call, and never
+  calls the policy again while it runs.
 - A dark scene with a few lights in it no longer reads as a blank canvas, which made a pass harness. When 2 sample
   points or more are 64 grey levels or more over the rest, the canvas drew. A HUD under `pointer-events: none` is
   drawn over the canvas, so QAJev does not read the points under it: its lit marks cannot pass for lights.
