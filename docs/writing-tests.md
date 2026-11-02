@@ -24,7 +24,7 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 |---|---|---|
 | `text` | `--expect-text`, `-t` | the page shows these words (anywhere in the page) |
 | `visible` | `--visible` | a person sees these words right now: in the viewport, not covered by anything drawn over them (an overlay, a dialog), and not cut short by their box (an ellipsis, `overflow: hidden`); a failure says which |
-| `absent` | `--absent`, `-a` | the page does not show these words |
+| `absent` | `--absent`, `-a` | the page does not show these words (words only in a control the guard hid: harness) |
 | `url` | `--expect-url`, `-u` | the final address contains this |
 | `url_regex` | `--expect-url-regex` | the final address matches this pattern |
 | `status` | suite only | the page answered with this HTTP status, such as 404 for a removed page (that status is then not also filed as a finding) |

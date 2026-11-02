@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- A `page lacks` (`absent`) check no longer passes when its words are only in a control the guard hid. A read-only
+  run hides controls such as "Save", "Approve" and "Add", so such a check passed on any build. It is now harness,
+  and its detail names the hidden control.
+
 ## 0.4.43: 2 Nov 2026
 
 ### Fixed
