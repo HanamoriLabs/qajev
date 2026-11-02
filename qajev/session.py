@@ -369,10 +369,15 @@ def awaited(expression, timeout_ms=JS_WAIT_MS):
 # The tick's promise stays in the page under its id. One that has not settled within $wait_ms answers {pending}, and
 # the next call with the same id waits on that promise again: the policy is never called twice at once, and no CDP
 # call waits on a slow policy long enough to read as a browser that stopped answering (Twilight, 2 Nov: a page's
-# next() took up to 60 s by design, QAJev sent the tick again at 30 s, then called the browser stalled).
+# next() took up to 60 s by design, QAJev sent the tick again at 30 s, then called the browser stalled). A call that an
+# earlier hook left running is waited on first, and its answer dropped (redteam L1, #261): never two calls at once.
 REACT_JS = Template("""(async () => {
   const slot = "__qajevReactTick", id = $id;
+  const late = new Promise((r) => setTimeout(() => r(null), $wait_ms));
   let tick = window[slot];
+  if (tick && tick.id !== id && (await Promise.race([tick.result, late])) === null) {
+    return { pending: true };
+  }
   if (!tick || tick.id !== id) {
     tick = window[slot] = { id, result: (async () => {
       try {
@@ -381,7 +386,7 @@ REACT_JS = Template("""(async () => {
       } catch (e) { return { error: String(e && e.message || e) }; }
     })() };
   }
-  const out = await Promise.race([tick.result, new Promise((r) => setTimeout(() => r(null), $wait_ms))]);
+  const out = await Promise.race([tick.result, late]);
   if (out === null) return { pending: true };
   if (window[slot] === tick) window[slot] = undefined;
   return out;
@@ -1882,6 +1887,9 @@ class Session:
                     if p["until"]:
                         running = "; the policy's last call was still running" if tick_id else ""
                         raise HookFailed(f"react: {p['until']!r} did not hold within {p['for_s']:g} s{running}")
+                    if tick_id:  # the next react hook on this page waits for it first (REACT_JS)
+                        log.append({"note": "the hook ended while its policy's last call was still running",
+                                    "at_s": round(began - start, 2)})
                     return
                 if tick_id is None:  # a new tick; a pending one keeps its id, so its policy call is not made again
                     ticks += 1

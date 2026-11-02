@@ -11,6 +11,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   drawn over the canvas, so QAJev does not read the points under it: its lit marks cannot pass for lights. A HUD
   canvas, such as a spark layer, hides only the points where it has drawn, so a full-view one cannot hide a blank
   scene.
+- The next `react` hook on a page now waits for a policy call that the hook before it left running, so the
+  policy never runs twice at once across hooks. A hook without `until` that ends while its policy's call still
+  runs adds a note to its log.
 
 ## 0.4.44: 2 Nov 2026
 

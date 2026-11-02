@@ -255,3 +255,14 @@ def test_a_hook_that_ends_on_a_running_policy_says_so(monkeypatch):
     with pytest.raises(HookFailed, match=r"did not hold within 2 s; the policy's last call was still running"):
         f.page.react({"js": "p()", "until": "won()", "for_s": 2})
     assert len(set(tick_ids(f))) == 1  # one policy call the whole time
+
+
+def test_a_hook_without_until_that_ends_on_a_running_call_notes_it(monkeypatch):
+    # redteam L1 on #261: that call keeps running in the page, and the next react hook waits for it (REACT_JS).
+    f = FakePage(monkeypatch, [{"pending": True}] * 100, tick_s=0.25)
+    f.page.react({"js": "p()", "for_s": 2})
+    notes = [e for e in f.page.react_log if "note" in e]
+    assert [n["note"] for n in notes] == ["the hook ended while its policy's last call was still running"]
+    f = FakePage(monkeypatch, [{"actions": None}] * 100, tick_s=0.25)
+    f.page.react({"js": "p()", "for_s": 2})
+    assert not [e for e in f.page.react_log if "note" in e]  # its calls all settled
