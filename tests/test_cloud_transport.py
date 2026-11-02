@@ -187,21 +187,113 @@ def test_mutating_calls_never_retry_an_uncertain_reply(monkeypatch, method):
     assert len(calls) == 1 and waits == []
 
 
-@pytest.mark.parametrize("status", [400, 401, 403, 413, 500])
+def answered(request, status, error):
+    return urllib.error.HTTPError(request.full_url, status, "refused", Message(),
+                                  io.BytesIO(json.dumps({"error": error}).encode()))
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 413, 429])
 def test_an_http_answer_is_not_retried_or_turned_into_a_timeout(monkeypatch, status):
     client, waits = client_and_waits(monkeypatch)
     calls = []
 
     def urlopen(request, *, timeout):
         calls.append(request)
-        raise urllib.error.HTTPError(
-            request.full_url, status, "refused", Message(), io.BytesIO(json.dumps({"error": f"refused {KEY}"}).encode())
-        )
+        raise answered(request, status, f"refused {KEY}")
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     with pytest.raises(cloud.ApiError) as caught:
         client.put_file(RUN, "site/frame.jpg", b"frame")
     assert caught.value.status == status and KEY not in str(caught.value)
+    assert len(calls) == 1 and waits == []
+
+
+# rea's 2 cloud runs, 2 Nov 17:10: the Worker answered one file PUT 500 ("Something went wrong in the worker", a failed
+# storage call), and each run stopped without a report. The same file under the same name is safe to send again.
+@pytest.mark.parametrize("statuses", [(500,), (502, 503), (504, 500)])
+def test_a_file_put_the_worker_answers_5xx_is_sent_again_with_the_same_bytes(monkeypatch, statuses):
+    client, waits = client_and_waits(monkeypatch)
+    calls, data = [], b"\xff\xd8" + bytes(4057)
+
+    def urlopen(request, *, timeout):
+        calls.append(request)
+        if len(calls) <= len(statuses):
+            raise answered(request, statuses[len(calls) - 1], "Something went wrong in the worker.")
+        return Reply()
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    assert client.put_file(RUN, "site/f/s12.html", data) == {"ok": True}
+    assert waits == [2, 5][:len(statuses)] and len(calls) == len(statuses) + 1
+    for request in calls:
+        assert request.get_method() == "PUT" and request.data == data
+        assert request.full_url == f"{client.base}/api/v1/runs/{RUN}/files/site/f/s12.html"
+        assert request.get_header("X-content-sha256") == hashlib.sha256(data).hexdigest()
+
+
+def test_three_5xx_answers_stop_the_run_once_with_the_dashboards_error(monkeypatch, tmp_path):
+    client, waits = client_and_waits(monkeypatch)
+    page = tmp_path / "s12.html"
+    page.write_bytes(b"<p>frame</p>")
+    calls = []
+
+    def urlopen(request, *, timeout):
+        method, path = request.get_method(), urllib.parse.urlsplit(request.full_url).path
+        calls.append((method, path))
+        if method == "POST":
+            return Reply(json.dumps({"run": {"id": RUN}}).encode())
+        raise answered(request, 500, f"Something went wrong in the worker. {KEY}")
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    plan = cloud.Plan("run", ["run", "in/suite.yaml"], "upload 5xx", files=[("site/f/s12.html", page)])
+    with pytest.raises(cloud.CloudError) as caught:
+        cloud.submit(client, plan)
+    message = str(caught.value)
+    assert message.startswith("the upload of site/f/s12.html failed, so the run was stopped: the dashboard answered "
+                              "500: Something went wrong in the worker."), message
+    assert "3 attempts" in message and "PUT" in message and KEY not in message
+    assert caught.value.code == 4 and caught.value.run_id == RUN
+    assert calls.count(("PUT", f"/api/v1/runs/{RUN}/files/site/f/s12.html")) == 3
+    assert [path for method, path in calls if method == "POST"] == ["/api/v1/runs", f"/api/v1/runs/{RUN}/stop"]
+    assert waits == [2, 5]
+
+
+@pytest.mark.parametrize("stored", [b"frame", b"other bytes"])
+def test_a_refusal_after_a_5xx_is_a_receipt_only_when_the_stored_file_is_the_same(monkeypatch, stored):
+    # The 5xx may come after the write, and the run may start before the next attempt: the Worker then refuses the
+    # PUT (409). Only the same bytes, read back once, count as the upload.
+    client, waits = client_and_waits(monkeypatch)
+    calls = []
+
+    def urlopen(request, *, timeout):
+        calls.append(request.get_method())
+        if request.get_method() == "GET":
+            return Reply(stored)
+        raise answered(request, 500 if len(calls) == 1 else 409, "That run already started.")
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    if stored == b"frame":
+        assert client.put_file(RUN, "site/frame.jpg", b"frame")["sha256"] == hashlib.sha256(b"frame").hexdigest()
+    else:
+        with pytest.raises(cloud.ApiError) as caught:
+            client.put_file(RUN, "site/frame.jpg", b"frame")
+        assert caught.value.status == 409
+    assert calls == ["PUT", "PUT", "GET"] and waits == [2]
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_a_5xx_answer_to_a_read_or_a_post_is_still_final(monkeypatch, method):
+    client, waits = client_and_waits(monkeypatch)
+    calls = []
+
+    def urlopen(request, *, timeout):
+        calls.append(request)
+        raise answered(request, 500, "Something went wrong in the worker.")
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    with pytest.raises(cloud.ApiError) as caught:
+        client._call(method, "/api/v1/runs", body={} if method == "POST" else None)
+    assert caught.value.status == 500 and str(caught.value) == ("the dashboard answered 500: Something went wrong "
+                                                                 "in the worker.")
     assert len(calls) == 1 and waits == []
 
 
