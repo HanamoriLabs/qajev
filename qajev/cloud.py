@@ -42,6 +42,10 @@ EXIT_CONFIG, EXIT_TROUBLE = 3, 4  # as cli.py: a setting to fix; the dashboard c
 POLL_S = 10  # seconds between two looks at a cloud run
 # Only reads and same-file PUTs may replay an uncertain reply; never a run POST.
 RETRY_WAITS = (2, 5)
+# A file PUT that the dashboard answers with one of these is sent again: the Worker gives them when its own storage
+# call fails, and the same file under the same name is safe to write twice (rea's 2 cloud runs, 2 Nov 17:10: one 500
+# stopped each run). Any other HTTP answer is final.
+RETRY_STATUS = (500, 502, 503, 504)
 WAIT_S = 2 * 3600  # how long a run is waited for (QAJEV_CLOUD_WAIT, seconds); the run itself goes on
 # How long a run that waits for credits is followed before QAJev says so and returns (QAJEV_CLOUD_CREDIT_WAIT,
 # seconds). The run stays queued: a top-up starts it, and QAJev Cloud ends it after 2 hours with no charge (the
@@ -71,7 +75,7 @@ class CloudError(RuntimeError):
 class ApiError(CloudError):
     def __init__(self, status, message):
         super().__init__(f"the dashboard answered {status}: {message}")
-        self.status = status
+        self.status, self.detail = status, message
 
 
 class NotAllowed(Exception):
@@ -235,6 +239,13 @@ class Client:
                     receipt = confirm_upload()
                     if receipt is not None:
                         return receipt
+                if method == "PUT" and e.status in RETRY_STATUS:
+                    uncertain = True  # a 5xx after the write is possible: a later refusal checks the stored file
+                    if wait is not None:
+                        time.sleep(wait)
+                        continue
+                    if attempt > 1:
+                        raise ApiError(e.status, f"{e.detail} ({method} {path}, {attempt} attempts)") from None
                 raise
             except (urllib.error.URLError, OSError) as e:
                 uncertain = True
