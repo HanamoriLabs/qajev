@@ -7,20 +7,39 @@
   canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
   .panel { position: fixed; left: 8px; bottom: 8px; padding: 8px; background: #050508; border: 1px solid #333; }
   .hud { position: fixed; inset: 0; pointer-events: none; }
-  .hud b { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; background: #fff; color: #000; }
+  .hud b, .hud img { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; background: #fff; color: #000; }
+  .hud img { background: none; }
+  .hud canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 </style></head>
 <body>
   <!-- The 3D view draws nothing, as in canvas-dark.html. A game HUD under pointer-events: none is drawn over it, with
-       four lit marks on points QAJev reads. The hit test skips the HUD, so QAJev must not read the marks as lights. -->
+       four lit marks on points QAJev reads. The hit test skips the HUD, so QAJev must not read the marks as lights.
+       ?kind=canvas draws the marks as sparks on a full-view HUD canvas (Twilight's particle layer), ?kind=img as
+       images: both have no style paint, only their own pixels. -->
   <canvas id="view"></canvas>
   <div class="hud" id="hud"></div>
   <div class="panel">Stage 1 of 5: the hall stands</div>
   <script>
-    for (const [i, j] of [[5, 3], [12, 8], [18, 5], [8, 11]]) {
-      const mark = document.createElement('b');
-      mark.textContent = '+';
-      mark.style.left = `${100 * (i + 0.5) / 24}%`; mark.style.top = `${100 * (j + 0.5) / 16}%`;
-      document.getElementById('hud').append(mark);
+    const kind = new URLSearchParams(location.search).get('kind'), hud = document.getElementById('hud');
+    const at = [[5, 3], [12, 8], [18, 5], [8, 11]];
+    if (kind === 'canvas') {
+      const sparks = document.createElement('canvas');
+      sparks.width = innerWidth; sparks.height = innerHeight;
+      hud.append(sparks);
+      const pen = sparks.getContext('2d');
+      pen.fillStyle = '#fff';
+      for (const [i, j] of at) pen.fillRect(innerWidth * (i + 0.5) / 24 - 20, innerHeight * (j + 0.5) / 16 - 20, 40, 40);
+    } else {
+      const white = document.createElement('canvas');
+      white.width = white.height = 40;
+      white.getContext('2d').fillStyle = '#fff';
+      white.getContext('2d').fillRect(0, 0, 40, 40);
+      for (const [i, j] of at) {
+        const mark = document.createElement(kind === 'img' ? 'img' : 'b');
+        if (kind === 'img') { mark.src = white.toDataURL(); mark.alt = ''; } else { mark.textContent = '+'; }
+        mark.style.left = `${100 * (i + 0.5) / 24}%`; mark.style.top = `${100 * (j + 0.5) / 16}%`;
+        hud.append(mark);
+      }
     }
   </script>
 </body>

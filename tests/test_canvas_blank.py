@@ -98,6 +98,14 @@ scenarios:
     about: fixture
     url: /canvas-hud.html
     expect: {{text: ["the hall stands"]}}
+  - name: a dark canvas under a HUD canvas with sparks
+    about: fixture
+    url: /canvas-hud.html?kind=canvas
+    expect: {{text: ["the hall stands"]}}
+  - name: a dark canvas under HUD images
+    about: fixture
+    url: /canvas-hud.html?kind=img
+    expect: {{text: ["the hall stands"]}}
   - name: a dark canvas under a see-through layer
     about: fixture
     url: /canvas-layer.html
@@ -137,6 +145,12 @@ scenarios:
     hud = got["a dark canvas under a HUD the pointer passes through"]  # its lit marks are not the canvas's
     assert hud["outcome"] == "harness" and hud["canvas_blank"]["median"] < 24, hud
     assert hud["canvas_blank"]["points"] <= 384 - 4, hud
+    # A HUD canvas or image has no style paint, only its own pixels (redteam-1 B1 on #263: Twilight's spark layer).
+    # The sparks hide only the points they paint: a full-view HUD canvas must not hide the whole blank scene.
+    sparks = got["a dark canvas under a HUD canvas with sparks"]
+    assert sparks["outcome"] == "harness" and 300 <= sparks["canvas_blank"]["points"] <= 384 - 4, sparks
+    images = got["a dark canvas under HUD images"]
+    assert images["outcome"] == "harness" and images["canvas_blank"]["points"] <= 384 - 4, images
     # A see-through layer that takes the pointer does not hide the canvas (rea's Crumble page, workload-gpu, 1 Nov)
     layer = got["a dark canvas under a see-through layer"]
     assert layer["outcome"] == "harness" and layer["canvas_blank"]["through"] >= 300, layer

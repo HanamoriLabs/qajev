@@ -758,6 +758,7 @@ CANVAS_POINTS = """(() => {
   }
   if (!best || most < 0.2 * W * H) return null;
   const [c, [x0, y0, x1, y1]] = best, points = [], seen = new Map();
+  const paints = e => ['IMG', 'VIDEO', 'IFRAME', 'CANVAS'].includes(e.tagName);  // their own pixels, whatever the style
   const bare = (e, s) => {
     // paint the hit test does not show: a ::before or ::after, a shadow tree (only its host is hit), SVG shapes
     const hidden = ['::before', '::after'].some(p => !['none', 'normal'].includes(getComputedStyle(e, p).content)) ||
@@ -772,26 +773,42 @@ CANVAS_POINTS = """(() => {
       const r = e.getBoundingClientRect();
       const big = Math.max(0, Math.min(x1, r.right) - Math.max(x0, r.left)) *
                   Math.max(0, Math.min(y1, r.bottom) - Math.max(y0, r.top)) >= 0.9 * most;
-      seen.set(e, big && bare(e, getComputedStyle(e)) && !['IMG', 'VIDEO', 'IFRAME', 'CANVAS'].includes(e.tagName));
+      seen.set(e, big && bare(e, getComputedStyle(e)) && !paints(e));
     }
     return seen.get(e);
   };
   // The hit test skips an element under pointer-events: none (a game's HUD), but it is drawn over the canvas: the
-  // points under one with paint of its own are not the canvas's. Its lit text must not read as the scene's lights.
+  // points under one with paint of its own are not the canvas's. Its lit text, or the sparks a HUD canvas draws, must
+  // not read as the scene's lights. A HUD canvas hides only the points where it has paint: a full-view spark layer
+  // must not hide a blank scene. A canvas whose pixels cannot be read (cross-origin) hides its whole box. A WebGL HUD
+  // canvas without preserveDrawingBuffer reads as clear here, so its paint is read as the scene's.
   const ghosts = [];
   let looked = 0;
   for (const e of document.querySelectorAll('body *')) {
     if (++looked > 5000) break;
     if (e === c || e.contains(c)) continue;
     const s = getComputedStyle(e);
-    if (s.pointerEvents !== 'none' || s.visibility !== 'visible' || bare(e, s)) continue;
+    if (s.pointerEvents !== 'none' || s.visibility !== 'visible' || (bare(e, s) && !paints(e))) continue;
     const r = e.getBoundingClientRect();
-    if (r.right > x0 && r.left < x1 && r.bottom > y0 && r.top < y1) ghosts.push(r);
+    if (r.right > x0 && r.left < x1 && r.bottom > y0 && r.top < y1) ghosts.push([e, r]);
   }
+  const probe = document.createElement('canvas');
+  probe.width = probe.height = 1;
+  const pen = probe.getContext('2d', {willReadFrequently: true});
+  const painted = (e, r, x, y) => {
+    if (e.tagName !== 'CANVAS' || !e.width || !e.height || !r.width || !r.height) return true;
+    try {
+      pen.clearRect(0, 0, 1, 1);
+      pen.drawImage(e, (x - r.left) * e.width / r.width, (y - r.top) * e.height / r.height, 1, 1, 0, 0, 1, 1);
+      return pen.getImageData(0, 0, 1, 1).data[3] > 0;
+    } catch (error) { return true; }
+  };
   let through = 0;
   for (let i = 0; i < 24; i++) for (let j = 0; j < 16; j++) {
     const x = x0 + (x1 - x0) * (i + 0.5) / 24, y = y0 + (y1 - y0) * (j + 0.5) / 16;
-    if (ghosts.some(r => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)) continue;
+    if (ghosts.some(([e, r]) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom && painted(e, r, x, y))) {
+      continue;
+    }
     const stack = document.elementsFromPoint(x, y), k = stack.findIndex(e => e === c || !clear(e));
     if (stack[k] === c) { points.push([x, y]); if (k) through++; }
   }
