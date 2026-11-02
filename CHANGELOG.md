@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- A scrollbar that comes and goes while a page starts no longer stops a test as harness ("page geometry changed
+  during capture"). Before the first capture, QAJev now waits until the page geometry stays the same for 200 ms,
+  5 s at most. The `viewport` object says so in `settle`.
+
 ## 0.4.43: 2 Nov 2026
 
 ### Fixed
