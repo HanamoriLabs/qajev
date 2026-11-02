@@ -38,6 +38,15 @@ def test_a_canvas_reads_flat_dark_only_when_nearly_all_its_points_are_one_dark_c
         assert got["points"] == len(lumas) and got["median"] < 24
 
 
+def test_points_under_a_hud_canvas_count_for_the_share_but_never_as_lights():
+    # A HUD canvas paints its own sparks (redteam-1 B1 on #263): 4 lit points under it are no lights in the scene.
+    lumas = [11] * 296 + [230] * 4
+    assert pixels.flat_dark(lumas) is None  # 4 lights anywhere else: the scene drew
+    got = pixels.flat_dark(lumas, unlit=range(296, 300))
+    assert got and got["points"] == 300  # still read: they count for the share
+    assert pixels.flat_dark(lumas, unlit=[296, 297]) is None  # 2 lights outside the HUD canvas are enough
+
+
 BLANK = {"points": 300, "median": 11, "flat": 1.0, "canvas": [1280, 900], "share": 1.0}
 
 
@@ -106,6 +115,10 @@ scenarios:
     about: fixture
     url: /canvas-hud.html?kind=img
     expect: {{text: ["the hall stands"]}}
+  - name: a dark canvas under a WebGL HUD that repaints its sparks
+    about: fixture
+    url: /canvas-hud.html?kind=gl
+    expect: {{text: ["the hall stands"]}}
   - name: a dark canvas under a see-through layer
     about: fixture
     url: /canvas-layer.html
@@ -146,11 +159,17 @@ scenarios:
     assert hud["outcome"] == "harness" and hud["canvas_blank"]["median"] < 24, hud
     assert hud["canvas_blank"]["points"] <= 384 - 4, hud
     # A HUD canvas or image has no style paint, only its own pixels (redteam-1 B1 on #263: Twilight's spark layer).
-    # The sparks hide only the points they paint: a full-view HUD canvas must not hide the whole blank scene.
-    sparks = got["a dark canvas under a HUD canvas with sparks"]
-    assert sparks["outcome"] == "harness" and 300 <= sparks["canvas_blank"]["points"] <= 384 - 4, sparks
+    # A HUD image covers its points. A HUD canvas's points are read, but its sparks are never lights: a full-view one
+    # cannot hide a blank scene, and one that repaints on every frame (or a WebGL one) cannot fake lights either.
+    for name in ("a dark canvas under a HUD canvas with sparks",
+                 "a dark canvas under a WebGL HUD that repaints its sparks"):
+        sparks = got[name]
+        assert sparks["outcome"] == "harness", f"{name}: {sparks}"
+        assert sparks["canvas_blank"]["points"] >= 300 and sparks["canvas_blank"]["hud"] >= 300, f"{name}: {sparks}"
     images = got["a dark canvas under HUD images"]
-    assert images["outcome"] == "harness" and images["canvas_blank"]["points"] <= 384 - 4, images
+    assert images["outcome"] == "harness", f"HUD images: {images}"
+    assert images["canvas_blank"]["points"] <= 384 - 4, f"HUD images: {images}"
+    assert not images["canvas_blank"].get("hud"), f"HUD images: {images}"
     # A see-through layer that takes the pointer does not hide the canvas (rea's Crumble page, workload-gpu, 1 Nov)
     layer = got["a dark canvas under a see-through layer"]
     assert layer["outcome"] == "harness" and layer["canvas_blank"]["through"] >= 300, layer

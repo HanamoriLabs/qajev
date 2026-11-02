@@ -9,8 +9,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - A dark scene with a few lights in it no longer reads as a blank canvas, which made a pass harness. When 2 sample
   points or more are 64 grey levels or more over the rest, the canvas drew. A HUD under `pointer-events: none` is
   drawn over the canvas, so QAJev does not read the points under it: its lit marks cannot pass for lights. A HUD
-  canvas, such as a spark layer, hides only the points where it has drawn, so a full-view one cannot hide a blank
-  scene.
+  canvas, such as a spark layer, never adds lights: its points count only for the dark share, so a full-view or
+  moving one can neither hide a blank scene nor fake lights in it.
 - The next `react` hook on a page now waits for a policy call that the hook before it left running, so the
   policy never runs twice at once across hooks. A hook without `until` that ends while its policy's call still
   runs adds a note to its log.

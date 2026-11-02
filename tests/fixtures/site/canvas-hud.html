@@ -15,14 +15,31 @@
   <!-- The 3D view draws nothing, as in canvas-dark.html. A game HUD under pointer-events: none is drawn over it, with
        four lit marks on points QAJev reads. The hit test skips the HUD, so QAJev must not read the marks as lights.
        ?kind=canvas draws the marks as sparks on a full-view HUD canvas (Twilight's particle layer), ?kind=img as
-       images: both have no style paint, only their own pixels. -->
+       images: both have no style paint, only their own pixels. ?kind=gl repaints them on every frame on a WebGL HUD
+       canvas without preserveDrawingBuffer: a read after the screenshot sees a clear canvas. -->
   <canvas id="view"></canvas>
   <div class="hud" id="hud"></div>
   <div class="panel">Stage 1 of 5: the hall stands</div>
   <script>
     const kind = new URLSearchParams(location.search).get('kind'), hud = document.getElementById('hud');
     const at = [[5, 3], [12, 8], [18, 5], [8, 11]];
-    if (kind === 'canvas') {
+    if (kind === 'gl') {
+      const sparks = document.createElement('canvas');
+      sparks.width = innerWidth; sparks.height = innerHeight;
+      hud.append(sparks);
+      const gl = sparks.getContext('webgl', {preserveDrawingBuffer: false, alpha: true});
+      const frame = () => {
+        gl.disable(gl.SCISSOR_TEST); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.enable(gl.SCISSOR_TEST); gl.clearColor(1, 1, 1, 1);
+        for (const [i, j] of at) {
+          const x = innerWidth * (i + 0.5) / 24, y = innerHeight * (1 - (j + 0.5) / 16);  // GL counts y up
+          gl.scissor(Math.round(x - 20), Math.round(y - 20), 40, 40);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+        }
+        requestAnimationFrame(frame);
+      };
+      frame();
+    } else if (kind === 'canvas') {
       const sparks = document.createElement('canvas');
       sparks.width = innerWidth; sparks.height = innerHeight;
       hud.append(sparks);

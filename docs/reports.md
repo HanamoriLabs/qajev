@@ -76,9 +76,9 @@ view. A see-through layer over the canvas (a game's input or HUD layer as large 
 border, shadow, backdrop filter or text of its own, and no `::before`, `::after`, shadow tree or SVG) does not cover
 it: `through` counts the points read through one. A layer under `pointer-events: none` (a game's HUD) with paint of its
 own does cover it: the points under it are not read. A HUD `<img>`, `<video>` or `<iframe>` always has paint of its own,
-and a HUD `<canvas>` (a spark or particle layer) covers only the points where it has drawn. A dark scene with lights in
-it is not flat: when 2 points or more are 64 grey levels or more over the median, the canvas drew. A pass, or a scenario
-with no checks, is then **harness**; a failure stays a failure, with the note. The check
+and a HUD `<canvas>` (a spark or particle layer) never adds lights: its points count only for the share. A dark scene
+with lights in it is not flat: when 2 points or more are 64 grey levels or more over the median, the canvas drew. A
+pass, or a scenario with no checks, is then **harness**; a failure stays a failure, with the note. The check
 needs the screenshot, so `--no-shots` skips it. When the check itself breaks, the scenario keeps `canvas_blank_error`
 (the error) and its reason says so; the outcome stays. A scenario with `canvas_dark` ([Writing tests](writing-tests.md))
 keeps its outcome on a flat dark canvas: it then keeps `canvas_dark` (the scenario's reason), and its reason ends with it.
