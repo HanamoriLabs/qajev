@@ -72,7 +72,8 @@ def in_new_namespace(*argv):
     -> (the unshare process, the process's pid as this namespace sees it)."""
     if not shutil.which("unshare"):
         pytest.skip("no unshare")
-    outer = subprocess.Popen(["unshare", "--user", "--map-root-user", "--pid", "--fork", sys.executable, "-c",
+    outer = subprocess.Popen(["unshare", "--user", "--map-root-user", "--pid", "--fork", "--kill-child",
+                              sys.executable, "-c",
                               "import time; time.sleep(60)", *argv], stderr=subprocess.PIPE)
     children = Path(f"/proc/{outer.pid}/task/{outer.pid}/children")
     deadline = time.monotonic() + 10

@@ -302,3 +302,12 @@ def test_reap_never_stops_another_users_daemon_found_by_its_name(tmp_path, monke
         assert signals.to(daemon.pid) == [] and daemon.poll() is None
     finally:
         daemon.kill()
+
+
+def test_the_user_of_a_process_comes_from_ps_where_there_is_no_proc(tmp_path, monkeypatch):
+    # macOS has no /proc: there `ps` decides every stop, and a None for a live process stops no dead run's Chrome
+    # (redteam B1 on #260).
+    monkeypatch.setattr(chrome, "PROC", tmp_path)
+    assert chrome.user_of(os.getpid()) == os.getuid()
+    assert chrome.user_of(dead_pid()) is None
+    assert chrome.pid_namespace() is None and chrome.ours(os.getpid()) is True
