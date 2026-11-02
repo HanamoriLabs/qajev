@@ -173,7 +173,9 @@ QAJev waits while the load is very high, then skips ("machine busy"). Tune `--lo
 `QAJEV_LOAD_HIGH=0` to never wait.
 
 **A run was killed and left a browser open**
-The next run cleans it up; or run `qajev browser reap`.
+The next run cleans it up; or run `qajev browser reap`. QAJev stops only a Chrome that a QAJev run with the same
+`QAJEV_HOME` started and recorded. That Chrome must also run as the same user in the same PID namespace. QAJev
+never stops another user's Chrome, or a sandboxed job's Chrome.
 
 **`browser/daemon transport lost`**
 The connection closed before QAJev could confirm the current action or check. That scenario is harness and
