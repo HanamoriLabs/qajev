@@ -627,6 +627,8 @@ def _finish(args, report):
         for r in report["scenarios"]:
             if r.get("expected"):  # a planted fault: how the gate counted it
                 print(f"  expected to fail: {r['name']}: {r['graded_reason']}", file=sys.stderr)
+        if (report.get("browser") or {}).get("gpu", {}).get("note"):  # software drawing on a GPU machine
+            print(f"qajev: warning: {report['browser']['gpu']['note']}", file=sys.stderr)
         print(f"Report: {Path(report['run_dir']) / 'report.html'} (also report.md, report.json)", file=sys.stderr)
     if report.get("interrupted"):
         return EXIT_INTERRUPTED

@@ -13,6 +13,12 @@ Each report names the QAJev version and the commit that judged it (`qajev_commit
 QAJev's own code had uncommitted changes, absent for an installed package), so an old verdict can be traced to the
 rules it was judged by.
 
+The Run section names the GPU renderer the run's Chrome drew with, as WebGL names it to the page (`browser.gpu` in
+`report.json`: `device`, or `none` with why). A software renderer, such as SwiftShader or llvmpipe, adds `software`.
+On a machine with an NVIDIA GPU it also adds a `note`, which the CLI prints as a warning: WebGL and WebGPU pages then
+ran on the CPU ([Troubleshooting](troubleshooting.md) says how to give Chrome the GPU). With a fresh Chrome per test,
+a Chrome that drew with another renderer is listed under `others`.
+
 The CLI prints the folder when the run ends. `qajev report <folder>` prints the Markdown again, and
 `qajev report <folder> --html` rebuilds the page from `report.json`.
 

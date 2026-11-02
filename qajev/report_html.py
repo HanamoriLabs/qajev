@@ -553,6 +553,19 @@ def browser_owner(browser):
     return f"QAJev-managed profile {browser.get('profile')}"
 
 
+def gpu_line(gpu):
+    """The renderer the run's Chrome drew with (runner.lift_gpu), as one line: its name or why there is none, then
+    "software" and the note."""
+    line = gpu.get("device") or gpu.get("none") or "unknown"
+    if gpu.get("software"):
+        line += f" (software: {gpu['software']})"
+    if gpu.get("note"):
+        line += f". {gpu['note']}"
+    if gpu.get("others"):
+        line += f"; other tests' Chrome: {', '.join(str(g.get('device') or g.get('none')) for g in gpu['others'])}"
+    return line
+
+
 def browser_where(browser):
     """The Browser line of both reports: the Chrome a suite shared, or a fresh one for each test, and why it shared one
     when the suite asked for fresh ones."""
@@ -764,6 +777,7 @@ def render(data):
            if browser.get("surface") == "native" else
            ("Browser", _e(browser_where(browser))),
            *([("Game profile", _e(game_profile(browser)))] if game_profile(browser) else []),
+           *([("GPU", _e(gpu_line(browser["gpu"])))] if isinstance(browser.get("gpu"), dict) else []),
            ("Cost", _e(f"{decisions_cost(data)}, text model "
                        f"${cost['usd_text']:.4f}" + ("" if cost["text_cost_reported"]
                                                      else " (provider did not report cost)")))]
