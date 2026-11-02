@@ -154,13 +154,15 @@ def test_the_only_declared_suite_is_confirmed_after_dispatch_without_stopping_it
     assert all(not path.endswith("/stop") for _, path, _, _ in calls)
 
 
-@pytest.mark.parametrize("status", [400, 401, 404, 500])
-def test_other_http_failures_after_a_lost_reply_do_not_start_confirmation_reads(monkeypatch, tmp_path, status):
+@pytest.mark.parametrize("status, puts, retry_waits", [(400, 2, [2]), (401, 2, [2]), (404, 2, [2]),
+                                                       (500, 3, [2, 5])])  # a 5xx PUT uses the last attempt too
+def test_other_http_failures_after_a_lost_reply_do_not_start_confirmation_reads(monkeypatch, tmp_path, status, puts,
+                                                                                  retry_waits):
     client, calls, waits = dashboard(monkeypatch, b"input", put_status=status)
     with pytest.raises(cloud.CloudError):
         submit(client, tmp_path, b"input")
-    assert [method for method, _, _, _ in calls] == ["POST", "PUT", "PUT", "POST"]
-    assert calls[-1][1] == f"/api/v1/runs/{RUN}/stop" and waits == [2]
+    assert [method for method, _, _, _ in calls] == ["POST", *["PUT"] * puts, "POST"]
+    assert calls[-1][1] == f"/api/v1/runs/{RUN}/stop" and waits == retry_waits
 
 
 def test_no_empty_response_can_confirm_a_zero_byte_upload(monkeypatch, tmp_path):
