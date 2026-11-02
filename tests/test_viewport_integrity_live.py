@@ -337,3 +337,94 @@ def test_real_late_font_during_the_startup_capture_is_taken_again_and_passes(bro
     assert row["outcome"] == "pass" and row["viewport"]["retakes"] == 1
     assert row["viewport"]["before"] == row["viewport"]["after"]
     assert row["viewport"]["after"]["clientWidth"] == font["after"]["clientWidth"]
+
+
+# A page whose scrollbar comes and goes for its first 2.5 s, then stays away: a tall block shown and hidden every 30 ms
+# from the time the page's script runs. The wide block is the test's own (FLASH_CLI); the page never moves it.
+FLASH_PAGE = (b'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Flash</title>'
+              b'<body style="margin:0;background:rgb(19,47,83);color:white"><p>Flash ready</p>'
+              b'<div id="tall" style="height:300vh;display:none"></div>'
+              b'<div id="wide" style="width:300vw;height:1px;display:none"></div><script>'
+              b'const tall=document.getElementById("tall");'
+              b'const flash=setInterval(()=>{tall.style.display=tall.style.display==="none"?"block":"none";},30);'
+              b'setTimeout(()=>{clearInterval(flash);tall.style.display="none";window.startupDone=true;},2500);'
+              b'</script>')
+
+
+@pytest.fixture
+def flash_site():
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(FLASH_PAGE)))
+            self.end_headers()
+            self.wfile.write(FLASH_PAGE)
+
+        def log_message(self, *_args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/"
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(5)
+
+
+# The page's own flash can fall between a capture's two measures or not, by chance, and two flashes cancel. So that
+# the test does not hang on chance, a capture taken while the page still flashes gets one move of its own between the
+# capture and the measure after it: the wide block, which the page never moves, brings or takes a horizontal
+# scrollbar. A capture after the start-up gets none. The layout and the scrollbars are Chrome's own.
+FLASH_CLI = r"""
+import json,sys
+from pathlib import Path
+from qajev import cli,session
+out=Path(sys.argv[1])
+normal_call=session.Session.call
+captures=[]
+FLIP=('(()=>{const w=document.getElementById("wide");w.style.display=w.style.display==="none"?"block":"none";'
+      'return document.documentElement.clientHeight;})()')
+def call(self,method,**params):
+    result=normal_call(self,method,**params)
+    if method=='Page.captureScreenshot':
+        done=self.evaluate('window.startupDone===true')
+        captures.append({'startup_done':done})
+        if not done:
+            self.evaluate(FLIP)
+        (out/'captures.json').write_text(json.dumps(captures))
+    return result
+session.Session.call=call
+raise SystemExit(cli.main(sys.argv[2:]))
+"""
+
+
+def test_real_scrollbar_flash_at_start_up_is_waited_out_before_the_first_capture(browser, flash_site, tmp_path):
+    cdp, _ = browser
+    empty = tmp_path / "empty.env"
+    empty.touch(mode=0o600)
+    spec = tmp_path / "suite.json"
+    spec.write_text(json.dumps({"name": "Start-up flash fixture", "base_url": flash_site,
+                               "devices": ["desktop"], "scenarios": [
+        {"name": "scrollbar flash at start-up", "url": "/", "settle": 0,
+         "about": "A scrollbar that comes and goes at start-up is waited out, so the first capture holds still.",
+         "expect": {"text": "Flash ready", "js": "window.startupDone===true",
+                    "says": "the start-up flash has ended"}}]}))
+    env = {key: os.environ[key] for key in ("HOME", "PATH", "LANG", "PYTHONPATH") if key in os.environ}
+    env.update(QAJEV_HOME=str(tmp_path / "home"), QAJEV_OUTLIVE_PARENT="1", PYTHONDONTWRITEBYTECODE="1")
+    argv = [sys.executable, "-P", "-c", FLASH_CLI, str(tmp_path), "run", str(spec), "--runner", "local", "--headless",
+            "--cdp-url", cdp.endpoint, "--devices", "desktop", "--cost-cap", "0", "--ux", "off", "--no-shots",
+            "--env-file", str(empty), "--out", str(tmp_path / "reports"), "--json", "--quiet"]
+    with (tmp_path / "cli.stdout").open("w") as stdout, (tmp_path / "cli.stderr").open("w") as stderr:
+        result = subprocess.run(argv, env=env, stdout=stdout, stderr=stderr, timeout=90)
+    report = json.loads((tmp_path / "cli.stdout").read_text())
+    row = report["scenarios"][0]
+    captures = json.loads((tmp_path / "captures.json").read_text())
+    assert result.returncode == 0 and report["gate"] == "PASS", row.get("reason")
+    assert row["outcome"] == "pass" and row["viewport"]["retakes"] == 0
+    settle = row["viewport"]["settle"]
+    assert settle["stable"] is True and settle["changes"] >= 10, "the wait must really see the flash"
+    assert captures[0] == {"startup_done": True}, "the first capture comes after the flash"

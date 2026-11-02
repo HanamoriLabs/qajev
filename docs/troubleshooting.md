@@ -6,6 +6,10 @@ The page and its capture do not agree with the requested device geometry. Before
 checks or hooks, QAJev measures the page, takes a native capture, then measures again. A mismatch or a resize
 during capture stops that scenario as harness. This check also runs with `--no-shots`.
 
+Before the first capture, QAJev waits until the page geometry stays the same for 200 ms, 5 s at most (`settle` in
+the `viewport` object). This waits out a scrollbar that comes and goes at start-up. When the reason ends with "did not
+settle in 5 s before the first capture", the page still moved after 5 s.
+
 When the page moved during the capture, QAJev waits for the page's fonts and two drawn frames, then takes the
 capture again, 3 captures at most (`retakes` in the `viewport` object). "page geometry changed during capture"
 means the page still moved during the last of them: for example, it loads more than one late font, or it

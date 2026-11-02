@@ -257,6 +257,61 @@ def test_a_settle_that_fails_still_takes_the_capture_again_but_a_lost_browser_st
         page.verify_viewport()
 
 
+def settling(monkeypatch, page, seen, reply):
+    """The page's answer to the wait for stable geometry: `reply`, or raised when it is an exception."""
+    evaluate = page.evaluate
+
+    def answer(expression, **kwargs):
+        if expression == viewport.STABLE:
+            seen["calls"].append(("stable", {}))
+            if isinstance(reply, Exception):
+                raise reply
+            return copy.deepcopy(reply)
+        return evaluate(expression, **kwargs)
+
+    monkeypatch.setattr(page, "evaluate", answer)
+
+
+def test_the_first_capture_waits_until_the_page_holds_still(monkeypatch):
+    page, seen = moving_page(monkeypatch, [scrolled(), scrolled()])
+    settling(monkeypatch, page, seen, {"stable": True, "waited_ms": 2600, "changes": 41})
+    result = run(page)
+    assert result["outcome"] == "pass", result["reason"]
+    steps = [method for method, _ in seen["calls"] if method in ("stable", "Page.captureScreenshot")]
+    assert steps == ["stable", "Page.captureScreenshot"], "the wait comes before the first capture"
+    assert result["viewport"]["settle"] == {"stable": True, "waited_ms": 2600, "changes": 41}
+    assert result["viewport"]["retakes"] == 0
+
+
+def test_a_page_that_never_holds_still_says_so_when_its_capture_fails(monkeypatch):
+    page, seen = moving_page(monkeypatch, [geometry(), scrolled()] * 3)
+    settling(monkeypatch, page, seen, {"stable": False, "waited_ms": viewport.STABLE_MAX_MS, "changes": 200})
+    result = run(page)
+    assert result["outcome"] == "harness" and result["stop"] == "viewport_mismatch"
+    assert "page geometry changed during capture" in result["reason"]
+    assert "did not settle in 5 s before the first capture" in result["reason"]
+    assert result["viewport"]["settle"]["stable"] is False and result["viewport"]["retakes"] == 2
+    assert seen["checks"] == seen["hooks"] == 0
+
+
+@pytest.mark.parametrize("reply", [RuntimeError("page script failed: navigating"), TimeoutError("no answer"), None])
+def test_a_wait_that_cannot_run_still_takes_the_checked_capture(monkeypatch, reply):
+    page, seen = moving_page(monkeypatch, [scrolled(), scrolled()])
+    settling(monkeypatch, page, seen, reply)
+    result = run(page)
+    assert result["outcome"] == "pass", result["reason"]
+    assert result["viewport"]["settle"] is None and capture_steps(seen) == ["Page.captureScreenshot"]
+
+
+def test_a_browser_lost_during_the_wait_stops_before_any_capture(monkeypatch):
+    page, seen = moving_page(monkeypatch, [scrolled(), scrolled()])
+    settling(monkeypatch, page, seen, session.TransportLost("the browser went away"))
+    page.set_device(suite.DEVICES["desktop"])
+    with pytest.raises(session.TransportLost):
+        page.verify_viewport()
+    assert capture_steps(seen) == []
+
+
 def test_mobile_layout_zoom_is_normalized_without_changing_the_image_or_device(monkeypatch):
     page, _ = scenario_page(monkeypatch, inner=(980, 2121), image_size=(1170, 2532), scale=3, zoom=390 / 980)
     result = run(page, device="phone")

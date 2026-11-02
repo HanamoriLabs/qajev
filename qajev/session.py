@@ -1264,9 +1264,33 @@ class Session:
         self.last_capture_viewport = evidence
         return data["data"], evidence
 
+    def _settle_geometry(self):
+        """Wait until the page holds still (viewport.STABLE). None when the wait itself could not run."""
+        try:
+            result = self.evaluate(viewport.STABLE, timeout_ms=viewport.STABLE_MAX_MS + 2000)
+        except TransportLost:
+            raise
+        except (RuntimeError, TimeoutError):
+            return None  # the capture still measures the page before and after
+        if not isinstance(result, dict):
+            return None
+        return {key: result.get(key) for key in ("stable", "waited_ms", "changes")}
+
     def verify_viewport(self):
-        """Measure this target and its actual capture; a successful metrics request proves neither."""
-        return self._checked_capture(format="png", fromSurface=True, captureBeyondViewport=False)[1]
+        """Measure this target and its actual capture; a successful metrics request proves neither. The first capture
+        waits until the page holds still."""
+        settle = self._settle_geometry()
+        try:
+            evidence = self._checked_capture(format="png", fromSurface=True, captureBeyondViewport=False)[1]
+        except viewport.ViewportMismatch as error:
+            error.evidence["settle"] = settle
+            if settle and settle["stable"] is False:
+                raise viewport.ViewportMismatch(
+                    f"{error}; the page geometry did not settle in {viewport.STABLE_MAX_MS / 1000:g} s before the "
+                    f"first capture", error.evidence) from error
+            raise
+        evidence["settle"] = settle
+        return evidence
 
     def _viewport_data(self, **params):
         # Before a profile is selected, internal callers have no declared geometry to compare. Scenarios always
