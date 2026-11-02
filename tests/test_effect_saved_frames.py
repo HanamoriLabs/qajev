@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from PIL import Image, ImageChops, ImageStat
 
-from qajev import report, runner, suite
+from qajev import report, runner, suite, viewport
 from qajev.session import Session
 
 FIXTURES = Path(__file__).parent / "fixtures" / "visible_effect"
@@ -44,6 +44,13 @@ class SavedFramesPage(Session):
     def call(self, method, **params):
         if method == "Page.getLayoutMetrics":
             return {"cssLayoutViewport": {"clientWidth": VIEWPORT["width"], "clientHeight": VIEWPORT["height"]}}
+        if method == "Page.getFrameTree":  # QAJev's own JS world, for the wait before the first capture
+            return {"frameTree": {"frame": {"id": "saved-frame"}}}
+        if method == "Page.createIsolatedWorld":
+            return {"executionContextId": 1}
+        if method == "Runtime.evaluate":  # a saved frame holds still
+            assert params["expression"] == viewport.STABLE and params["contextId"] == 1
+            return {"result": {"value": {"stable": True, "waited_ms": 200, "changes": 0}}}
         assert method == "Page.captureScreenshot" and params["format"] == "png"
         if "clip" not in params:
             output = io.BytesIO()
