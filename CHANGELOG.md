@@ -17,6 +17,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - A `react` hook whose policy takes longer than the CDP timeout no longer stops as "the browser stopped answering".
   QAJev sent the tick again, so the policy ran twice at once. Now QAJev waits for the same policy call, and never
   calls the policy again while it runs.
+- QAJev's cleanup of dead runs no longer finds a Chrome by its command line. On a shared machine, it sent a stop
+  signal to another user's Chrome, and the refusal ended the QAJev run. QAJev now stops a dead run's Chrome only by
+  the process id in that run's own record. The process must run as the same user, in the same PID namespace. A
+  refused stop no longer ends a run, and a folder in `/tmp` that another user owns stays.
 
 ## 0.4.43: 2 Nov 2026
 
