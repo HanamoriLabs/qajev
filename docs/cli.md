@@ -375,7 +375,8 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
   3. The folder the run starts from: its `.qajev/project.toml` (or one above it), else the project whose `repo` holds
      it.
   4. The one registered project with an environment on the URL's site (host and port; `www.` makes no difference).
-     A site two projects share, such as one `127.0.0.1` port, names neither.
+     A site two projects share names neither. A loopback site (`127.0.0.1`, `localhost`) names no project: any repo
+     on the Mac can serve on that port.
 
   The dashboard must know the project (it is synced from `project.toml`); otherwise the run shows "No project".
 
