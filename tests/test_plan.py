@@ -210,3 +210,32 @@ def test_the_plan_before_a_run_names_the_checks_as_the_run_will(tmp_path):
     during = plan.merge(before, [{"name": "pay", "outcome": "pass", "checks": ran}])
     assert [it["state"] for it in during] == ["pass", "todo"]
     assert all(line["ok"] for line in during[0]["checks"])
+
+
+def test_every_check_kind_has_plan_words_so_its_test_can_pass():
+    # redteam-1 N1, #281: a check kind with no words makes its test NOT DESCRIBED, and its gate can never be PASS
+    # (0.4.47 shipped motion looks so). A new expect key fails here until it has a sample with words.
+    from qajev import suite as suite_mod
+
+    region = {"name": "view", "x": 0, "y": 0, "width": 8, "height": 8}
+    samples = {
+        "url": "/done", "url_regex": "/done$", "status": 200, "text": ["Paid"], "visible": ["Paid"],
+        "js": "window.paid === true", "looks": ["The page shows a receipt"],
+        "fetch": [{"url": "/api/order", "status": 200}], "command": "true",
+        "effect": {"name": "shadow", "region": region, "off": [{"js": "1"}], "on": [{"js": "2"}], "min_changed": 0.01},
+        "load": {"ready": "window.ready === true", "max_ms": 1000},
+        "input": {"name": "drag", "region": region, "min_changed": 0.1,
+                  "do": [{"drag": {"selector": "#v", "x": 1, "y": 1, "by": {"x": 5, "y": 0}}}]},
+        "motion": {"name": "marker", "region": region, "max_gap_ms": 100, "looks": ["No ghost trails"]},
+        "sweep": {"name": "menus", "settings": [{"name": "high", "do": [{"click": "#high"}]}]},
+    }
+    says = {"js": "the order is saved", "url_regex": "the address ends in /done", "fetch": "the order API answers",
+            "command": "the shell command runs"}
+    # across is a multiplayer check (a scenario with clients): like js, it has words only from its own says
+    assert set(samples) | {"absent", "ignore_case", "says", "across"} == suite_mod.EXPECT_KEYS
+    for key, value in samples.items():
+        expect = {key: value, **({"says": {key: says[key]}} if key in says else {})}
+        scenarios = suite_mod.parse({"devices": ["desktop"], "scenarios": [
+            {"name": key, "about": "x", "url": "http://127.0.0.1:9/", "expect": expect}]}).scenarios
+        item, = plan.from_suite(scenarios)
+        assert item["described"], (key, [line["check"] for line in item["checks"] if not line["words"]])
