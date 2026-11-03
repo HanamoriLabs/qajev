@@ -406,6 +406,10 @@ def markdown(data):
                       "Region: " + json.dumps(effect["region"], ensure_ascii=False), "",
                       "Pixels: " + json.dumps(effect["metrics"], ensure_ascii=False, sort_keys=True), "",
                       " · ".join(f"[{key}]({effect[key]})" for key in ("off", "on", "difference")), ""]
+        if r.get("load"):
+            lines += ["Load: " + report_html.load_summary(r["load"]), ""]
+            if r["load"].get("shot"):
+                lines += [f"[playable frame]({r['load']['shot']})", ""]
         if r.get("expected"):
             tag = report_html.planted_tag(r)
             lines += [f"{tag[:1].upper()}{tag[1:]}. Gate: {r['graded_reason']}", ""]

@@ -32,6 +32,7 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | `fetch` | `--fetch URL[=STATUS]` | a request made from the page answers with that status (default 200) |
 | `command` | suite only | a shell command prints the expected output (needs `--allow-commands`) |
 | `effect` | suite only | off/on PNG captures of a named region have at least the required fraction of changed pixels |
+| `load` | suite only | the page is playable within `max_ms` of its navigation start, on a cold cache (below) |
 | `looks` | `--expect-looks` | Clef, looking at the final screenshot, judges this statement true (needs Clef: see below) |
 
 Text is compared the way a person reads it: line breaks and runs of spaces count as one space. Use
@@ -80,6 +81,41 @@ comparison's 16,384-per-axis/16,777,216-total-pixel limit and the 32 MiB evidenc
 Use `qajev run` or `qa_run_suite` with the same suite. `qajev plan` describes the comparison before it runs. A planted
 fault can name the comparison's exact plan words with `expect_fail`, as for other checks. Report downloads keep all
 three PNGs; Cloud publication needs the matching CLI and evidence-uploader versions on its runner.
+
+## Time to the first playable frame: `load`
+
+A game or a demo can pass every check on a fast machine and still take minutes to load for a person. `expect.load`
+times the page from its navigation start to the first animation frame where `ready` returns exactly `true`. Fail
+above `max_ms`, in whole milliseconds (at most 300000). Write `ready` so that it is true only when a person can play:
+the level runs and its first frame is drawn. An optional `failed` expression that returns `true` fails the load at
+once, for a page that says its own load failed.
+
+```yaml
+scenarios:
+  - name: the level is playable in 10 s
+    about: A first visit plays within 10 s of opening the page.
+    url: http://127.0.0.1:5173/?scene=level-1
+    expect:
+      load:
+        ready: window.game?.ready === true && window.game.firstFrameDrawn === true
+        failed: window.game?.loadFailed === true
+        max_ms: 10000
+```
+
+QAJev puts its watcher in the page before the page's own code runs, and asks `ready` at each animation frame. The
+time is the page's own clock (`performance.now()`), so QAJev's own work does not count. A test with `load` runs on a
+cold cache, as a first visit does, even when the suite does not say `cache: cold`. A throw counts as "not yet", and
+the last one is kept for the report. QAJev waits up to twice the limit, so a slow load still gets its time: "playable
+at 21.40 s, over the 10 s limit". A page that is never playable fails with "not playable after 20.0 s". A `ready` or
+`failed` that does not parse stops the watcher: the test is **harness**, with "the ready watcher never ran in the
+page".
+
+Only the test's first page is timed. QAJev clicks nothing before it measures: its `before` hooks, its goal and its
+other checks come after the page is playable. A page that needs a click before it plays is not playable. A
+multiplayer test cannot use this check. `report.json` keeps `load` (`ms`, `max_ms`, `cache`, and `waited_ms`,
+`failed_ms`, `error` or `watched` when the page was not playable) and a screenshot of the playable frame
+(`load.shot`). A planted fault names the check by its plan words, such as
+`expect_fail: "playable within 10 s on a cold cache"`.
 
 ## A canvas the screenshot cannot show: `canvas_capture`
 

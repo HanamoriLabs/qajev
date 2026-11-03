@@ -50,13 +50,15 @@ def image_paths(data: dict) -> list[str]:
     named = set()
     for scenario in _objects(data.get("scenarios")):
         effect = scenario.get("effect") or {}
-        if not isinstance(effect, dict):
-            raise ValueError("invalid report effect metadata")
+        load = scenario.get("load") or {}
+        if not isinstance(effect, dict) or not isinstance(load, dict):
+            raise ValueError("invalid report effect or load metadata")
         paths = [
             scenario.get("shot"),
             *(item.get("shot") for item in _objects(scenario.get("clients"))),
             *(item.get("path") for item in _objects(scenario.get("react"))),
             *(effect.get(key) for key in ("off", "on", "difference")),
+            load.get("shot"),
         ]
         for check in _objects(scenario.get("checks")):
             evidence = check.get("evidence")

@@ -32,7 +32,7 @@ STALE_LIMIT = 8  # decisions without an executed action before we call the page 
 LOOP_CLICKS = 3
 # The expectations a run that stopped early may never reach, as its reason names them.
 NOT_RUN = {"looks": "expect.looks", "after": "the after hooks", "fetch": "expect.fetch", "command": "expect.command",
-           "effect": "expect.effect"}
+           "effect": "expect.effect", "load": "expect.load"}
 EFFECT_MAX_BYTES = 32 * 1024 * 1024  # below the Cloud report-file limit, so required evidence can be transferred
 
 
@@ -199,6 +199,37 @@ def _effect_check(session, scenario, run_dir, url):
     return check, evidence
 
 
+def _load_check(session, scenario, opts, run_dir):
+    """expect.load: the time from the page's navigation start to its first playable frame (session.wait_load), with a
+    screenshot of that moment. -> (check, evidence)."""
+    spec = scenario.expect["load"]
+    got = session.wait_load(spec)
+    limit = spec["max_ms"]
+    evidence = {"max_ms": limit, "cache": "cold", **got}
+    check = {**verdict.load_planned(spec), "value": evidence}
+    if got["ms"] is not None:
+        ok = got["ms"] <= limit
+        detail = f"playable at {got['ms'] / 1000:.2f} s" + ("" if ok else f", over the {limit / 1000:g} s limit")
+        if opts.shots and run_dir is not None:
+            try:
+                shot = session.screenshot(run_dir / "shots" / f"{slug(scenario.name)}-load.jpg")
+                evidence["shot"] = str(shot.relative_to(run_dir)) if shot else None
+            except (RuntimeError, TimeoutError, OSError, ValueError) as e:  # the time stands; the picture is missing
+                evidence["shot_error"] = f"{type(e).__name__}: {e}"
+        return {**check, "ok": ok, "detail": detail}, evidence
+    if not got.get("watched"):  # nothing was judged: the author's expression stopped QAJev's watcher
+        return {**check, "ok": False, "broke": True,
+                "detail": "the ready watcher never ran in the page: check ready and failed for a JavaScript "
+                          "syntax error"}, evidence
+    if got.get("failed_ms") is not None:
+        detail = f"the page said its load failed at {got['failed_ms'] / 1000:.2f} s ({spec['failed']!r} returned true)"
+    else:
+        detail = f"not playable after {got['waited_ms'] / 1000:.1f} s (limit {limit / 1000:g} s)"
+    if got.get("error"):
+        detail += f"; ready last threw: {got['error']}"
+    return {**check, "ok": False, "detail": detail}, evidence
+
+
 def run_scenario(session, scenario, *, opts, hosts, run_dir):
     from .session import GuardMissing, HookFailed, LeftSite, require_transport, transport_error
     from .viewport import ViewportMismatch
@@ -227,6 +258,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     stop, detail = None, None
     before = None  # the page's checks as Jev found it, before its first move
     ux_observer = None
+    load = scenario.expect.get("load")
+    measured_load = None
+    ran = set()  # the expectations beyond the page's own that did run
     ux_enabled = resolve_ux(opts, getattr(scenario, "ux_options", None))["ux"] != "off"
 
     def absorb(obs):
@@ -298,6 +332,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             session.count_draws()  # before the page loads: it wraps the draw calls of contexts made later (drawn_dark)
         if scenario.url:
             session.check_host(scenario.url)
+            if load:
+                session.watch_load(load)  # before the page loads: its clock starts at the navigation
             error = session.navigate(scenario.url)
             if error:
                 stop, detail = "unreachable", error
@@ -306,6 +342,12 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                 result["viewport"] = session.verify_viewport()
             if ux_observer:
                 ux_observer.safe(ux_observer.start)
+            if load:
+                _emit(opts, "step", scenario=scenario.name, at=time.time(),
+                      doing=f"waiting for the page to be playable (limit {load['max_ms'] / 1000:g} s)")
+                measured_load, result["load"] = _load_check(session, scenario, opts, run_dir)
+                ran.add("load")
+                session.unwatch_load()  # the test's later reloads and pages are not measured
             # What it is doing, for the dashboard and qajev top, while a slow check runs in the page (a script that
             # plays the game for a minute said nothing at all before).
             _emit(opts, "step", scenario=scenario.name, at=time.time(),
@@ -361,7 +403,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         stop, detail = "browser_error", f"{type(e).__name__}: {e}"
 
     checks = []
-    ran = set()  # the expectations beyond the page's own that did run
+    if load and hasattr(session, "unwatch_load"):
+        session.unwatch_load()
     if stop not in {"unreachable", "interrupted", "viewport_mismatch"} and transport_error() is None:
         _doing(session, "the checks")
         try:
@@ -387,6 +430,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                 ran.add("effect")
                 read()  # ordinary page checks and looks judge the final, enabled state
             checks = verdict.page_checks(scenario.expect, observed)
+            if measured_load is not None:
+                checks.append(measured_load)
             if measured_effect is not None:
                 checks.append(measured_effect)
             if scenario.expect.get("looks") and stop not in verdict.HARNESS_STOPS:
@@ -463,7 +508,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     result["findings"] = verdict.dedupe(findings)
     result["stop"] = stop
     wanted = {"looks": scenario.expect.get("looks"), "after": scenario.after, "fetch": scenario.expect.get("fetch"),
-              "command": scenario.expect.get("command"), "effect": scenario.expect.get("effect")}
+              "command": scenario.expect.get("command"), "effect": scenario.expect.get("effect"),
+              "load": load}
     not_run = [NOT_RUN[k] for k, v in wanted.items() if v and k not in ran]
     outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail,
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),
@@ -866,7 +912,8 @@ def _run_hooks(session, kind, hooks, url):
 
 def _cache(scenario, opts):
     """cold when the test or the run asks for a cold cache, else None."""
-    return getattr(scenario, "cache", None) or getattr(opts, "cache", None)
+    load = (getattr(scenario, "expect", None) or {}).get("load")  # a load time means a first visit's
+    return getattr(scenario, "cache", None) or getattr(opts, "cache", None) or ("cold" if load else None)
 
 
 def _cache_record(cache):
