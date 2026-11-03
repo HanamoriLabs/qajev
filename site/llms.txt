@@ -88,6 +88,8 @@ How to write a check:
    and `vision: true` shows Clef the screen at every decision. Jev reads text only: without Clef both are refused.
    For a game or a demo, a suite's `expect.load: {ready: <js, true when a person can play>, max_ms: 10000}` times
    the page from its navigation start to its first playable frame, on a cold cache (`failed: <js>` fails it at once).
+   `expect.input: {name, region, do: [hooks], min_changed}` holds when the `do` hooks (such as a `drag:` hook, a real
+   mouse drag) change the region by at least `min_changed` more than the same time with no input.
 4. Give every value Jev must type, and start from a URL close to the target.
 5. Say what each test proves: `about` on every test, and `says` (plain words) on every `js`, `url_regex`, `fetch` or
    `command` check (`says` with `expect_js` on `qa_check`). Without them the test is NOT DESCRIBED and the gate is

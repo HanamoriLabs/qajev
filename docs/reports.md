@@ -106,6 +106,11 @@ A test with `expect.load` keeps `load`: `ms` (the time from navigation start to 
 how long QAJev waited. `failed_ms` is when the page's `failed` expression held, `error` is the last throw of `ready`,
 and `watched: false` means the watcher never ran (the test is harness).
 
+A test with `expect.input` keeps `input`: its `name`, `region`, `metrics` (`idle` and `input`, each with `changed`,
+`total`, `fraction` and `seconds`, and `margin`, `min_changed`, `tolerance`, `ok`) and the paths of its six PNGs
+(`idle-before`, `idle-after`, `idle-difference`, `input-before`, `input-after`, `input-difference`). Report downloads
+keep all six.
+
 A scenario whose page crashed (Chrome's "Aw, Snap") is **fail**, with stop `page_crashed` and a `page_crashed` record:
 the crashed page's `url` and the `last_step`. A scenario with `cache: cold` keeps `cache: "cold"`. The lines that its
 `console_keep` patterns matched are under `page_console_kept`, and `page_console_kept_omitted` counts those over 200.

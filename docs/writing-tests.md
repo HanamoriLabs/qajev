@@ -33,6 +33,7 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | `command` | suite only | a shell command prints the expected output (needs `--allow-commands`) |
 | `effect` | suite only | off/on PNG captures of a named region have at least the required fraction of changed pixels |
 | `load` | suite only | the page is playable within `max_ms` of its navigation start, on a cold cache (below) |
+| `input` | suite only | a named region changes by at least `min_changed` more with the input than in the same time with none (below) |
 | `looks` | `--expect-looks` | Clef, looking at the final screenshot, judges this statement true (needs Clef: see below) |
 
 Text is compared the way a person reads it: line breaks and runs of spaces count as one space. Use
@@ -116,6 +117,44 @@ multiplayer test cannot use this check. `report.json` keeps `load` (`ms`, `max_m
 `failed_ms`, `error` or `watched` when the page was not playable) and a screenshot of the playable frame
 (`load.shot`). A planted fault names the check by its plan words, such as
 `expect_fail: "playable within 10 s on a cold cache"`.
+
+## The view answers the input: `input`
+
+A still frame cannot tell a camera that follows the mouse from one that does not. `expect.input` measures it. QAJev
+captures a named region, waits as long as the input takes, and captures it again: that is how much the view changes
+with no input. Then it captures the region, runs the `do` hooks (a `drag`, a `key`, a `pad`), and captures it again.
+The check holds when the input changes at least `min_changed` more of the region's pixels than the wait with no
+input did. A scene that animates by itself (a water shader, idle animations, a world that scrolls) cannot pass for
+one that answers the input. A pixel counts as changed when its largest red, green or blue difference is greater than
+`tolerance` (an integer from 0 to 255, default 8), as for `effect`.
+
+```yaml
+scenarios:
+  - name: the camera follows the mouse
+    about: A drag across the view turns the camera.
+    url: http://127.0.0.1:5173/?scene=level-1
+    before:
+      - wait_for: {js: "window.game?.ready === true", timeout: 60}
+    expect:
+      input:
+        name: the mouse turns the camera
+        region: {name: the 3D view, x: 0, y: 80, width: 1280, height: 560}
+        do:
+          - drag: {selector: canvas, x: 640, y: 360, by: {x: 300, y: 0}, ms: 500}
+        min_changed: 0.2
+```
+
+The wait with no input is the time the `do` hooks plan to take: a drag's `ms`, a key's holds and intervals, a
+`sleep`; at least 0.2 s. Place the region over the part of the view the input moves, away from a HUD and its
+counters. When the scene moves a lot by itself, a larger region or a longer drag gives the input room to add more.
+The check runs after the page checks have held, before `looks`, and the page checks and looks then judge the page
+after its input. A multiplayer test cannot use this check.
+
+`report.json` keeps `input`: `metrics` (the `idle` and `input` changes, each with `changed`, `total`, `fraction` and
+`seconds`, and the `margin` between them, with `min_changed` and `tolerance`) and six PNGs (`idle-before`,
+`idle-after`, `idle-difference`, `input-before`, `input-after`, `input-difference`; magenta marks changed pixels). A
+capture that fails is harness. A planted fault names the check as `qajev plan` prints it, such as
+`expect_fail: "input 'the mouse turns the camera' changes region 'the 3D view'"`.
 
 ## A canvas the screenshot cannot show: `canvas_capture`
 
@@ -485,7 +524,7 @@ without `selector` the pixels are the viewport's. It reaches into an iframe, suc
 something else covers, or that lies outside the element, fails naming why. When the point is known only at run time,
 `{selector: "iframe#view", js: "window.findBench()"}` takes it from an expression that returns `{x, y}` (it may await).
 The expression runs on the top page: it can read a same-origin frame through `contentWindow`, not a cross-origin
-one), `fill`
+one), `drag` (a real mouse drag, below), `fill`
 (`{selector: text}`: a date, time or month field gets its value set, in the form Chrome stores it, such as
 `2027-06-30`; a fill whose text never reaches the field fails, saying so), `navigate`, `wait_for` (JavaScript that must turn
 true, within `timeout` seconds: 15 by default, at most 300, e.g. `{js: "window.ready", timeout: 60}`; a Promise counts by what it resolves to; a wait, unlike a check, holds on any truthy value), `key` (a real key press, below), `sleep` (up to 30 s), `reload` (`reload: true`: the same page again, keeping its
@@ -495,6 +534,13 @@ Its `after:` hooks run after the checks: a result an `after:` hook writes can ne
 hook that plays the page and records a result belongs last in `before:`. `expect` js and hook js run in separate
 JavaScript worlds: they share the page's DOM (so a hook can leave its result in a `data-` attribute), not its
 window globals.
+
+A `drag` hook drags the real mouse, as a player turns a camera: `{selector: "canvas", x: 200, y: 150, by: {x: 150,
+y: 0}}` presses at the point (CSS pixels, as for `click_at`), moves by `by` in `steps` moves (default 20) over `ms`
+(default 400, at most 10000), and lets go there. `button` is `left` (the default), `right` or `middle`. The page gets
+trusted `mousedown`, `mousemove` with the button held and `movementX`/`movementY` set, and `mouseup`, so a camera
+under pointer lock turns too. A start point that something else covers fails naming it, and the button is let go
+even when the drag breaks midway. Jev cannot drag: a goal that needs a drag and gets stuck says to use this hook.
 
 A `key` hook presses real keys, as a player does: the page gets trusted `keydown` and `keyup` events. Jev clicks and
 types but cannot press a game's keys, so a game's real-key test drives them with hooks. `qajev plan` flags a goal that

@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import browser_pool, chrome, live, plan, providers, ux, verdict, vision
+from . import browser_pool, chrome, keys, live, plan, providers, ux, verdict, vision
 from .config import redact, redact_tree, remember_secret, remembered_secrets, secret_values
 from .diagnostics import keep_console
 from .ledger import CostCapReached, Ledger
@@ -32,7 +32,7 @@ STALE_LIMIT = 8  # decisions without an executed action before we call the page 
 LOOP_CLICKS = 3
 # The expectations a run that stopped early may never reach, as its reason names them.
 NOT_RUN = {"looks": "expect.looks", "after": "the after hooks", "fetch": "expect.fetch", "command": "expect.command",
-           "effect": "expect.effect", "load": "expect.load"}
+           "effect": "expect.effect", "load": "expect.load", "input": "expect.input"}
 EFFECT_MAX_BYTES = 32 * 1024 * 1024  # below the Cloud report-file limit, so required evidence can be transferred
 
 
@@ -199,6 +199,75 @@ def _effect_check(session, scenario, run_dir, url):
     return check, evidence
 
 
+def _input_wait_s(hooks):
+    """How long the no-input control waits: the time the input hooks plan to take (a drag's ms, a key's hold and
+    interval, a sleep), at least 0.2 s."""
+    planned = 0.0
+    for hook in hooks:
+        kind, value = next(iter(hook.items()))
+        if kind == "drag":
+            planned += value.get("ms", 400) / 1000
+        elif kind == "sleep":
+            planned += min(float(value), 30)
+        elif kind == "key":
+            p = keys.plan(value)
+            planned += len(p["keys"]) * p["repeat"] * (p["hold_ms"] + p["interval_ms"]) / 1000
+    return max(planned, 0.2)
+
+
+def _input_check(session, scenario, run_dir, url):
+    """expect.input: how much the region changes with the test's input (its `do` hooks) against how much it changes in
+    the same time with none, so a scene that animates by itself cannot pass for one that answers the mouse.
+    -> (check, evidence)."""
+    import hashlib
+
+    from .pixels import PixelError, compare
+
+    spec = scenario.expect["input"]
+    if run_dir is None:
+        raise PixelError("input comparison needs a report folder for its evidence")
+    wait = _input_wait_s(spec["do"])
+    frames, took = {}, {}
+    try:
+        frames["idle-before"] = session.capture_region_png(spec["region"])
+        started = time.monotonic()
+        time.sleep(wait)
+        frames["idle-after"] = session.capture_region_png(spec["region"])
+        took["idle"] = time.monotonic() - started
+        frames["input-before"] = session.capture_region_png(spec["region"])
+        started = time.monotonic()
+        for hook in spec["do"]:
+            session.run_hook(hook, url)
+        frames["input-after"] = session.capture_region_png(spec["region"])
+        took["input"] = time.monotonic() - started
+    except (RuntimeError, ValueError, OSError, TimeoutError) as e:
+        raise PixelError(f"input {spec['name']!r}, capture {len(frames) + 1} of 4: {e}") from None
+    for name, contents in frames.items():
+        if not isinstance(contents, bytes) or len(contents) > EFFECT_MAX_BYTES:
+            raise PixelError(f"input {spec['name']!r}, {name}: PNG capture is missing or exceeds the 32 MiB limit")
+    # min_changed=1 only satisfies compare's bounds: the check's own rule is the margin below
+    idle, idle_png = compare(frames["idle-before"], frames["idle-after"], tolerance=spec["tolerance"], min_changed=1)
+    moved, moved_png = compare(frames["input-before"], frames["input-after"], tolerance=spec["tolerance"],
+                               min_changed=1)
+    margin = moved["fraction"] - idle["fraction"]
+    ok = margin >= spec["min_changed"]
+    stem = "input-" + hashlib.sha256(scenario.name.encode()).hexdigest()[:16]
+    metrics = {"idle": {k: idle[k] for k in ("changed", "total", "fraction")} | {"seconds": round(took["idle"], 3)},
+               "input": {k: moved[k] for k in ("changed", "total", "fraction")} | {"seconds": round(took["input"], 3)},
+               "margin": margin, "min_changed": spec["min_changed"], "tolerance": spec["tolerance"], "ok": ok}
+    evidence = {"name": spec["name"], "region": spec["region"], "metrics": metrics}
+    for name, contents in (*frames.items(), ("idle-difference", idle_png), ("input-difference", moved_png)):
+        relative = f"shots/{stem}-{name}.png"
+        path = run_dir / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(contents)
+        evidence[name] = relative
+    detail = (f"with the input {moved['fraction']:.2%} of pixels changed in {took['input']:.2f} s; with none "
+              f"{idle['fraction']:.2%} in {took['idle']:.2f} s; the input must add {spec['min_changed']:.2%}, "
+              f"it added {margin:.2%}")
+    return {**verdict.input_planned(spec), "ok": ok, "detail": detail, "value": metrics}, evidence
+
+
 def _load_check(session, scenario, opts, run_dir):
     """expect.load: the time from the page's navigation start to its first playable frame (session.wait_load), with a
     screenshot of that moment. -> (check, evidence)."""
@@ -326,7 +395,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             ux_observer = session.configure_ux(opts, run_dir, scenario.name, getattr(scenario, "ux_options", None))
         effect = scenario.expect.get("effect") or {}
         if any("pad" in hook for hook in [*scenario.before, *scenario.after, *effect.get("off", []),
-                                         *effect.get("on", [])]):
+                                         *effect.get("on", []), *(scenario.expect.get("input") or {}).get("do", [])]):
             session.use_pad()  # before the page loads: a game may read its pads only once, at load
         if scenario.canvas_capture and scenario.expect.get("looks") and hasattr(session, "count_draws"):
             session.count_draws()  # before the page loads: it wraps the draw calls of contexts made later (drawn_dark)
@@ -423,7 +492,12 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                 if assist:
                     session.assists.append(assist)
                     read()
-            measured_effect = None
+            measured_effect = measured_input = None
+            if scenario.expect.get("input") and stop not in verdict.HARNESS_STOPS:
+                measured_input, result["input"] = _input_check(session, scenario, run_dir,
+                                                               observed.get("url") or scenario.url)
+                ran.add("input")
+                read()  # the page checks and looks judge the page after its input
             if scenario.expect.get("effect") and stop not in verdict.HARNESS_STOPS:
                 measured_effect, result["effect"] = _effect_check(session, scenario, run_dir,
                                                                  observed.get("url") or scenario.url)
@@ -432,6 +506,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             checks = verdict.page_checks(scenario.expect, observed)
             if measured_load is not None:
                 checks.append(measured_load)
+            if measured_input is not None:
+                checks.append(measured_input)
             if measured_effect is not None:
                 checks.append(measured_effect)
             if scenario.expect.get("looks") and stop not in verdict.HARNESS_STOPS:
@@ -509,7 +585,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     result["stop"] = stop
     wanted = {"looks": scenario.expect.get("looks"), "after": scenario.after, "fetch": scenario.expect.get("fetch"),
               "command": scenario.expect.get("command"), "effect": scenario.expect.get("effect"),
-              "load": load}
+              "load": load, "input": scenario.expect.get("input")}
     not_run = [NOT_RUN[k] for k, v in wanted.items() if v and k not in ran]
     outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail,
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),

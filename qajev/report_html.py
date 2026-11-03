@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import quote, urlsplit
 
 from . import plan as plan_mod
-from .report_files import ux_crop, ux_details
+from .report_files import INPUT_FRAMES, ux_crop, ux_details
 from .verdict import NO_ADDRESS, hidden_list
 
 # The red banner of a run that showed destructive controls (allow_destructive; refused for a production host).
@@ -318,6 +318,13 @@ def _scenario(i, r, who="Jev"):
         parts.append(f'<p>Load: {_e(load_summary(r["load"]))}</p>')
         if r["load"].get("shot"):
             parts.append(_shot(r["load"]["shot"], "the first playable frame", "first playable frame"))
+    moved = r.get("input")
+    if moved:
+        parts += [f'<h4>Input: {_e(moved["name"])}</h4>',
+                  f'<pre>Region: {_e(json.dumps(moved["region"], ensure_ascii=False))}\n'
+                  f'Pixels: {_e(json.dumps(moved["metrics"], ensure_ascii=False, sort_keys=True))}</pre>']
+        parts += [_shot(moved[key], f"{moved['name']} — {key}", f"{moved['region']['name']} — {key}")
+                  for key in INPUT_FRAMES if moved.get(key)]
     effect = r.get("effect")
     if effect:
         parts += [f'<h4>Visible effect: {_e(effect["name"])}</h4>',

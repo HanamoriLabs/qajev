@@ -52,9 +52,9 @@ def wanted_devices(explicit=None):
         _device(name, "devices")
     return names or list(DEFAULT_DEVICES)
 HOOK_KINDS = {"js", "fill", "click", "click_at", "navigate", "wait_for", "key", "react", "sleep", "command", "reload",
-              "pad"}
+              "pad", "drag"}
 EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
-               "looks", "across", "says", "effect", "load"}
+               "looks", "across", "says", "effect", "load", "input"}
 # The checks only their author can describe, by what `says` gives them in plain words (the test plan, 6 Oct)
 SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
@@ -142,7 +142,7 @@ class Scenario:
     def uses_commands(self):
         hooks = [*self.before, *self.after]
         effect = self.expect.get("effect") or {}
-        hooks += [*effect.get("off", []), *effect.get("on", [])]
+        hooks += [*effect.get("off", []), *effect.get("on", []), *(self.expect.get("input") or {}).get("do", [])]
         return any("command" in h for h in hooks) or "command" in self.expect
 
 
@@ -210,6 +210,7 @@ def _hooks(value, where):
         _key_hook(hook, f"{where}[{i}]")
         _wait_hook(hook, f"{where}[{i}]")
         _click_at_hook(hook, f"{where}[{i}]")
+        _drag_hook(hook, f"{where}[{i}]")
     return hooks
 
 
@@ -256,6 +257,40 @@ def _click_at_hook(hook, where):
             raise SuiteError(f"{where}.click_at.{axis} must be a number of CSS pixels, 0 or more")
     if "selector" in spec and (not isinstance(spec["selector"], str) or not spec["selector"].strip()):
         raise SuiteError(f"{where}.click_at.selector must be a CSS selector")
+
+
+DRAG_MAX_MS = 10_000
+DRAG_BUTTONS = ("left", "right", "middle")
+
+
+def _drag_hook(hook, where):
+    """drag: {selector?, x, y, by: {x, y}, ms?, steps?, button?}: a real mouse drag from a point (CSS pixels from the
+    element's top-left corner, or the viewport's) by an offset, over ms (default 400) in steps moves."""
+    if "drag" not in hook:
+        return
+    spec = hook["drag"]
+    if not isinstance(spec, dict) or set(spec) - {"selector", "x", "y", "by", "ms", "steps", "button"} \
+            or not {"x", "y", "by"} <= set(spec):
+        raise SuiteError(f"{where}.drag must be {{x: <px>, y: <px>, by: {{x: <px>, y: <px>}}}}, with an optional "
+                         "selector, ms, steps and button")
+    number = lambda v: not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(v)  # noqa: E731
+    for axis in ("x", "y"):
+        if not number(spec[axis]) or spec[axis] < 0:
+            raise SuiteError(f"{where}.drag.{axis} must be a number of CSS pixels, 0 or more")
+    by = spec["by"]
+    if not isinstance(by, dict) or set(by) != {"x", "y"} or not all(number(by[a]) for a in ("x", "y")) \
+            or by["x"] == by["y"] == 0:
+        raise SuiteError(f"{where}.drag.by must be {{x, y}}: the move in CSS pixels, not both 0")
+    ms = spec.get("ms", 400)
+    if not number(ms) or not 0 <= ms <= DRAG_MAX_MS:
+        raise SuiteError(f"{where}.drag.ms must be milliseconds, 0 to {DRAG_MAX_MS}")
+    steps = spec.get("steps", 20)
+    if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= 600:
+        raise SuiteError(f"{where}.drag.steps must be a whole number of moves, 1 to 600")
+    if spec.get("button", "left") not in DRAG_BUTTONS:
+        raise SuiteError(f"{where}.drag.button must be one of {', '.join(DRAG_BUTTONS)}")
+    if "selector" in spec and (not isinstance(spec["selector"], str) or not spec["selector"].strip()):
+        raise SuiteError(f"{where}.drag.selector must be a CSS selector")
 
 
 WAIT_MAX_S = 300
@@ -324,7 +359,51 @@ def _expect(value, where):
         out["effect"] = _effect(out["effect"], f"{where}.effect")
     if "load" in out:
         out["load"] = _load(out["load"], f"{where}.load")
+    if "input" in out:
+        out["input"] = _input(out["input"], f"{where}.input")
     return out
+
+
+def _region(value, where):
+    """A named rectangle in viewport CSS pixels: {name, x, y, width, height}."""
+    if not isinstance(value, dict) or set(value) != {"name", "x", "y", "width", "height"}:
+        raise SuiteError(f"{where} needs name, x, y, width and height in viewport CSS pixels")
+    if not isinstance(value["name"], str) or not value["name"].strip() or len(value["name"]) > 200:
+        raise SuiteError(f"{where}.name must be 1–200 characters")
+    for key in ("x", "y", "width", "height"):
+        number = value[key]
+        if (isinstance(number, bool) or not isinstance(number, (int, float))
+                or (isinstance(number, float) and not math.isfinite(number))
+                or number < 0 or (key in {"width", "height"} and number == 0)):
+            bound = "positive" if key in {"width", "height"} else "nonnegative"
+            raise SuiteError(f"{where}.{key} must be finite and {bound}")
+    return dict(value)
+
+
+def _fraction(value, where):
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or (isinstance(value, float) and not math.isfinite(value)) or not 0 < value <= 1):
+        raise SuiteError(f"{where} must be a fraction greater than 0 and at most 1")
+    return value
+
+
+def _input(value, where):
+    """expect.input: {name, region, do, min_changed, tolerance?}: the region changes by at least min_changed more
+    after the `do` hooks (a drag, keys) than in the same time with no input (29 Oct: a demo's camera did not follow
+    the mouse, and a still frame could not tell)."""
+    if not isinstance(value, dict):
+        raise SuiteError(f"{where} must name the input, a region, its do hooks and min_changed")
+    _unknown(where, value, {"name", "region", "do", "min_changed", "tolerance"})
+    if not isinstance(value.get("name"), str) or not value["name"].strip() or len(value["name"]) > 200:
+        raise SuiteError(f"{where}.name must be 1–200 characters")
+    tolerance = value.get("tolerance", 8)
+    if isinstance(tolerance, bool) or not isinstance(tolerance, int) or not 0 <= tolerance <= 255:
+        raise SuiteError(f"{where}.tolerance must be an integer from 0 to 255")
+    hooks = _hooks(value.get("do"), f"{where}.do")
+    if not hooks:
+        raise SuiteError(f"{where}.do needs at least one input, such as a drag or a key")
+    return {"name": value["name"], "region": _region(value.get("region"), f"{where}.region"), "do": hooks,
+            "min_changed": _fraction(value.get("min_changed"), f"{where}.min_changed"), "tolerance": tolerance}
 
 
 LOAD_MAX_MS = 300_000  # 5 min: the longest load limit; QAJev waits up to twice the limit to measure a slow load
@@ -474,6 +553,7 @@ def _steps(value, names, where):
                 raise SuiteError(f"{at} needs one hook, one of {sorted(CLIENT_HOOK_KINDS)}")
             _key_hook(hook, at)
             _click_at_hook(hook, at)
+            _drag_hook(hook, at)
             who = names if kind == "all" else _list(step["client"], f"{at}.client")
             unknown = [w for w in who if w not in names]
             if unknown:
@@ -496,7 +576,8 @@ def page_checks(expect):
 def has_checks(expect):
     # looks is not a page check: it costs a model call, so it is judged once, at the end, not while Jev moves.
     return page_checks(expect) or bool(expect.get("fetch") or expect.get("command") or expect.get("looks")
-                                       or expect.get("across") or expect.get("effect") or expect.get("load"))
+                                       or expect.get("across") or expect.get("effect") or expect.get("load")
+                                       or expect.get("input"))
 
 
 def _account(raw, base, folder=None):
@@ -707,9 +788,9 @@ def parse(data, path=None, devices=None):
                                              *console_keep(item.get("console_keep"), f"{where}.console_keep")])),
             cache=cache(item.get("cache", data.get("cache")), f"{where}.cache"),
         ))
-        if clients and ({"console_keep", "cache"} & set(item) or expect.get("load")):
-            raise SuiteError(f"{where}: console_keep, cache and expect.load are for a test in QAJev's own tab, not a "
-                             "multiplayer test's clients")
+        if clients and ({"console_keep", "cache"} & set(item) or expect.get("load") or expect.get("input")):
+            raise SuiteError(f"{where}: console_keep, cache, expect.load and expect.input are for a test in QAJev's "
+                             "own tab, not a multiplayer test's clients")
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")
 
