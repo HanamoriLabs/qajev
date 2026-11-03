@@ -160,8 +160,8 @@ def from_results(scenarios):
 
 # Checks that need something to be on the page. A test with only `absent` checks passes on a blank page, so it proves
 # nothing (Foley claim 13, 13 Oct: an accept step passed in 0.89 s on a blank page, before its request went out).
-# These check the page (text, visible, js, looks, across, load, input) or its effect (fetch, command).
-POSITIVE = ("text", "visible", "js", "looks", "across", "fetch", "command", "effect", "load", "input")
+# These check the page (text, visible, js, looks, across, load, input, motion) or its effect (fetch, command).
+POSITIVE = ("text", "visible", "js", "looks", "across", "fetch", "command", "effect", "load", "input", "motion")
 # The address and the status say where the page is, not what it shows: a blank page at the right address passes them
 # (redteam, 13 Oct). Every other expect key is decided in one of these two lists (tests/test_plan.py checks it).
 WHERE_ONLY = ("url", "url_regex", "status")

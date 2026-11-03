@@ -56,8 +56,10 @@ def image_paths(data: dict) -> list[str]:
         effect = scenario.get("effect") or {}
         load = scenario.get("load") or {}
         moved = scenario.get("input") or {}
-        if not isinstance(effect, dict) or not isinstance(load, dict) or not isinstance(moved, dict):
-            raise ValueError("invalid report effect, load or input metadata")
+        motion = scenario.get("motion") or {}
+        if not all(isinstance(part, dict) for part in (effect, load, moved, motion)) \
+                or not isinstance(motion.get("frames", []), list):
+            raise ValueError("invalid report effect, load, input or motion metadata")
         paths = [
             scenario.get("shot"),
             *(item.get("shot") for item in _objects(scenario.get("clients"))),
@@ -65,6 +67,7 @@ def image_paths(data: dict) -> list[str]:
             *(effect.get(key) for key in ("off", "on", "difference")),
             load.get("shot"),
             *(moved.get(key) for key in INPUT_FRAMES),
+            *motion.get("frames", []), motion.get("sheet"),
         ]
         for check in _objects(scenario.get("checks")):
             evidence = check.get("evidence")

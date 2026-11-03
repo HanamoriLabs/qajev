@@ -169,3 +169,30 @@ def transparent(data):
             return False
         with image.convert("RGBA") as rgba:
             return rgba.getchannel("A").getextrema()[1] == 0
+
+
+def sheet(pngs: list[bytes], *, columns: int = 3, max_width: int = 1536) -> bytes:
+    """The frames side by side, `columns` to a row, left to right then top to bottom, each scaled to fit `max_width`
+    in all, with a 4 px white gap: one PNG for Clef to judge a sequence on (expect.motion's looks)."""
+    if not pngs:
+        raise PixelError("a sheet needs at least one frame")
+    frames = [_decode(data) for data in pngs]
+    try:
+        width, height = frames[0].size
+        if any(f.size != (width, height) for f in frames):
+            raise PixelError("capture dimensions must match")
+        columns = min(columns, len(frames))
+        rows = math.ceil(len(frames) / columns)
+        scale = min(1.0, (max_width - 4 * (columns - 1)) / (width * columns))
+        cell = (max(1, round(width * scale)), max(1, round(height * scale)))
+        with Image.new("RGB", (cell[0] * columns + 4 * (columns - 1), cell[1] * rows + 4 * (rows - 1)),
+                       (255, 255, 255)) as out:
+            for i, frame in enumerate(frames):
+                with frame.resize(cell, Image.Resampling.LANCZOS) as small:
+                    out.paste(small, ((i % columns) * (cell[0] + 4), (i // columns) * (cell[1] + 4)))
+            buffer = io.BytesIO()
+            out.save(buffer, format="PNG")
+            return buffer.getvalue()
+    finally:
+        for frame in frames:
+            frame.close()

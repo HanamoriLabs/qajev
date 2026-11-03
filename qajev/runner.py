@@ -32,7 +32,7 @@ STALE_LIMIT = 8  # decisions without an executed action before we call the page 
 LOOP_CLICKS = 3
 # The expectations a run that stopped early may never reach, as its reason names them.
 NOT_RUN = {"looks": "expect.looks", "after": "the after hooks", "fetch": "expect.fetch", "command": "expect.command",
-           "effect": "expect.effect", "load": "expect.load", "input": "expect.input"}
+           "effect": "expect.effect", "load": "expect.load", "input": "expect.input", "motion": "expect.motion"}
 EFFECT_MAX_BYTES = 32 * 1024 * 1024  # below the Cloud report-file limit, so required evidence can be transferred
 
 
@@ -268,6 +268,95 @@ def _input_check(session, scenario, run_dir, url):
     return {**verdict.input_planned(spec), "ok": ok, "detail": detail, "value": metrics}, evidence
 
 
+SHEET_FRAMES = 6  # at most this many frames, evenly picked, on the sheet Clef judges
+
+
+def frame_gaps(times):
+    """The page's animation frame times -> {frames, seconds, fps, longest_ms, p95_ms}."""
+    gaps = sorted(b - a for a, b in zip(times, times[1:], strict=False))
+    span = (times[-1] - times[0]) / 1000 if len(times) > 1 else 0
+    return {"frames": len(times), "seconds": round(span, 3), "fps": round((len(times) - 1) / span, 1) if span else 0,
+            "longest_ms": round(gaps[-1], 1) if gaps else None,
+            "p95_ms": round(gaps[min(len(gaps) - 1, int(len(gaps) * 0.95))], 1) if gaps else None}
+
+
+def _motion_check(session, scenario, run_dir, url, observed):
+    """expect.motion: after its `do` hooks, the page's frame gaps over `seconds` with no capture (max_gap_ms), then
+    `frames` captures of the region over `seconds`: each pair of frames in a row must change (min_changed) in at least
+    min_moving of the pairs. Clef judges each looks statement on a sheet of up to SHEET_FRAMES of them (ghosting, a
+    trail, an effect that never plays). -> (checks, evidence, why Clef failed or None)."""
+    import hashlib
+
+    from .pixels import PixelError, compare, sheet
+
+    spec = scenario.expect["motion"]
+    if run_dir is None:
+        raise PixelError("motion capture needs a report folder for its evidence")
+    planned = verdict.motion_planned(spec)
+    for hook in spec["do"]:
+        session.run_hook(hook, url)
+    checks, gaps = [], None
+    if spec.get("max_gap_ms"):
+        gaps = frame_gaps(session.frame_times(spec["seconds"] * 1000))
+        ok = gaps["longest_ms"] is not None and gaps["longest_ms"] <= spec["max_gap_ms"]
+        checks.append({**planned[1], "ok": ok, "value": gaps,
+                       "detail": f"longest gap {gaps['longest_ms']} ms, 95% of gaps within {gaps['p95_ms']} ms, "
+                                 f"{gaps['fps']} frames a second over {gaps['seconds']} s"})
+    frames, at = [], []
+    interval = spec["seconds"] / (spec["frames"] - 1)
+    started = time.monotonic()
+    try:
+        for i in range(spec["frames"]):
+            time.sleep(max(0.0, started + i * interval - time.monotonic()))
+            at.append(round(time.monotonic() - started, 3))
+            frames.append(session.capture_region_png(spec["region"]))
+    except (RuntimeError, ValueError, OSError, TimeoutError) as e:
+        raise PixelError(f"motion {spec['name']!r}, capture {len(frames) + 1} of {spec['frames']}: {e}") from None
+    if any(not isinstance(f, bytes) or len(f) > EFFECT_MAX_BYTES for f in frames):
+        raise PixelError(f"motion {spec['name']!r}: a PNG capture is missing or exceeds the 32 MiB limit")
+    pairs = [compare(a, b, tolerance=spec["tolerance"], min_changed=spec["min_changed"])[0]
+             for a, b in zip(frames, frames[1:], strict=False)]
+    moving = sum(1 for m in pairs if m["ok"])
+    still, run = 0, 0
+    for m in pairs:  # the longest run of pairs in a row with no motion: a frozen stretch
+        run = 0 if m["ok"] else run + 1
+        still = max(still, run)
+    share = moving / len(pairs)
+    stem = "motion-" + hashlib.sha256(scenario.name.encode()).hexdigest()[:16]
+    paths = []
+    for i, contents in enumerate(frames):
+        relative = f"shots/{stem}-{i:02d}.png"
+        (run_dir / relative).parent.mkdir(parents=True, exist_ok=True)
+        (run_dir / relative).write_bytes(contents)
+        paths.append(relative)
+    metrics = {"pairs": [round(m["fraction"], 6) for m in pairs], "moving": moving, "still_run": still,
+               "share": share, "at": at, "min_changed": spec["min_changed"], "min_moving": spec["min_moving"],
+               "tolerance": spec["tolerance"], **({"gaps": gaps} if gaps else {})}
+    evidence = {"name": spec["name"], "region": spec["region"], "metrics": metrics, "frames": paths}
+    checks.insert(0, {**planned[0], "ok": share >= spec["min_moving"], "value": metrics,
+                      "detail": f"{moving} of {len(pairs)} frame pairs moved (need {spec['min_moving']:.0%}); "
+                                f"the longest still stretch is {still} pair(s); the largest change "
+                                f"{max(m['fraction'] for m in pairs):.2%} of the region"})
+    if not spec["looks"]:
+        return checks, evidence, None
+    pick = sorted({round(i * (len(frames) - 1) / (min(SHEET_FRAMES, len(frames)) - 1))
+                   for i in range(min(SHEET_FRAMES, len(frames)))})
+    picture = sheet([frames[i] for i in pick])
+    evidence["sheet"] = f"shots/{stem}-sheet.png"
+    (run_dir / evidence["sheet"]).write_bytes(picture)
+    evidence["sheet_frames"] = pick
+    context = {"page": {"url": observed.get("url"), "title": observed.get("title")},
+               "image": f"{len(pick)} frames of the region {spec['region']['name']!r}, taken over "
+                        f"{at[pick[-1]] - at[pick[0]]:.1f} s, in time order: left to right, then top to bottom"}
+    try:
+        judged = vision.look(session.jev.model.post_json, vision.data_url(picture), spec["looks"], context)
+    except (RuntimeError, ValueError) as e:
+        return checks, evidence, f"while judging the motion looks: {e}"
+    for check, named in zip(judged, planned[len(planned) - len(spec["looks"]):], strict=True):
+        checks.append({**check, "check": named["check"]})
+    return checks, evidence, None
+
+
 def _load_check(session, scenario, opts, run_dir):
     """expect.load: the time from the page's navigation start to its first playable frame (session.wait_load), with a
     screenshot of that moment. -> (check, evidence)."""
@@ -395,7 +484,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             ux_observer = session.configure_ux(opts, run_dir, scenario.name, getattr(scenario, "ux_options", None))
         effect = scenario.expect.get("effect") or {}
         if any("pad" in hook for hook in [*scenario.before, *scenario.after, *effect.get("off", []),
-                                         *effect.get("on", []), *(scenario.expect.get("input") or {}).get("do", [])]):
+                                         *effect.get("on", []), *(scenario.expect.get("input") or {}).get("do", []),
+                                         *(scenario.expect.get("motion") or {}).get("do", [])]):
             session.use_pad()  # before the page loads: a game may read its pads only once, at load
         if scenario.canvas_capture and scenario.expect.get("looks") and hasattr(session, "count_draws"):
             session.count_draws()  # before the page loads: it wraps the draw calls of contexts made later (drawn_dark)
@@ -493,6 +583,14 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                     session.assists.append(assist)
                     read()
             measured_effect = measured_input = None
+            measured_motion = []
+            if scenario.expect.get("motion") and stop not in verdict.HARNESS_STOPS:
+                measured_motion, result["motion"], failed = _motion_check(
+                    session, scenario, run_dir, observed.get("url") or scenario.url, observed)
+                ran.add("motion")
+                if failed:  # Clef failed, not the browser
+                    stop, detail = "model_error", failed
+                read()
             if scenario.expect.get("input") and stop not in verdict.HARNESS_STOPS:
                 measured_input, result["input"] = _input_check(session, scenario, run_dir,
                                                                observed.get("url") or scenario.url)
@@ -508,6 +606,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                 checks.append(measured_load)
             if measured_input is not None:
                 checks.append(measured_input)
+            checks += measured_motion
             if measured_effect is not None:
                 checks.append(measured_effect)
             if scenario.expect.get("looks") and stop not in verdict.HARNESS_STOPS:
@@ -585,7 +684,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     result["stop"] = stop
     wanted = {"looks": scenario.expect.get("looks"), "after": scenario.after, "fetch": scenario.expect.get("fetch"),
               "command": scenario.expect.get("command"), "effect": scenario.expect.get("effect"),
-              "load": load, "input": scenario.expect.get("input")}
+              "load": load, "input": scenario.expect.get("input"), "motion": scenario.expect.get("motion")}
     not_run = [NOT_RUN[k] for k, v in wanted.items() if v and k not in ran]
     outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail,
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),
@@ -1606,7 +1705,7 @@ def run(suite, opts):
                               "Clef; see `qajev doctor`")
     except providers.ProviderError as e:
         raise ConfigError(str(e)) from None
-    sees = [s for s in scenarios if s.vision or s.expect.get("looks")]
+    sees = [s for s in scenarios if s.vision or s.expect.get("looks") or (s.expect.get("motion") or {}).get("looks")]
     if sees:
         refused = vision.require_clef("vision" if any(s.vision for s in sees) else "looks")
         if refused:

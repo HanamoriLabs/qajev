@@ -122,6 +122,8 @@ def planned(expect):
         out.append(load_planned(expect["load"]))
     if expect.get("input"):
         out.append(input_planned(expect["input"]))
+    if expect.get("motion"):
+        out.extend(motion_planned(expect["motion"]))
     if expect.get("looks"):
         from . import vision
 
@@ -144,6 +146,22 @@ def input_planned(spec):
             "says": f"{name}: with the input, at least {spec['min_changed']:.6g} more of the pixels in region {region} "
                     f"change than in the same time with no input, with RGB difference greater than "
                     f"{spec['tolerance']}"}
+
+
+def motion_planned(spec):
+    """expect.motion's checks: the frames keep moving; the page's frame gaps, with max_gap_ms; each looks statement,
+    judged by Clef on a sheet of the frames."""
+    name, region = spec["name"], spec["region"]["name"]
+    out = [{"check": f"motion {name!r} in region {region!r}",
+            "says": f"{name}: over {spec['seconds']:g} s, at least {spec['min_moving']:.6g} of the "
+                    f"{spec['frames'] - 1} pairs of {spec['frames']} frames of region {region} change by at least "
+                    f"{spec['min_changed']:.6g} of their pixels, with RGB difference greater than {spec['tolerance']}"}]
+    if spec.get("max_gap_ms"):
+        out.append({"check": f"motion {name!r}: frame gaps at most {spec['max_gap_ms']} ms",
+                    "says": f"{name}: over {spec['seconds']:g} s with no capture, no gap between two of the page's "
+                            f"animation frames is longer than {spec['max_gap_ms']} ms"})
+    out += [{"check": f"motion {name!r} looks: {statement}"} for statement in spec.get("looks", [])]
+    return out
 
 
 def load_planned(spec):

@@ -33,6 +33,7 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | `command` | suite only | a shell command prints the expected output (needs `--allow-commands`) |
 | `effect` | suite only | off/on PNG captures of a named region have at least the required fraction of changed pixels |
 | `load` | suite only | the page is playable within `max_ms` of its navigation start, on a cold cache (below) |
+| `motion` | suite only | a named region keeps moving over a sequence of frames, the page's frames come without long gaps, and Clef finds what `looks` asks on a sheet of the frames (below) |
 | `input` | suite only | a named region changes by at least `min_changed` more with the input than in the same time with none (below) |
 | `looks` | `--expect-looks` | Clef, looking at the final screenshot, judges this statement true (needs Clef: see below) |
 
@@ -155,6 +156,49 @@ after its input. A multiplayer test cannot use this check.
 `idle-after`, `idle-difference`, `input-before`, `input-after`, `input-difference`; magenta marks changed pixels). A
 capture that fails is harness. A planted fault names the check as `qajev plan` prints it, such as
 `expect_fail: "input 'the mouse turns the camera' changes region 'the 3D view'"`.
+
+## A sequence of frames, not one still frame: `motion`
+
+One still frame cannot show a frozen view, a stutter, or a ghost trail behind a moving object. `expect.motion` runs
+its optional `do` hooks (a key that starts the effect), then captures a named region `frames` times (3 to 40,
+default 8) over `seconds` (0.5 to 30, default 2). Each pair of frames in a row "moves" when at least `min_changed`
+of its pixels change (default 0.001), with the same `tolerance` as `effect`. The check holds when at least
+`min_moving` of the pairs move (default 1: every pair). The report names the longest still stretch.
+
+```yaml
+scenarios:
+  - name: the tower collapses smoothly
+    about: The collapse plays, with no stutter and no ghost trails.
+    url: http://127.0.0.1:5173/?scene=tower
+    before:
+      - wait_for: {js: "window.game?.ready === true", timeout: 60}
+    expect:
+      motion:
+        name: the collapse
+        region: {name: the tower, x: 320, y: 60, width: 640, height: 600}
+        do:
+          - key: Space
+        seconds: 3
+        frames: 12
+        max_gap_ms: 100
+        looks:
+          - No moving piece leaves a ghost image or a trail behind it
+```
+
+With `max_gap_ms` (17 to 5000), QAJev first records the page's animation frames for `seconds`, with no capture
+running, because a capture can hold a frame back itself. The longest gap between two frames must be at most
+`max_gap_ms`: a stall on load or in an effect fails it. It is its own check, with the frames a second and the gap
+that 95% of frames stay within.
+
+Each `looks` statement is judged by Clef (it needs Clef, as `expect.looks` does) on one sheet of up to 6 of the
+frames, evenly picked, in time order: left to right, then top to bottom. Clef sees the sequence, so it can judge what
+one frame cannot show, such as a ghost trail, a smear, or an effect that never plays. Each statement is its own check,
+named "motion '<name>' looks: <statement>".
+
+The check runs after the page checks have held, before `input`, `effect` and `looks`. A multiplayer test cannot use
+it. `report.json` keeps `motion`: `metrics` (`pairs`, the changed fraction of each pair; `moving`; `still_run`;
+`share`; `at`, each capture's time in seconds; and `gaps`) and the PNG of each frame (`frames`), with `sheet` and
+`sheet_frames` when Clef judged looks. A capture that fails is harness, and so is a Clef error.
 
 ## A canvas the screenshot cannot show: `canvas_capture`
 

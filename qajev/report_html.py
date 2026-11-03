@@ -318,6 +318,14 @@ def _scenario(i, r, who="Jev"):
         parts.append(f'<p>Load: {_e(load_summary(r["load"]))}</p>')
         if r["load"].get("shot"):
             parts.append(_shot(r["load"]["shot"], "the first playable frame", "first playable frame"))
+    motion = r.get("motion")
+    if motion:
+        parts += [f'<h4>Motion: {_e(motion["name"])}</h4>',
+                  f'<pre>Region: {_e(json.dumps(motion["region"], ensure_ascii=False))}\n'
+                  f'Pixels: {_e(json.dumps(motion["metrics"], ensure_ascii=False, sort_keys=True))}</pre>']
+        frames = motion.get("frames", [])
+        shown = [motion["sheet"]] if motion.get("sheet") else frames[:1] + frames[-1:]
+        parts += [_shot(path, f"{motion['name']} — frames", f"{motion['region']['name']} — frames") for path in shown]
     moved = r.get("input")
     if moved:
         parts += [f'<h4>Input: {_e(moved["name"])}</h4>',
