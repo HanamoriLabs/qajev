@@ -284,7 +284,9 @@ const t0 = performance.now();
 const frame = now => {
   const t = (now - t0) / 1000, x = cam + spin * t;
   for (let i = 0; i < 320; i += 4) {
-    c.fillStyle = Math.floor((i + x) / 20) % 2 ? '#222' : '#ddd'; c.fillRect(i, 0, 4, 200);
+    // stripes that do not repeat: a world of even stripes looks the same after a scroll of whole periods
+    const k = Math.abs(Math.floor((i + x) / 20));
+    c.fillStyle = (k * k * 7919) % 101 < 50 ? '#222' : '#ddd'; c.fillRect(i, 0, 4, 200);
   }
   c.fillStyle = '#e33'; c.fillRect(150 + 40 * Math.sin(t * 3), 90, 8, 8);
   requestAnimationFrame(frame);
