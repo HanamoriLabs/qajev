@@ -227,7 +227,7 @@ def test_a_sweep_that_needs_nothing_on_the_page_is_flagged_as_a_blank_page_pass(
         return plan.absent_only(_suite(settings=list(settings)).scenarios) == ["settings"]
 
     assert not flagged(*SETTINGS)
-    assert flagged({"name": "keys", "do": [{"key": "F2"}]})
+    assert flagged({"name": "keys", "do": [{"key": "m"}]})
     assert flagged(SETTINGS[0], {"name": "pad", "do": [{"pad": "A"}, {"sleep": 0.5}]})
     assert not flagged({"name": "menu", "do": [{"key": "Escape"}, {"wait_for": {"js": "window.menuOpen"}}]})
 
