@@ -416,10 +416,13 @@ def _site(url):
 
 
 def owner_of_url(url):
-    """The one registered project with an environment on this URL's site, or None: no project, or several (a shared
-    127.0.0.1 port names no one)."""
+    """The one registered project with an environment on this URL's site, or None: no project, several, or a
+    loopback site. Any repo on this Mac can serve on a 127.0.0.1 port (3 Nov: microdrama's --serve runs on :8765 were
+    filed under figgyz-verse, the one project registered there)."""
+    from .config import is_loopback  # noqa: PLC0415
+
     site = _site(url)
-    if not site:
+    if not site or is_loopback(url):
         return None
     names = {p["name"] for p in listing() if not p.get("error") and any(_site(b) == site for b in p["envs"].values())}
     return names.pop() if len(names) == 1 else None

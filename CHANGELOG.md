@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- A cloud run on a loopback URL (`127.0.0.1`, `localhost`) is no longer filed under the one project registered on
+  that port. Any repo can serve there: `--serve` runs from a folder with no project were filed under another
+  project. Such a run now shows "No project", unless `--project`, its suite or its folder names one.
+
 ## 0.4.45: 2 Nov 2026
 
 ### Added
