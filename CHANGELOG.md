@@ -13,14 +13,18 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 - A `looks` statement in `expect.motion` now has plan words ("<name>: on a sheet of the frames, <statement>").
   Before, a test with one was NOT DESCRIBED, so its gate could never be PASS (0.4.47).
+- `expect.input` on a slow machine: when the input runs past its planned time, QAJev measures the change with no
+  input again, after the input, for as long as the input took, and judges on that. `report.json` names the control
+  (`before the input` or `after the input`). Before, the check was harness: in the 0.4.47 cloud run, a 300 ms drag
+  of 15 moves took 1.15 s. A second control that is still too short stays harness.
 
 ### Changed
 
 - `expect.load`: when QAJev cannot read the browser's clock before the navigation, it times the page from the last
   document's start. `report.json` now keeps `clock` (`navigation` or `document`), and the check's detail says so.
   Before, that fallback was silent, and a loader page's own time was left out with no word.
-- `expect.input`: tests pin the time guard's bound. For a 0.2 s control, an input of 0.50 s is judged and one of
-  0.51 s is harness.
+- `expect.input`: tests pin the time guard's bound. For a 0.2 s control, an input of 0.50 s is judged on it, and one
+  of 0.51 s gets a second control after the input (see Fixed).
 
 ## 0.4.47: 4 Nov 2026
 

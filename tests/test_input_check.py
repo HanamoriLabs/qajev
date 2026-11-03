@@ -110,7 +110,7 @@ class View:
 
     def capture_region_png(self, region):
         self.calls.append("capture")
-        if self.calls.count("capture") in (2, 4):
+        if self.calls.count("capture") in (2, 4, 6):  # 6: the end of a second control, after a slow input
             self.columns += self.idle
         return png(min(self.columns, 8))
 
@@ -144,38 +144,78 @@ def test_only_the_change_the_input_adds_counts(tmp_path, monkeypatch, idle, move
 
 
 class Clock:
-    """time.monotonic and time.sleep for the runner: a sleep moves the clock, and so does each input hook."""
+    """time.monotonic and time.sleep for the runner: a sleep moves the clock, and so does each input hook. `second`,
+    when set, is how far the second sleep (a second control's wait) really moves it."""
 
-    def __init__(self, hook_s):
-        self.now, self.hook_s = 100.0, hook_s
+    def __init__(self, hook_s, second=None):
+        self.now, self.hook_s, self.second, self.slept = 100.0, hook_s, second, []
 
     def monotonic(self):
         return self.now
 
     def sleep(self, s):
-        self.now += s
+        self.slept.append(round(s, 6))
+        self.now += self.second if len(self.slept) == 2 and self.second is not None else s
 
 
-# 0.50 s is the bound for a 0.2 s control (1.25 x 0.2 + 0.25): it is judged, and 0.51 s is not (redteam-1 L1, #278)
-@pytest.mark.parametrize("hook_s,outcome", [(0.2, "pass"), (0.45, "pass"), (0.50, "pass"), (0.51, "harness"),
-                                            (1.0, "harness")])
-def test_an_input_that_takes_longer_than_its_control_is_not_judged(tmp_path, monkeypatch, hook_s, outcome):
-    """A click with no planned time gets a 0.2 s control: an input that then runs 1 s has 5 times longer to change by
-    itself, so the two changes cannot be compared (redteam-1 M1, #275)."""
-    clock = Clock(hook_s)
-    view = View(0, 4)
+def _timed(tmp_path, monkeypatch, clock, view, **extra):
     moves = view.run_hook
-    view.run_hook = lambda hook, url: clock.sleep(clock.hook_s) or moves(hook, url)
+    view.run_hook = lambda hook, url: setattr(clock, "now", clock.now + clock.hook_s) or moves(hook, url)
     monkeypatch.setattr(runner, "wait_for_quiet", lambda _: (True, 0))
     monkeypatch.setattr(runner.time, "monotonic", clock.monotonic)
     monkeypatch.setattr(runner.time, "sleep", clock.sleep)
-    result = runner.run_scenario(view, _suite(do=[{"click": "#go"}]).scenarios[0], opts=runner.Options(shots=False),
-                                 hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
+    return runner.run_scenario(view, _suite(do=[{"click": "#go"}], **extra).scenarios[0],
+                               opts=runner.Options(shots=False), hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
+
+
+# 0.50 s is the bound for a 0.2 s control (1.25 x 0.2 + 0.25): it is judged on that control (redteam-1 L1, #278). Past
+# it, as in the 0.4.47 cloud run (a 300 ms drag took 1.15 s), a second control after the input waits as long as it.
+@pytest.mark.parametrize("hook_s,control", [(0.2, "before the input"), (0.45, "before the input"),
+                                            (0.50, "before the input"), (0.51, "after the input"),
+                                            (1.15, "after the input")])
+def test_an_input_longer_than_its_control_gets_a_second_control_as_long_as_it(tmp_path, monkeypatch, hook_s, control):
+    clock = Clock(hook_s)
+    view = View(0, 4)
+    result = _timed(tmp_path, monkeypatch, clock, view)
+    assert result["outcome"] == "pass", result["reason"]
+    metrics = result["input"]["metrics"]
+    assert metrics["control"] == control and metrics["ok"] is True
+    assert metrics["input"]["seconds"] == hook_s
+    if control == "before the input":
+        assert clock.slept == [0.2] and view.calls == ["capture", "capture", "capture", {"click": "#go"}, "capture"]
+        assert metrics["idle"]["seconds"] == 0.2
+    else:
+        assert clock.slept == [0.2, hook_s]
+        assert view.calls == ["capture", "capture", "capture", {"click": "#go"}, "capture", "capture", "capture"]
+        assert metrics["idle"]["seconds"] == hook_s
+        check = next(c for c in result["checks"] if c["check"].startswith("input "))
+        assert f"with none 0.00% in {hook_s:.2f} s after the input" in check["detail"]
+
+
+@pytest.mark.parametrize("idle,moved,outcome,margin", [(0, 4, "pass", 0.5), (2, 1, "fail", 0.125)])
+def test_a_slow_input_is_judged_on_the_change_its_second_control_sees(tmp_path, monkeypatch, idle, moved, outcome,
+                                                                       margin):
+    """The second control measures the change with no input after the input: a view that moves 2 columns by itself
+    in each wait still fails, though its input took 1.15 s for a 0.3 s plan."""
+    result = _timed(tmp_path, monkeypatch, Clock(1.15), View(idle, moved), min_changed=0.25)
+    assert result["outcome"] == outcome, result["reason"]
+    metrics = result["input"]["metrics"]
+    assert metrics["control"] == "after the input" and metrics["margin"] == pytest.approx(margin)
+    for key in report_files.INPUT_FRAMES:  # the six PNGs, the idle pair from the second control
+        assert (tmp_path / result["input"][key]).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+
+# For a 1.00 s input the second control's bound is 0.60 s (1.25 x 0.60 + 0.25): 0.61 s is judged, 0.59 s is not. A
+# control that does not wait at all (0 s) is harness, never a pass.
+@pytest.mark.parametrize("second,outcome", [(1.0, "pass"), (0.61, "pass"), (0.59, "harness"), (0.0, "harness")])
+def test_a_second_control_shorter_than_its_input_is_not_judged(tmp_path, monkeypatch, second, outcome):
+    result = _timed(tmp_path, monkeypatch, Clock(1.0, second=second), View(0, 4))
     assert result["outcome"] == outcome, result["reason"]
     if outcome == "harness":
-        assert f"the input took {hook_s:.2f} s and the no-input control 0.20 s, so their changes cannot be compared" \
-            in result["reason"]
+        assert (f"the input took 1.00 s and the no-input control {second:.2f} s, so their changes cannot be "
+                "compared") in result["reason"]
         assert result["input"]["metrics"]["ok"] is False
+        assert result["input"]["metrics"]["control"] == "after the input"
 
 
 def test_a_do_hook_that_fails_stops_the_test_as_a_failed_hook(tmp_path, monkeypatch):
@@ -202,6 +242,16 @@ def test_a_capture_that_fails_is_harness_and_names_the_input_check(tmp_path, mon
                                  hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
     assert result["outcome"] == "harness"
     assert "input 'the camera follows the mouse', capture 1 of 4: no frame" in result["reason"]
+
+
+def test_a_capture_that_fails_in_the_second_control_names_it_of_six(tmp_path, monkeypatch):
+    view = View(0, 4)
+    captured = view.capture_region_png
+    view.capture_region_png = lambda region: (captured(region) if view.calls.count("capture") < 4
+                                              else (_ for _ in ()).throw(RuntimeError("no frame")))
+    result = _timed(tmp_path, monkeypatch, Clock(1.15), view)
+    assert result["outcome"] == "harness"
+    assert "input 'the camera follows the mouse', capture 5 of 6: no frame" in result["reason"]
 
 
 def _tab(at):
@@ -272,12 +322,14 @@ def test_a_drag_from_a_missing_or_covered_point_fails_the_hook(at, says):
 CAMERA = """<!doctype html><link rel="icon" href="data:,"><style>body{margin:0}</style>
 <canvas id="view" width="320" height="200"></canvas><script>
 const q = new URLSearchParams(location.search), follow = q.get('mouse') !== '0', spin = Number(q.get('spin') || 0);
+const slow = Number(q.get('slow') || 0);  // ms each move's handler takes: a drag then runs past its planned time
 const c = document.getElementById('view').getContext('2d');
 let cam = 0, down = false, last = 0; window.moves = 0; window.movement = 0;
 addEventListener('mousedown', e => { down = e.isTrusted; last = e.clientX; });
 addEventListener('mouseup', () => { down = false; });
 addEventListener('mousemove', e => {
   if (!down || e.buttons !== 1) return;
+  for (const until = performance.now() + slow; performance.now() < until;);
   window.moves++; window.movement += e.movementX;
   if (follow) cam += e.clientX - last;
   last = e.clientX;
@@ -332,19 +384,26 @@ def test_browser_a_real_drag_turns_a_camera_and_a_camera_that_ignores_it_fails(p
                                              "ms": 300, "steps": 15}}], "min_changed": 0.2}
     scenario = suite.parse({"devices": ["desktop"], "scenarios": [{"name": "camera", "about": "x", "url": camera,
                                                                    "expect": {"input": spec}}]}).scenarios[0]
-    outcome = {}
-    for query in ("?follow", "?mouse=0", "?mouse=0&spin=400"):
+    outcome, slow = {}, {}
+    for query in ("?follow", "?mouse=0", "?mouse=0&spin=400", "?slow=60", "?mouse=0&slow=60"):
         tab.navigate(camera + "/" + query)
         check, evidence = runner._input_check(tab, scenario, tmp_path / query[1:].replace("&", "-"), camera)
         metrics = evidence["metrics"]
         outcome[query] = (check["ok"], round(metrics["idle"]["fraction"], 3), round(metrics["input"]["fraction"], 3),
                           tab.evaluate("window.moves"))
+        slow[query] = (check.get("broke", False), metrics["control"], metrics["input"]["seconds"])
     assert outcome["?follow"][0] is True, outcome
     # The planted faults: a camera that ignores the mouse, and one whose world scrolls by itself as much as a drag
     # would move it (a check of the change alone passes there).
     assert outcome["?mouse=0"][0] is False and outcome["?mouse=0&spin=400"][0] is False, outcome
     assert outcome["?mouse=0&spin=400"][2] >= 0.2, outcome  # the view did change a lot: only the margin fails it
     assert all(moves == 15 for *_, moves in outcome.values()), outcome  # every move arrived, button held
+    # A handler that takes 60 ms a move runs the 0.3 s drag past its bound (1.25 x 0.3 + 0.25 = 0.625 s), as the 0.4.47
+    # cloud run did: both are judged on a second control after the input, not harness, and the planted one fails.
+    assert outcome["?slow=60"][0] is True and outcome["?mouse=0&slow=60"][0] is False, outcome
+    for query in ("?slow=60", "?mouse=0&slow=60"):
+        assert slow[query][:2] == (False, "after the input") and slow[query][2] > 0.625, slow
+    assert slow["?follow"][1] == "before the input", slow
 
 
 @pytest.mark.skipif(not ENDPOINT or os.uname().sysname != "Linux", reason="requires approved CPU fixture browser")

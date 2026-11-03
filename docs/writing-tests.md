@@ -151,15 +151,18 @@ scenarios:
 
 The wait with no input is the time the `do` hooks plan to take: a drag's `ms`, a key's holds and intervals, a
 pad's frames (its `hold_ms`), a `react` hook's `for_s`, a `sleep`; at least 0.2 s. A hook with no planned time, such
-as a `click` or a `wait_for`, counts 0. When the input then takes longer than 1.25 times its control plus 0.25 s, it
-had more time to change by itself, so the check is harness and its reason gives both times: give the `do` hooks a
-planned time. A `do` hook that fails stops the test as a failed hook, as a `before` hook does. Place the region over the part of the view the input moves, away from a HUD and its
+as a `click` or a `wait_for`, counts 0. When the input then takes longer than 1.25 times its control plus 0.25 s (a
+slow machine, or a page whose handlers take long), it had more time to change by itself. QAJev then measures the
+change with no input again, after the input, for as long as the input took, and judges on that second control. Motion
+that the input leaves behind counts as change with no input there. When the input is still longer than 1.25 times the
+second control plus 0.25 s, the check is harness and its reason gives both times. A `do` hook that fails stops the test as a failed hook, as a `before` hook does. Place the region over the part of the view the input moves, away from a HUD and its
 counters. When the scene moves a lot by itself, a larger region or a longer drag gives the input room to add more.
 The check runs after the page checks have held, before `looks`, and the page checks and looks then judge the page
 after its input. A multiplayer test cannot use this check.
 
 `report.json` keeps `input`: `metrics` (the `idle` and `input` changes, each with `changed`, `total`, `fraction` and
-`seconds`, and the `margin` between them, with `min_changed` and `tolerance`) and six PNGs (`idle-before`,
+`seconds`, and the `margin` between them, with `min_changed`, `tolerance` and `control`: `before the input` or `after
+the input`) and six PNGs (`idle-before`,
 `idle-after`, `idle-difference`, `input-before`, `input-after`, `input-difference`; magenta marks changed pixels). A
 capture that fails is harness. A planted fault names the check as `qajev plan` prints it, such as
 `expect_fail: "input 'the mouse turns the camera' changes region 'the 3D view'"`.
