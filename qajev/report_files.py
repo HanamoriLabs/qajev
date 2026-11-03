@@ -45,20 +45,26 @@ def ux_crop(finding: dict) -> str | None:
     return path if relative(path) and path.startswith("ux/") else None
 
 
+# expect.input's six frames in report.json's `input` (runner._input_check)
+INPUT_FRAMES = ("idle-before", "idle-after", "idle-difference", "input-before", "input-after", "input-difference")
+
+
 def image_paths(data: dict) -> list[str]:
     """Every safe run-relative frame named by the full report, once, in stable order."""
     named = set()
     for scenario in _objects(data.get("scenarios")):
         effect = scenario.get("effect") or {}
         load = scenario.get("load") or {}
-        if not isinstance(effect, dict) or not isinstance(load, dict):
-            raise ValueError("invalid report effect or load metadata")
+        moved = scenario.get("input") or {}
+        if not isinstance(effect, dict) or not isinstance(load, dict) or not isinstance(moved, dict):
+            raise ValueError("invalid report effect, load or input metadata")
         paths = [
             scenario.get("shot"),
             *(item.get("shot") for item in _objects(scenario.get("clients"))),
             *(item.get("path") for item in _objects(scenario.get("react"))),
             *(effect.get(key) for key in ("off", "on", "difference")),
             load.get("shot"),
+            *(moved.get(key) for key in INPUT_FRAMES),
         ]
         for check in _objects(scenario.get("checks")):
             evidence = check.get("evidence")

@@ -14,6 +14,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   animation frame (a hidden window) is harness.
   `report.json` keeps `load` and a screenshot of the playable frame. Before, a game that passed on a fast machine
   could take over 2 min to load for a person, and no check said so.
+- A `drag` hook: a real mouse drag from a point by an offset, over `ms` in `steps` moves, with the `left`, `right` or
+  `middle` button. The page gets trusted mouse events, and `movementX`/`movementY` in the drag's direction, so a
+  camera under pointer lock turns. The button is let go even when the drag breaks midway.
+- `expect.input` in a suite: a named region must change by at least `min_changed` more with the test's input (its
+  `do` hooks) than in the same time with none. A scene that animates by itself cannot pass for one that answers the
+  mouse. `report.json` keeps both changes, the margin and six PNGs. Before, a still frame could not show that a
+  camera ignored the mouse.
 
 ## 0.4.46: 3 Nov 2026
 

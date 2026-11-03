@@ -334,8 +334,8 @@ def blocked_by(goal, outcome, hidden):
             return (f"the goal needs a key press ({name}); Jev can only click, type, choose and scroll: press it "
                     "with a `key` hook before the goal")
     if re.search(DRAG, task, re.I):
-        return ("the goal needs a drag; Jev can only click, type, choose and scroll: do the drag in a hook before "
-                "the goal")
+        return ("the goal needs a drag; Jev can only click, type, choose and scroll: do the drag with a `drag` hook "
+                "before the goal")
     return None
 
 

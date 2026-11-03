@@ -120,6 +120,8 @@ def planned(expect):
         out.append(effect_planned(expect["effect"]))
     if expect.get("load"):
         out.append(load_planned(expect["load"]))
+    if expect.get("input"):
+        out.append(input_planned(expect["input"]))
     if expect.get("looks"):
         from . import vision
 
@@ -134,6 +136,14 @@ def effect_planned(spec):
     return {"check": f"effect {name!r} in region {region!r}",
             "says": f"{name}: at least {spec['min_changed']:.6g} of pixels in region {region} change "
                     f"between off and on, with RGB difference greater than {spec['tolerance']}"}
+
+
+def input_planned(spec):
+    name, region = spec["name"], spec["region"]["name"]
+    return {"check": f"input {name!r} changes region {region!r}",
+            "says": f"{name}: with the input, at least {spec['min_changed']:.6g} more of the pixels in region {region} "
+                    f"change than in the same time with no input, with RGB difference greater than "
+                    f"{spec['tolerance']}"}
 
 
 def load_planned(spec):

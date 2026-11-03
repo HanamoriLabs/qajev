@@ -2158,6 +2158,35 @@ class Session:
         with self.ux_action({"x": at["x"], "y": at["y"]}, action=what):
             self.trusted_click(at["x"], at["y"])
 
+    def drag(self, spec):
+        """A drag hook: a real mouse press at the start point (as click_at finds it), `steps` moves to the start plus
+        `by` over `ms`, and the release there. The page sees trusted mousedown, mousemove (with movementX/Y and the
+        button held) and mouseup, so a camera that follows the mouse turns, and so does one under pointer lock."""
+        selector = spec.get("selector")
+        what = f"drag {selector or 'the viewport'} {spec['x']}, {spec['y']} by {spec['by']['x']}, {spec['by']['y']}"
+        at = self.evaluate(AT_JS.substitute(selector=json.dumps(selector), x=json.dumps(spec["x"]),
+                                            y=json.dumps(spec["y"])), timeout_ms=3000) or {}
+        if at.get("error"):
+            raise HookFailed(f"{what}: {at['error']}")
+        if at.get("covered"):
+            raise HookFailed(f"{what}: the point is covered by {at.get('over')}")
+        button = spec.get("button", "left")
+        held = {"left": 1, "right": 2, "middle": 4}[button]
+        steps, pause = spec.get("steps", 20), spec.get("ms", 400) / 1000 / spec.get("steps", 20)
+        x, y = at["x"], at["y"]
+        with self.ux_action({"x": x, "y": y}, action=what):
+            self.call("Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y)
+            self.call("Input.dispatchMouseEvent", type="mousePressed", x=x, y=y, button=button, buttons=held,
+                      clickCount=1)
+            try:
+                for i in range(1, steps + 1):
+                    time.sleep(pause)
+                    x, y = at["x"] + spec["by"]["x"] * i / steps, at["y"] + spec["by"]["y"] * i / steps
+                    self.call("Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y, button=button, buttons=held)
+            finally:  # a button left down would drag the rest of the test
+                self.call("Input.dispatchMouseEvent", type="mouseReleased", x=x, y=y, button=button, buttons=0,
+                          clickCount=1)
+
     def settled(self, selector, timeout=2.0):
         """A click target scrolled into view, on top, and at the same spot two looks in a row: a fading splash, a
         panel still scrolling or growing as its images arrive moves or covers it for a moment (SideGame1, 6 Oct).
@@ -2244,10 +2273,10 @@ class Session:
                 time.sleep(0.25)
         elif kind == "reload":  # the same page again, keeping the tab's cookies and storage (a player rejoining)
             self.reload()
-        elif kind in ("key", "react", "pad"):  # real time: a LIVE frame must not steal its time (live.REALTIME)
+        elif kind in ("key", "react", "pad", "drag"):  # real time: a LIVE frame must not steal its time (live.REALTIME)
             live.REALTIME.set()
             try:
-                {"key": self.press, "react": self.react, "pad": self.pad}[kind](value)
+                {"key": self.press, "react": self.react, "pad": self.pad, "drag": self.drag}[kind](value)
             finally:
                 live.REALTIME.clear()
         elif kind == "sleep":
