@@ -812,6 +812,43 @@ CANVAS_POINTS = """(() => {
   return {size: [c.width, c.height], share: most / (W * H), width: W, points, through, hud};
 })()"""
 
+# canvas_capture's readback expression, run inside a requestAnimationFrame callback (Session.page_canvas in_frame). A
+# page that draws every frame registered its callback in the frame before, so it runs first and this one reads the
+# frame it just drew, before the browser can clear the drawing buffer.
+IN_FRAME = ("new Promise((resolve, reject) => requestAnimationFrame(() => {{ try {{ "
+            "const count = window[Symbol.for('qajev.frameDraws')]; const draws = count ? count() : null; "
+            "Promise.resolve(({expression})).then((url) => resolve({{url, draws}}), reject); }} "
+            "catch (e) {{ reject(e); }} }}))")
+
+# The page's draw calls in the frame now (Session.count_draws): WebGL clear and draw calls, and WebGPU queue submits.
+# Its own requestAnimationFrame callback, registered before the page's code runs, resets the count first in each
+# frame, so a readback in a later callback of that frame sees what the page drew in it. 0 draws: the drawing buffer
+# holds no frame of this one (the page drew nothing, or its callback comes after QAJev's), so a dark readback is no
+# evidence (redteam-1 O1, 3 Nov: with alpha: false a cleared buffer reads opaque black).
+DRAW_COUNT_JS = r"""(() => {
+  const key = Symbol.for('qajev.frameDraws');
+  if (window[key]) return;
+  let draws = 0;
+  Object.defineProperty(window, key, { value: () => draws, enumerable: false });
+  const count = (proto, names) => {
+    if (!proto) return;
+    for (const name of names) {
+      const real = proto[name];
+      if (typeof real !== 'function') continue;
+      proto[name] = function (...args) { draws++; return real.apply(this, args); };
+    }
+  };
+  const gl = ['clear', 'drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced',
+              'drawRangeElements'];
+  count(window.WebGLRenderingContext && WebGLRenderingContext.prototype, gl);
+  count(window.WebGL2RenderingContext && WebGL2RenderingContext.prototype, gl);
+  count(window.ANGLEInstancedArrays && ANGLEInstancedArrays.prototype,
+        ['drawArraysInstancedANGLE', 'drawElementsInstancedANGLE']);
+  count(window.GPUQueue && GPUQueue.prototype, ['submit']);
+  const frame = () => { draws = 0; requestAnimationFrame(frame); };
+  requestAnimationFrame(frame);
+})();"""
+
 # The page's WebGPU adapter as the page gets it, for canvas_capture's gpu: hardware. No device is made.
 WEBGPU_ADAPTER_JS = """(async () => {
   if (!navigator.gpu) return {none: 'the page has no WebGPU (navigator.gpu)'};
@@ -1620,26 +1657,35 @@ class Session:
         hud = {"hud": len(seen["hud"])} if seen.get("hud") else {}  # points under a HUD canvas
         return {**flat, "canvas": seen["size"], "share": round(seen["share"], 2), **through, **hud}
 
-    def page_canvas(self, spec, path):
+    def page_canvas(self, spec, path, in_frame=False):
         """canvas_capture: page. Runs the suite's readback expression, saves the image at path and reads it as
         flat_dark does; with gpu: hardware, also the page's WebGPU adapter and the browser's GPU. -> {image, problem,
-        blank, adapter, gpu, software}: image is the saved path or None, problem says why there is no image."""
+        blank, adapter, gpu, software}: image is the saved path or None, problem says why there is no image.
+        in_frame: the expression runs inside a requestAnimationFrame callback, after the page's own callback drew that
+        frame, so a drawing buffer the browser clears after each frame still holds it; the result also says whether
+        the image is fully transparent (`transparent`: a cleared buffer, nothing drawn) (runner.drawn_dark)."""
         import base64
 
         from . import pixels
 
         out: dict[str, Any] = {"image": None, "problem": None, "blank": None, "adapter": None, "gpu": None,
                                "software": None}
+        expression = IN_FRAME.format(expression=spec["page"]) if in_frame else spec["page"]
         try:
-            url = self.evaluate(spec["page"], timeout_ms=15000)
+            url = self.evaluate(expression, timeout_ms=15000)
         except (RuntimeError, TimeoutError) as error:
             url, out["problem"] = None, f"the readback expression failed: {error}"
+        if in_frame:  # {url, draws}: the page's draw calls in the frame of the readback (DRAW_COUNT_JS), or None
+            got = url if isinstance(url, dict) else {}
+            url, out["draws"] = got.get("url"), got.get("draws")
         if url is not None and not (isinstance(url, str) and url.startswith("data:image/") and ";base64," in url):
             out["problem"] = "the readback expression gave no data:image/...;base64 URL"
         elif isinstance(url, str):
             try:
                 raw = base64.b64decode(url.split(",", 1)[1], validate=True)
                 out["blank"] = pixels.flat_dark(pixels.grid_lumas(raw))
+                if in_frame:
+                    out["transparent"] = pixels.transparent(raw)
                 kind = url[len("data:image/"):url.index(";")].lower()
                 path = path.with_suffix({"jpeg": ".jpg", "webp": ".webp"}.get(kind, ".png"))
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -1849,6 +1895,16 @@ class Session:
         self.pad_script_id = self.call("Page.addScriptToEvaluateOnNewDocument", source=pad_mod.SHIM_JS)["identifier"]
         with contextlib.suppress(RuntimeError):
             self.evaluate(pad_mod.SHIM_JS)
+
+    def count_draws(self):
+        """Count the page's draw calls in each frame (DRAW_COUNT_JS), in every document from now on, before the page's
+        own code. Only a scenario with canvas_capture and looks gets it (runner.drawn_dark reads the count)."""
+        if getattr(self, "draw_count_script_id", None):
+            return
+        self.draw_count_script_id = self.call("Page.addScriptToEvaluateOnNewDocument",
+                                              source=DRAW_COUNT_JS)["identifier"]
+        with contextlib.suppress(RuntimeError):
+            self.evaluate(DRAW_COUNT_JS)
 
     def pad(self, value):
         """A pad hook: each frame of pad.plan(value) set on the virtual pad, held for its time."""

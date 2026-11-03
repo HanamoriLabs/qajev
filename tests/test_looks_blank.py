@@ -61,11 +61,11 @@ class Page:
     def screen_image(self): return self.image
 
 
-def run(page, expect, **extra):
+def run(page, expect, run_dir=None, **extra):
     parsed = suite.parse({"devices": ["desktop"], "scenarios": [{"name": "supported hall", "about": "fixture",
                           "url": "http://127.0.0.1:8765/", "expect": expect, **extra}]})
     return runner.run_scenario(page, parsed.scenarios[0], opts=runner.Options(shots=False),
-                               hosts={"127.0.0.1:8765"}, run_dir=None)
+                               hosts={"127.0.0.1:8765"}, run_dir=run_dir)
 
 
 @pytest.fixture(autouse=True)
@@ -136,3 +136,64 @@ def test_the_grade_keeps_a_failure_and_turns_everything_else_into_harness():
     got, reason = runner.looks_blank_grade("fail", "r", blank, [{"check": "x", "ok": False}])
     assert got == "fail" and reason.startswith("r; the looks were not judged")
     assert runner.looks_blank_grade("fail", "r", None, []) == ("fail", "r")
+
+
+# canvas_capture: page and a dark screen: the page's own frame decides (runner.drawn_dark; test_dark_frame reads
+# real frames in Chrome). redteam-1's known-answer tests, 3 Nov: a black-frame fault must fail on its look, not grade
+# harness.
+DARK = {"points": 384, "median": 0, "flat": 1.0}
+CAPTURE = {"canvas_capture": {"page": "document.getElementById('view').toDataURL()"}}
+
+
+class Framed(Page):
+    """A page with canvas_capture: the readback in a frame callback gives `frame`, the one after the test `end`."""
+
+    def __init__(self, image, frame, end=None):
+        super().__init__(image)
+        self.frame, self.end, self.counted, self.in_frame = frame, end or frame, 0, []
+
+    def count_draws(self):
+        self.counted += 1
+
+    def page_canvas(self, spec, path, in_frame=False):
+        self.in_frame.append(in_frame)
+        got = self.frame if in_frame else self.end
+        return {"image": None, "problem": None, "blank": None, "adapter": None, "gpu": None, "software": None, **got}
+
+
+def test_a_dark_frame_the_page_drew_goes_to_clef_and_fails_on_its_look(tmp_path):
+    page = Framed(jpeg(), {"blank": DARK, "draws": 2, "transparent": False})
+    result = run(page, {"looks": LOOKS}, run_dir=tmp_path, **CAPTURE)
+    assert len(page.calls) == 1, "Clef did not judge the page's dark frame"
+    assert page.counted == 1 and page.in_frame[0] is True, page.in_frame  # counted before load, read in a frame
+    assert result["outcome"] == "fail" and not result.get("looks_blank"), result
+    assert result["looks_frame"]["dark"] is True and result["looks_frame"]["draws"] == 2
+    assert [c["ok"] for c in result["checks"] if c["check"].startswith("looks")] == [False]
+
+
+@pytest.mark.parametrize("frame, why", [
+    ({"blank": DARK, "draws": 0, "transparent": False}, "no draw call in the readback's frame (redteam-1 O1)"),
+    ({"blank": DARK, "draws": None, "transparent": False}, "no draw count"),
+    ({"blank": DARK, "draws": 3, "transparent": True}, "a cleared, transparent buffer"),
+    ({"blank": None, "draws": 3, "transparent": False}, "a lit frame: the screenshot lost the GPU layer"),
+    ({"blank": DARK, "draws": 3, "transparent": False, "problem": "the readback expression failed: x"}, "no readback"),
+])
+def test_a_dark_screen_whose_frame_is_no_evidence_is_not_judged_and_grades_harness(tmp_path, frame, why):
+    page = Framed(jpeg(), frame, end={"blank": None})
+    result = run(page, {"looks": LOOKS}, run_dir=tmp_path, **CAPTURE)
+    assert page.calls == [], why
+    assert result["outcome"] == "harness" and result["looks_blank"], (why, result)
+    assert result["looks_frame"]["dark"] is False, why
+
+
+def test_without_canvas_capture_a_dark_screen_is_never_read_in_a_frame_and_stays_harness(tmp_path):
+    page = Framed(jpeg(), {"blank": DARK, "draws": 2, "transparent": False})
+    result = run(page, {"looks": LOOKS}, run_dir=tmp_path)
+    assert page.calls == [] and page.in_frame == [] and page.counted == 0
+    assert result["outcome"] == "harness" and "looks_frame" not in result, result
+
+
+def test_a_lit_screen_with_canvas_capture_is_judged_as_before_without_a_frame_readback(tmp_path):
+    page = Framed(jpeg(lit), {"blank": DARK, "draws": 2, "transparent": False}, end={"blank": None})
+    result = run(page, {"looks": LOOKS}, run_dir=tmp_path, **CAPTURE)
+    assert len(page.calls) == 1 and True not in page.in_frame and "looks_frame" not in result, result

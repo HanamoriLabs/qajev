@@ -1,0 +1,9 @@
+<!doctype html><meta charset="utf-8"><title>transparent frame</title>
+<style>html,body{margin:0;background:#888} canvas{display:block;width:100vw;height:100vh}</style>
+<canvas id="view" width="320" height="200"></canvas>
+<script>
+// Clears to fully transparent in every frame.
+const gl = document.getElementById('view').getContext('webgl', {alpha: true, preserveDrawingBuffer: false});
+function paint(r, g, b, a) { gl.clearColor(r, g, b, a); gl.clear(gl.COLOR_BUFFER_BIT); }
+(function frame() { paint(0, 0, 0, 0); requestAnimationFrame(frame); })();
+</script>

@@ -1,0 +1,9 @@
+<!doctype html><meta charset="utf-8"><title>timer frame</title>
+<style>html,body{margin:0;background:#888} canvas{display:block;width:100vw;height:100vh}</style>
+<canvas id="view" width="320" height="200"></canvas>
+<script>
+// Draws a lit frame from a timer, never inside a frame callback.
+const gl = document.getElementById('view').getContext('webgl', {alpha: false, preserveDrawingBuffer: false});
+function paint(r, g, b, a) { gl.clearColor(r, g, b, a); gl.clear(gl.COLOR_BUFFER_BIT); }
+setInterval(() => paint(0.8, 0.7, 0.5, 1), 5);
+</script>
