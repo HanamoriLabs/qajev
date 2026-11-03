@@ -68,6 +68,17 @@ def test_each_looks_check_names_clef_and_keeps_its_probability_passing_or_failin
         (True, 0.93, judge, model), (False, 0.08, judge, model)]
 
 
+@pytest.mark.parametrize("model, judge", [("clef", "Clef"), ("clef-flash", "Clef-flash")])
+def test_a_clef_result_that_names_its_own_model_still_names_the_model_asked(model, judge):
+    # redteam-1 C1 (3 Nov): a Workers AI result may carry its own model id; the judge is the model QAJev asked for
+    env = {**CF, "QAJEV_CLEF_MODEL": model, "TYPESAFE_API_KEY": "ts-key-for-test"}
+    resolved = P.apply(env)
+    post = P.route(lambda url, key, body: {"result": {"model": "@cf/some/other-model", "answers": {
+        "look_0": {"type": "noul", "noul": 0.93}}}}, resolved, env)
+    checks = vision.look(post, "data:image/jpeg;base64,AAAA", ["the trees are green"], {})
+    assert (checks[0]["judge"], checks[0]["judge_model"]) == (judge, model)
+
+
 def test_vision_and_looks_need_clef_and_say_how(monkeypatch):
     for k in ("QAJEV_JEV_PROVIDER", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"):
         monkeypatch.delenv(k, raising=False)

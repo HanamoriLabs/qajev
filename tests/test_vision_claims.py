@@ -110,6 +110,7 @@ def test_similar_panels_fail_even_when_a_model_would_pass_them(tmp_path, color):
     checks = vision.look(post, vision.data_url(output.getvalue()), [entry], {},
                          folder=tmp_path, evidence_dir=tmp_path / "report")
     assert checks[0]["ok"] is False and not calls
+    assert (checks[0]["probability"], checks[0]["judge"]) == (None, None)  # no model judged it (redteam-1 L1)
     metrics = checks[0]["evidence"]["comparison"]
     assert metrics["changed"] == 0 and metrics["total"] == 16 and metrics["min_changed"] == 0.05
     for name in ("crop", "panel", "difference"):
@@ -165,6 +166,7 @@ def test_invalid_model_probabilities_never_pass(probability):
     checks = vision.look(lambda url, key, body: response(body, probability), "data:image/jpeg;base64,AAAA",
                          ["The subject is visible."], {})
     assert checks[0]["ok"] is False
+    assert checks[0]["probability"] is None  # stored as null: a NaN breaks strict JSON readers (redteam-1 L2)
 
 
 def test_web_runner_reports_mcp_and_download_keep_the_exact_claim_images(tmp_path, monkeypatch):
