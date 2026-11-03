@@ -63,7 +63,10 @@ def test_the_plan_names_each_motion_check():
          "says": "the collapse plays: over 1 s with no capture, the page's main thread runs an animation frame at "
                  "least every 100 ms (frames QAJev asks for: a busy main thread delays them, a page that stops drawing "
                  "does not)"},
-        {"check": "motion 'the collapse plays' looks: No ghost trails"}]
+        {"check": "motion 'the collapse plays' looks: No ghost trails",
+         "says": "the collapse plays: on a sheet of the frames, No ghost trails"}]
+    # every check has its words, so the test is described and its gate can pass
+    assert plan.item(1, "collapse", "x", verdict.planned(parsed.scenarios[0].expect))["described"] is True
 
 
 def test_frame_gaps_are_read_from_the_frame_times():
@@ -160,6 +163,7 @@ def test_clef_judges_the_looks_on_a_sheet_of_the_frames(monkeypatch, tmp_path):
     assert seen["context"]["image"].startswith("6 frames of the region 'view', taken over ")
     assert result["motion"]["sheet_frames"] == [0, 1, 3, 4, 6, 7]
     assert result["checks"][1] == {"check": "motion 'the collapse plays' looks: No ghost trails", "ok": False,
+                                   "says": "the collapse plays: on a sheet of the frames, No ghost trails",
                                    "detail": "p 0.10", "probability": 0.1, "judge": "Clef"}
     assert result["outcome"] == "fail"
     assert result["motion"]["sheet"] in report_files.image_paths({"scenarios": [result]})
