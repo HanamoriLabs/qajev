@@ -324,7 +324,7 @@ def _scenario(i, r, who="Jev"):
                   f'<pre>Region: {_e(json.dumps(motion["region"], ensure_ascii=False))}\n'
                   f'Pixels: {_e(json.dumps(motion["metrics"], ensure_ascii=False, sort_keys=True))}</pre>']
         frames = motion.get("frames", [])
-        shown = [motion["sheet"]] if motion.get("sheet") else frames[:1] + frames[-1:]
+        shown = [motion["sheet"]] if motion.get("sheet") else ([frames[0], frames[-1]] if len(frames) > 1 else frames)
         parts += [_shot(path, f"{motion['name']} — frames", f"{motion['region']['name']} — frames") for path in shown]
     moved = r.get("input")
     if moved:
