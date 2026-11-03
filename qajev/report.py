@@ -406,6 +406,13 @@ def markdown(data):
                       "Region: " + json.dumps(effect["region"], ensure_ascii=False), "",
                       "Pixels: " + json.dumps(effect["metrics"], ensure_ascii=False, sort_keys=True), "",
                       " · ".join(f"[{key}]({effect[key]})" for key in ("off", "on", "difference")), ""]
+        motion = r.get("motion")
+        if motion:
+            lines += ["Motion: " + _cell(motion["name"], 200), "",
+                      "Region: " + json.dumps(motion["region"], ensure_ascii=False), "",
+                      "Pixels: " + json.dumps(motion["metrics"], ensure_ascii=False, sort_keys=True), "",
+                      " · ".join(f"[{i}]({path})" for i, path in enumerate(motion.get("frames", [])))
+                      + (f" · [sheet]({motion['sheet']})" if motion.get("sheet") else ""), ""]
         moved = r.get("input")
         if moved:
             lines += ["Input: " + _cell(moved["name"], 200), "",

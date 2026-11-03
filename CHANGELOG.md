@@ -23,6 +23,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   that takes longer than 1.25 times that time plus 0.25 s is harness, because it had more time to change by itself.
   A `do` hook that fails stops the test as a failed hook. `report.json` keeps both changes, the margin and six PNGs.
   Before, a still frame could not show that a camera ignored the mouse.
+- `expect.motion` in a suite: a sequence of frames of a named region, not one still frame. Each pair of frames in a
+  row must change (`min_changed`) in at least `min_moving` of the pairs, so a frozen view fails. With `max_gap_ms`,
+  the page's animation frames, recorded with no capture running, must come without a longer gap. Each `looks`
+  statement is judged by Clef on a sheet of up to 6 of the frames in time order, for what one frame cannot show, such
+  as a ghost trail. `report.json` keeps the measures, every frame and the sheet.
 
 ## 0.4.46: 3 Nov 2026
 
