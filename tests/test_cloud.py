@@ -473,14 +473,15 @@ def test_step_4_a_check_names_the_one_project_registered_for_its_host(dash, loca
 def test_a_loopback_port_names_no_project_even_when_only_one_has_it(dash, local, registry):
     # 3 Nov: microdrama's --serve runs on 127.0.0.1:8765, sent from a folder with no project, were filed under
     # figgyz-verse, the one project registered on that port. Any repo can serve on a loopback port.
-    (registry["projects"] / "verse.toml").write_text('name = "verse"\n[env.local]\nbase_url = "http://127.0.0.1:8765"\n')
+    (registry["projects"] / "verse.toml").write_text('name = "verse"\n[env.local]\nbase_url = "http://127.0.0.1:8765"\n'
+                                                     '[env.dev]\nbase_url = "http://localhost:8766"\n')
     dash.projects |= {"verse"}
     (registry["loose"] / "review").mkdir()
     suite = suite_file(registry["loose"] / "review", base="http://127.0.0.1:8765")
     dist = site(registry["loose"])
     assert _filed(dash, ["run", str(suite), "--serve", str(dist)]) is None
     assert _filed(dash, ["check", "http://127.0.0.1:8765/", "--serve", str(dist), "--expect-text", "x"]) is None
-    assert _filed(dash, ["check", "http://localhost:8765/", "--serve", str(dist), "--expect-text", "x"]) is None
+    assert _filed(dash, ["check", "http://localhost:8766/", "--serve", str(dist), "--expect-text", "x"]) is None
     assert _filed(dash, ["check", "https://shop.example/cart", "--expect-text", "Cart"]) == "shop"  # a public site still does
     assert local == []
 
