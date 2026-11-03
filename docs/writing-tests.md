@@ -210,7 +210,8 @@ own, as above.
 Each `looks` statement is judged by Clef (it needs Clef, as `expect.looks` does) on one sheet of up to 6 of the
 frames, evenly picked, in time order: left to right, then top to bottom. Clef sees the sequence, so it can judge what
 one frame cannot show, such as a ghost trail, a smear, or an effect that never plays. Each statement is its own check,
-named "motion '<name>' looks: <statement>".
+named "motion '<name>' looks: <statement>". Its plan words are "<name>: on a sheet of the frames, <statement>", and a
+planted fault can name it with them in `expect_fail`.
 
 The check runs after the page checks have held, before `input`, `effect` and `looks`. A multiplayer test cannot use
 it. `report.json` keeps `motion`: `metrics` (`pairs`, the changed fraction of each pair; `moving`; `still_run`;

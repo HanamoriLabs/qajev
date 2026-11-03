@@ -163,7 +163,9 @@ def motion_planned(spec):
                     "says": f"{name}: over {spec['seconds']:g} s with no capture, the page's main thread runs an "
                             f"animation frame at least every {spec['max_gap_ms']} ms (frames QAJev asks for: a busy "
                             "main thread delays them, a page that stops drawing does not)"})
-    out += [{"check": f"motion {name!r} looks: {statement}"} for statement in spec.get("looks", [])]
+    # each statement says itself, or a test with one would be NOT DESCRIBED and could never pass
+    out += [{"check": f"motion {name!r} looks: {statement}", "says": f"{name}: on a sheet of the frames, {statement}"}
+            for statement in spec.get("looks", [])]
     return out
 
 

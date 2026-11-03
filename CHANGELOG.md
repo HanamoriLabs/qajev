@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- A `looks` statement in `expect.motion` now has plan words ("<name>: on a sheet of the frames, <statement>").
+  Before, a test with one was NOT DESCRIBED, so its gate could never be PASS (0.4.47).
+
 ### Changed
 
 - `expect.load`: when QAJev cannot read the browser's clock before the navigation, it times the page from the last
