@@ -587,9 +587,10 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if scenario.expect.get("motion") and stop not in verdict.HARNESS_STOPS:
                 measured_motion, result["motion"], failed = _motion_check(
                     session, scenario, run_dir, observed.get("url") or scenario.url, observed)
-                ran.add("motion")
-                if failed:  # Clef failed, not the browser
+                if failed:  # Clef failed, not the browser: its looks were not judged, so motion did not run
                     stop, detail = "model_error", failed
+                else:
+                    ran.add("motion")
                 read()
             if scenario.expect.get("input") and stop not in verdict.HARNESS_STOPS:
                 measured_input, result["input"] = _input_check(session, scenario, run_dir,

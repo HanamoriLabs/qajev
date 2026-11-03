@@ -166,7 +166,7 @@ def test_a_sheet_keeps_time_order_and_fits_its_width():
         assert out.size == (32, 20)
         assert out.getpixel((0, 0)) == (255, 255, 255)  # frame 0: no dark column
         assert out.getpixel((12, 0)) == (0, 0, 0) and out.getpixel((13, 0)) == (255, 255, 255)  # frame 1: one
-        assert out.getpixel((12, 12)) == (0, 0, 0) and out.getpixel((15, 12)) == (255, 255, 255)  # frame 4: four
+        assert out.getpixel((15, 12)) == (0, 0, 0) and out.getpixel((16, 12)) == (255, 255, 255)  # frame 4: four
     with pytest.raises(pixels.PixelError, match="dimensions must match"):
         big = io.BytesIO()
         Image.new("RGB", (9, 8)).save(big, format="PNG")
