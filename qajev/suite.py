@@ -878,7 +878,8 @@ def parse(data, path=None, devices=None):
             state=item.get("state"),
             seed=item.get("seed"),
             color_scheme=color_scheme(item.get("color_scheme", data.get("color_scheme")), f"{where}.color_scheme"),
-            expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where),
+            expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where,
+                                     hooks={"before": item.get("before") or [], "after": item.get("after") or []}),
             ux_options=_ux_options({**suite_ux, **_ux_options(item, where)}, where),
             canvas_capture=capture,
             canvas_dark=canvas_dark(item.get("canvas_dark"), f"{where}.canvas_dark"),
@@ -1099,10 +1100,14 @@ def about(value, where):
     return " ".join(value.split()) or None
 
 
-def _expect_fail(value, expect, clients, about_text, where):
+HOOK_RAN = re.compile(r"(before|after) hook (\d+) of (\d+) ran")
+
+
+def _expect_fail(value, expect, clients, about_text, where, hooks=None):
     """`expect_fail`: a planted fault, a test meant to fail on one named check (the Orchestrator, 13 Oct). It names
     that check by its `says`, its plain words or its name as `qajev plan` prints them; `true` only when the test has
-    one check. It must say in `about` what it plants. -> {check, words} or None. The gate reads it (verdict.planted)."""
+    one check. A js before or after hook that throws on purpose is named by its place, "before hook 1 of 2 ran" (4
+    Nov). It must say in `about` what it plants. -> {check, words} or None. The gate reads it (verdict.planted)."""
     if value is None or value is False:
         return None
     if clients is not None:
@@ -1118,6 +1123,15 @@ def _expect_fail(value, expect, clients, about_text, where):
     elif isinstance(value, str) and value.strip():
         want = " ".join(value.split())
         hit = [c for c in checks if want in (c.get("says"), plan_mod.words(c), c["check"])]
+        ran = HOOK_RAN.fullmatch(want)
+        if not hit and ran:  # a js hook that throws on purpose: the runner fails the test on "<place> ran"
+            listed = (hooks or {}).get(ran[1]) or []
+            n, of = int(ran[2]), int(ran[3])
+            js = 1 <= n <= of == len(listed) and isinstance(listed[n - 1], dict) and "js" in listed[n - 1]
+            if not js:
+                raise SuiteError(f"{where}.expect_fail: {want!r} must name one of the test's js {ran[1]} hooks by its "
+                                 f"place (this test has {len(listed)} {ran[1]} hook(s))")
+            return {"check": want, "words": want}
         if len(hit) != 1:
             raise SuiteError(f"{where}.expect_fail: {want!r} must name exactly one of the test's checks (it names "
                              f"{len(hit)}); its checks: "

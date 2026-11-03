@@ -169,6 +169,7 @@ def _effect_check(session, scenario, run_dir, url):
     import hashlib
 
     from .pixels import PixelError, compare
+    from .session import HookThrew
 
     spec = scenario.expect["effect"]
     if run_dir is None:
@@ -176,11 +177,12 @@ def _effect_check(session, scenario, run_dir, url):
     frames = {}
     for state in ("off", "on"):
         try:
-            for hook in spec[state]:
-                session.run_hook(hook, url)
+            _run_hooks(session, f"effect {spec['name']!r}, {state}", spec[state], url, doing=False)
             frames[state] = session.capture_region_png(spec["region"])
             if not isinstance(frames[state], bytes) or len(frames[state]) > EFFECT_MAX_BYTES:
                 raise PixelError("PNG capture is missing or exceeds the 32 MiB evidence limit")
+        except HookThrew:  # the page's answer, not a capture's trouble: the runner fails the test on it
+            raise
         except (RuntimeError, ValueError, OSError, TimeoutError) as e:
             raise PixelError(f"effect {spec['name']!r}, {state} capture: {e}") from None
     metrics, difference = compare(frames["off"], frames["on"], tolerance=spec["tolerance"],
@@ -199,6 +201,10 @@ def _effect_check(session, scenario, run_dir, url):
               f"region {spec['region']['name']!r}")
     check = {**verdict.effect_planned(spec), "ok": metrics["ok"], "detail": detail, "value": metrics}
     return check, evidence
+
+
+# Stops after which no later hook or check runs: the harness's, and a js hook that threw (the test fails on it)
+HALTS = verdict.HARNESS_STOPS | {"hook_threw"}
 
 
 # The input may take at most this much longer than its no-input control (x 1.25, + 0.25 s) for the two changes to be
@@ -235,7 +241,7 @@ def _input_check(session, scenario, run_dir, url):
     import hashlib
 
     from .pixels import PixelError, compare
-    from .session import HookFailed
+    from .session import HookBroke, HookFailed
 
     spec = scenario.expect["input"]
     if run_dir is None:
@@ -251,8 +257,9 @@ def _input_check(session, scenario, run_dir, url):
         frames["input-before"] = session.capture_region_png(spec["region"])
         started = time.monotonic()
         try:
-            for hook in spec["do"]:
-                session.run_hook(hook, url)
+            _run_hooks(session, f"input {spec['name']!r}, do", spec["do"], url, doing=False)
+        except HookBroke:  # a js hook's error names its place already
+            raise
         except HookFailed as e:  # the input itself failed, as a before hook would (redteam-1 L1, #275)
             raise HookFailed(f"input {spec['name']!r}, the do hooks: {e}") from None
         frames["input-after"] = session.capture_region_png(spec["region"])
@@ -328,8 +335,7 @@ def _motion_check(session, scenario, run_dir, url, observed):
     if run_dir is None:
         raise PixelError("motion capture needs a report folder for its evidence")
     planned = verdict.motion_planned(spec)
-    for hook in spec["do"]:
-        session.run_hook(hook, url)
+    _run_hooks(session, f"motion {spec['name']!r}, do", spec["do"], url, doing=False)
     checks, gaps = [], None
     if spec.get("max_gap_ms"):
         gaps = frame_gaps(session.frame_times(spec["seconds"] * 1000))
@@ -434,7 +440,7 @@ def _sweep_check(session, scenario, url, read):
     errors and the banners a person sees that were not there before the hooks. read() is the runner's own read of the
     page: it drains the errors, so each read holds only what came after the one before. -> (one check per setting,
     evidence)."""
-    from .session import HookFailed
+    from .session import HookBroke, HookFailed
 
     spec = scenario.expect["sweep"]
     read()  # what the page logged before the sweep is no setting's
@@ -443,8 +449,10 @@ def _sweep_check(session, scenario, url, read):
         # a banner shown before the hooks (before the sweep, or by an earlier setting) is not this one's (redteam-1 M1)
         before, broken = _sweep_banners(session, spec)
         try:
-            for hook in setting["do"]:
-                session.run_hook(hook, url)
+            _run_hooks(session, f"sweep {spec['name']!r}, setting {setting['name']!r}, do", setting["do"], url,
+                       doing=False)
+        except HookBroke:  # a js hook's error names its place already
+            raise
         except HookFailed as e:  # the sweep could not reach the setting: a failed hook, as a before hook's
             raise HookFailed(f"sweep {spec['name']!r}, setting {setting['name']!r}: {e}") from None
         time.sleep(spec["wait"])
@@ -519,7 +527,7 @@ def _load_check(session, scenario, opts, run_dir, started):
 
 
 def run_scenario(session, scenario, *, opts, hosts, run_dir):
-    from .session import GuardMissing, HookFailed, LeftSite, require_transport, transport_error
+    from .session import GuardMissing, HookFailed, HookThrew, LeftSite, require_transport, transport_error
     from .viewport import ViewportMismatch
 
     started = time.monotonic()
@@ -543,7 +551,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
 
     findings = []
     observed = {}
-    stop, detail = None, None
+    stop, detail, thrown = None, None, None
     before = None  # the page's checks as Jev found it, before its first move
     ux_observer = None
     load = scenario.expect.get("load")
@@ -679,6 +687,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                            "harness", str(e), started)
         stop, detail = "viewport_mismatch", str(e)
         result["capture_viewport"] = e.evidence
+    except HookThrew as e:  # the page's answer: the test fails on the hook (verdict.classify)
+        stop, detail, thrown = "hook_threw", str(e), e
     except HookFailed as e:
         stop, detail = "hook_failed", str(e)
     except LeftSite as e:
@@ -716,7 +726,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                     read()
             measured_effect = measured_input = None
             measured_motion = []
-            if scenario.expect.get("motion") and stop not in verdict.HARNESS_STOPS:
+            if scenario.expect.get("motion") and stop not in HALTS:
                 measured_motion, result["motion"], failed = _motion_check(
                     session, scenario, run_dir, observed.get("url") or scenario.url, observed)
                 if failed:  # Clef failed, not the browser: its looks were not judged, so motion did not run
@@ -724,18 +734,18 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                 else:
                     ran.add("motion")
                 read()
-            if scenario.expect.get("input") and stop not in verdict.HARNESS_STOPS:
+            if scenario.expect.get("input") and stop not in HALTS:
                 measured_input, result["input"] = _input_check(session, scenario, run_dir,
                                                                observed.get("url") or scenario.url)
                 ran.add("input")
                 read()  # the page checks and looks judge the page after its input
-            if scenario.expect.get("effect") and stop not in verdict.HARNESS_STOPS:
+            if scenario.expect.get("effect") and stop not in HALTS:
                 measured_effect, result["effect"] = _effect_check(session, scenario, run_dir,
                                                                  observed.get("url") or scenario.url)
                 ran.add("effect")
                 read()  # ordinary page checks and looks judge the final, enabled state
             measured_sweep = []
-            if scenario.expect.get("sweep") and stop not in verdict.HARNESS_STOPS:
+            if scenario.expect.get("sweep") and stop not in HALTS:
                 measured_sweep, result["sweep"] = _sweep_check(session, scenario, observed.get("url") or scenario.url,
                                                                read)
                 ran.add("sweep")
@@ -748,12 +758,12 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if measured_effect is not None:
                 checks.append(measured_effect)
             checks += measured_sweep
-            if scenario.expect.get("looks") and stop not in verdict.HARNESS_STOPS:
+            if scenario.expect.get("looks") and stop not in HALTS:
                 looks, failed = judge_looks(session, scenario, observed, run_dir, result, ran)
                 checks += looks
                 if failed:  # Clef failed, not the browser
                     stop, detail = "model_error", failed
-            if stop not in verdict.HARNESS_STOPS:
+            if stop not in HALTS:
                 ran.add("after")  # a hook that fails is named by the stop itself, not as never run
                 _run_hooks(session, "after", scenario.after, observed.get("url") or scenario.url)
                 says = scenario.expect.get("says") or {}  # the author's words for these checks (the test plan)
@@ -768,6 +778,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                     if says.get("command"):
                         checks[-1]["says"] = says["command"]
                 ran.add("command")
+        except HookThrew as e:
+            stop, detail, thrown = "hook_threw", str(e), e
         except HookFailed as e:
             stop, detail = "hook_failed", str(e)
         except ViewportMismatch as e:
@@ -812,6 +824,9 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                    "latency_ms", "text_latency_ms", "executed_ms", "elapsed_ms")}
             for h in state["history"][-15:]
         ]
+    if thrown is not None:  # the hook's own check: named by its place, so a planted fault can name it
+        checks.append({"check": f"{thrown.where or 'a js hook'} ran", "ok": False,
+                       "detail": f"`{thrown.source}` threw {thrown.said}"})
     result["checks"] = checks
     if session.react_log:  # what react hooks saw: the frames they asked for (relative to the run) and any releases
         result["react"] = [{**e, "path": str(Path(e["path"]).relative_to(run_dir)) if e.get("path") and run_dir
@@ -1218,11 +1233,19 @@ def _doing(session, words):
     session.doing = words
 
 
-def _run_hooks(session, kind, hooks, url):
-    """The test's before or after hooks, in order, each named for a page that crashes ("before hook 2 of 3")."""
+def _run_hooks(session, kind, hooks, url, doing=True):
+    """Hooks in order, each named by its place ("before hook 2 of 3", "input 'aim', do hook 1 of 1"): for a page that
+    crashes (doing: the test's before and after hooks), and in the error of a js hook that throws or breaks."""
+    from .session import HookBroke
+
     for n, hook in enumerate(hooks, 1):
-        _doing(session, f"{kind} hook {n} of {len(hooks)}")
-        session.run_hook(hook, url)
+        where = f"{kind} hook {n} of {len(hooks)}"
+        if doing:
+            _doing(session, where)
+        try:
+            session.run_hook(hook, url)
+        except HookBroke as e:  # a HookThrew too
+            raise e.at(where) from None
 
 
 def _cache(scenario, opts):

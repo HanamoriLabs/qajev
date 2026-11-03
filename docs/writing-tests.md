@@ -456,7 +456,8 @@ For a phone's real browser (Chrome on an Android emulator; iOS Safari is not rea
 
 A planted fault proves a check can catch a fault: you break the page on purpose, and the check must fail. Mark such
 a test with `expect_fail`, naming the one check it plants against by its `says` text (or its words as `qajev plan`
-prints them). `expect_fail: true` works only on a test with exactly one check. The test must say in `about` what it
+prints them). `expect_fail: true` works only on a test with exactly one check. A `js` before or after hook that throws
+on purpose is named by its place, such as `expect_fail: "before hook 1 of 1 ran"`. The test must say in `about` what it
 plants.
 
 ```yaml
@@ -649,6 +650,15 @@ Its `after:` hooks run after the checks: a result an `after:` hook writes can ne
 hook that plays the page and records a result belongs last in `before:`. `expect` js and hook js run in separate
 JavaScript worlds: they share the page's DOM (so a hook can leave its result in a `data-` attribute), not its
 window globals.
+
+A `js` hook that throws on purpose, such as `throw new Error("PLAYER_UNLOCK_INPUT_STUCK")`, gives the page's answer:
+the test fails on a check named for the hook's place, such as `before hook 2 of 3 ran`, with the error's type, its
+message and its first stack frame. A rejected Promise and a thrown string count the same way. Nothing after the hook
+runs. After a `before:` or `after:` hook, the page checks still judge the page. Places in a check's own hooks read
+`input 'aim', do hook 1 of 1`,
+`sweep 'menus', setting 'logs', do hook 1 of 1`, `effect 'glow', on hook 1 of 2` and `motion 'fall', do hook 1 of 1`.
+A hook whose own code broke (a `TypeError`, a `ReferenceError` or a `SyntaxError`) says nothing about the page: the
+test is harness, and its reason gives the hook's place, the error's type, its message and its first stack frame.
 
 A `drag` hook drags the real mouse, as a player turns a camera: `{selector: "canvas", x: 200, y: 150, by: {x: 150,
 y: 0}}` presses at the point (CSS pixels, as for `click_at`), moves by `by` in `steps` moves (default 20) over `ms`

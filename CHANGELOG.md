@@ -16,6 +16,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Changed
 
+- A `js` hook that throws on purpose (`throw new Error("PLAYER_UNLOCK_INPUT_STUCK")`, a rejected Promise, a thrown
+  string) now fails the test on a check named for the hook's place, such as `before hook 2 of 3 ran`. Before, it was
+  harness ("browser/daemon error"), though the error named the product's own state. A hook whose own code broke (a
+  `TypeError`, a `ReferenceError` or a `SyntaxError`) stays harness, and its reason now gives the hook's place, the
+  error's type, its message and its first stack frame. `expect_fail` can name a `js` before or after hook by its
+  place. Suites whose hooks throw an `Error` on purpose now get fail where they got harness.
 - `expect.load`: when QAJev cannot read the browser's clock before the navigation, it times the page from the last
   document's start. `report.json` now keeps `clock` (`navigation` or `document`), and the check's detail says so.
   Before, that fallback was silent, and a loader page's own time was left out with no word.
