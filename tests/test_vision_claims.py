@@ -145,6 +145,7 @@ def test_identical_blockout_cannot_pass_even_if_the_model_would_pass_it(tmp_path
                         evidence_dir=tmp_path / "report")[0]
     assert check["ok"] is False and "identical" in check["detail"]
     assert check["evidence"]["crop"] == check["evidence"]["reference"]
+    assert (check["probability"], check["judge"]) == (None, None)  # no model judged it, and the report says so
 
 
 def test_a_reference_symlink_cannot_read_or_upload_an_outside_image(tmp_path):

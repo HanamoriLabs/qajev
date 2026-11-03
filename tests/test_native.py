@@ -340,7 +340,8 @@ def test_a_game_step_with_vision_shows_clef_the_screen_and_judges_its_looks(monk
     r = native.play(Windowed(), name="menu", goal="Open the menu.", expect={"looks": ["the menu is open"]},
                     budget={"actions": 5, "seconds": 10}, ledger=_NoLedger(), vision=True)
     assert seen and seen[0].startswith("data:image/png;base64,") and providers.SEE is None
-    assert {"check": "looks: the menu is open", "ok": True, "detail": "p 0.90"} in r["checks"]
+    assert {"check": "looks: the menu is open", "ok": True, "detail": "p 0.90", "probability": 0.9,
+            "judge": None} in r["checks"]
 
 
 def test_real_time_play_on_a_paused_game_stops_and_says_so():
