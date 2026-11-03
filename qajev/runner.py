@@ -200,9 +200,10 @@ def _effect_check(session, scenario, run_dir, url):
     return check, evidence
 
 
-# The input may take at most this much longer than its no-input control (x 1.25, + 0.1 s) for the two changes to be
-# compared: a longer input has more time to change by itself (redteam-1 M1, #275).
-INPUT_TIME_RATIO, INPUT_TIME_SLACK_S = 1.25, 0.1
+# The input may take at most this much longer than its no-input control (x 1.25, + 0.25 s) for the two changes to be
+# compared: a longer input has more time to change by itself (redteam-1 M1, #275). The 0.25 s is a hook's own cost:
+# a drag's start point and its press and release are not paced, and each event waits for the renderer.
+INPUT_TIME_RATIO, INPUT_TIME_SLACK_S = 1.25, 0.25
 
 
 def _input_wait_s(hooks):

@@ -2179,8 +2179,10 @@ class Session:
             self.call("Input.dispatchMouseEvent", type="mousePressed", x=x, y=y, button=button, buttons=held,
                       clickCount=1)
             try:
-                for i in range(1, steps + 1):
-                    time.sleep(pause)
+                started = time.monotonic()
+                for i in range(1, steps + 1):  # on the clock: each move waits for the renderer, so a fixed pause
+                    # between them made a 300 ms drag take about 600 ms, longer than its input check's control
+                    time.sleep(max(0.0, started + i * pause - time.monotonic()))
                     x, y = at["x"] + spec["by"]["x"] * i / steps, at["y"] + spec["by"]["y"] * i / steps
                     self.call("Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y, button=button, buttons=held)
             finally:  # a button left down would drag the rest of the test
