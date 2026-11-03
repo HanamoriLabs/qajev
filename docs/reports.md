@@ -101,6 +101,11 @@ keeps its `probability` (`null` when the model gave no valid one) and its `judge
 QAJev asked for), with the model id in `judge_model`. A look that failed on its pixels before any model was asked has
 both `null`.
 
+A test with `expect.load` keeps `load`: `ms` (the time from navigation start to the first playable frame), `max_ms`,
+`cache` (always `cold`) and `shot` (that frame). When the page was not playable, `ms` is `null` and `waited_ms` says
+how long QAJev waited. `failed_ms` is when the page's `failed` expression held, `error` is the last throw of `ready`,
+and `watched: false` means the watcher never ran (the test is harness).
+
 A scenario whose page crashed (Chrome's "Aw, Snap") is **fail**, with stop `page_crashed` and a `page_crashed` record:
 the crashed page's `url` and the `last_step`. A scenario with `cache: cold` keeps `cache: "cold"`. The lines that its
 `console_keep` patterns matched are under `page_console_kept`, and `page_console_kept_omitted` counts those over 200.

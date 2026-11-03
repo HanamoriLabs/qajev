@@ -54,7 +54,7 @@ def wanted_devices(explicit=None):
 HOOK_KINDS = {"js", "fill", "click", "click_at", "navigate", "wait_for", "key", "react", "sleep", "command", "reload",
               "pad"}
 EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
-               "looks", "across", "says", "effect"}
+               "looks", "across", "says", "effect", "load"}
 # The checks only their author can describe, by what `says` gives them in plain words (the test plan, 6 Oct)
 SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
@@ -322,7 +322,34 @@ def _expect(value, where):
             raise SuiteError(f"{where}.command needs run")
     if "effect" in out:
         out["effect"] = _effect(out["effect"], f"{where}.effect")
+    if "load" in out:
+        out["load"] = _load(out["load"], f"{where}.load")
     return out
+
+
+# The load limits: below 100 ms is a limit in seconds by mistake; 5 min is the longest (QAJev waits twice the limit)
+LOAD_MIN_MS, LOAD_MAX_MS = 100, 300_000
+
+
+def _load(value, where):
+    """expect.load: {ready, max_ms, failed?}: the page is playable (ready returns true) within max_ms of its
+    navigation start, on a cold cache (29 Oct: a demo passed on a GPU box and took over 2 min to load on a laptop)."""
+    if not isinstance(value, dict):
+        raise SuiteError(f"{where} must be {{ready: <JavaScript expression>, max_ms: <milliseconds>}}")
+    _unknown(where, value, {"ready", "failed", "max_ms"})
+    for key in ("ready", "failed"):
+        if key in value and (not isinstance(value[key], str) or not value[key].strip()):
+            raise SuiteError(f"{where}.{key} must be a JavaScript expression that returns true")
+    if "ready" not in value:
+        raise SuiteError(f"{where}.ready is required: an expression that returns true when a person can play")
+    limit = value.get("max_ms")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not LOAD_MIN_MS <= limit <= LOAD_MAX_MS:
+        raise SuiteError(f"{where}.max_ms must be whole milliseconds, {LOAD_MIN_MS} to {LOAD_MAX_MS}"
+                         + (f"; {limit:g} looks like seconds (write {limit * 1000:g})"
+                            if isinstance(limit, (int, float)) and not isinstance(limit, bool)
+                            and 0 < limit < LOAD_MIN_MS
+                            else ""))
+    return {"ready": value["ready"], "max_ms": limit, **({"failed": value["failed"]} if "failed" in value else {})}
 
 
 def _effect(value, where):
@@ -471,7 +498,7 @@ def page_checks(expect):
 def has_checks(expect):
     # looks is not a page check: it costs a model call, so it is judged once, at the end, not while Jev moves.
     return page_checks(expect) or bool(expect.get("fetch") or expect.get("command") or expect.get("looks")
-                                       or expect.get("across") or expect.get("effect"))
+                                       or expect.get("across") or expect.get("effect") or expect.get("load"))
 
 
 def _account(raw, base, folder=None):

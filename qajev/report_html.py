@@ -275,6 +275,18 @@ def _plan(items, scenarios):
     return "".join(out)
 
 
+def load_summary(load):
+    """expect.load's measure in words, for the HTML and Markdown reports."""
+    limit = f"limit {load['max_ms'] / 1000:g} s, {load.get('cache') or 'cold'} cache"
+    if load.get("ms") is not None:
+        return f"playable at {load['ms'] / 1000:.2f} s ({limit})"
+    if load.get("failed_ms") is not None:
+        return f"the page said its load failed at {load['failed_ms'] / 1000:.2f} s ({limit})"
+    if not load.get("watched"):
+        return f"not measured: the ready watcher never ran in the page ({limit})"
+    return f"not playable after {load['waited_ms'] / 1000:.1f} s ({limit})"
+
+
 def planted_tag(r):
     """A planted fault's tag (suite.expect_fail): the check it must fail on."""
     return f"expected to fail on “{r.get('expected_check')}”"
@@ -302,6 +314,10 @@ def _scenario(i, r, who="Jev"):
     if r.get("expected"):
         parts.append(f'<p class="planted"><span class="tag">{_e(planted_tag(r))}</span> Gate: '
                      f'{_e(r.get("graded_reason"))}</p>')
+    if r.get("load"):
+        parts.append(f'<p>Load: {_e(load_summary(r["load"]))}</p>')
+        if r["load"].get("shot"):
+            parts.append(_shot(r["load"]["shot"], "the first playable frame", "first playable frame"))
     effect = r.get("effect")
     if effect:
         parts += [f'<h4>Visible effect: {_e(effect["name"])}</h4>',

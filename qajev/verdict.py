@@ -118,6 +118,8 @@ def planned(expect):
                     **({"says": says["command"]} if says.get("command") else {})})
     if expect.get("effect"):
         out.append(effect_planned(expect["effect"]))
+    if expect.get("load"):
+        out.append(load_planned(expect["load"]))
     if expect.get("looks"):
         from . import vision
 
@@ -132,6 +134,13 @@ def effect_planned(spec):
     return {"check": f"effect {name!r} in region {region!r}",
             "says": f"{name}: at least {spec['min_changed']:.6g} of pixels in region {region} change "
                     f"between off and on, with RGB difference greater than {spec['tolerance']}"}
+
+
+def load_planned(spec):
+    return {"check": f"playable within {spec['max_ms'] / 1000:g} s on a cold cache",
+            "says": f"playable within {spec['max_ms'] / 1000:g} s of the page's navigation start, on a cold cache: "
+                    f"the first animation frame where {spec['ready']!r} returns true"
+                    + (f"; {spec['failed']!r} returning true fails the load at once" if spec.get("failed") else "")}
 
 
 def _measured_result(value: Any) -> TypeGuard[dict[str, Any]]:

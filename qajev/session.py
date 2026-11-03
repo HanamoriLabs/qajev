@@ -849,6 +849,33 @@ DRAW_COUNT_JS = r"""(() => {
   requestAnimationFrame(frame);
 })();"""
 
+# expect.load's watcher, in the top document before the page's own code: at each animation frame it asks the test's
+# ready (and failed) expressions, and keeps performance.now() (ms since the page's navigation start) at the first frame
+# where one returns exactly true. A throw counts as not yet; the last one is kept for the report.
+LOAD_WATCH_JS = r"""(() => {
+  if (window !== window.top) return;
+  const key = Symbol.for('qajev.load');
+  if (window[key]) return;
+  const state = {at: null, failed: null, error: null};
+  Object.defineProperty(window, key, { value: state, enumerable: false });
+  const holds = test => {
+    try { return test() === true; }
+    catch (e) { state.error = String((e && e.message) || e).slice(0, 300); return false; }
+  };
+  const ready = () => (__READY__
+  );
+  const failed = __FAILED__;
+  const frame = () => {
+    if (failed && holds(failed)) { state.failed = performance.now(); return; }
+    if (holds(ready)) { state.at = performance.now(); return; }
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+})();"""
+LOAD_STATE_JS = """(() => { const s = window[Symbol.for('qajev.load')];
+  return s ? {at: s.at, failed: s.failed, error: s.error, now: performance.now()}
+           : {missing: true, now: performance.now()}; })()"""
+
 # The page's WebGPU adapter as the page gets it, for canvas_capture's gpu: hardware. No device is made.
 WEBGPU_ADAPTER_JS = """(async () => {
   if (!navigator.gpu) return {none: 'the page has no WebGPU (navigator.gpu)'};
@@ -1905,6 +1932,46 @@ class Session:
                                               source=DRAW_COUNT_JS)["identifier"]
         with contextlib.suppress(RuntimeError):
             self.evaluate(DRAW_COUNT_JS)
+
+    def watch_load(self, spec):
+        """expect.load: put LOAD_WATCH_JS, with the test's expressions, in every document from now on, before the
+        page's own code. The runner calls it before the test's page loads and unwatch_load after it measured."""
+        self.unwatch_load()
+        failed = f"() => ({spec['failed']}\n  )" if spec.get("failed") else "null"
+        head, _, tail = LOAD_WATCH_JS.partition("__READY__")  # the author's text is never searched for markers
+        source = head + spec["ready"] + tail.replace("__FAILED__", failed)
+        self.load_script_id = self.call("Page.addScriptToEvaluateOnNewDocument", source=source)["identifier"]
+
+    def unwatch_load(self):
+        if getattr(self, "load_script_id", None):
+            with contextlib.suppress(RuntimeError, TimeoutError):
+                self.call("Page.removeScriptToEvaluateOnNewDocument", identifier=self.load_script_id)
+            self.load_script_id = None
+
+    def wait_load(self, spec):
+        """Wait for the page that watch_load watches to be playable, to say its load failed, or for twice its limit.
+        -> {ms} when it was playable; else {ms: None, waited_ms, failed_ms?, error?, watched}. watched False: the
+        watcher never ran in the page (a ready expression that does not parse stops it). The page's own clock
+        (performance.now()) times the wait, so a page that answers late is not cut short."""
+        wait_ms = 2 * spec["max_ms"]
+        deadline = time.monotonic() + wait_ms / 1000 + 30  # the page's own clock decides; this guards a page that hangs
+        state = None
+        while time.monotonic() < deadline and self.page_crash() is None:
+            with contextlib.suppress(RuntimeError, TimeoutError):
+                state = self.evaluate(LOAD_STATE_JS, timeout_ms=3000) or state
+            if state and (state.get("at") is not None or state.get("failed") is not None
+                          or state.get("now", 0) >= wait_ms):
+                break
+            time.sleep(0.1)
+        if state and state.get("at") is not None:
+            return {"ms": round(state["at"])}
+        out = {"ms": None, "waited_ms": round((state or {}).get("now") or wait_ms),
+               "watched": bool(state) and not state.get("missing")}
+        if state and state.get("failed") is not None:
+            out["failed_ms"] = round(state["failed"])
+        if state and state.get("error"):
+            out["error"] = state["error"]
+        return out
 
     def pad(self, value):
         """A pad hook: each frame of pad.plan(value) set on the virtual pad, held for its time."""

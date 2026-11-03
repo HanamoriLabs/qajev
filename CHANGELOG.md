@@ -4,6 +4,15 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- `expect.load` in a suite: the time from the page's navigation start to its first playable frame, on a cold cache.
+  `ready` is a JavaScript expression that returns `true` when a person can play, and `max_ms` is the limit. An optional
+  `failed` expression fails the load at once. QAJev asks `ready` at each animation frame from before the page's own
+  code runs, and times it with the page's own clock. It waits up to twice the limit, so a slow load gets its time.
+  `report.json` keeps `load` and a screenshot of the playable frame. Before, a game that passed on a fast machine
+  could take over 2 min to load for a person, and no check said so.
+
 ## 0.4.46: 3 Nov 2026
 
 ### Added
