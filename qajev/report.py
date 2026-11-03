@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from urllib.parse import quote, urlsplit
 
 from . import __version__, config, plan, planfile, report_html, verdict
-from .report_files import PUBLISH_LOCK, missing_images, publish, ux_crop, ux_details
+from .report_files import INPUT_FRAMES, PUBLISH_LOCK, missing_images, publish, ux_crop, ux_details
 
 OBVIOUS = 0.8
 MOTION = {
@@ -406,6 +406,12 @@ def markdown(data):
                       "Region: " + json.dumps(effect["region"], ensure_ascii=False), "",
                       "Pixels: " + json.dumps(effect["metrics"], ensure_ascii=False, sort_keys=True), "",
                       " · ".join(f"[{key}]({effect[key]})" for key in ("off", "on", "difference")), ""]
+        moved = r.get("input")
+        if moved:
+            lines += ["Input: " + _cell(moved["name"], 200), "",
+                      "Region: " + json.dumps(moved["region"], ensure_ascii=False), "",
+                      "Pixels: " + json.dumps(moved["metrics"], ensure_ascii=False, sort_keys=True), "",
+                      " · ".join(f"[{key}]({moved[key]})" for key in INPUT_FRAMES if moved.get(key)), ""]
         if r.get("load"):
             lines += ["Load: " + report_html.load_summary(r["load"]), ""]
             if r["load"].get("shot"):
