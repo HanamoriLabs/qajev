@@ -124,6 +124,8 @@ def planned(expect):
         out.append(input_planned(expect["input"]))
     if expect.get("motion"):
         out.extend(motion_planned(expect["motion"]))
+    if expect.get("sweep"):
+        out.extend(sweep_planned(expect["sweep"]))
     if expect.get("looks"):
         from . import vision
 
@@ -162,6 +164,15 @@ def motion_planned(spec):
                             f"animation frames is longer than {spec['max_gap_ms']} ms"})
     out += [{"check": f"motion {name!r} looks: {statement}"} for statement in spec.get("looks", [])]
     return out
+
+
+def sweep_planned(spec):
+    """expect.sweep's checks: one for each setting."""
+    banners = f"no banner ({', '.join(spec['banners'])})" if spec["banners"] else "no banners are looked for"
+    return [{"check": f"sweep {spec['name']!r}: {setting['name']!r} shows no error",
+             "says": f"{spec['name']}: {spec['wait']:g} s after {setting['name']}, the page logged no new error "
+                     f"(console.error, an exception, a rejection, a worker's error) and shows {banners}"}
+            for setting in spec["settings"]]
 
 
 def load_planned(spec):

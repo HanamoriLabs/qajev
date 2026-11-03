@@ -116,6 +116,10 @@ A test with `expect.motion` keeps `motion`: its `name`, `region`, `metrics` (`pa
 when it has `max_gap_ms`), the paths of its frames (`frames`), and the `sheet` Clef judged with its `sheet_frames`.
 Report downloads keep them all.
 
+A test with `expect.sweep` keeps `sweep`: its `name`, `wait` and `banners` (the selectors), and for each of its
+`settings` the `name`, the first 10 new `errors`, the `error_count`, and the first 10 `banners` seen
+(`{selector, text}`). Each setting is also a check in `checks`.
+
 A scenario whose page crashed (Chrome's "Aw, Snap") is **fail**, with stop `page_crashed` and a `page_crashed` record:
 the crashed page's `url` and the `last_step`. A scenario with `cache: cold` keeps `cache: "cold"`. The lines that its
 `console_keep` patterns matched are under `page_console_kept`, and `page_console_kept_omitted` counts those over 200.
