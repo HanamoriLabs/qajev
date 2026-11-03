@@ -42,12 +42,19 @@ def test_a_motion_check_has_defaults_and_bounds():
             _suite(**bad)
 
 
+def test_a_multiplayer_test_cannot_check_motion():
+    with pytest.raises(suite.SuiteError, match=r"expect: unknown key\(s\) \['motion'\]"):
+        suite.parse({"scenarios": [{"name": "a", "url": "http://127.0.0.1/", "about": "x", "clients": ["p1", "p2"],
+                                    "steps": [{"client": "p1", "js": "1"}],
+                                    "expect": {"motion": {"name": "n", "region": REGION}}}]})
+
+
 def test_the_plan_names_each_motion_check():
     parsed = _suite(max_gap_ms=100, looks=["No ghost trails"], frames=5, seconds=1)
     assert plan.absent_only(parsed.scenarios) == [] and suite.has_checks(parsed.scenarios[0].expect)
     assert verdict.planned(parsed.scenarios[0].expect) == [
         {"check": "motion 'the collapse plays' in region 'view'",
-         "says": "the collapse plays: over 1 s, at least 1 of the 4 pairs of 5 frames of region view change by at "
+         "says": "the collapse plays: over 1 s, at least 100% of the 4 pairs of 5 frames of region view change by at "
                  "least 0.001 of their pixels, with RGB difference greater than 8"},
         {"check": "motion 'the collapse plays': frame gaps at most 100 ms",
          "says": "the collapse plays: over 1 s with no capture, no gap between two of the page's animation frames is "

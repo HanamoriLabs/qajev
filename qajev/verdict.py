@@ -153,7 +153,7 @@ def motion_planned(spec):
     judged by Clef on a sheet of the frames."""
     name, region = spec["name"], spec["region"]["name"]
     out = [{"check": f"motion {name!r} in region {region!r}",
-            "says": f"{name}: over {spec['seconds']:g} s, at least {spec['min_moving']:.6g} of the "
+            "says": f"{name}: over {spec['seconds']:g} s, at least {spec['min_moving']:.0%} of the "
                     f"{spec['frames'] - 1} pairs of {spec['frames']} frames of region {region} change by at least "
                     f"{spec['min_changed']:.6g} of their pixels, with RGB difference greater than {spec['tolerance']}"}]
     if spec.get("max_gap_ms"):
