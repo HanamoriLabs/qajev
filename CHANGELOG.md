@@ -4,6 +4,13 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Changed
+
+- With `canvas_capture: page` and `expect.looks`, a dark screen is checked against the page's own frame. QAJev counts
+  the page's draw calls in each frame and reads the canvas again inside a frame callback. When that frame is flat dark,
+  opaque, and drawn in, Clef judges the looks, so a black frame fails on its look instead of grading harness. A lit,
+  transparent or undrawn frame keeps the old harness grade (redteam-1's known-answer tests).
+
 ### Fixed
 
 - A cloud run on a loopback URL (`127.0.0.1`, `localhost`) is no longer filed under the one project registered on

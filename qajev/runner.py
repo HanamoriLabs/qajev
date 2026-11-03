@@ -294,6 +294,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         if any("pad" in hook for hook in [*scenario.before, *scenario.after, *effect.get("off", []),
                                          *effect.get("on", [])]):
             session.use_pad()  # before the page loads: a game may read its pads only once, at load
+        if scenario.canvas_capture and scenario.expect.get("looks") and hasattr(session, "count_draws"):
+            session.count_draws()  # before the page loads: it wraps the draw calls of contexts made later (drawn_dark)
         if scenario.url:
             session.check_host(scenario.url)
             error = session.navigate(scenario.url)
@@ -545,10 +547,16 @@ def scroll_to_visible(session, expect):
 def judge_looks(session, scenario, observed, run_dir, result, ran):
     """expect.looks, judged by Clef on the screen now: -> (its checks, None), and "looks" joins ran. On a screen whose
     main canvas is one flat dark colour (looks_blank) Clef is not asked: -> ([], None), with result["looks_blank"], and
-    looks_blank_grade grades it. When Clef fails: -> ([], why). A failed capture raises, as a browser error."""
+    looks_blank_grade grades it, unless the page's own frame is dark too (drawn_dark): then Clef judges the screen.
+    When Clef fails: -> ([], why). A failed capture raises, as a browser error."""
     structured = any(isinstance(entry, dict) for entry in scenario.expect["looks"])
     image = session.screen_image_png() if structured else session.screen_image()
     blank = None if scenario.canvas_dark else looks_blank(session, image, result)
+    if blank and scenario.canvas_capture and run_dir:
+        frame = drawn_dark(session, scenario, run_dir)
+        result["looks_frame"] = frame
+        if frame["dark"]:
+            blank = None
     if blank:
         result["looks_blank"] = blank
         return [], None
@@ -560,6 +568,23 @@ def judge_looks(session, scenario, observed, run_dir, result, ran):
         return [], f"while judging looks: {e}"
     ran.add("looks")
     return checks, None
+
+
+def drawn_dark(session, scenario, run_dir):
+    """The screen is flat dark and the scenario has canvas_capture: page. The page's own frame, read inside a
+    requestAnimationFrame callback after the page drew it (Session.page_canvas in_frame), tells why. -> {dark, image,
+    transparent, draws, problem, blank}. dark: that frame is flat dark, not transparent, and the page made draw calls
+    in it (Session.count_draws), so the page drew a dark frame and Clef judges the looks (redteam-1's known-answer
+    tests, 3 Nov: a black-frame fault must fail on its look, not grade harness). A lit frame means the screenshot lost
+    the canvas's GPU layer; a transparent one, a cleared buffer or nothing drawn; 0 draws (or no count), that the buffer
+    holds no frame the page drew in this one (redteam-1 O1): none of these is judged, as before."""
+    got = session.page_canvas(scenario.canvas_capture, run_dir / "shots" / f"{slug(scenario.name)}-frame-canvas.png",
+                              in_frame=True)
+    transparent, draws = bool(got.get("transparent")), got.get("draws")
+    drew = isinstance(draws, int) and not isinstance(draws, bool) and draws > 0
+    return {"dark": bool(got["blank"]) and not transparent and drew and not got["problem"],
+            "image": str(got["image"].relative_to(run_dir)) if got["image"] else None,
+            "transparent": transparent, "draws": draws, "problem": got["problem"], "blank": got["blank"]}
 
 
 def looks_blank(session, image, result):

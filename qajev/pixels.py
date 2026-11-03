@@ -159,3 +159,13 @@ def grid_lumas(data, *, columns=24, rows=16):
     except (OSError, SyntaxError, ValueError, struct.error, Image.DecompressionBombError,
             Image.DecompressionBombWarning) as error:
         raise PixelError("the readback is not a valid image") from error
+
+
+def transparent(data):
+    """Every pixel of a readback grid_lumas has read is fully transparent: a cleared drawing buffer or a canvas that
+    drew nothing, never a frame the page drew dark. -> bool (False for an image with no alpha channel)."""
+    with Image.open(io.BytesIO(data)) as image:
+        if "A" not in image.getbands() and "transparency" not in image.info:
+            return False
+        with image.convert("RGBA") as rgba:
+            return rgba.getchannel("A").getextrema()[1] == 0

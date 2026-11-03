@@ -108,6 +108,16 @@ so the page's scripts cannot change them. A failure stays a failure, with the no
 with `preserveDrawingBuffer: true`, or read the canvas in the same frame as the draw, else the readback is empty. QAJev
 saves the readback even with `--no-shots`.
 
+With `expect.looks`, `canvas_capture` also decides whether a dark screen is the page's own dark frame. QAJev then
+counts the page's draw calls in each frame (WebGL `clear` and draw calls, WebGPU queue submits), from before the page
+loads. When the screen is one flat dark colour, it runs `page` again inside a `requestAnimationFrame` callback, after
+the page's own callback drew that frame. When that readback is one flat dark colour, is not transparent, and the page
+made a draw call in that frame, the page drew a dark frame: Clef judges the looks, and a look that fails fails the test
+(a black frame is a real fault). Otherwise the looks are not judged and the test is harness, as before: a lit readback
+means the screenshot lost the canvas, a transparent one is a cleared or empty canvas, and a frame with no draw call
+holds no frame the page drew (a page that draws from a timer or only on demand, or whose frame callback comes after
+QAJev's). The report keeps that readback as `looks_frame`, with its image in `shots/<test>-frame-canvas.png`.
+
 The readback runs in QAJev's own Chrome tab only. A scenario with `clients` cannot have `canvas_capture`, and a
 suite-level `canvas_capture` cannot reach one: such a suite is refused when it loads, so give `canvas_capture` to each
 scenario that needs it. In a device browser (`real_devices`), no readback runs, so that copy of the scenario is

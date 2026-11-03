@@ -29,6 +29,8 @@ LIVE = pytest.mark.skipif(os.environ.get("QAJEV_LIVE") != "1", reason="set QAJEV
     ([11] * 280 + [60] * 20, False),              # a dark scene with things in it
     ([200] * 300, False),                         # flat, but not dark: a light page or a white canvas
     ([25] * 300, False),                          # flat, but over the dark line
+    ([23] * 300, True),                           # just under the dark line (24): dark
+    ([24] * 300, False),                          # on the dark line: not dark (redteam-1 Ask 2, 3 Nov)
     ([i % 40 for i in range(300)], False),        # dark, but not one colour
 ])
 def test_a_canvas_reads_flat_dark_only_when_nearly_all_its_points_are_one_dark_colour(lumas, flat):
