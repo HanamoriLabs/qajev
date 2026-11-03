@@ -482,7 +482,8 @@ def test_a_loopback_port_names_no_project_even_when_only_one_has_it(dash, local,
     assert _filed(dash, ["run", str(suite), "--serve", str(dist)]) is None
     assert _filed(dash, ["check", "http://127.0.0.1:8765/", "--serve", str(dist), "--expect-text", "x"]) is None
     assert _filed(dash, ["check", "http://localhost:8766/", "--serve", str(dist), "--expect-text", "x"]) is None
-    assert _filed(dash, ["check", "https://shop.example/cart", "--expect-text", "Cart"]) == "shop"  # a public site still does
+    # a public site still names its one project
+    assert _filed(dash, ["check", "https://shop.example/cart", "--expect-text", "Cart"]) == "shop"
     assert local == []
 
 
