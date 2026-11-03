@@ -127,7 +127,9 @@ words.
 ## What only a look at the screen tells (Clef)
 
 Write one visible claim per `looks` entry. Each entry gets its own model question and probability; claims are not
-averaged together. Existing strings still use the full screenshot. For small features and relative claims, give an
+averaged together. In report.json each looks check keeps, passing or failing, its `probability` and its `judge` (the
+model's name, such as `Clef`, with the model id in `judge_model`). Both are `null` when no model judged the check: it
+failed on its pixels first, or the reply named no model. Existing strings still use the full screenshot. For small features and relative claims, give an
 explicit crop and a labelled reference instead:
 
 ```yaml

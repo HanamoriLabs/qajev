@@ -49,8 +49,23 @@ def test_looks_are_judged_one_check_each_with_clefs_probability():
                          {"page": {"url": "http://x/pricing", "title": "Pricing"}})
     assert seen["images"] == ["data:image/jpeg;base64,AAAA"] and seen["state"]["page"]["title"] == "Pricing"
     assert [q["type"] for q in seen["questions"].values()] == ["noul"]
-    assert checks == [{"check": "looks: the Pro plan costs $29", "ok": True, "detail": "p 0.93"},
-                      {"check": "looks: three plans are shown", "ok": False, "detail": "p 0.08"}]
+    # this caller's reply names no model, so no judge is claimed
+    assert checks == [{"check": "looks: the Pro plan costs $29", "ok": True, "detail": "p 0.93", "probability": 0.93,
+                       "judge": None},
+                      {"check": "looks: three plans are shown", "ok": False, "detail": "p 0.08", "probability": 0.08,
+                       "judge": None}]
+
+
+@pytest.mark.parametrize("model, judge", [("clef", "Clef"), ("clef-flash", "Clef-flash")])
+def test_each_looks_check_names_clef_and_keeps_its_probability_passing_or_failing(model, judge):
+    # redteam-1's known-answer tests (3 Nov): the report alone must show that Clef judged every look
+    env = {**CF, "QAJEV_CLEF_MODEL": model, "TYPESAFE_API_KEY": "ts-key-for-test"}
+    resolved = P.apply(env)
+    post = P.route(lambda url, key, body: {"result": {"answers": {
+        "look_0": {"type": "noul", "noul": 0.93}, "look_1": {"type": "noul", "noul": 0.08}}}}, resolved, env)
+    checks = vision.look(post, "data:image/jpeg;base64,AAAA", ["the trees are green", "the sky is lit"], {})
+    assert [(c["ok"], c["probability"], c["judge"], c["judge_model"]) for c in checks] == [
+        (True, 0.93, judge, model), (False, 0.08, judge, model)]
 
 
 def test_vision_and_looks_need_clef_and_say_how(monkeypatch):

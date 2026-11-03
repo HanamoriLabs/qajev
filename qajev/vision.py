@@ -129,6 +129,10 @@ def normalize(value):
     return result
 
 
+# A looks check that fails on its pixels before Clef is asked (an identical block-out crop, panels too similar).
+NOT_JUDGED = {"probability": None, "judge": None}
+
+
 def planned(entry):
     return {"check": f"looks: {entry}" if isinstance(entry, str) else
             f"looks: {entry['claim']} (crop {entry['crop']['name']})"}
@@ -221,7 +225,7 @@ def look(post_json, image, statements, context, *, folder=None, evidence_dir=Non
                     evidence.update(reference=_save_image(evidence_dir, reference), reference_role=ref["role"])
                     state["reference_role"] = ref["role"]
                     if ref["role"] == "blockout" and reference == capture:
-                        checks.append({**planned(entry), "ok": False, "evidence": evidence,
+                        checks.append({**planned(entry), "ok": False, "evidence": evidence, **NOT_JUDGED,
                                        "detail": "scene crop has identical pixels to the block-out reference"})
                         continue
                     instructions += (f"Image {len(images)} is the {ref['role']} reference. "
@@ -238,7 +242,7 @@ def look(post_json, image, statements, context, *, folder=None, evidence_dir=Non
                                     difference=_save_image(evidence_dir, difference), comparison=metrics,
                                     panel_region=spec["crop"])
                     if not metrics["ok"]:
-                        checks.append({**planned(entry), "ok": False, "evidence": evidence,
+                        checks.append({**planned(entry), "ok": False, "evidence": evidence, **NOT_JUDGED,
                                        "detail": f"panels too similar: {metrics['changed']}/{metrics['total']} "
                                                  f"pixels changed; fraction {metrics['fraction']:.8g}, minimum "
                                                  f"{metrics['min_changed']:.8g}, tolerance {metrics['tolerance']}"})
@@ -261,9 +265,14 @@ def look(post_json, image, statements, context, *, folder=None, evidence_dir=Non
         answer = answers.get(question) if isinstance(answers, dict) else None
         p = answer.get("noul") if isinstance(answer, dict) else None
         valid = (not isinstance(p, bool) and isinstance(p, (int, float)) and 0 <= p <= 1 and math.isfinite(p))
+        # Every judged check names its judge and keeps the probability, passing or failing (redteam-1's known-answer
+        # tests, 3 Nov: the report alone must show that Clef judged each look). The judge is the model the reply
+        # names, or None when it names none.
+        model = reply.get("model") if isinstance(reply, dict) and isinstance(reply.get("model"), str) else None
         check = {**planned(entry), "ok": isinstance(p, (int, float)) and valid and p >= PASS_AT,
-                 "detail": f"p {p:.2f}" if valid else "no valid probability"}
+                 "detail": f"p {p:.2f}" if valid else "no valid probability", "probability": p if valid else None,
+                 "judge": providers.decider(model) if model else None, **({"judge_model": model} if model else {})}
         if evidence:
-            check.update(evidence=evidence, probability=p if valid else None)
+            check.update(evidence=evidence)
         checks.append(check)
     return checks
