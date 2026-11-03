@@ -148,7 +148,10 @@ scenarios:
 ```
 
 The wait with no input is the time the `do` hooks plan to take: a drag's `ms`, a key's holds and intervals, a
-`sleep`; at least 0.2 s. Place the region over the part of the view the input moves, away from a HUD and its
+pad's frames (its `hold_ms`), a `react` hook's `for_s`, a `sleep`; at least 0.2 s. A hook with no planned time, such
+as a `click` or a `wait_for`, counts 0. When the input then takes longer than 1.25 times its control plus 0.1 s, it
+had more time to change by itself, so the check is harness and its reason gives both times: give the `do` hooks a
+planned time. A `do` hook that fails stops the test as a failed hook, as a `before` hook does. Place the region over the part of the view the input moves, away from a HUD and its
 counters. When the scene moves a lot by itself, a larger region or a longer drag gives the input room to add more.
 The check runs after the page checks have held, before `looks`, and the page checks and looks then judge the page
 after its input. A multiplayer test cannot use this check.

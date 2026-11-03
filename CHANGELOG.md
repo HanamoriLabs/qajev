@@ -19,8 +19,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   camera under pointer lock turns. The button is let go even when the drag breaks midway.
 - `expect.input` in a suite: a named region must change by at least `min_changed` more with the test's input (its
   `do` hooks) than in the same time with none. A scene that animates by itself cannot pass for one that answers the
-  mouse. `report.json` keeps both changes, the margin and six PNGs. Before, a still frame could not show that a
-  camera ignored the mouse.
+  mouse. The time with none is the time the `do` hooks plan to take, a pad's and a `react` hook's included. An input
+  that takes longer than 1.25 times that time plus 0.1 s is harness, because it had more time to change by itself.
+  A `do` hook that fails stops the test as a failed hook. `report.json` keeps both changes, the margin and six PNGs.
+  Before, a still frame could not show that a camera ignored the mouse.
 
 ## 0.4.46: 3 Nov 2026
 

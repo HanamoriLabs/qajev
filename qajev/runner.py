@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import browser_pool, chrome, keys, live, plan, providers, ux, verdict, vision
+from . import pad as pad_mod
 from .config import redact, redact_tree, remember_secret, remembered_secrets, secret_values
 from .diagnostics import keep_console
 from .ledger import CostCapReached, Ledger
@@ -199,9 +200,15 @@ def _effect_check(session, scenario, run_dir, url):
     return check, evidence
 
 
+# The input may take at most this much longer than its no-input control (x 1.25, + 0.1 s) for the two changes to be
+# compared: a longer input has more time to change by itself (redteam-1 M1, #275).
+INPUT_TIME_RATIO, INPUT_TIME_SLACK_S = 1.25, 0.1
+
+
 def _input_wait_s(hooks):
-    """How long the no-input control waits: the time the input hooks plan to take (a drag's ms, a key's hold and
-    interval, a sleep), at least 0.2 s."""
+    """How long the no-input control waits: the time the input hooks plan to take (a drag's ms, a key's holds and
+    intervals, a pad's frames, a react hook's for_s, a sleep), at least 0.2 s. A hook with no planned time (a click,
+    a wait_for) counts 0; the time guard in _input_check then says when the input took longer."""
     planned = 0.0
     for hook in hooks:
         kind, value = next(iter(hook.items()))
@@ -212,6 +219,10 @@ def _input_wait_s(hooks):
         elif kind == "key":
             p = keys.plan(value)
             planned += len(p["keys"]) * p["repeat"] * (p["hold_ms"] + p["interval_ms"]) / 1000
+        elif kind == "pad":
+            planned += sum(frame["ms"] for frame in pad_mod.plan(value)) / 1000
+        elif kind == "react":
+            planned += keys.react_plan(value)["for_s"]
     return max(planned, 0.2)
 
 
@@ -222,6 +233,7 @@ def _input_check(session, scenario, run_dir, url):
     import hashlib
 
     from .pixels import PixelError, compare
+    from .session import HookFailed
 
     spec = scenario.expect["input"]
     if run_dir is None:
@@ -236,10 +248,15 @@ def _input_check(session, scenario, run_dir, url):
         took["idle"] = time.monotonic() - started
         frames["input-before"] = session.capture_region_png(spec["region"])
         started = time.monotonic()
-        for hook in spec["do"]:
-            session.run_hook(hook, url)
+        try:
+            for hook in spec["do"]:
+                session.run_hook(hook, url)
+        except HookFailed as e:  # the input itself failed, as a before hook would (redteam-1 L1, #275)
+            raise HookFailed(f"input {spec['name']!r}, the do hooks: {e}") from None
         frames["input-after"] = session.capture_region_png(spec["region"])
         took["input"] = time.monotonic() - started
+    except HookFailed:  # a RuntimeError, but not a capture's
+        raise
     except (RuntimeError, ValueError, OSError, TimeoutError) as e:
         raise PixelError(f"input {spec['name']!r}, capture {len(frames) + 1} of 4: {e}") from None
     for name, contents in frames.items():
@@ -251,10 +268,12 @@ def _input_check(session, scenario, run_dir, url):
                                min_changed=1)
     margin = moved["fraction"] - idle["fraction"]
     ok = margin >= spec["min_changed"]
+    longer = took["input"] > INPUT_TIME_RATIO * took["idle"] + INPUT_TIME_SLACK_S
     stem = "input-" + hashlib.sha256(scenario.name.encode()).hexdigest()[:16]
     metrics = {"idle": {k: idle[k] for k in ("changed", "total", "fraction")} | {"seconds": round(took["idle"], 3)},
                "input": {k: moved[k] for k in ("changed", "total", "fraction")} | {"seconds": round(took["input"], 3)},
-               "margin": margin, "min_changed": spec["min_changed"], "tolerance": spec["tolerance"], "ok": ok}
+               "margin": margin, "min_changed": spec["min_changed"], "tolerance": spec["tolerance"],
+               "ok": ok and not longer}
     evidence = {"name": spec["name"], "region": spec["region"], "metrics": metrics}
     for name, contents in (*frames.items(), ("idle-difference", idle_png), ("input-difference", moved_png)):
         relative = f"shots/{stem}-{name}.png"
@@ -265,6 +284,11 @@ def _input_check(session, scenario, run_dir, url):
     detail = (f"with the input {moved['fraction']:.2%} of pixels changed in {took['input']:.2f} s; with none "
               f"{idle['fraction']:.2%} in {took['idle']:.2f} s; the input must add {spec['min_changed']:.2%}, "
               f"it added {margin:.2%}")
+    if longer:  # nothing was judged: the input had more time to change by itself than its control
+        return {**verdict.input_planned(spec), "ok": False, "broke": True, "value": metrics,
+                "detail": f"the input took {took['input']:.2f} s and the no-input control {took['idle']:.2f} s, so "
+                          f"their changes cannot be compared ({detail}); give the do hooks a planned time (a drag's "
+                          "ms, a key's hold_ms, a pad's hold_ms, a react hook's for_s, a sleep)"}, evidence
     return {**verdict.input_planned(spec), "ok": ok, "detail": detail, "value": metrics}, evidence
 
 

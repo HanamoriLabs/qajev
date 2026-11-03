@@ -76,6 +76,9 @@ def test_the_no_input_control_waits_as_long_as_the_input_plans_to_take():
     assert runner._input_wait_s([DRAG, {"sleep": 0.5}, {"key": {"press": ["a", "d"], "repeat": 2, "hold_ms": 100}},
                                  {"js": "1"}]) == pytest.approx(0.3 + 0.5 + 0.4)
     assert runner._input_wait_s([{"js": "1"}]) == 0.2
+    # a pad's held stick and a react hook's for_s count too (redteam-1 M1, #275)
+    assert runner._input_wait_s([{"pad": {"stick": "left", "x": 1, "y": 0, "hold_ms": 2000}},
+                                 {"react": {"js": "null", "for_s": 1.5}}]) == pytest.approx(2.0 + 1.5)
 
 
 def png(dark):
@@ -138,6 +141,54 @@ def test_only_the_change_the_input_adds_counts(tmp_path, monkeypatch, idle, move
     for name in ("report.md", "report.html"):
         text = (tmp_path / name).read_text()
         assert all(result["input"][key] in text for key in report_files.INPUT_FRAMES)
+
+
+class Clock:
+    """time.monotonic and time.sleep for the runner: a sleep moves the clock, and so does each input hook."""
+
+    def __init__(self, hook_s):
+        self.now, self.hook_s = 100.0, hook_s
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, s):
+        self.now += s
+
+
+@pytest.mark.parametrize("hook_s,outcome", [(0.2, "pass"), (0.3, "pass"), (1.0, "harness")])
+def test_an_input_that_takes_longer_than_its_control_is_not_judged(tmp_path, monkeypatch, hook_s, outcome):
+    """A click with no planned time gets a 0.2 s control: an input that then runs 1 s has 5 times longer to change by
+    itself, so the two changes cannot be compared (redteam-1 M1, #275)."""
+    clock = Clock(hook_s)
+    view = View(0, 4)
+    view.run_hook = lambda hook, url: clock.sleep(clock.hook_s) or view.calls.append(hook)
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda _: (True, 0))
+    monkeypatch.setattr(runner.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(runner.time, "sleep", clock.sleep)
+    result = runner.run_scenario(view, _suite(do=[{"click": "#go"}]).scenarios[0], opts=runner.Options(shots=False),
+                                 hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
+    assert result["outcome"] == outcome, result["reason"]
+    if outcome == "harness":
+        assert "the input took 1.00 s and the no-input control 0.20 s, so their changes cannot be compared" in \
+            result["reason"]
+        assert result["input"]["metrics"]["ok"] is False
+
+
+def test_a_do_hook_that_fails_stops_the_test_as_a_failed_hook(tmp_path, monkeypatch):
+    view = View(0, 4)
+
+    def broken(hook, url):
+        raise session.HookFailed("'#go' is covered by div#splash")
+
+    view.run_hook = broken
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda _: (True, 0))
+    monkeypatch.setattr(runner.time, "sleep", lambda _: None)
+    result = runner.run_scenario(view, _suite(do=[{"click": "#go"}]).scenarios[0], opts=runner.Options(shots=False),
+                                 hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
+    assert result["stop"] == "hook_failed" and result["outcome"] == "harness"
+    assert "input 'the camera follows the mouse', the do hooks: '#go' is covered by div#splash" in result["reason"]
+    assert "capture" not in result["reason"]
 
 
 def test_a_capture_that_fails_is_harness_and_names_the_input_check(tmp_path, monkeypatch):
