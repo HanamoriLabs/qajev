@@ -30,14 +30,17 @@ def test_a_motion_check_has_defaults_and_bounds():
     assert {k: spec[k] for k in ("seconds", "frames", "min_changed", "min_moving", "tolerance", "looks", "do")} == {
         "seconds": 2, "frames": 8, "min_changed": 0.001, "min_moving": 1, "tolerance": 8, "looks": [], "do": []}
     assert "max_gap_ms" not in spec
-    full = _suite(seconds=0.5, frames=3, max_gap_ms=17, looks="No ghost trails", do=[{"key": "Space"}])
+    full = _suite(seconds=0.5, frames=3, max_gap_ms=17, looks="No ghost trails")
     assert full.scenarios[0].expect["motion"]["looks"] == ["No ghost trails"]
+    assert _suite(do=[{"key": "Space"}]).scenarios[0].expect["motion"]["do"] == [{"key": "Space"}]
     for bad, says in (({"seconds": 0.4}, "seconds"), ({"seconds": 31}, "seconds"), ({"frames": 2}, "frames"),
                       ({"frames": 41}, "frames"), ({"frames": 4.0}, "frames"), ({"max_gap_ms": 16}, "max_gap_ms"),
                       ({"max_gap_ms": 5001}, "max_gap_ms"), ({"min_moving": 0}, "min_moving"),
                       ({"min_changed": 2}, "min_changed"), ({"looks": [{"claim": "x"}]}, "plain statements"),
                       ({"looks": [""]}, "plain statements"), ({"do": [{"tap": 1}]}, "do\\[0\\]"),
-                      ({"name": ""}, "name"), ({"region": {"name": "v"}}, "region"), ({"fps": 60}, "fps")):
+                      ({"name": ""}, "name"), ({"region": {"name": "v"}}, "region"), ({"fps": 60}, "fps"),
+                      # the gaps come first, so the frames would miss a short effect the hooks start (redteam-1 M1)
+                      ({"max_gap_ms": 100, "do": [{"key": "Space"}]}, "max_gap_ms and do cannot go together")):
         with pytest.raises(suite.SuiteError, match=says):
             _suite(**bad)
 
@@ -57,8 +60,9 @@ def test_the_plan_names_each_motion_check():
          "says": "the collapse plays: over 1 s, at least 100% of the 4 pairs of 5 frames of region view change by at "
                  "least 0.001 of their pixels, with RGB difference greater than 8"},
         {"check": "motion 'the collapse plays': frame gaps at most 100 ms",
-         "says": "the collapse plays: over 1 s with no capture, no gap between two of the page's animation frames is "
-                 "longer than 100 ms"},
+         "says": "the collapse plays: over 1 s with no capture, the page's main thread runs an animation frame at "
+                 "least every 100 ms (frames QAJev asks for: a busy main thread delays them, a page that stops drawing "
+                 "does not)"},
         {"check": "motion 'the collapse plays' looks: No ghost trails"}]
 
 
@@ -165,6 +169,39 @@ def test_a_clef_failure_is_a_model_error_not_a_product_fail(monkeypatch, tmp_pat
     monkeypatch.setattr(vision, "look", lambda *a, **k: (_ for _ in ()).throw(vision.VisionError("Clef said 503")))
     _, result = _run(monkeypatch, tmp_path, Scene(list(range(3))), frames=3, seconds=1, looks=["No ghost trails"])
     assert result["outcome"] == "harness" and "Clef said 503" in result["reason"]
+
+
+def test_motion_looks_need_clef_and_are_refused_before_the_browser(monkeypatch):
+    monkeypatch.delenv("QAJEV_JEV_PROVIDER", raising=False)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "ts-key-for-test")
+    monkeypatch.setattr(runner.chrome, "reap", lambda *a, **k: pytest.fail("the run got past the Clef check"))
+    with pytest.raises(runner.ConfigError, match=r"looks needs Clef.*'collapse' asks for it"):
+        runner.run(_suite(looks=["No ghost trails"]), runner.Options())
+
+
+def _dark(canvas_dark=None, **extra):
+    scenario = {"name": "collapse", "about": "The tower falls.", "url": "http://127.0.0.1:8877/",
+                "expect": {"motion": {"name": "the collapse plays", "region": REGION, "frames": 3, "seconds": 1,
+                                      **extra}}}
+    return suite.parse({"devices": ["desktop"], "scenarios": [
+        {**scenario, **({"canvas_dark": canvas_dark} if canvas_dark else {})}]})
+
+
+def test_frames_that_are_all_one_flat_dark_colour_are_harness_not_a_frozen_view(monkeypatch, tmp_path):
+    """A capture without its GPU layer reads as one flat dark colour in every frame: that is not the page (redteam-1
+    L3, #276). Clef is not asked about a sheet of blank frames."""
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda _: (True, 0))
+    monkeypatch.setattr(runner.time, "sleep", lambda _: None)
+    monkeypatch.setattr(vision, "look", lambda *a, **k: pytest.fail("Clef was asked about blank frames"))
+    result = runner.run_scenario(Scene([8, 8, 8]), _dark(looks=["No ghost trails"]).scenarios[0],
+                                 opts=runner.Options(shots=False), hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
+    assert result["outcome"] == "harness", result["reason"]
+    assert "every frame of region 'view' is one flat dark colour (median grey 0)" in result["reason"]
+    assert [c["broke"] for c in result["checks"]] == [True, True] and result["motion"]["flat_dark"]["median"] == 0
+    # a region that is dark on purpose says so, and its frozen frames fail as frozen
+    result = runner.run_scenario(Scene([8, 8, 8]), _dark("a night scene").scenarios[0],
+                                 opts=runner.Options(shots=False), hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
+    assert result["outcome"] == "fail" and "0 of 2 frame pairs moved" in result["reason"], result["reason"]
 
 
 def test_a_sheet_keeps_time_order_and_fits_its_width():

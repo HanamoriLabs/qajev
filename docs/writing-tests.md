@@ -186,15 +186,25 @@ scenarios:
           - key: Space
         seconds: 3
         frames: 12
-        max_gap_ms: 100
         looks:
           - No moving piece leaves a ghost image or a trail behind it
+  - name: the idle tower never stalls
+    about: The page's main thread stays free while the scene plays.
+    url: http://127.0.0.1:5173/?scene=tower
+    expect:
+      motion:
+        name: the idle scene
+        region: {name: the tower, x: 320, y: 60, width: 640, height: 600}
+        max_gap_ms: 100
 ```
 
-With `max_gap_ms` (17 to 5000), QAJev first records the page's animation frames for `seconds`, with no capture
-running, because a capture can hold a frame back itself. The longest gap between two frames must be at most
-`max_gap_ms`: a stall on load or in an effect fails it. It is its own check, with the frames a second and the gap
-that 95% of frames stay within.
+With `max_gap_ms` (17 to 5000), QAJev first asks the browser for animation frames for `seconds`, with no capture
+running, because a capture can hold a frame back itself. These are QAJev's own frames, on the page's main thread:
+the longest gap between two of them must be at most `max_gap_ms`. A main thread that is busy (a long script, a
+stall) delays them and fails the check. A page that stops drawing does not: the frames themselves show that. It is
+its own check, with the frames a second and the gap that 95% of frames stay within. `max_gap_ms` cannot go with `do`:
+the frames come after the gaps, so a short effect that a hook starts would be over. Put the gaps in a test of their
+own, as above.
 
 Each `looks` statement is judged by Clef (it needs Clef, as `expect.looks` does) on one sheet of up to 6 of the
 frames, evenly picked, in time order: left to right, then top to bottom. Clef sees the sequence, so it can judge what
@@ -204,7 +214,9 @@ named "motion '<name>' looks: <statement>".
 The check runs after the page checks have held, before `input`, `effect` and `looks`. A multiplayer test cannot use
 it. `report.json` keeps `motion`: `metrics` (`pairs`, the changed fraction of each pair; `moving`; `still_run`;
 `share`; `at`, each capture's time in seconds; and `gaps`) and the PNG of each frame (`frames`), with `sheet` and
-`sheet_frames` when Clef judged looks. A capture that fails is harness, and so is a Clef error.
+`sheet_frames` when Clef judged looks. A capture that fails is harness, and so is a Clef error. When every frame is
+one flat dark colour, the capture may have lost the page's GPU layer: the check is harness, not a frozen view, and
+Clef is not asked. A region that is dark on purpose says why with `canvas_dark` (see below).
 
 ## A canvas the screenshot cannot show: `canvas_capture`
 

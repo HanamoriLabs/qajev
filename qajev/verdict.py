@@ -158,8 +158,9 @@ def motion_planned(spec):
                     f"{spec['min_changed']:.6g} of their pixels, with RGB difference greater than {spec['tolerance']}"}]
     if spec.get("max_gap_ms"):
         out.append({"check": f"motion {name!r}: frame gaps at most {spec['max_gap_ms']} ms",
-                    "says": f"{name}: over {spec['seconds']:g} s with no capture, no gap between two of the page's "
-                            f"animation frames is longer than {spec['max_gap_ms']} ms"})
+                    "says": f"{name}: over {spec['seconds']:g} s with no capture, the page's main thread runs an "
+                            f"animation frame at least every {spec['max_gap_ms']} ms (frames QAJev asks for: a busy "
+                            "main thread delays them, a page that stops drawing does not)"})
     out += [{"check": f"motion {name!r} looks: {statement}"} for statement in spec.get("looks", [])]
     return out
 

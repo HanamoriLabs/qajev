@@ -91,7 +91,8 @@ How to write a check:
    `expect.input: {name, region, do: [hooks], min_changed}` holds when the `do` hooks (such as a `drag:` hook, a real
    mouse drag) change the region by at least `min_changed` more than the same time with no input.
    `expect.motion: {name, region, seconds, frames, max_gap_ms?, looks?: [...]}` captures a sequence: the region
-   must keep moving, the page's frames must come without a gap over `max_gap_ms`, and Clef judges each `looks`
+   must keep moving, the main thread's animation frames must come without a gap over `max_gap_ms` (not with
+   `do`: give the gaps their own test), and Clef judges each `looks`
    statement (such as "no ghost trails") on a sheet of the frames.
 4. Give every value Jev must type, and start from a URL close to the target.
 5. Say what each test proves: `about` on every test, and `says` (plain words) on every `js`, `url_regex`, `fetch` or

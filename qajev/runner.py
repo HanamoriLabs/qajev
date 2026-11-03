@@ -305,6 +305,15 @@ def frame_gaps(times):
             "p95_ms": round(gaps[min(len(gaps) - 1, int(len(gaps) * 0.95))], 1) if gaps else None}
 
 
+def _all_flat_dark(frames):
+    """pixels.flat_dark on each motion frame: -> the first frame's reading when every frame is one flat dark colour,
+    else None."""
+    from .pixels import flat_dark, grid_lumas
+
+    readings = [flat_dark(grid_lumas(frame)) for frame in frames]
+    return readings[0] if all(readings) else None
+
+
 def _motion_check(session, scenario, run_dir, url, observed):
     """expect.motion: after its `do` hooks, the page's frame gaps over `seconds` with no capture (max_gap_ms), then
     `frames` captures of the region over `seconds`: each pair of frames in a row must change (min_changed) in at least
@@ -325,8 +334,9 @@ def _motion_check(session, scenario, run_dir, url, observed):
         gaps = frame_gaps(session.frame_times(spec["seconds"] * 1000))
         ok = gaps["longest_ms"] is not None and gaps["longest_ms"] <= spec["max_gap_ms"]
         checks.append({**planned[1], "ok": ok, "value": gaps,
-                       "detail": f"longest gap {gaps['longest_ms']} ms, 95% of gaps within {gaps['p95_ms']} ms, "
-                                 f"{gaps['fps']} frames a second over {gaps['seconds']} s"})
+                       "detail": f"longest gap {gaps['longest_ms']} ms between two of the main thread's animation "
+                                 f"frames, 95% of gaps within {gaps['p95_ms']} ms, {gaps['fps']} frames a second over "
+                                 f"{gaps['seconds']} s"})
     frames, at = [], []
     interval = spec["seconds"] / (spec["frames"] - 1)
     started = time.monotonic()
@@ -362,6 +372,15 @@ def _motion_check(session, scenario, run_dir, url, observed):
                       "detail": f"{moving} of {len(pairs)} frame pairs moved (need {spec['min_moving']:.0%}); "
                                 f"the longest still stretch is {still} pair(s); the largest change "
                                 f"{max(m['fraction'] for m in pairs):.2%} of the region"})
+    dark = None if scenario.canvas_dark else _all_flat_dark(frames)
+    if dark:  # a capture without its GPU layer reads as a frozen view (redteam-1 L3, #276): nothing was judged
+        evidence["flat_dark"] = dark
+        broke = (f"every frame of region {spec['region']['name']!r} is one flat dark colour (median grey "
+                 f"{dark['median']}): the capture may have lost the page's GPU layer, so motion was not judged; if "
+                 "the region is dark on purpose, say why with canvas_dark")
+        checks[0] = {**planned[0], "ok": False, "broke": True, "value": metrics, "detail": broke}
+        looks = planned[1 + bool(spec.get("max_gap_ms")):]
+        return checks + [{**named, "ok": False, "broke": True, "detail": broke} for named in looks], evidence, None
     if not spec["looks"]:
         return checks, evidence, None
     pick = sorted({round(i * (len(frames) - 1) / (min(SHEET_FRAMES, len(frames)) - 1))

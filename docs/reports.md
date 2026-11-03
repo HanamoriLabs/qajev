@@ -114,7 +114,8 @@ keep all six.
 
 A test with `expect.motion` keeps `motion`: its `name`, `region`, `metrics` (`pairs`, `moving`, `still_run`, `share`,
 `at`, `min_changed`, `min_moving`, `tolerance`, and `gaps` with `frames`, `seconds`, `fps`, `longest_ms` and `p95_ms`
-when it has `max_gap_ms`), the paths of its frames (`frames`), and the `sheet` Clef judged with its `sheet_frames`.
+when it has `max_gap_ms`), the paths of its frames (`frames`), the `sheet` Clef judged with its `sheet_frames`, and `flat_dark` when every
+frame was one flat dark colour (the test is then harness).
 Report downloads keep them all.
 
 A scenario whose page crashed (Chrome's "Aw, Snap") is **fail**, with stop `page_crashed` and a `page_crashed` record:
