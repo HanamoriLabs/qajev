@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- Each looks check in report.json keeps Clef's `probability` and names its `judge` (`Clef` or `Clef-flash`, with the
+  model id in `judge_model`), passing or failing. Before, a plain-text look kept the probability only in its detail
+  text ("p 0.73"), and no check named its judge. A check that fails on its pixels before any model is asked has both
+  fields `null`. An invalid probability is stored as `null`. The judge is the Clef model QAJev asked for, even when
+  the reply names another model.
+
 ### Changed
 
 - With `canvas_capture: page` and `expect.looks`, a dark screen is checked against the page's own frame. QAJev counts
