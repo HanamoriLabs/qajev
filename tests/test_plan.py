@@ -210,3 +210,66 @@ def test_the_plan_before_a_run_names_the_checks_as_the_run_will(tmp_path):
     during = plan.merge(before, [{"name": "pay", "outcome": "pass", "checks": ran}])
     assert [it["state"] for it in during] == ["pass", "todo"]
     assert all(line["ok"] for line in during[0]["checks"])
+
+
+def test_every_check_kind_has_plan_words_so_its_test_can_pass():
+    # redteam-1 N1, #281: a check kind with no words makes its test NOT DESCRIBED, and its gate can never be PASS
+    # (0.4.47 shipped motion looks so). A new expect key fails here until it has a sample with words.
+    from qajev import suite as suite_mod
+
+    region = {"name": "view", "x": 0, "y": 0, "width": 8, "height": 8}
+    samples = {
+        "url": "/done", "url_regex": "/done$", "status": 200, "text": ["Paid"], "visible": ["Paid"],
+        "js": "window.paid === true", "looks": ["The page shows a receipt"],
+        "fetch": [{"url": "/api/order", "status": 200}], "command": "true",
+        "effect": {"name": "shadow", "region": region, "off": [{"js": "1"}], "on": [{"js": "2"}], "min_changed": 0.01},
+        "load": {"ready": "window.ready === true", "max_ms": 1000},
+        "input": {"name": "drag", "region": region, "min_changed": 0.1,
+                  "do": [{"drag": {"selector": "#v", "x": 1, "y": 1, "by": {"x": 5, "y": 0}}}]},
+        "motion": {"name": "marker", "region": region, "max_gap_ms": 100, "looks": ["No ghost trails"]},
+        "sweep": {"name": "menus", "settings": [{"name": "high", "do": [{"click": "#high"}]}]},
+    }
+    says = {"js": "the order is saved", "url_regex": "the address ends in /done", "fetch": "the order API answers",
+            "command": "the shell command runs"}
+    # across is a multiplayer check: a scenario with clients, below
+    assert set(samples) | {"absent", "ignore_case", "says", "across"} == suite_mod.EXPECT_KEYS
+    for key, value in samples.items():
+        expect = {key: value, **({"says": {key: says[key]}} if key in says else {})}
+        scenarios = suite_mod.parse({"devices": ["desktop"], "scenarios": [
+            {"name": key, "about": "x", "url": "http://127.0.0.1:9/", "expect": expect}]}).scenarios
+        item, = plan.from_suite(scenarios)
+        assert item["described"], (key, [line["check"] for line in item["checks"] if not line["words"]])
+
+    def room(across, steps=()):
+        scenario = {"name": "room", "about": "x", "url": "http://127.0.0.1:9/?p={client}", "clients": 2,
+                    "state": "window.s", "expect": {"across": across}, **({"steps": list(steps)} if steps else {})}
+        item, = plan.from_suite(suite_mod.parse({"devices": ["desktop"], "scenarios": [scenario]}).scenarios)
+        return item
+
+    # a named across check says itself (its name, #44); one with says too; a bare expression needs says
+    assert room([{"check": "everyone sees the same roster", "js": "clients.length === 2"}])["described"]
+    assert room([{"js": "clients.length === 2", "says": "both players joined"}])["described"]
+    bare = room(["clients.length === 2"])
+    assert not bare["described"]
+    assert bare["checks"][0]["needs"] == "this across check needs says: write what it proves"
+    snap = room([{"check": "roster", "js": "1"}], steps=[{"snapshot": "joined", "expect": ["clients.length === 2"]}])
+    assert not snap["described"]
+    assert snap["checks"][-1]["needs"] == "this snapshot check needs says: write what it proves"
+
+
+def test_qajev_plan_says_what_a_bare_across_check_needs(tmp_path, capsys):
+    # the Orchestrator, 4 Nov: a bare across expression is NOT DESCRIBED, and the plan says what to write
+    from qajev import cli
+
+    room = tmp_path / "room.qajev.yaml"
+    room.write_text(
+        "name: room\nbase_url: http://127.0.0.1:9\ndevices: [desktop]\nscenarios:\n"
+        "  - name: join\n    about: two players join one room\n    url: '/?p={client}'\n    clients: 2\n"
+        "    state: window.s\n    expect: {across: ['clients.length === 2']}\n")
+    assert cli.main(["plan", str(room)]) == 2
+    assert ("NOT DESCRIBED: across: clients.length === 2 (this across check needs says: write what it proves)"
+            in capsys.readouterr().out)
+    assert cli.main(["plan", str(room), "--json"]) == 2
+    line, = [c for c in json.loads(capsys.readouterr().out)["plan"][0]["checks"] if c["check"].startswith("across")]
+    assert line == {"words": None, "check": "across: clients.length === 2",
+                    "needs": "this across check needs says: write what it proves"}

@@ -1999,7 +1999,8 @@ def cmd_plan(args):
         for it in items:
             print(f"{it['n']}. {it['name']}: {it['about'] or 'NOT DESCRIBED (no about)'}")
             for line in it["checks"]:
-                print(f"     - {line['words'] or 'NOT DESCRIBED: ' + str(line['check'])}")
+                print(f"     - {line['words'] or 'NOT DESCRIBED: ' + str(line['check'])}"
+                      + (f" ({line['needs']})" if line.get("needs") else ""))
         described = len(items) - len(missing)
         print(f"{described} of {len(items)} tests say what they prove"
               + (f"; NOT DESCRIBED: {', '.join(missing)} (a run would be INCOMPLETE)" if missing else ""))

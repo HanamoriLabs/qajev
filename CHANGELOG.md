@@ -4,6 +4,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- `qajev plan` says what a bare `across` or snapshot check needs: "this across check needs says: write what it
+  proves". The JSON plan line has it as `needs`. A test checks that every check kind has plan words.
+
 ### Fixed
 
 - A `looks` statement in `expect.motion` now has plan words ("<name>: on a sheet of the frames, <statement>").

@@ -62,8 +62,22 @@ def state(outcome):
     return {"pass": "pass", "fail": "fail", "stuck": "warn", "harness": "warn"}.get(outcome or "", "todo")
 
 
+def needs(check):
+    """What a check with no words needs, for the lines that only `says` can describe: a bare across or snapshot JS
+    expression. A named across check is described by its name (suite._across). -> a sentence, or None."""
+    name = str(check or "")
+    if name.startswith("across: "):
+        return "this across check needs says: write what it proves"
+    if re.match(r"snapshot [^:]+: ", name):
+        return "this snapshot check needs says: write what it proves"
+    return None
+
+
 def item(n, name, about, checks, outcome=None):
     lines = [{"words": words(c), "check": c.get("check"), **({"ok": c["ok"]} if "ok" in c else {})} for c in checks]
+    for line in lines:
+        if not line["words"] and needs(line["check"]):
+            line["needs"] = needs(line["check"])
     described = bool(about) and all(line["words"] for line in lines)
     return {"n": n, "name": name, "about": about or None, "checks": lines, "described": described,
             "state": state(outcome)}
