@@ -856,6 +856,26 @@ FRAME_TIMES_JS = Template("""new Promise(done => {
   requestAnimationFrame(frame);
 })""")
 
+# expect.sweep's banners: the elements each selector matches that a person sees (laid out, visible, with text), and
+# not one QAJev's guard hid. A selector that is not valid CSS comes back with its error.
+BANNERS_JS = Template("""(() => {
+  const out = [], norm = (s) => String(s || '').replace(/\\s+/g, ' ').trim();
+  for (const selector of $selectors) {
+    let found;
+    try { found = document.querySelectorAll(selector); }
+    catch (e) { out.push({selector, error: String(e.message || e)}); continue; }
+    for (const e of found) {
+      const r = e.getBoundingClientRect(), text = norm(e.innerText);
+      const seen = !e.checkVisibility || e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true});
+      if (r.width > 0 && r.height > 0 && seen && text && !e.closest('[data-qajev-guard]')) {
+        out.push({selector, text: text.slice(0, 200)});
+        if (out.length >= 10) return out;
+      }
+    }
+  }
+  return out;
+})()""")
+
 # expect.load's watcher, in each top document before the page's own code: at each animation frame it asks the test's
 # ready (and failed) expressions, and keeps performance.now() (ms since that document's start) at the first frame
 # where one returns exactly true; failed is asked first. A throw counts as not yet; the last one is kept for the
@@ -1952,6 +1972,14 @@ class Session:
         got = self.isolated_evaluate(FRAME_TIMES_JS.substitute(ms=json.dumps(float(ms))), timeout_ms=int(ms) + 10000)
         if not isinstance(got, list) or not all(isinstance(t, (int, float)) and not isinstance(t, bool) for t in got):
             raise RuntimeError(f"the page's frame times could not be read: {str(got)[:120]}")
+        return got
+
+    def banners(self, selectors):
+        """expect.sweep: the banners a person sees now (BANNERS_JS), read in QAJev's own JS world: [{selector, text}],
+        or {selector, error} for a selector that is not valid CSS."""
+        got = self.isolated_evaluate(BANNERS_JS.substitute(selectors=json.dumps(selectors)), timeout_ms=10000)
+        if not isinstance(got, list) or not all(isinstance(b, dict) for b in got):
+            raise RuntimeError(f"the page's banners could not be read: {str(got)[:120]}")
         return got
 
     def watch_load(self, spec):

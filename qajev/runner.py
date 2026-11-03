@@ -20,9 +20,9 @@ from pathlib import Path
 from . import browser_pool, chrome, keys, live, plan, providers, ux, verdict, vision
 from . import pad as pad_mod
 from .config import redact, redact_tree, remember_secret, remembered_secrets, secret_values
-from .diagnostics import keep_console
+from .diagnostics import clean_data, keep_console
 from .ledger import CostCapReached, Ledger
-from .suite import has_checks
+from .suite import has_checks, sweep_hooks
 from .suite import page_checks as has_page_checks
 from .ux_options import resolve as resolve_ux
 
@@ -33,7 +33,8 @@ STALE_LIMIT = 8  # decisions without an executed action before we call the page 
 LOOP_CLICKS = 3
 # The expectations a run that stopped early may never reach, as its reason names them.
 NOT_RUN = {"looks": "expect.looks", "after": "the after hooks", "fetch": "expect.fetch", "command": "expect.command",
-           "effect": "expect.effect", "load": "expect.load", "input": "expect.input", "motion": "expect.motion"}
+           "effect": "expect.effect", "load": "expect.load", "input": "expect.input", "motion": "expect.motion",
+           "sweep": "expect.sweep"}
 EFFECT_MAX_BYTES = 32 * 1024 * 1024  # below the Cloud report-file limit, so required evidence can be transferred
 
 
@@ -401,6 +402,62 @@ def _motion_check(session, scenario, run_dir, url, observed):
     return checks, evidence, None
 
 
+# The page's records that a sweep counts as an error: what it logged with console.error, an uncaught exception, an
+# unhandled rejection. A worker's console counts at the error level only.
+SWEEP_ERRORS = {"console", "exception", "rejection"}
+SWEEP_KEEP = 10  # errors and banners kept for each setting
+
+
+def _sweep_errors(probe):
+    """The errors in one read of the page (session.probe's `errors`, drained at each read), cleaned for the report."""
+    out = []
+    for err in probe.get("errors") or []:
+        kind, detail = err.get("kind"), str(err.get("detail", ""))
+        if (kind in SWEEP_ERRORS or (kind == "worker" and err.get("level") == "error")) \
+                and "QAJev read-only" not in detail:  # QAJev's own write block, as findings_from_probe skips it
+            out.append(f"{kind}: {clean_data(detail)[:300]}")
+    return out
+
+
+def _sweep_check(session, scenario, url, read):
+    """expect.sweep: for each setting, its do hooks, the sweep's wait, then the page's new errors and the banners a
+    person sees. read() is the runner's own read of the page: it drains the errors, so each read holds only what came
+    after the one before. -> (one check per setting, evidence)."""
+    from .session import HookFailed
+
+    spec = scenario.expect["sweep"]
+    read()  # what the page logged before the sweep is no setting's
+    checks, evidence = [], {"name": spec["name"], "wait": spec["wait"], "banners": spec["banners"], "settings": []}
+    for setting, planned in zip(spec["settings"], verdict.sweep_planned(spec), strict=True):
+        try:
+            for hook in setting["do"]:
+                session.run_hook(hook, url)
+        except HookFailed as e:  # the sweep could not reach the setting: a failed hook, as a before hook's
+            raise HookFailed(f"sweep {spec['name']!r}, setting {setting['name']!r}: {e}") from None
+        time.sleep(spec["wait"])
+        errors = _sweep_errors((read() or {}).get("probe") or {})
+        try:
+            banners = session.banners(spec["banners"]) if spec["banners"] else []
+        except (RuntimeError, TimeoutError) as e:
+            banners = [{"selector": None, "error": f"the banners could not be read: {e}"}]
+        broken = [b for b in banners if b.get("error")]
+        shown = [b for b in banners if not b.get("error")]
+        evidence["settings"].append({"name": setting["name"], "errors": errors[:SWEEP_KEEP], "error_count": len(errors),
+                                     "banners": shown[:SWEEP_KEEP]})
+        if broken:  # nothing was judged: the test's selector, or QAJev's read, broke
+            checks.append({**planned, "ok": False, "broke": True,
+                           "detail": "; ".join(f"banner selector {b['selector']!r}: {b['error']}" if b["selector"]
+                                               else b["error"] for b in broken)})
+            continue
+        said = [*errors[:3], *(f"banner {b['selector']}: {b['text']!r}" for b in shown[:3])]
+        more = len(errors) + len(shown) - len(said)
+        checks.append({**planned, "ok": not errors and not shown,
+                       "detail": (f"{len(errors)} new error(s), {len(shown)} banner(s): " + "; ".join(said)
+                                  + (f"; and {more} more" if more > 0 else "")) if said
+                       else "no new error and no banner"})
+    return checks, evidence
+
+
 def _load_check(session, scenario, opts, run_dir, started):
     """expect.load: the time from the navigation (started: the browser's clock right before it) to the page's first
     playable frame (session.wait_load), with a screenshot of that moment. -> (check, evidence)."""
@@ -533,7 +590,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         effect = scenario.expect.get("effect") or {}
         if any("pad" in hook for hook in [*scenario.before, *scenario.after, *effect.get("off", []),
                                          *effect.get("on", []), *(scenario.expect.get("input") or {}).get("do", []),
-                                         *(scenario.expect.get("motion") or {}).get("do", [])]):
+                                         *(scenario.expect.get("motion") or {}).get("do", []),
+                                         *sweep_hooks(scenario.expect)]):
             session.use_pad()  # before the page loads: a game may read its pads only once, at load
         if scenario.canvas_capture and scenario.expect.get("looks") and hasattr(session, "count_draws"):
             session.count_draws()  # before the page loads: it wraps the draw calls of contexts made later (drawn_dark)
@@ -651,6 +709,11 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                                                  observed.get("url") or scenario.url)
                 ran.add("effect")
                 read()  # ordinary page checks and looks judge the final, enabled state
+            measured_sweep = []
+            if scenario.expect.get("sweep") and stop not in verdict.HARNESS_STOPS:
+                measured_sweep, result["sweep"] = _sweep_check(session, scenario, observed.get("url") or scenario.url,
+                                                               read)
+                ran.add("sweep")
             checks = verdict.page_checks(scenario.expect, observed)
             if measured_load is not None:
                 checks.append(measured_load)
@@ -659,6 +722,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             checks += measured_motion
             if measured_effect is not None:
                 checks.append(measured_effect)
+            checks += measured_sweep
             if scenario.expect.get("looks") and stop not in verdict.HARNESS_STOPS:
                 looks, failed = judge_looks(session, scenario, observed, run_dir, result, ran)
                 checks += looks
@@ -734,7 +798,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     result["stop"] = stop
     wanted = {"looks": scenario.expect.get("looks"), "after": scenario.after, "fetch": scenario.expect.get("fetch"),
               "command": scenario.expect.get("command"), "effect": scenario.expect.get("effect"),
-              "load": load, "input": scenario.expect.get("input"), "motion": scenario.expect.get("motion")}
+              "load": load, "input": scenario.expect.get("input"), "motion": scenario.expect.get("motion"),
+              "sweep": scenario.expect.get("sweep")}
     not_run = [NOT_RUN[k] for k, v in wanted.items() if v and k not in ran]
     outcome, reason = verdict.classify(stop, checks, has_checks=has_checks(scenario.expect), stop_detail=detail,
                                        not_run=not_run, actions=(result.get("jev") or {}).get("actions"),

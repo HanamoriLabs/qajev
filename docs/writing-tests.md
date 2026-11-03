@@ -218,6 +218,48 @@ it. `report.json` keeps `motion`: `metrics` (`pairs`, the changed fraction of ea
 one flat dark colour, the capture may have lost the page's GPU layer: the check is harness, not a frozen view, and
 Clef is not asked. A region that is dark on purpose says why with `canvas_dark` (see below).
 
+## Every setting, with no error and no banner: `sweep`
+
+A setting can break the page without changing what a test checks: a graphics preset that logs a shader error, a
+language whose file is missing, a toggle that shows an error banner. `expect.sweep` chooses each setting in turn. It
+runs the setting's `do` hooks, waits `wait` seconds (0 to 30, default 1), then reads what the page logged since the
+setting before. The setting's check holds when the page logged no new error and shows no banner.
+
+- An error is a `console.error` line, an uncaught exception, an unhandled rejection, or a worker's console error. A
+  warning, a failed request and QAJev's own read-only block are not. They stay findings, as before.
+- A banner is an element that a `banners` selector matches (default `[role=alert]` and `[role=alertdialog]`) and that
+  a person sees: it is laid out, visible, and has text. An empty live region is not a banner. `banners: []` looks for
+  none. A selector that is not valid CSS is harness.
+
+```yaml
+scenarios:
+  - name: the settings menus stay clean
+    about: Each graphics and language setting applies with no error.
+    url: http://127.0.0.1:5173/
+    before:
+      - click: "#settings"
+    expect:
+      sweep:
+        name: the settings menus
+        wait: 1.5
+        banners: ["[role=alert]", ".toast-error"]
+        settings:
+          - name: graphics high
+            do:
+              - click: "#graphics-high"
+          - name: language Japanese
+            do:
+              - click: "#language"
+              - click: "[data-lang=ja]"
+```
+
+Each setting (1 to 40, each name used once) is its own check, named "sweep '<name>': '<setting>' shows no error", so a
+planted fault names the one setting it breaks. The errors the page logged before the sweep are no setting's. A `do`
+hook that fails stops the test as a failed hook, as a `before` hook does. The sweep runs after the page checks have
+held and after `motion`, `input` and `effect`. The page checks and `looks` then judge the page after the last setting.
+A multiplayer test cannot use it. `report.json` keeps `sweep`: for each setting its first 10 errors, their count, and
+the banners seen.
+
 ## A canvas the screenshot cannot show: `canvas_capture`
 
 QAJev reads the end screenshot of each web test. When the page's main canvas is one flat dark colour in that picture,
