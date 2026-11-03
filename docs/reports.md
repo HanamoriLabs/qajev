@@ -119,8 +119,9 @@ frame was one flat dark colour (the test is then harness).
 Report downloads keep them all.
 
 A test with `expect.sweep` keeps `sweep`: its `name`, `wait` and `banners` (the selectors), and for each of its
-`settings` the `name`, the first 10 new `errors`, the `error_count`, and the first 10 `banners` seen
-(`{selector, text}`). Each setting is also a check in `checks`.
+`settings` the `name`, the first 10 new `errors`, the `error_count`, the first 10 new `banners` (`{selector,
+text}`), the first 10 `banners_before` its hooks, and `blocked`, the writes QAJev's read-only guard stopped. Each
+setting is also a check in `checks`.
 
 A scenario whose page crashed (Chrome's "Aw, Snap") is **fail**, with stop `page_crashed` and a `page_crashed` record:
 the crashed page's `url` and the `last_step`. A scenario with `cache: cold` keeps `cache: "cold"`. The lines that its

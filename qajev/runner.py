@@ -419,42 +419,62 @@ def _sweep_errors(probe):
     return out
 
 
+def _sweep_banners(session, spec):
+    """The banners a person sees now -> (shown, broken): [{selector, text}], and the read's errors (a selector that is
+    not CSS, or a read that failed)."""
+    try:
+        banners = session.banners(spec["banners"]) if spec["banners"] else []
+    except (RuntimeError, TimeoutError) as e:
+        banners = [{"selector": None, "error": f"the banners could not be read: {e}"}]
+    return [b for b in banners if not b.get("error")], [b for b in banners if b.get("error")]
+
+
 def _sweep_check(session, scenario, url, read):
-    """expect.sweep: for each setting, its do hooks, the sweep's wait, then the page's new errors and the banners a
-    person sees. read() is the runner's own read of the page: it drains the errors, so each read holds only what came
-    after the one before. -> (one check per setting, evidence)."""
+    """expect.sweep: for each setting, the banners shown before it, its do hooks, the sweep's wait, then the page's new
+    errors and the banners a person sees that were not there before the hooks. read() is the runner's own read of the
+    page: it drains the errors, so each read holds only what came after the one before. -> (one check per setting,
+    evidence)."""
     from .session import HookFailed
 
     spec = scenario.expect["sweep"]
     read()  # what the page logged before the sweep is no setting's
     checks, evidence = [], {"name": spec["name"], "wait": spec["wait"], "banners": spec["banners"], "settings": []}
     for setting, planned in zip(spec["settings"], verdict.sweep_planned(spec), strict=True):
+        # a banner shown before the hooks (before the sweep, or by an earlier setting) is not this one's (redteam-1 M1)
+        before, broken = _sweep_banners(session, spec)
         try:
             for hook in setting["do"]:
                 session.run_hook(hook, url)
         except HookFailed as e:  # the sweep could not reach the setting: a failed hook, as a before hook's
             raise HookFailed(f"sweep {spec['name']!r}, setting {setting['name']!r}: {e}") from None
         time.sleep(spec["wait"])
-        errors = _sweep_errors((read() or {}).get("probe") or {})
-        try:
-            banners = session.banners(spec["banners"]) if spec["banners"] else []
-        except (RuntimeError, TimeoutError) as e:
-            banners = [{"selector": None, "error": f"the banners could not be read: {e}"}]
-        broken = [b for b in banners if b.get("error")]
-        shown = [b for b in banners if not b.get("error")]
+        probe = (read() or {}).get("probe") or {}
+        errors, blocked = _sweep_errors(probe), probe.get("blocked") or []
+        after, broke_after = _sweep_banners(session, spec)
+        broken += broke_after
+        seen = {(b["selector"], b["text"]) for b in before}
+        shown = [b for b in after if (b["selector"], b["text"]) not in seen]
         evidence["settings"].append({"name": setting["name"], "errors": errors[:SWEEP_KEEP], "error_count": len(errors),
-                                     "banners": shown[:SWEEP_KEEP]})
+                                     "banners": shown[:SWEEP_KEEP], "banners_before": before[:SWEEP_KEEP],
+                                     **({"blocked": blocked[:SWEEP_KEEP]} if blocked else {})})
         if broken:  # nothing was judged: the test's selector, or QAJev's read, broke
             checks.append({**planned, "ok": False, "broke": True,
                            "detail": "; ".join(f"banner selector {b['selector']!r}: {b['error']}" if b["selector"]
                                                else b["error"] for b in broken)})
             continue
+        if blocked:  # QAJev's read-only guard stopped the setting's own write: the page's answer is not the product's
+            writes = ", ".join(f"{w.get('method')} {w.get('url')}" for w in blocked[:3])
+            checks.append({**planned, "ok": False, "broke": True,
+                           "detail": f"QAJev's read-only guard blocked the setting's write ({writes}), so what the "
+                                     "page did next was not judged: run the sweep where the write may go out, or "
+                                     "choose settings that save nothing"})
+            continue
         said = [*errors[:3], *(f"banner {b['selector']}: {b['text']!r}" for b in shown[:3])]
         more = len(errors) + len(shown) - len(said)
         checks.append({**planned, "ok": not errors and not shown,
-                       "detail": (f"{len(errors)} new error(s), {len(shown)} banner(s): " + "; ".join(said)
+                       "detail": (f"{len(errors)} new error(s), {len(shown)} new banner(s): " + "; ".join(said)
                                   + (f"; and {more} more" if more > 0 else "")) if said
-                       else "no new error and no banner"})
+                       else "no new error and no new banner"})
     return checks, evidence
 
 

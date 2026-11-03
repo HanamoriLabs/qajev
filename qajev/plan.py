@@ -168,11 +168,25 @@ POSITIVE = ("text", "visible", "js", "looks", "across", "fetch", "command", "eff
 WHERE_ONLY = ("url", "url_regex", "status")
 
 
+# A sweep's setting that needs something on the page: these hooks fail when their element is missing. A sweep whose
+# every setting has one is a positive check; one of keys, js, sleeps or pads passes on a blank page (redteam-1 L3).
+ELEMENT_HOOKS = ("click", "fill", "drag", "wait_for")
+
+
+def _shows(expect, key):
+    value = expect.get(key)
+    if key == "sweep" and isinstance(value, dict):
+        return all(any(next(iter(hook)) in ELEMENT_HOOKS for hook in setting.get("do", []))
+                   for setting in value.get("settings", []))
+    return bool(value)
+
+
 def absent_only(scenarios):
-    """The tests whose only checks say a text is absent (with at most an address or status): a blank page passes them.
-    Only the test's own expect is read, not a steps suite's or a client's. -> [name]"""
+    """The tests a blank page passes: their only checks say a text is absent, or are a sweep with a setting that needs
+    nothing on the page (with at most an address or status). Only the test's own expect is read, not a steps suite's
+    or a client's. -> [name]"""
     return [s.name for s in scenarios
-            if s.expect.get("absent") and not any(s.expect.get(k) for k in POSITIVE)]
+            if (s.expect.get("absent") or s.expect.get("sweep")) and not any(_shows(s.expect, k) for k in POSITIVE)]
 
 
 # A goal that asks Jev to press a key. Jev clicks, types into a field, picks an option and scrolls, but presses no key

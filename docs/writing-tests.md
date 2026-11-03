@@ -222,14 +222,22 @@ Clef is not asked. A region that is dark on purpose says why with `canvas_dark` 
 
 A setting can break the page without changing what a test checks: a graphics preset that logs a shader error, a
 language whose file is missing, a toggle that shows an error banner. `expect.sweep` chooses each setting in turn. It
-runs the setting's `do` hooks, waits `wait` seconds (0 to 30, default 1), then reads what the page logged since the
-setting before. The setting's check holds when the page logged no new error and shows no banner.
+reads the banners shown, runs the setting's `do` hooks, waits `wait` seconds (0 to 30, default 1), then reads what the
+page logged since the setting before. The setting's check holds when the page logged no new error and shows no banner
+that was not there before its hooks. A banner shown before the sweep, or by an earlier setting, fails no later one.
 
 - An error is a `console.error` line, an uncaught exception, an unhandled rejection, or a worker's console error. A
   warning, a failed request and QAJev's own read-only block are not. They stay findings, as before.
 - A banner is an element that a `banners` selector matches (default `[role=alert]` and `[role=alertdialog]`) and that
   a person sees: it is laid out, visible, and has text. An empty live region is not a banner. `banners: []` looks for
-  none. A selector that is not valid CSS is harness.
+  none. A selector that is not valid CSS is harness. QAJev does not read inside shadow roots or frames.
+- An error the page logs after the `wait` counts for the next setting, and one after the last setting is a finding
+  only. Raise `wait` for a slow setting.
+- In a read-only run, QAJev blocks a write a setting makes (a save of the preferences). The page's answer to that is
+  QAJev's doing, so the setting is harness and names the write. Run the sweep where the write may go out, or choose
+  settings that save nothing.
+- Each setting needs a `click`, `fill`, `drag` or `wait_for` hook, which fails when its element is missing. A sweep
+  of keys, `js`, sleeps or pads alone passes on a blank page, so `qajev plan` lists it as ABSENT ONLY.
 
 ```yaml
 scenarios:

@@ -169,7 +169,8 @@ def motion_planned(spec):
 
 def sweep_planned(spec):
     """expect.sweep's checks: one for each setting."""
-    banners = f"no banner ({', '.join(spec['banners'])})" if spec["banners"] else "no banners are looked for"
+    banners = (f"no banner ({', '.join(spec['banners'])}) that was not there before it" if spec["banners"]
+               else "no banners are looked for")
     return [{"check": f"sweep {spec['name']!r}: {setting['name']!r} shows no error",
              "says": f"{spec['name']}: {spec['wait']:g} s after {setting['name']}, the page logged no new error "
                      f"(console.error, an exception, a rejection, a worker's error) and shows {banners}"}

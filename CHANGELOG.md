@@ -33,7 +33,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `expect.sweep` in a suite: a list of settings, each with the hooks that choose it. After each setting and a `wait`,
   the page must have logged no new error (`console.error`, an uncaught exception, an unhandled rejection, a worker's
   error) and must show no banner (`[role=alert]` and `[role=alertdialog]`, or the test's own selectors). Each setting
-  is its own check. Before, the page's console errors were findings only, and no check failed on them.
+  is its own check. Only a banner that was not there before the setting's hooks counts. A setting whose write
+  QAJev's read-only guard blocked is harness. A sweep of keys, js, sleeps or pads alone is listed as ABSENT ONLY,
+  because it passes on a blank page. Before, the page's console errors were findings only, and no check failed on
+  them.
 
 ## 0.4.46: 3 Nov 2026
 
