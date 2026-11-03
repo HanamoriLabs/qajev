@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.46: 3 Nov 2026
+
 ### Added
 
 - Each looks check in report.json keeps Clef's `probability` and names its `judge` (`Clef` or `Clef-flash`, with the
