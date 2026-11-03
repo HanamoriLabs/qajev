@@ -4,6 +4,7 @@ passed 5/5 on a GPU box, and on a laptop it took over 2 min to load)."""
 import http.server
 import os
 import threading
+import time
 from urllib.parse import urlsplit
 
 import pytest
@@ -25,18 +26,20 @@ def test_a_load_check_needs_ready_and_whole_milliseconds():
     s = _scenario({"ready": READY, "max_ms": 10000, "failed": "window.game?.failed === true"})
     assert s.expect["load"] == {"ready": READY, "max_ms": 10000, "failed": "window.game?.failed === true"}
     assert suite.has_checks(s.expect)
-    for bad, says in (({"max_ms": 10000}, "ready is required"), ({"ready": "", "max_ms": 1}, "ready must be"),
+    assert _scenario({"ready": READY, "max_ms": 100}).expect["load"]["max_ms"] == 100
+    for bad, says in (({"max_ms": 10000}, "ready is required"), ({"ready": "", "max_ms": 100}, "ready must be"),
                       ({"ready": READY, "max_ms": 10}, "looks like seconds \\(write 10000\\)"),
                       ({"ready": READY, "max_ms": 2.5}, "whole milliseconds"),
-                      ({"ready": READY, "max_ms": 300001}, "1 to 300000"),
+                      ({"ready": READY, "max_ms": 300001}, "100 to 300000"),
+                      ({"ready": READY, "max_ms": 99}, "100 to 300000"),
                       ({"ready": READY, "max_ms": True}, "whole milliseconds"),
-                      ({"ready": READY, "max_ms": 1, "first": "x"}, "first"), ("fast", "must be")):
+                      ({"ready": READY, "max_ms": 100, "first": "x"}, "first"), ("fast", "must be")):
         with pytest.raises(suite.SuiteError, match=says):
             _scenario(bad)
 
 
 def test_a_multiplayer_test_cannot_time_a_load():
-    with pytest.raises(suite.SuiteError, match="expect.load are for a test in QAJev's own tab"):
+    with pytest.raises(suite.SuiteError, match=r"expect: unknown key\(s\) \['load'\]"):
         suite.parse({"scenarios": [{"name": "a", "url": "http://127.0.0.1/", "about": "x", "clients": ["p1", "p2"],
                                     "steps": [{"client": "p1", "js": "1"}],
                                     "expect": {"load": {"ready": READY, "max_ms": 1000}}}]})
@@ -151,7 +154,7 @@ def test_the_watcher_keeps_the_authors_text_as_written():
     tab.browser = type("B", (), {"call": lambda _self, method, **params: sent.append((method, params))
                                  or {"identifier": "7"}})()
     tab.crash, tab.net = None, None
-    tab.watch_load({"ready": "window['__FAILED__'] === true // a comment", "max_ms": 1})
+    tab.watch_load({"ready": "window['__FAILED__'] === true // a comment", "max_ms": 100})
     (method, params), = sent
     assert method == "Page.addScriptToEvaluateOnNewDocument"
     assert "window['__FAILED__'] === true // a comment\n  );" in params["source"]
@@ -160,7 +163,7 @@ def test_the_watcher_keeps_the_authors_text_as_written():
     assert sent[-1] == ("Page.removeScriptToEvaluateOnNewDocument", {"identifier": "7"})
 
 
-def test_reports_show_the_load_and_keep_its_frame():
+def test_reports_show_the_load_and_keep_its_frame(monkeypatch, tmp_path):
     load = {"max_ms": 10000, "cache": "cold", "ms": 12345, "shot": "shots/loads-load.jpg"}
     assert report_html.load_summary(load) == "playable at 12.35 s (limit 10 s, cold cache)"
     assert report_html.load_summary({"max_ms": 1000, "ms": None, "waited_ms": 2000, "watched": False}) == \
@@ -169,8 +172,15 @@ def test_reports_show_the_load_and_keep_its_frame():
         ["shots/loads-load.jpg", "shots/loads.jpg"]
     with pytest.raises(ValueError, match="load metadata"):
         report_files.image_paths({"scenarios": [{"load": "fast"}]})
-    md = report.markdown({"scenarios": [{"name": "loads", "outcome": "fail", "reason": "r", "load": load}]})
+    result, _ = _run(monkeypatch, {"ms": 12345})
+    result["load"] = load
+    data = report.build(suite.parse({"scenarios": [{"name": "loads", "url": "http://127.0.0.1/", "about": "x",
+                                                     "expect": {"load": {"ready": READY, "max_ms": 10000}}}]}),
+                        [result], [], browser={}, started_at=time.time(), strict=False, interrupted=False,
+                        run_dir=tmp_path)
+    md, html = report.markdown(data), report_html.render(data)
     assert "Load: playable at 12.35 s (limit 10 s, cold cache)" in md and "(shots/loads-load.jpg)" in md
+    assert "Load: playable at 12.35 s (limit 10 s, cold cache)" in html and 'src="shots/loads-load.jpg"' in html
 
 
 # A page whose game is playable `?after=<ms>` after its navigation, or says its load failed then (`&fail=1`).
