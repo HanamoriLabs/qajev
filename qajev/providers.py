@@ -139,7 +139,9 @@ def _clef(post_json, resolved, env):
                     raise
                 got = post_json(resolved["jev_url"], env[resolved["jev_key_name"]], send)
             out = (got or {}).get("result", got) or out
-        out.setdefault("model", model)  # the model asked: a looks check names its judge from it (vision.look)
+        # The model asked, whatever the reply's own result says: a looks check names its judge from it (vision.look),
+        # and a Workers AI result may carry a model id of its own (redteam-1 C1, 3 Nov)
+        out["model"] = model
         out.setdefault("answers", {}).update(sure)
         usage = out.setdefault("usage", {}) or {}
         usage["cost_usd"] = round((usage.get("input_tokens") or 0) * CLEF_MODELS[model] / 1e6, 8)

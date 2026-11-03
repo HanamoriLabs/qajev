@@ -128,8 +128,9 @@ words.
 
 Write one visible claim per `looks` entry. Each entry gets its own model question and probability; claims are not
 averaged together. In report.json each looks check keeps, passing or failing, its `probability` and its `judge` (the
-model's name, such as `Clef`, with the model id in `judge_model`). Both are `null` when no model judged the check: it
-failed on its pixels first, or the reply named no model. Existing strings still use the full screenshot. For small features and relative claims, give an
+model's name, such as `Clef`, with the model id in `judge_model`). Both are `null` when the check failed on its
+pixels before any model was asked. A probability that is not a number from 0 to 1 is stored as `null`, and the check
+fails. A reply that names no model keeps its probability, with `judge` `null`. Existing strings still use the full screenshot. For small features and relative claims, give an
 explicit crop and a labelled reference instead:
 
 ```yaml
