@@ -24,6 +24,10 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   the page's animation frames, recorded with no capture running, must come without a longer gap. Each `looks`
   statement is judged by Clef on a sheet of up to 6 of the frames in time order, for what one frame cannot show, such
   as a ghost trail. `report.json` keeps the measures, every frame and the sheet.
+- `expect.sweep` in a suite: a list of settings, each with the hooks that choose it. After each setting and a `wait`,
+  the page must have logged no new error (`console.error`, an uncaught exception, an unhandled rejection, a worker's
+  error) and must show no banner (`[role=alert]` and `[role=alertdialog]`, or the test's own selectors). Each setting
+  is its own check. Before, the page's console errors were findings only, and no check failed on them.
 
 ## 0.4.46: 3 Nov 2026
 

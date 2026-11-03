@@ -54,7 +54,7 @@ def wanted_devices(explicit=None):
 HOOK_KINDS = {"js", "fill", "click", "click_at", "navigate", "wait_for", "key", "react", "sleep", "command", "reload",
               "pad", "drag"}
 EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
-               "looks", "across", "says", "effect", "load", "input", "motion"}
+               "looks", "across", "says", "effect", "load", "input", "motion", "sweep"}
 # The checks only their author can describe, by what `says` gives them in plain words (the test plan, 6 Oct)
 SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
@@ -143,7 +143,7 @@ class Scenario:
         hooks = [*self.before, *self.after]
         effect = self.expect.get("effect") or {}
         hooks += [*effect.get("off", []), *effect.get("on", []), *(self.expect.get("input") or {}).get("do", []),
-                  *(self.expect.get("motion") or {}).get("do", [])]
+                  *(self.expect.get("motion") or {}).get("do", []), *sweep_hooks(self.expect)]
         return any("command" in h for h in hooks) or "command" in self.expect
 
 
@@ -364,6 +364,8 @@ def _expect(value, where):
         out["input"] = _input(out["input"], f"{where}.input")
     if "motion" in out:
         out["motion"] = _motion(out["motion"], f"{where}.motion")
+    if "sweep" in out:
+        out["sweep"] = _sweep(out["sweep"], f"{where}.sweep")
     return out
 
 
@@ -405,6 +407,53 @@ def _motion(value, where):
             "min_moving": _fraction(value.get("min_moving", 1), f"{where}.min_moving"), "tolerance": tolerance,
             **({"max_gap_ms": gap} if gap is not None else {}), "looks": looks,
             "do": _hooks(value.get("do"), f"{where}.do")}
+
+
+# What a sweep counts as a visible banner when the test names none: the page's own alerts
+SWEEP_BANNERS = ("[role=alert]", "[role=alertdialog]")
+
+
+def _sweep(value, where):
+    """expect.sweep: {name, settings: [{name, do}], wait?, banners?}: after each setting's `do` hooks and `wait`
+    seconds, the page logged no new error (console.error, an exception, a rejection, a worker's error) and shows no
+    banner (3 Nov: a demo's settings menus each logged errors and showed banners, and no check read them)."""
+    if not isinstance(value, dict):
+        raise SuiteError(f"{where} must name the sweep and its settings")
+    _unknown(where, value, {"name", "settings", "wait", "banners"})
+    if not isinstance(value.get("name"), str) or not value["name"].strip() or len(value["name"]) > 200:
+        raise SuiteError(f"{where}.name must be 1–200 characters")
+    settings = value.get("settings")
+    if not isinstance(settings, list) or not 1 <= len(settings) <= 40:
+        raise SuiteError(f"{where}.settings must list 1 to 40 settings, each {{name, do}}")
+    out, names = [], set()
+    for i, setting in enumerate(settings):
+        at = f"{where}.settings[{i}]"
+        if not isinstance(setting, dict):
+            raise SuiteError(f"{at} must be {{name, do}}")
+        _unknown(at, setting, {"name", "do"})
+        name = setting.get("name")
+        if not isinstance(name, str) or not name.strip() or len(name) > 200:
+            raise SuiteError(f"{at}.name must be 1–200 characters")
+        if name in names:
+            raise SuiteError(f"{at}.name {name!r} is used twice: each setting is its own check")
+        names.add(name)
+        hooks = _hooks(setting.get("do"), f"{at}.do")
+        if not hooks:
+            raise SuiteError(f"{at}.do needs at least one hook, such as a click on the setting")
+        out.append({"name": name, "do": hooks})
+    wait = value.get("wait", 1)
+    if isinstance(wait, bool) or not isinstance(wait, (int, float)) or not 0 <= wait <= 30:
+        raise SuiteError(f"{where}.wait must be 0 to 30 seconds")
+    banners = value.get("banners", list(SWEEP_BANNERS))
+    if (not isinstance(banners, list) or len(banners) > 20
+            or not all(isinstance(b, str) and b.strip() and len(b) <= 300 for b in banners)):
+        raise SuiteError(f"{where}.banners must list at most 20 CSS selectors")
+    return {"name": value["name"], "settings": out, "wait": wait, "banners": banners}
+
+
+def sweep_hooks(expect):
+    """Every hook of expect.sweep's settings, in order."""
+    return [hook for setting in (expect.get("sweep") or {}).get("settings", []) for hook in setting["do"]]
 
 
 def _region(value, where):
@@ -622,7 +671,7 @@ def has_checks(expect):
     # looks is not a page check: it costs a model call, so it is judged once, at the end, not while Jev moves.
     return page_checks(expect) or bool(expect.get("fetch") or expect.get("command") or expect.get("looks")
                                        or expect.get("across") or expect.get("effect") or expect.get("load")
-                                       or expect.get("input") or expect.get("motion"))
+                                       or expect.get("input") or expect.get("motion") or expect.get("sweep"))
 
 
 def _account(raw, base, folder=None):
