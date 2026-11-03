@@ -143,6 +143,27 @@ def test_a_slow_failed_or_unwatched_load_is_graded_by_what_the_page_said(monkeyp
     assert reason in result["reason"]
 
 
+def test_a_load_timed_without_the_browsers_clock_says_so(monkeypatch):
+    """With no browser clock read before the navigation, the times are from the last document's start: a loader
+    page's own time is then left out, and the result and the reason say so (redteam-1 L2, #278)."""
+    tab = session.Session.__new__(session.Session)
+    tab.page_crash = lambda: None
+    tab.evaluate = lambda js, timeout_ms=None: {"origin": 5000.0, "at": 1200.0, "now": 1300.0, "frames": 70}
+    spec = {"ready": READY, "max_ms": 10000}
+    assert tab.wait_load(spec, 4000.0) == {"ms": 2200, "document_ms": 1000, "clock": "navigation"}
+    assert tab.wait_load(spec, None) == {"ms": 1200, "document_ms": 0, "clock": "document"}
+    tab.evaluate = lambda js, timeout_ms=None: {"at": 1200.0, "now": 1300.0, "frames": 70}  # no time origin
+    assert tab.wait_load(spec, 4000.0)["clock"] == "document"
+    for got, outcome in (({"ms": 1200, "clock": "document"}, "pass"), ({"ms": 12000, "clock": "document"}, "fail")):
+        result, _ = _run(monkeypatch, got)
+        assert result["outcome"] == outcome
+        assert result["checks"][0]["detail"].endswith(
+            "; timed from the last document's start, as the browser's clock could not be read before the navigation")
+        assert result["load"]["clock"] == "document"
+    result, _ = _run(monkeypatch, {"ms": 1200, "clock": "navigation"})
+    assert result["checks"][0]["detail"] == "playable at 1.20 s"
+
+
 def test_a_page_that_never_loads_names_the_load_check_as_not_run(monkeypatch):
     class Down(Loading):
         def navigate(self, url):
@@ -246,7 +267,7 @@ def test_browser_times_a_page_from_its_navigation_to_its_first_playable_frame(pa
     tab, _ = page
     tab.hosts = {urlsplit(game).netloc}
     fast = _measure(tab, game + "/?after=300", {"ready": READY, "max_ms": 3000})
-    assert 300 <= fast["ms"] < 3000 and fast["document_ms"] < 300, fast
+    assert 300 <= fast["ms"] < 3000 and fast["document_ms"] < 300 and fast["clock"] == "navigation", fast
     # A loader page that moves on after 1 s is timed from the navigation, not from the last document (redteam-1 L1).
     hop = _measure(tab, game + "/?hop=1000&after=300", {"ready": READY, "max_ms": 5000})
     assert hop["ms"] >= 1300 and hop["document_ms"] >= 1000 and hop["ms"] - hop["document_ms"] >= 300, hop

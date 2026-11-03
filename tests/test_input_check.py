@@ -156,7 +156,9 @@ class Clock:
         self.now += s
 
 
-@pytest.mark.parametrize("hook_s,outcome", [(0.2, "pass"), (0.45, "pass"), (1.0, "harness")])
+# 0.50 s is the bound for a 0.2 s control (1.25 x 0.2 + 0.25): it is judged, and 0.51 s is not (redteam-1 L1, #278)
+@pytest.mark.parametrize("hook_s,outcome", [(0.2, "pass"), (0.45, "pass"), (0.50, "pass"), (0.51, "harness"),
+                                            (1.0, "harness")])
 def test_an_input_that_takes_longer_than_its_control_is_not_judged(tmp_path, monkeypatch, hook_s, outcome):
     """A click with no planned time gets a 0.2 s control: an input that then runs 1 s has 5 times longer to change by
     itself, so the two changes cannot be compared (redteam-1 M1, #275)."""
@@ -171,8 +173,8 @@ def test_an_input_that_takes_longer_than_its_control_is_not_judged(tmp_path, mon
                                  hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
     assert result["outcome"] == outcome, result["reason"]
     if outcome == "harness":
-        assert "the input took 1.00 s and the no-input control 0.20 s, so their changes cannot be compared" in \
-            result["reason"]
+        assert f"the input took {hook_s:.2f} s and the no-input control 0.20 s, so their changes cannot be compared" \
+            in result["reason"]
         assert result["input"]["metrics"]["ok"] is False
 
 

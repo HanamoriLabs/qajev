@@ -118,7 +118,8 @@ animation frame at all is **harness** too: QAJev's browser window was hidden or 
 Only the test's first page is timed. QAJev clicks nothing before it measures: its `before` hooks, its goal and its
 other checks come after the page is playable. A page that needs a click before it plays is not playable. A
 multiplayer test cannot use this check. `report.json` keeps `load` (`ms`, `max_ms`, `cache`, `document_ms`: when
-the document that became playable began, and `waited_ms`, `frames`, `failed_ms`, `error` or `watched` when the page
+the document that became playable began, `clock`: `document` when the times are from the last document's start
+because the browser's clock could not be read before the navigation, and `waited_ms`, `frames`, `failed_ms`, `error` or `watched` when the page
 was not playable) and a screenshot of the playable frame (`load.shot`). A planted fault names the check by its plan
 words, such as `expect_fail: "playable within 10 s on a cold cache"`.
 

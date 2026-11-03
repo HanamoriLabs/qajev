@@ -2012,9 +2012,10 @@ class Session:
         document's own start. The times are from then, on the browser's clock, so a page that moved to another
         document while it loaded (a redirect, a reload, location.replace) is timed from the navigation, and a page that
         answers late is not cut short.
-        -> {ms, document_ms} when it was playable (document_ms: when the document that became playable began); else
-        {ms: None, waited_ms, frames, failed_ms?, error?, watched}. watched False: the watcher never ran in the page (a
-        ready expression that does not parse stops it). frames 0: the page drew no animation frame."""
+        -> {ms, document_ms, clock} when it was playable (document_ms: when the document that became playable began);
+        else {ms: None, waited_ms, frames, failed_ms?, error?, watched, clock}. watched False: the watcher never ran in
+        the page (a ready expression that does not parse stops it). frames 0: the page drew no animation frame. clock:
+        "navigation", or "document" when the times are from the last document's start (no start, or no time origin)."""
         wait_ms = 2 * spec["max_ms"]
         deadline = time.monotonic() + wait_ms / 1000 + 30  # the browser's clock decides; this guards a page that hangs
         state = None
@@ -2030,10 +2031,12 @@ class Session:
                           or since(state.get("now", 0)) >= wait_ms):
                 break
             time.sleep(0.1)
+        clock = "navigation" if started is not None and (state or {}).get("origin") else "document"
         if state and state.get("at") is not None:
-            return {"ms": since(state["at"]), "document_ms": since(0)}
+            return {"ms": since(state["at"]), "document_ms": since(0), "clock": clock}
         out = {"ms": None, "waited_ms": since(state["now"]) if state else wait_ms,
-               "watched": bool(state) and not state.get("missing"), "frames": (state or {}).get("frames", 0)}
+               "watched": bool(state) and not state.get("missing"), "frames": (state or {}).get("frames", 0),
+               "clock": clock}
         if state and state.get("failed") is not None:
             out["failed_ms"] = since(state["failed"])
         if state and state.get("error"):

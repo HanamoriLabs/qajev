@@ -106,6 +106,8 @@ browser's clock), `document_ms` (when the document that became playable began; f
 document while it loaded, the time of that move), `max_ms`, `cache` (always `cold`) and `shot` (that frame). When the page was not playable, `ms` is `null` and `waited_ms` says
 how long QAJev waited. `failed_ms` is when the page's `failed` expression held, `error` is the last throw of `ready`,
 `watched: false` means the watcher never ran, and `frames: 0` that the page drew no animation frame (both harness).
+`clock` is `navigation`, or `document` when QAJev could not read the browser's clock before the navigation: the
+times are then from the last document's start, and the check's detail says so.
 
 A test with `expect.input` keeps `input`: its `name`, `region`, `metrics` (`idle` and `input`, each with `changed`,
 `total`, `fraction` and `seconds`, and `margin`, `min_changed`, `tolerance`, `ok`) and the paths of its six PNGs
