@@ -12,6 +12,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `expect.input`: tests pin the time guard's bound. For a 0.2 s control, an input of 0.50 s is judged and one of
   0.51 s is harness.
 
+## 0.4.47: 4 Nov 2026
+
 ### Added
 
 - `expect.load` in a suite: the time from the page's navigation start to its first playable frame, on a cold cache.
