@@ -538,8 +538,9 @@ window globals.
 A `drag` hook drags the real mouse, as a player turns a camera: `{selector: "canvas", x: 200, y: 150, by: {x: 150,
 y: 0}}` presses at the point (CSS pixels, as for `click_at`), moves by `by` in `steps` moves (default 20) over `ms`
 (default 400, at most 10000), and lets go there. `button` is `left` (the default), `right` or `middle`. The page gets
-trusted `mousedown`, `mousemove` with the button held and `movementX`/`movementY` set, and `mouseup`, so a camera
-under pointer lock turns too. A start point that something else covers fails naming it, and the button is let go
+trusted `mousedown`, `mousemove` with the button held, and `mouseup`. Chrome also sets `movementX`/`movementY` on
+each move, in the drag's direction, so a camera under pointer lock turns too. It can be less than the CSS distance
+(60 for a 150 px drag in headless Chromium). A start point that something else covers fails naming it, and the button is let go
 even when the drag breaks midway. Jev cannot drag: a goal that needs a drag and gets stuck says to use this hook.
 
 A `key` hook presses real keys, as a player does: the page gets trusted `keydown` and `keyup` events. Jev clicks and

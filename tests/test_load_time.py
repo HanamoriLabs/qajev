@@ -170,7 +170,7 @@ def test_reports_show_the_load_and_keep_its_frame(monkeypatch, tmp_path):
         "not measured: the ready watcher never ran in the page (limit 1 s, cold cache)"
     assert report_files.image_paths({"scenarios": [{"shot": "shots/loads.jpg", "load": load}]}) == \
         ["shots/loads-load.jpg", "shots/loads.jpg"]
-    with pytest.raises(ValueError, match="load metadata"):
+    with pytest.raises(ValueError, match="invalid report .*metadata"):
         report_files.image_paths({"scenarios": [{"load": "fast"}]})
     result, _ = _run(monkeypatch, {"ms": 12345})
     result["load"] = load
