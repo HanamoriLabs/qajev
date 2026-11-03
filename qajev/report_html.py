@@ -284,6 +284,8 @@ def load_summary(load):
         return f"the page said its load failed at {load['failed_ms'] / 1000:.2f} s ({limit})"
     if not load.get("watched"):
         return f"not measured: the ready watcher never ran in the page ({limit})"
+    if not load.get("frames"):
+        return f"not measured: the page drew no animation frame in {load['waited_ms'] / 1000:.1f} s ({limit})"
     return f"not playable after {load['waited_ms'] / 1000:.1f} s ({limit})"
 
 

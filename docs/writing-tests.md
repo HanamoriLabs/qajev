@@ -32,7 +32,7 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | `fetch` | `--fetch URL[=STATUS]` | a request made from the page answers with that status (default 200) |
 | `command` | suite only | a shell command prints the expected output (needs `--allow-commands`) |
 | `effect` | suite only | off/on PNG captures of a named region have at least the required fraction of changed pixels |
-| `load` | suite only | the page is playable within `max_ms` of its navigation start, on a cold cache (below) |
+| `load` | suite only | the page is playable within `max_ms` of its navigation, on a cold cache (below) |
 | `looks` | `--expect-looks` | Clef, looking at the final screenshot, judges this statement true (needs Clef: see below) |
 
 Text is compared the way a person reads it: line breaks and runs of spaces count as one space. Use
@@ -102,20 +102,23 @@ scenarios:
         max_ms: 10000
 ```
 
-QAJev puts its watcher in the page before the page's own code runs, and asks `ready` at each animation frame. The
-time is the page's own clock (`performance.now()`), so QAJev's own work does not count. A test with `load` runs on a
-cold cache, as a first visit does, even when the suite does not say `cache: cold`. A throw counts as "not yet", and
-the last one is kept for the report. QAJev waits up to twice the limit, so a slow load still gets its time: "playable
-at 21.40 s, over the 10 s limit". A page that is never playable fails with "not playable after 20.0 s". A `ready` or
-`failed` that does not parse stops the watcher: the test is **harness**, with "the ready watcher never ran in the
-page".
+QAJev puts its watcher in each document before the page's own code runs, and asks `failed`, then `ready`, at each
+animation frame: when both hold in the same frame, the load failed. The time runs from the navigation to that frame,
+on the browser's own clock, so QAJev's own work does not count. A page that moves to another document while it loads
+(a loader page that redirects, reloads or calls `location.replace`) is timed from the navigation, not from its last
+document. A test with `load` runs on a cold cache, as a first visit does, even when the suite does not say
+`cache: cold`. A throw counts as "not yet", and the last one is kept for the report. QAJev waits up to twice the
+limit, so a slow load still gets its time: "playable at 21.40 s, over the 10 s limit". A time equal to the limit
+passes. A page that is never playable fails with "not playable after 20.0 s". A `ready` or `failed` that does not
+parse stops the watcher: the test is **harness**, with "the ready watcher never ran in the page". A page that drew no
+animation frame at all is **harness** too: QAJev's browser window was hidden or covered, so nothing was judged.
 
 Only the test's first page is timed. QAJev clicks nothing before it measures: its `before` hooks, its goal and its
 other checks come after the page is playable. A page that needs a click before it plays is not playable. A
-multiplayer test cannot use this check. `report.json` keeps `load` (`ms`, `max_ms`, `cache`, and `waited_ms`,
-`failed_ms`, `error` or `watched` when the page was not playable) and a screenshot of the playable frame
-(`load.shot`). A planted fault names the check by its plan words, such as
-`expect_fail: "playable within 10 s on a cold cache"`.
+multiplayer test cannot use this check. `report.json` keeps `load` (`ms`, `max_ms`, `cache`, `document_ms`: when
+the document that became playable began, and `waited_ms`, `frames`, `failed_ms`, `error` or `watched` when the page
+was not playable) and a screenshot of the playable frame (`load.shot`). A planted fault names the check by its plan
+words, such as `expect_fail: "playable within 10 s on a cold cache"`.
 
 ## A canvas the screenshot cannot show: `canvas_capture`
 

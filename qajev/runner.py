@@ -199,11 +199,11 @@ def _effect_check(session, scenario, run_dir, url):
     return check, evidence
 
 
-def _load_check(session, scenario, opts, run_dir):
-    """expect.load: the time from the page's navigation start to its first playable frame (session.wait_load), with a
-    screenshot of that moment. -> (check, evidence)."""
+def _load_check(session, scenario, opts, run_dir, started):
+    """expect.load: the time from the navigation (started: the browser's clock right before it) to the page's first
+    playable frame (session.wait_load), with a screenshot of that moment. -> (check, evidence)."""
     spec = scenario.expect["load"]
-    got = session.wait_load(spec)
+    got = session.wait_load(spec, started)
     limit = spec["max_ms"]
     evidence = {"max_ms": limit, "cache": "cold", **got}
     check = {**verdict.load_planned(spec), "value": evidence}
@@ -221,6 +221,10 @@ def _load_check(session, scenario, opts, run_dir):
         return {**check, "ok": False, "broke": True,
                 "detail": "the ready watcher never ran in the page: check ready and failed for a JavaScript "
                           "syntax error"}, evidence
+    if not got.get("frames") and got.get("failed_ms") is None:  # nothing was judged: the page drew no frame
+        return {**check, "ok": False, "broke": True,
+                "detail": f"the page drew no animation frame in {got['waited_ms'] / 1000:.1f} s, so its load was not "
+                          "judged: QAJev's browser window may be hidden or covered"}, evidence
     if got.get("failed_ms") is not None:
         detail = f"the page said its load failed at {got['failed_ms'] / 1000:.2f} s ({spec['failed']!r} returned true)"
     else:
@@ -259,7 +263,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     before = None  # the page's checks as Jev found it, before its first move
     ux_observer = None
     load = scenario.expect.get("load")
-    measured_load = None
+    measured_load = load_started = None
     ran = set()  # the expectations beyond the page's own that did run
     ux_enabled = resolve_ux(opts, getattr(scenario, "ux_options", None))["ux"] != "off"
 
@@ -333,7 +337,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         if scenario.url:
             session.check_host(scenario.url)
             if load:
-                session.watch_load(load)  # before the page loads: its clock starts at the navigation
+                session.watch_load(load)  # before the page loads
+                load_started = session.browser_clock()  # the time runs from the navigation, on the browser's clock
             error = session.navigate(scenario.url)
             if error:
                 stop, detail = "unreachable", error
@@ -345,7 +350,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if load:
                 _emit(opts, "step", scenario=scenario.name, at=time.time(),
                       doing=f"waiting for the page to be playable (limit {load['max_ms'] / 1000:g} s)")
-                measured_load, result["load"] = _load_check(session, scenario, opts, run_dir)
+                measured_load, result["load"] = _load_check(session, scenario, opts, run_dir, load_started)
                 ran.add("load")
                 session.unwatch_load()  # the test's later reloads and pages are not measured
             # What it is doing, for the dashboard and qajev top, while a slow check runs in the page (a script that

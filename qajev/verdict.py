@@ -138,7 +138,7 @@ def effect_planned(spec):
 
 def load_planned(spec):
     return {"check": f"playable within {spec['max_ms'] / 1000:g} s on a cold cache",
-            "says": f"playable within {spec['max_ms'] / 1000:g} s of the page's navigation start, on a cold cache: "
+            "says": f"playable within {spec['max_ms'] / 1000:g} s of the navigation, on a cold cache: "
                     f"the first animation frame where {spec['ready']!r} returns true"
                     + (f"; {spec['failed']!r} returning true fails the load at once" if spec.get("failed") else "")}
 
