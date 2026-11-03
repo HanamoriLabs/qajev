@@ -352,7 +352,7 @@ def _motion_check(session, scenario, run_dir, url, observed):
         judged = vision.look(session.jev.model.post_json, vision.data_url(picture), spec["looks"], context)
     except (RuntimeError, ValueError) as e:
         return checks, evidence, f"while judging the motion looks: {e}"
-    for check, named in zip(judged, planned[len(planned) - len(spec["looks"]):], strict=True):
+    for check, named in zip(judged, planned[1 + bool(spec.get("max_gap_ms")):], strict=True):
         checks.append({**check, "check": named["check"]})
     return checks, evidence, None
 
