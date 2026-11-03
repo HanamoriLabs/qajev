@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import browser_pool, chrome, keys, live, plan, providers, ux, verdict, vision
+from . import pad as pad_mod
 from .config import redact, redact_tree, remember_secret, remembered_secrets, secret_values
 from .diagnostics import clean_data, keep_console
 from .ledger import CostCapReached, Ledger
@@ -200,9 +201,16 @@ def _effect_check(session, scenario, run_dir, url):
     return check, evidence
 
 
+# The input may take at most this much longer than its no-input control (x 1.25, + 0.25 s) for the two changes to be
+# compared: a longer input has more time to change by itself (redteam-1 M1, #275). The 0.25 s is a hook's own cost:
+# a drag's start point and its press and release are not paced, and each event waits for the renderer.
+INPUT_TIME_RATIO, INPUT_TIME_SLACK_S = 1.25, 0.25
+
+
 def _input_wait_s(hooks):
-    """How long the no-input control waits: the time the input hooks plan to take (a drag's ms, a key's hold and
-    interval, a sleep), at least 0.2 s."""
+    """How long the no-input control waits: the time the input hooks plan to take (a drag's ms, a key's holds and
+    intervals, a pad's frames, a react hook's for_s, a sleep), at least 0.2 s. A hook with no planned time (a click,
+    a wait_for) counts 0; the time guard in _input_check then says when the input took longer."""
     planned = 0.0
     for hook in hooks:
         kind, value = next(iter(hook.items()))
@@ -213,6 +221,10 @@ def _input_wait_s(hooks):
         elif kind == "key":
             p = keys.plan(value)
             planned += len(p["keys"]) * p["repeat"] * (p["hold_ms"] + p["interval_ms"]) / 1000
+        elif kind == "pad":
+            planned += sum(frame["ms"] for frame in pad_mod.plan(value)) / 1000
+        elif kind == "react":
+            planned += keys.react_plan(value)["for_s"]
     return max(planned, 0.2)
 
 
@@ -223,6 +235,7 @@ def _input_check(session, scenario, run_dir, url):
     import hashlib
 
     from .pixels import PixelError, compare
+    from .session import HookFailed
 
     spec = scenario.expect["input"]
     if run_dir is None:
@@ -237,10 +250,15 @@ def _input_check(session, scenario, run_dir, url):
         took["idle"] = time.monotonic() - started
         frames["input-before"] = session.capture_region_png(spec["region"])
         started = time.monotonic()
-        for hook in spec["do"]:
-            session.run_hook(hook, url)
+        try:
+            for hook in spec["do"]:
+                session.run_hook(hook, url)
+        except HookFailed as e:  # the input itself failed, as a before hook would (redteam-1 L1, #275)
+            raise HookFailed(f"input {spec['name']!r}, the do hooks: {e}") from None
         frames["input-after"] = session.capture_region_png(spec["region"])
         took["input"] = time.monotonic() - started
+    except HookFailed:  # a RuntimeError, but not a capture's
+        raise
     except (RuntimeError, ValueError, OSError, TimeoutError) as e:
         raise PixelError(f"input {spec['name']!r}, capture {len(frames) + 1} of 4: {e}") from None
     for name, contents in frames.items():
@@ -252,10 +270,12 @@ def _input_check(session, scenario, run_dir, url):
                                min_changed=1)
     margin = moved["fraction"] - idle["fraction"]
     ok = margin >= spec["min_changed"]
+    longer = took["input"] > INPUT_TIME_RATIO * took["idle"] + INPUT_TIME_SLACK_S
     stem = "input-" + hashlib.sha256(scenario.name.encode()).hexdigest()[:16]
     metrics = {"idle": {k: idle[k] for k in ("changed", "total", "fraction")} | {"seconds": round(took["idle"], 3)},
                "input": {k: moved[k] for k in ("changed", "total", "fraction")} | {"seconds": round(took["input"], 3)},
-               "margin": margin, "min_changed": spec["min_changed"], "tolerance": spec["tolerance"], "ok": ok}
+               "margin": margin, "min_changed": spec["min_changed"], "tolerance": spec["tolerance"],
+               "ok": ok and not longer}
     evidence = {"name": spec["name"], "region": spec["region"], "metrics": metrics}
     for name, contents in (*frames.items(), ("idle-difference", idle_png), ("input-difference", moved_png)):
         relative = f"shots/{stem}-{name}.png"
@@ -266,6 +286,11 @@ def _input_check(session, scenario, run_dir, url):
     detail = (f"with the input {moved['fraction']:.2%} of pixels changed in {took['input']:.2f} s; with none "
               f"{idle['fraction']:.2%} in {took['idle']:.2f} s; the input must add {spec['min_changed']:.2%}, "
               f"it added {margin:.2%}")
+    if longer:  # nothing was judged: the input had more time to change by itself than its control
+        return {**verdict.input_planned(spec), "ok": False, "broke": True, "value": metrics,
+                "detail": f"the input took {took['input']:.2f} s and the no-input control {took['idle']:.2f} s, so "
+                          f"their changes cannot be compared ({detail}); give the do hooks a planned time (a drag's "
+                          "ms, a key's hold_ms, a pad's hold_ms, a react hook's for_s, a sleep)"}, evidence
     return {**verdict.input_planned(spec), "ok": ok, "detail": detail, "value": metrics}, evidence
 
 
@@ -279,6 +304,15 @@ def frame_gaps(times):
     return {"frames": len(times), "seconds": round(span, 3), "fps": round((len(times) - 1) / span, 1) if span else 0,
             "longest_ms": round(gaps[-1], 1) if gaps else None,
             "p95_ms": round(gaps[min(len(gaps) - 1, int(len(gaps) * 0.95))], 1) if gaps else None}
+
+
+def _all_flat_dark(frames):
+    """pixels.flat_dark on each motion frame: -> the first frame's reading when every frame is one flat dark colour,
+    else None."""
+    from .pixels import flat_dark, grid_lumas
+
+    readings = [flat_dark(grid_lumas(frame)) for frame in frames]
+    return readings[0] if all(readings) else None
 
 
 def _motion_check(session, scenario, run_dir, url, observed):
@@ -301,8 +335,9 @@ def _motion_check(session, scenario, run_dir, url, observed):
         gaps = frame_gaps(session.frame_times(spec["seconds"] * 1000))
         ok = gaps["longest_ms"] is not None and gaps["longest_ms"] <= spec["max_gap_ms"]
         checks.append({**planned[1], "ok": ok, "value": gaps,
-                       "detail": f"longest gap {gaps['longest_ms']} ms, 95% of gaps within {gaps['p95_ms']} ms, "
-                                 f"{gaps['fps']} frames a second over {gaps['seconds']} s"})
+                       "detail": f"longest gap {gaps['longest_ms']} ms between two of the main thread's animation "
+                                 f"frames, 95% of gaps within {gaps['p95_ms']} ms, {gaps['fps']} frames a second over "
+                                 f"{gaps['seconds']} s"})
     frames, at = [], []
     interval = spec["seconds"] / (spec["frames"] - 1)
     started = time.monotonic()
@@ -338,6 +373,15 @@ def _motion_check(session, scenario, run_dir, url, observed):
                       "detail": f"{moving} of {len(pairs)} frame pairs moved (need {spec['min_moving']:.0%}); "
                                 f"the longest still stretch is {still} pair(s); the largest change "
                                 f"{max(m['fraction'] for m in pairs):.2%} of the region"})
+    dark = None if scenario.canvas_dark else _all_flat_dark(frames)
+    if dark:  # a capture without its GPU layer reads as a frozen view (redteam-1 L3, #276): nothing was judged
+        evidence["flat_dark"] = dark
+        broke = (f"every frame of region {spec['region']['name']!r} is one flat dark colour (median grey "
+                 f"{dark['median']}): the capture may have lost the page's GPU layer, so motion was not judged; if "
+                 "the region is dark on purpose, say why with canvas_dark")
+        checks[0] = {**planned[0], "ok": False, "broke": True, "value": metrics, "detail": broke}
+        looks = planned[1 + bool(spec.get("max_gap_ms")):]
+        return checks + [{**named, "ok": False, "broke": True, "detail": broke} for named in looks], evidence, None
     if not spec["looks"]:
         return checks, evidence, None
     pick = sorted({round(i * (len(frames) - 1) / (min(SHEET_FRAMES, len(frames)) - 1))
@@ -375,50 +419,70 @@ def _sweep_errors(probe):
     return out
 
 
+def _sweep_banners(session, spec):
+    """The banners a person sees now -> (shown, broken): [{selector, text}], and the read's errors (a selector that is
+    not CSS, or a read that failed)."""
+    try:
+        banners = session.banners(spec["banners"]) if spec["banners"] else []
+    except (RuntimeError, TimeoutError) as e:
+        banners = [{"selector": None, "error": f"the banners could not be read: {e}"}]
+    return [b for b in banners if not b.get("error")], [b for b in banners if b.get("error")]
+
+
 def _sweep_check(session, scenario, url, read):
-    """expect.sweep: for each setting, its do hooks, the sweep's wait, then the page's new errors and the banners a
-    person sees. read() is the runner's own read of the page: it drains the errors, so each read holds only what came
-    after the one before. -> (one check per setting, evidence)."""
+    """expect.sweep: for each setting, the banners shown before it, its do hooks, the sweep's wait, then the page's new
+    errors and the banners a person sees that were not there before the hooks. read() is the runner's own read of the
+    page: it drains the errors, so each read holds only what came after the one before. -> (one check per setting,
+    evidence)."""
     from .session import HookFailed
 
     spec = scenario.expect["sweep"]
     read()  # what the page logged before the sweep is no setting's
     checks, evidence = [], {"name": spec["name"], "wait": spec["wait"], "banners": spec["banners"], "settings": []}
     for setting, planned in zip(spec["settings"], verdict.sweep_planned(spec), strict=True):
+        # a banner shown before the hooks (before the sweep, or by an earlier setting) is not this one's (redteam-1 M1)
+        before, broken = _sweep_banners(session, spec)
         try:
             for hook in setting["do"]:
                 session.run_hook(hook, url)
         except HookFailed as e:  # the sweep could not reach the setting: a failed hook, as a before hook's
             raise HookFailed(f"sweep {spec['name']!r}, setting {setting['name']!r}: {e}") from None
         time.sleep(spec["wait"])
-        errors = _sweep_errors((read() or {}).get("probe") or {})
-        try:
-            banners = session.banners(spec["banners"]) if spec["banners"] else []
-        except (RuntimeError, TimeoutError) as e:
-            banners = [{"selector": None, "error": f"the banners could not be read: {e}"}]
-        broken = [b for b in banners if b.get("error")]
-        shown = [b for b in banners if not b.get("error")]
+        probe = (read() or {}).get("probe") or {}
+        errors, blocked = _sweep_errors(probe), probe.get("blocked") or []
+        after, broke_after = _sweep_banners(session, spec)
+        broken += broke_after
+        seen = {(b["selector"], b["text"]) for b in before}
+        shown = [b for b in after if (b["selector"], b["text"]) not in seen]
         evidence["settings"].append({"name": setting["name"], "errors": errors[:SWEEP_KEEP], "error_count": len(errors),
-                                     "banners": shown[:SWEEP_KEEP]})
+                                     "banners": shown[:SWEEP_KEEP], "banners_before": before[:SWEEP_KEEP],
+                                     **({"blocked": blocked[:SWEEP_KEEP]} if blocked else {})})
         if broken:  # nothing was judged: the test's selector, or QAJev's read, broke
             checks.append({**planned, "ok": False, "broke": True,
                            "detail": "; ".join(f"banner selector {b['selector']!r}: {b['error']}" if b["selector"]
                                                else b["error"] for b in broken)})
             continue
+        if blocked:  # QAJev's read-only guard stopped the setting's own write: the page's answer is not the product's
+            writes = ", ".join(f"{w.get('method')} {w.get('url')}" for w in blocked[:3])
+            checks.append({**planned, "ok": False, "broke": True,
+                           "detail": f"QAJev's read-only guard blocked the setting's write ({writes}), so what the "
+                                     "page did next was not judged: run the sweep where the write may go out, or "
+                                     "choose settings that save nothing"})
+            continue
         said = [*errors[:3], *(f"banner {b['selector']}: {b['text']!r}" for b in shown[:3])]
         more = len(errors) + len(shown) - len(said)
         checks.append({**planned, "ok": not errors and not shown,
-                       "detail": (f"{len(errors)} new error(s), {len(shown)} banner(s): " + "; ".join(said)
+                       "detail": (f"{len(errors)} new error(s), {len(shown)} new banner(s): " + "; ".join(said)
                                   + (f"; and {more} more" if more > 0 else "")) if said
-                       else "no new error and no banner"})
+                       else "no new error and no new banner"})
     return checks, evidence
 
 
-def _load_check(session, scenario, opts, run_dir):
-    """expect.load: the time from the page's navigation start to its first playable frame (session.wait_load), with a
-    screenshot of that moment. -> (check, evidence)."""
+def _load_check(session, scenario, opts, run_dir, started):
+    """expect.load: the time from the navigation (started: the browser's clock right before it) to the page's first
+    playable frame (session.wait_load), with a screenshot of that moment. -> (check, evidence)."""
     spec = scenario.expect["load"]
-    got = session.wait_load(spec)
+    got = session.wait_load(spec, started)
     limit = spec["max_ms"]
     evidence = {"max_ms": limit, "cache": "cold", **got}
     check = {**verdict.load_planned(spec), "value": evidence}
@@ -436,6 +500,10 @@ def _load_check(session, scenario, opts, run_dir):
         return {**check, "ok": False, "broke": True,
                 "detail": "the ready watcher never ran in the page: check ready and failed for a JavaScript "
                           "syntax error"}, evidence
+    if not got.get("frames") and got.get("failed_ms") is None:  # nothing was judged: the page drew no frame
+        return {**check, "ok": False, "broke": True,
+                "detail": f"the page drew no animation frame in {got['waited_ms'] / 1000:.1f} s, so its load was not "
+                          "judged: QAJev's browser window may be hidden or covered"}, evidence
     if got.get("failed_ms") is not None:
         detail = f"the page said its load failed at {got['failed_ms'] / 1000:.2f} s ({spec['failed']!r} returned true)"
     else:
@@ -474,7 +542,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
     before = None  # the page's checks as Jev found it, before its first move
     ux_observer = None
     load = scenario.expect.get("load")
-    measured_load = None
+    measured_load = load_started = None
     ran = set()  # the expectations beyond the page's own that did run
     ux_enabled = resolve_ux(opts, getattr(scenario, "ux_options", None))["ux"] != "off"
 
@@ -550,7 +618,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
         if scenario.url:
             session.check_host(scenario.url)
             if load:
-                session.watch_load(load)  # before the page loads: its clock starts at the navigation
+                session.watch_load(load)  # before the page loads
+                load_started = session.browser_clock()  # the time runs from the navigation, on the browser's clock
             error = session.navigate(scenario.url)
             if error:
                 stop, detail = "unreachable", error
@@ -562,7 +631,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
             if load:
                 _emit(opts, "step", scenario=scenario.name, at=time.time(),
                       doing=f"waiting for the page to be playable (limit {load['max_ms'] / 1000:g} s)")
-                measured_load, result["load"] = _load_check(session, scenario, opts, run_dir)
+                measured_load, result["load"] = _load_check(session, scenario, opts, run_dir, load_started)
                 ran.add("load")
                 session.unwatch_load()  # the test's later reloads and pages are not measured
             # What it is doing, for the dashboard and qajev top, while a slow check runs in the page (a script that

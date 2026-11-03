@@ -880,7 +880,8 @@ async def qa_reports(project: str | None = None, limit: int = 20) -> dict:
 async def qa_plan(suite: str) -> dict:
     """A suite's test plan without running it (free, no browser): each test's about and its checks in plain words,
     and `not_described`, the tests that do not say what they prove (a run would be INCOMPLETE), and `absent_only`, the
-    tests whose only checks say a text is absent (a blank page passes them), and `key_goals`, the tests whose goal asks
+    tests whose only checks say a text is absent or sweep settings with no click, fill, drag or wait_for hook (a
+    blank page passes them), and `key_goals`, the tests whose goal asks
     Jev to press a key, which it cannot (press it in a `key:` hook), each with the words found. `suite`: a suite file
     (scenarios:) or a game's steps suite (steps:). Lint a suite with it before running or sending a PR.
     `test_plan`: the approved test plan file the suite names (`plan:`): its path, whether it is approved, the

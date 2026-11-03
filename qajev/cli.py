@@ -2004,8 +2004,9 @@ def cmd_plan(args):
         print(f"{described} of {len(items)} tests say what they prove"
               + (f"; NOT DESCRIBED: {', '.join(missing)} (a run would be INCOMPLETE)" if missing else ""))
         if blind:
-            print(f"ABSENT ONLY: {', '.join(blind)}: each only checks that a text is absent, and a blank page passes "
-                  "that. Add a text or js check that must be there.")
+            print(f"ABSENT ONLY: {', '.join(blind)}: each only checks that a text is absent, or sweeps settings with "
+                  "no click, fill, drag or wait_for hook, and a blank page passes that. Add a text or js check that "
+                  "must be there.")
         if keyed:
             print("PRESSES KEYS: " + "; ".join(f"{k['name']} (“{k['says']}”)" for k in keyed) + ": Jev cannot press "
                   "keys. Press them in a `key:` hook (before or after) and leave them out of the goal.")

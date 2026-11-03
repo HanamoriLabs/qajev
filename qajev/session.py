@@ -876,14 +876,15 @@ BANNERS_JS = Template("""(() => {
   return out;
 })()""")
 
-# expect.load's watcher, in the top document before the page's own code: at each animation frame it asks the test's
-# ready (and failed) expressions, and keeps performance.now() (ms since the page's navigation start) at the first frame
-# where one returns exactly true. A throw counts as not yet; the last one is kept for the report.
+# expect.load's watcher, in each top document before the page's own code: at each animation frame it asks the test's
+# ready (and failed) expressions, and keeps performance.now() (ms since that document's start) at the first frame
+# where one returns exactly true; failed is asked first. A throw counts as not yet; the last one is kept for the
+# report. It counts the frames it saw: none means the page drew none (a hidden window), so nothing was judged.
 LOAD_WATCH_JS = r"""(() => {
   if (window !== window.top) return;
   const key = Symbol.for('qajev.load');
   if (window[key]) return;
-  const state = {at: null, failed: null, error: null};
+  const state = {at: null, failed: null, error: null, frames: 0};
   Object.defineProperty(window, key, { value: state, enumerable: false });
   const holds = test => {
     try { return test() === true; }
@@ -893,15 +894,19 @@ LOAD_WATCH_JS = r"""(() => {
   );
   const failed = __FAILED__;
   const frame = () => {
+    state.frames++;
     if (failed && holds(failed)) { state.failed = performance.now(); return; }
     if (holds(ready)) { state.at = performance.now(); return; }
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
 })();"""
-LOAD_STATE_JS = """(() => { const s = window[Symbol.for('qajev.load')];
-  return s ? {at: s.at, failed: s.failed, error: s.error, now: performance.now()}
-           : {missing: true, now: performance.now()}; })()"""
+# The watcher's state, with this document's start on the browser's clock (performance.timeOrigin, epoch ms), so a
+# page that moved to another document while it loaded is still timed from the navigation (redteam-1 L1, #274).
+LOAD_STATE_JS = """(() => { const s = window[Symbol.for('qajev.load')], origin = performance.timeOrigin;
+  return s ? {at: s.at, failed: s.failed, error: s.error, frames: s.frames, now: performance.now(), origin}
+           : {missing: true, now: performance.now(), origin}; })()"""
+BROWSER_CLOCK_JS = "performance.timeOrigin + performance.now()"
 
 # The page's WebGPU adapter as the page gets it, for canvas_capture's gpu: hardware. No device is made.
 WEBGPU_ADAPTER_JS = """(async () => {
@@ -1992,27 +1997,45 @@ class Session:
                 self.call("Page.removeScriptToEvaluateOnNewDocument", identifier=self.load_script_id)
             self.load_script_id = None
 
-    def wait_load(self, spec):
+    def browser_clock(self):
+        """The browser's clock now, in epoch ms (performance.timeOrigin + performance.now() on the current page), or
+        None. expect.load reads it right before the navigation it times."""
+        with contextlib.suppress(RuntimeError, TimeoutError):
+            now = self.evaluate(BROWSER_CLOCK_JS, timeout_ms=3000)
+            if isinstance(now, (int, float)) and not isinstance(now, bool):
+                return float(now)
+        return None
+
+    def wait_load(self, spec, started):
         """Wait for the page that watch_load watches to be playable, to say its load failed, or for twice its limit.
-        -> {ms} when it was playable; else {ms: None, waited_ms, failed_ms?, error?, watched}. watched False: the
-        watcher never ran in the page (a ready expression that does not parse stops it). The page's own clock
-        (performance.now()) times the wait, so a page that answers late is not cut short."""
+        started: the browser's clock (browser_clock) right before the navigation, or None to time from the last
+        document's own start. The times are from then, on the browser's clock, so a page that moved to another
+        document while it loaded (a redirect, a reload, location.replace) is timed from the navigation, and a page that
+        answers late is not cut short.
+        -> {ms, document_ms} when it was playable (document_ms: when the document that became playable began); else
+        {ms: None, waited_ms, frames, failed_ms?, error?, watched}. watched False: the watcher never ran in the page (a
+        ready expression that does not parse stops it). frames 0: the page drew no animation frame."""
         wait_ms = 2 * spec["max_ms"]
-        deadline = time.monotonic() + wait_ms / 1000 + 30  # the page's own clock decides; this guards a page that hangs
+        deadline = time.monotonic() + wait_ms / 1000 + 30  # the browser's clock decides; this guards a page that hangs
         state = None
+
+        def since(t):  # ms from the navigation to the time t of the current document
+            return max(0, round(state["origin"] + t - started)) if started is not None and state.get("origin") \
+                else round(t)
+
         while time.monotonic() < deadline and self.page_crash() is None:
             with contextlib.suppress(RuntimeError, TimeoutError):
                 state = self.evaluate(LOAD_STATE_JS, timeout_ms=3000) or state
             if state and (state.get("at") is not None or state.get("failed") is not None
-                          or state.get("now", 0) >= wait_ms):
+                          or since(state.get("now", 0)) >= wait_ms):
                 break
             time.sleep(0.1)
         if state and state.get("at") is not None:
-            return {"ms": round(state["at"])}
-        out = {"ms": None, "waited_ms": round((state or {}).get("now") or wait_ms),
-               "watched": bool(state) and not state.get("missing")}
+            return {"ms": since(state["at"]), "document_ms": since(0)}
+        out = {"ms": None, "waited_ms": since(state["now"]) if state else wait_ms,
+               "watched": bool(state) and not state.get("missing"), "frames": (state or {}).get("frames", 0)}
         if state and state.get("failed") is not None:
-            out["failed_ms"] = round(state["failed"])
+            out["failed_ms"] = since(state["failed"])
         if state and state.get("error"):
             out["error"] = state["error"]
         return out
@@ -2200,8 +2223,10 @@ class Session:
             self.call("Input.dispatchMouseEvent", type="mousePressed", x=x, y=y, button=button, buttons=held,
                       clickCount=1)
             try:
-                for i in range(1, steps + 1):
-                    time.sleep(pause)
+                started = time.monotonic()
+                for i in range(1, steps + 1):  # on the clock: each move waits for the renderer, so a fixed pause
+                    # between them made a 300 ms drag take about 600 ms, longer than its input check's control
+                    time.sleep(max(0.0, started + i * pause - time.monotonic()))
                     x, y = at["x"] + spec["by"]["x"] * i / steps, at["y"] + spec["by"]["y"] * i / steps
                     self.call("Input.dispatchMouseEvent", type="mouseMoved", x=x, y=y, button=button, buttons=held)
             finally:  # a button left down would drag the rest of the test

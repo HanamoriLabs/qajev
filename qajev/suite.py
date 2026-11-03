@@ -394,6 +394,10 @@ def _motion(value, where):
     gap = value.get("max_gap_ms")
     if gap is not None and (isinstance(gap, bool) or not isinstance(gap, int) or not 17 <= gap <= 5000):
         raise SuiteError(f"{where}.max_gap_ms must be whole milliseconds, 17 to 5000")
+    if gap is not None and value.get("do"):  # the gaps come first: the frames would miss a short effect (redteam-1 M1)
+        raise SuiteError(f"{where}: max_gap_ms and do cannot go together: QAJev records the frame gaps for `seconds` "
+                         "before it captures, so the frames would come after a short effect is over. Put the frame "
+                         "gaps in a test of their own, with no do hooks")
     looks = value.get("looks", [])
     looks = [looks] if isinstance(looks, str) else looks
     if not isinstance(looks, list) or not all(isinstance(s, str) and s.strip() for s in looks):

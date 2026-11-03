@@ -101,10 +101,11 @@ keeps its `probability` (`null` when the model gave no valid one) and its `judge
 QAJev asked for), with the model id in `judge_model`. A look that failed on its pixels before any model was asked has
 both `null`.
 
-A test with `expect.load` keeps `load`: `ms` (the time from navigation start to the first playable frame), `max_ms`,
-`cache` (always `cold`) and `shot` (that frame). When the page was not playable, `ms` is `null` and `waited_ms` says
+A test with `expect.load` keeps `load`: `ms` (the time from the navigation to the first playable frame, on the
+browser's clock), `document_ms` (when the document that became playable began; for a page that moved to another
+document while it loaded, the time of that move), `max_ms`, `cache` (always `cold`) and `shot` (that frame). When the page was not playable, `ms` is `null` and `waited_ms` says
 how long QAJev waited. `failed_ms` is when the page's `failed` expression held, `error` is the last throw of `ready`,
-and `watched: false` means the watcher never ran (the test is harness).
+`watched: false` means the watcher never ran, and `frames: 0` that the page drew no animation frame (both harness).
 
 A test with `expect.input` keeps `input`: its `name`, `region`, `metrics` (`idle` and `input`, each with `changed`,
 `total`, `fraction` and `seconds`, and `margin`, `min_changed`, `tolerance`, `ok`) and the paths of its six PNGs
@@ -113,12 +114,14 @@ keep all six.
 
 A test with `expect.motion` keeps `motion`: its `name`, `region`, `metrics` (`pairs`, `moving`, `still_run`, `share`,
 `at`, `min_changed`, `min_moving`, `tolerance`, and `gaps` with `frames`, `seconds`, `fps`, `longest_ms` and `p95_ms`
-when it has `max_gap_ms`), the paths of its frames (`frames`), and the `sheet` Clef judged with its `sheet_frames`.
+when it has `max_gap_ms`), the paths of its frames (`frames`), the `sheet` Clef judged with its `sheet_frames`, and `flat_dark` when every
+frame was one flat dark colour (the test is then harness).
 Report downloads keep them all.
 
 A test with `expect.sweep` keeps `sweep`: its `name`, `wait` and `banners` (the selectors), and for each of its
-`settings` the `name`, the first 10 new `errors`, the `error_count`, and the first 10 `banners` seen
-(`{selector, text}`). Each setting is also a check in `checks`.
+`settings` the `name`, the first 10 new `errors`, the `error_count`, the first 10 new `banners` (`{selector,
+text}`), the first 10 `banners_before` its hooks, and `blocked`, the writes QAJev's read-only guard stopped. Each
+setting is also a check in `checks`.
 
 A scenario whose page crashed (Chrome's "Aw, Snap") is **fail**, with stop `page_crashed` and a `page_crashed` record:
 the crashed page's `url` and the `last_step`. A scenario with `cache: cold` keeps `cache: "cold"`. The lines that its

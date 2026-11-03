@@ -76,6 +76,9 @@ def test_the_no_input_control_waits_as_long_as_the_input_plans_to_take():
     assert runner._input_wait_s([DRAG, {"sleep": 0.5}, {"key": {"press": ["a", "d"], "repeat": 2, "hold_ms": 100}},
                                  {"js": "1"}]) == pytest.approx(0.3 + 0.5 + 0.4)
     assert runner._input_wait_s([{"js": "1"}]) == 0.2
+    # a pad's held stick and a react hook's for_s count too (redteam-1 M1, #275)
+    assert runner._input_wait_s([{"pad": {"stick": "left", "x": 1, "y": 0, "hold_ms": 2000}},
+                                 {"react": {"js": "null", "for_s": 1.5}}]) == pytest.approx(2.0 + 1.5)
 
 
 def png(dark):
@@ -140,6 +143,55 @@ def test_only_the_change_the_input_adds_counts(tmp_path, monkeypatch, idle, move
         assert all(result["input"][key] in text for key in report_files.INPUT_FRAMES)
 
 
+class Clock:
+    """time.monotonic and time.sleep for the runner: a sleep moves the clock, and so does each input hook."""
+
+    def __init__(self, hook_s):
+        self.now, self.hook_s = 100.0, hook_s
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, s):
+        self.now += s
+
+
+@pytest.mark.parametrize("hook_s,outcome", [(0.2, "pass"), (0.45, "pass"), (1.0, "harness")])
+def test_an_input_that_takes_longer_than_its_control_is_not_judged(tmp_path, monkeypatch, hook_s, outcome):
+    """A click with no planned time gets a 0.2 s control: an input that then runs 1 s has 5 times longer to change by
+    itself, so the two changes cannot be compared (redteam-1 M1, #275)."""
+    clock = Clock(hook_s)
+    view = View(0, 4)
+    moves = view.run_hook
+    view.run_hook = lambda hook, url: clock.sleep(clock.hook_s) or moves(hook, url)
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda _: (True, 0))
+    monkeypatch.setattr(runner.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(runner.time, "sleep", clock.sleep)
+    result = runner.run_scenario(view, _suite(do=[{"click": "#go"}]).scenarios[0], opts=runner.Options(shots=False),
+                                 hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
+    assert result["outcome"] == outcome, result["reason"]
+    if outcome == "harness":
+        assert "the input took 1.00 s and the no-input control 0.20 s, so their changes cannot be compared" in \
+            result["reason"]
+        assert result["input"]["metrics"]["ok"] is False
+
+
+def test_a_do_hook_that_fails_stops_the_test_as_a_failed_hook(tmp_path, monkeypatch):
+    view = View(0, 4)
+
+    def broken(hook, url):
+        raise session.HookFailed("'#go' is covered by div#splash")
+
+    view.run_hook = broken
+    monkeypatch.setattr(runner, "wait_for_quiet", lambda _: (True, 0))
+    monkeypatch.setattr(runner.time, "sleep", lambda _: None)
+    result = runner.run_scenario(view, _suite(do=[{"click": "#go"}]).scenarios[0], opts=runner.Options(shots=False),
+                                 hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
+    assert result["stop"] == "hook_failed" and result["outcome"] == "harness"
+    assert "input 'the camera follows the mouse', the do hooks: '#go' is covered by div#splash" in result["reason"]
+    assert "capture" not in result["reason"]
+
+
 def test_a_capture_that_fails_is_harness_and_names_the_input_check(tmp_path, monkeypatch):
     view = View(0, 4)
     view.capture_region_png = lambda region: (_ for _ in ()).throw(RuntimeError("no frame"))
@@ -166,6 +218,25 @@ def test_a_drag_presses_moves_in_steps_and_releases_where_it_ends(monkeypatch):
     mouse = [(p["type"], p["x"], p["y"], p.get("buttons")) for m, p in sent if m == "Input.dispatchMouseEvent"]
     assert mouse == [("mouseMoved", 10, 20, None), ("mousePressed", 10, 20, 2), ("mouseMoved", 20, 17, 2),
                      ("mouseMoved", 30, 14, 2), ("mouseMoved", 40, 11, 2), ("mouseReleased", 40, 11, 0)]
+
+
+def test_a_drag_takes_its_ms_however_long_each_move_takes(monkeypatch):
+    """Each move waits for the renderer (about a frame in headless Chrome): the pauses take that time off, so the
+    drag ends at its ms, as the no-input control of an input check plans (redteam-1 M1, #275)."""
+    now, slept = [10.0], []
+    monkeypatch.setattr(session.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(session.time, "sleep", lambda s: slept.append(round(s, 6)) or now.__setitem__(0, now[0] + s))
+    tab, sent = _tab({"x": 10, "y": 20, "covered": False})
+    real = tab.browser.call
+
+    def slow(method, **params):  # every event takes 16 ms
+        now[0] += 0.016
+        return real(method, **params)
+
+    tab.browser.call = slow
+    tab.drag({"x": 1, "y": 2, "by": {"x": 30, "y": 0}, "steps": 3, "ms": 300})
+    assert slept == [0.1, 0.084, 0.084]  # 100 ms a move, less the 16 ms the move before it took
+    assert now[0] == pytest.approx(10.0 + 2 * 0.016 + 0.3 + 2 * 0.016)  # move and press, 300 ms, last move, release
 
 
 def test_a_drag_that_breaks_midway_still_lets_go_of_the_button(monkeypatch):
@@ -213,7 +284,9 @@ const t0 = performance.now();
 const frame = now => {
   const t = (now - t0) / 1000, x = cam + spin * t;
   for (let i = 0; i < 320; i += 4) {
-    c.fillStyle = Math.floor((i + x) / 20) % 2 ? '#222' : '#ddd'; c.fillRect(i, 0, 4, 200);
+    // stripes that do not repeat: a world of even stripes looks the same after a scroll of whole periods
+    const k = Math.abs(Math.floor((i + x) / 20));
+    c.fillStyle = (k * k * 7919) % 101 < 50 ? '#222' : '#ddd'; c.fillRect(i, 0, 4, 200);
   }
   c.fillStyle = '#e33'; c.fillRect(150 + 40 * Math.sin(t * 3), 90, 8, 8);
   requestAnimationFrame(frame);

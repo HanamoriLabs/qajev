@@ -160,15 +160,17 @@ def motion_planned(spec):
                     f"{spec['min_changed']:.6g} of their pixels, with RGB difference greater than {spec['tolerance']}"}]
     if spec.get("max_gap_ms"):
         out.append({"check": f"motion {name!r}: frame gaps at most {spec['max_gap_ms']} ms",
-                    "says": f"{name}: over {spec['seconds']:g} s with no capture, no gap between two of the page's "
-                            f"animation frames is longer than {spec['max_gap_ms']} ms"})
+                    "says": f"{name}: over {spec['seconds']:g} s with no capture, the page's main thread runs an "
+                            f"animation frame at least every {spec['max_gap_ms']} ms (frames QAJev asks for: a busy "
+                            "main thread delays them, a page that stops drawing does not)"})
     out += [{"check": f"motion {name!r} looks: {statement}"} for statement in spec.get("looks", [])]
     return out
 
 
 def sweep_planned(spec):
     """expect.sweep's checks: one for each setting."""
-    banners = f"no banner ({', '.join(spec['banners'])})" if spec["banners"] else "no banners are looked for"
+    banners = (f"no banner ({', '.join(spec['banners'])}) that was not there before it" if spec["banners"]
+               else "no banners are looked for")
     return [{"check": f"sweep {spec['name']!r}: {setting['name']!r} shows no error",
              "says": f"{spec['name']}: {spec['wait']:g} s after {setting['name']}, the page logged no new error "
                      f"(console.error, an exception, a rejection, a worker's error) and shows {banners}"}
@@ -177,7 +179,7 @@ def sweep_planned(spec):
 
 def load_planned(spec):
     return {"check": f"playable within {spec['max_ms'] / 1000:g} s on a cold cache",
-            "says": f"playable within {spec['max_ms'] / 1000:g} s of the page's navigation start, on a cold cache: "
+            "says": f"playable within {spec['max_ms'] / 1000:g} s of the navigation, on a cold cache: "
                     f"the first animation frame where {spec['ready']!r} returns true"
                     + (f"; {spec['failed']!r} returning true fails the load at once" if spec.get("failed") else "")}
 

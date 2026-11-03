@@ -9,7 +9,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `expect.load` in a suite: the time from the page's navigation start to its first playable frame, on a cold cache.
   `ready` is a JavaScript expression that returns `true` when a person can play, and `max_ms` is the limit. An optional
   `failed` expression fails the load at once. QAJev asks `ready` at each animation frame from before the page's own
-  code runs, and times it with the page's own clock. It waits up to twice the limit, so a slow load gets its time.
+  code runs, and times it from the navigation on the browser's own clock, so a loader page that moves to another
+  document is timed from the start. It waits up to twice the limit, so a slow load gets its time. A page that drew no
+  animation frame (a hidden window) is harness.
   `report.json` keeps `load` and a screenshot of the playable frame. Before, a game that passed on a fast machine
   could take over 2 min to load for a person, and no check said so.
 - A `drag` hook: a real mouse drag from a point by an offset, over `ms` in `steps` moves, with the `left`, `right` or
@@ -17,17 +19,24 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   camera under pointer lock turns. The button is let go even when the drag breaks midway.
 - `expect.input` in a suite: a named region must change by at least `min_changed` more with the test's input (its
   `do` hooks) than in the same time with none. A scene that animates by itself cannot pass for one that answers the
-  mouse. `report.json` keeps both changes, the margin and six PNGs. Before, a still frame could not show that a
-  camera ignored the mouse.
+  mouse. The time with none is the time the `do` hooks plan to take, a pad's and a `react` hook's included. An input
+  that takes longer than 1.25 times that time plus 0.25 s is harness, because it had more time to change by itself.
+  A `do` hook that fails stops the test as a failed hook. `report.json` keeps both changes, the margin and six PNGs.
+  Before, a still frame could not show that a camera ignored the mouse.
 - `expect.motion` in a suite: a sequence of frames of a named region, not one still frame. Each pair of frames in a
   row must change (`min_changed`) in at least `min_moving` of the pairs, so a frozen view fails. With `max_gap_ms`,
   the page's animation frames, recorded with no capture running, must come without a longer gap. Each `looks`
   statement is judged by Clef on a sheet of up to 6 of the frames in time order, for what one frame cannot show, such
-  as a ghost trail. `report.json` keeps the measures, every frame and the sheet.
+  as a ghost trail. `max_gap_ms` cannot go with `do`, because the frames come after the gaps. The gap check reads
+  animation frames QAJev asks for: a busy main thread delays them. Frames that are all one flat dark colour are
+  harness, not a frozen view. `report.json` keeps the measures, every frame and the sheet.
 - `expect.sweep` in a suite: a list of settings, each with the hooks that choose it. After each setting and a `wait`,
   the page must have logged no new error (`console.error`, an uncaught exception, an unhandled rejection, a worker's
   error) and must show no banner (`[role=alert]` and `[role=alertdialog]`, or the test's own selectors). Each setting
-  is its own check. Before, the page's console errors were findings only, and no check failed on them.
+  is its own check. Only a banner that was not there before the setting's hooks counts. A setting whose write
+  QAJev's read-only guard blocked is harness. A sweep of keys, js, sleeps or pads alone is listed as ABSENT ONLY,
+  because it passes on a blank page. Before, the page's console errors were findings only, and no check failed on
+  them.
 
 ## 0.4.46: 3 Nov 2026
 

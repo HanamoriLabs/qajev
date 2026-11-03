@@ -32,7 +32,7 @@ qajev check https://shop.example/pricing --expect-text 'Pro' --absent 'Something
 | `fetch` | `--fetch URL[=STATUS]` | a request made from the page answers with that status (default 200) |
 | `command` | suite only | a shell command prints the expected output (needs `--allow-commands`) |
 | `effect` | suite only | off/on PNG captures of a named region have at least the required fraction of changed pixels |
-| `load` | suite only | the page is playable within `max_ms` of its navigation start, on a cold cache (below) |
+| `load` | suite only | the page is playable within `max_ms` of its navigation, on a cold cache (below) |
 | `motion` | suite only | a named region keeps moving over a sequence of frames, the page's frames come without long gaps, and Clef finds what `looks` asks on a sheet of the frames (below) |
 | `input` | suite only | a named region changes by at least `min_changed` more with the input than in the same time with none (below) |
 | `looks` | `--expect-looks` | Clef, looking at the final screenshot, judges this statement true (needs Clef: see below) |
@@ -104,20 +104,23 @@ scenarios:
         max_ms: 10000
 ```
 
-QAJev puts its watcher in the page before the page's own code runs, and asks `ready` at each animation frame. The
-time is the page's own clock (`performance.now()`), so QAJev's own work does not count. A test with `load` runs on a
-cold cache, as a first visit does, even when the suite does not say `cache: cold`. A throw counts as "not yet", and
-the last one is kept for the report. QAJev waits up to twice the limit, so a slow load still gets its time: "playable
-at 21.40 s, over the 10 s limit". A page that is never playable fails with "not playable after 20.0 s". A `ready` or
-`failed` that does not parse stops the watcher: the test is **harness**, with "the ready watcher never ran in the
-page".
+QAJev puts its watcher in each document before the page's own code runs, and asks `failed`, then `ready`, at each
+animation frame: when both hold in the same frame, the load failed. The time runs from the navigation to that frame,
+on the browser's own clock, so QAJev's own work does not count. A page that moves to another document while it loads
+(a loader page that redirects, reloads or calls `location.replace`) is timed from the navigation, not from its last
+document. A test with `load` runs on a cold cache, as a first visit does, even when the suite does not say
+`cache: cold`. A throw counts as "not yet", and the last one is kept for the report. QAJev waits up to twice the
+limit, so a slow load still gets its time: "playable at 21.40 s, over the 10 s limit". A time equal to the limit
+passes. A page that is never playable fails with "not playable after 20.0 s". A `ready` or `failed` that does not
+parse stops the watcher: the test is **harness**, with "the ready watcher never ran in the page". A page that drew no
+animation frame at all is **harness** too: QAJev's browser window was hidden or covered, so nothing was judged.
 
 Only the test's first page is timed. QAJev clicks nothing before it measures: its `before` hooks, its goal and its
 other checks come after the page is playable. A page that needs a click before it plays is not playable. A
-multiplayer test cannot use this check. `report.json` keeps `load` (`ms`, `max_ms`, `cache`, and `waited_ms`,
-`failed_ms`, `error` or `watched` when the page was not playable) and a screenshot of the playable frame
-(`load.shot`). A planted fault names the check by its plan words, such as
-`expect_fail: "playable within 10 s on a cold cache"`.
+multiplayer test cannot use this check. `report.json` keeps `load` (`ms`, `max_ms`, `cache`, `document_ms`: when
+the document that became playable began, and `waited_ms`, `frames`, `failed_ms`, `error` or `watched` when the page
+was not playable) and a screenshot of the playable frame (`load.shot`). A planted fault names the check by its plan
+words, such as `expect_fail: "playable within 10 s on a cold cache"`.
 
 ## The view answers the input: `input`
 
@@ -146,7 +149,10 @@ scenarios:
 ```
 
 The wait with no input is the time the `do` hooks plan to take: a drag's `ms`, a key's holds and intervals, a
-`sleep`; at least 0.2 s. Place the region over the part of the view the input moves, away from a HUD and its
+pad's frames (its `hold_ms`), a `react` hook's `for_s`, a `sleep`; at least 0.2 s. A hook with no planned time, such
+as a `click` or a `wait_for`, counts 0. When the input then takes longer than 1.25 times its control plus 0.25 s, it
+had more time to change by itself, so the check is harness and its reason gives both times: give the `do` hooks a
+planned time. A `do` hook that fails stops the test as a failed hook, as a `before` hook does. Place the region over the part of the view the input moves, away from a HUD and its
 counters. When the scene moves a lot by itself, a larger region or a longer drag gives the input room to add more.
 The check runs after the page checks have held, before `looks`, and the page checks and looks then judge the page
 after its input. A multiplayer test cannot use this check.
@@ -180,15 +186,25 @@ scenarios:
           - key: Space
         seconds: 3
         frames: 12
-        max_gap_ms: 100
         looks:
           - No moving piece leaves a ghost image or a trail behind it
+  - name: the idle tower never stalls
+    about: The page's main thread stays free while the scene plays.
+    url: http://127.0.0.1:5173/?scene=tower
+    expect:
+      motion:
+        name: the idle scene
+        region: {name: the tower, x: 320, y: 60, width: 640, height: 600}
+        max_gap_ms: 100
 ```
 
-With `max_gap_ms` (17 to 5000), QAJev first records the page's animation frames for `seconds`, with no capture
-running, because a capture can hold a frame back itself. The longest gap between two frames must be at most
-`max_gap_ms`: a stall on load or in an effect fails it. It is its own check, with the frames a second and the gap
-that 95% of frames stay within.
+With `max_gap_ms` (17 to 5000), QAJev first asks the browser for animation frames for `seconds`, with no capture
+running, because a capture can hold a frame back itself. These are QAJev's own frames, on the page's main thread:
+the longest gap between two of them must be at most `max_gap_ms`. A main thread that is busy (a long script, a
+stall) delays them and fails the check. A page that stops drawing does not: the frames themselves show that. It is
+its own check, with the frames a second and the gap that 95% of frames stay within. `max_gap_ms` cannot go with `do`:
+the frames come after the gaps, so a short effect that a hook starts would be over. Put the gaps in a test of their
+own, as above.
 
 Each `looks` statement is judged by Clef (it needs Clef, as `expect.looks` does) on one sheet of up to 6 of the
 frames, evenly picked, in time order: left to right, then top to bottom. Clef sees the sequence, so it can judge what
@@ -198,20 +214,30 @@ named "motion '<name>' looks: <statement>".
 The check runs after the page checks have held, before `input`, `effect` and `looks`. A multiplayer test cannot use
 it. `report.json` keeps `motion`: `metrics` (`pairs`, the changed fraction of each pair; `moving`; `still_run`;
 `share`; `at`, each capture's time in seconds; and `gaps`) and the PNG of each frame (`frames`), with `sheet` and
-`sheet_frames` when Clef judged looks. A capture that fails is harness, and so is a Clef error.
+`sheet_frames` when Clef judged looks. A capture that fails is harness, and so is a Clef error. When every frame is
+one flat dark colour, the capture may have lost the page's GPU layer: the check is harness, not a frozen view, and
+Clef is not asked. A region that is dark on purpose says why with `canvas_dark` (see below).
 
 ## Every setting, with no error and no banner: `sweep`
 
 A setting can break the page without changing what a test checks: a graphics preset that logs a shader error, a
 language whose file is missing, a toggle that shows an error banner. `expect.sweep` chooses each setting in turn. It
-runs the setting's `do` hooks, waits `wait` seconds (0 to 30, default 1), then reads what the page logged since the
-setting before. The setting's check holds when the page logged no new error and shows no banner.
+reads the banners shown, runs the setting's `do` hooks, waits `wait` seconds (0 to 30, default 1), then reads what the
+page logged since the setting before. The setting's check holds when the page logged no new error and shows no banner
+that was not there before its hooks. A banner shown before the sweep, or by an earlier setting, fails no later one.
 
 - An error is a `console.error` line, an uncaught exception, an unhandled rejection, or a worker's console error. A
   warning, a failed request and QAJev's own read-only block are not. They stay findings, as before.
 - A banner is an element that a `banners` selector matches (default `[role=alert]` and `[role=alertdialog]`) and that
   a person sees: it is laid out, visible, and has text. An empty live region is not a banner. `banners: []` looks for
-  none. A selector that is not valid CSS is harness.
+  none. A selector that is not valid CSS is harness. QAJev does not read inside shadow roots or frames.
+- An error the page logs after the `wait` counts for the next setting, and one after the last setting is a finding
+  only. Raise `wait` for a slow setting.
+- In a read-only run, QAJev blocks a write a setting makes (a save of the preferences). The page's answer to that is
+  QAJev's doing, so the setting is harness and names the write. Run the sweep where the write may go out, or choose
+  settings that save nothing.
+- Each setting needs a `click`, `fill`, `drag` or `wait_for` hook, which fails when its element is missing. A sweep
+  of keys, `js`, sleeps or pads alone passes on a blank page, so `qajev plan` lists it as ABSENT ONLY.
 
 ```yaml
 scenarios:
