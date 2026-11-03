@@ -59,7 +59,7 @@ def test_a_page_callback_after_qajevs_in_the_same_frame_is_not_counted_yet(sessi
     readback = session_mod.IN_FRAME.format(expression=GRAB)
     got = session.evaluate(
         f"(() => {{ const read = {readback}; let after = null; requestAnimationFrame(() => {{ paint(0.8, 0.7, 0.5, 1); "
-        "after = window[Symbol.for('qajev.frameDraws')](); }}); "
+        "after = window[Symbol.for('qajev.frameDraws')](); }); "
         "return read.then((r) => new Promise((done) => setTimeout(() => done({draws: r.draws, after}), 100))); })()")
     assert got == {"draws": 0, "after": 1}, json.dumps(got)
 
