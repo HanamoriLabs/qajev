@@ -117,11 +117,13 @@ class View:
 def test_only_the_change_the_input_adds_counts(tmp_path, monkeypatch, idle, moved, outcome, margin):
     parsed = _suite(min_changed=0.25)
     view = View(idle, moved)
+    slept = []
     monkeypatch.setattr(runner, "wait_for_quiet", lambda _: (True, 0))
-    monkeypatch.setattr(runner.time, "sleep", lambda _: None)
+    monkeypatch.setattr(runner.time, "sleep", slept.append)
     result = runner.run_scenario(view, parsed.scenarios[0], opts=runner.Options(shots=False),
                                  hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
     assert result["outcome"] == outcome, result["reason"]
+    assert slept == [0.3]  # the no-input control waits as long as the drag takes, between its two captures
     assert view.calls == ["capture", "capture", "capture", DRAG, "capture"]
     metrics = result["input"]["metrics"]
     assert metrics["margin"] == pytest.approx(margin) and metrics["min_changed"] == 0.25
@@ -271,11 +273,15 @@ def test_browser_a_real_drag_turns_a_camera_and_a_camera_that_ignores_it_fails(p
 
 
 @pytest.mark.skipif(not ENDPOINT or os.uname().sysname != "Linux", reason="requires approved CPU fixture browser")
-def test_browser_a_drag_gives_the_page_movementX_as_a_mouse_does(page, camera, monkeypatch):
-    """A camera under pointer lock reads only movementX/Y, so QAJev's moves must carry it."""
+def test_browser_a_drag_gives_the_page_movementX_in_its_direction(page, camera, monkeypatch):
+    """A camera under pointer lock reads only movementX/Y, so QAJev's moves must carry it. Chrome sets it on
+    synthetic moves, though not always the full CSS distance (60 px for a 150 px drag in headless Chromium 153)."""
     tab, _ = page
     tab.hosts = {urlsplit(camera).netloc}
     monkeypatch.setattr(session, "require_transport", lambda: None)
     tab.navigate(camera + "/")
     tab.drag({"selector": "#view", "x": 60, "y": 100, "by": {"x": 150, "y": 0}, "ms": 150, "steps": 10})
-    assert tab.evaluate("[window.moves, window.movement]") == [10, 150]
+    moves, movement = tab.evaluate("[window.moves, window.movement]")
+    assert moves == 10 and 0 < movement <= 150, movement
+    tab.drag({"selector": "#view", "x": 200, "y": 100, "by": {"x": -150, "y": 0}, "ms": 150, "steps": 10})
+    assert tab.evaluate("window.movement") < movement  # back the other way
