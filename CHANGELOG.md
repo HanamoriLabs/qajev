@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.47: 4 Nov 2026
+
 ### Added
 
 - `expect.load` in a suite: the time from the page's navigation start to its first playable frame, on a cold cache.
