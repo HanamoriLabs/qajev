@@ -406,7 +406,8 @@ def _input(value, where):
             "min_changed": _fraction(value.get("min_changed"), f"{where}.min_changed"), "tolerance": tolerance}
 
 
-LOAD_MAX_MS = 300_000  # 5 min: the longest load limit; QAJev waits up to twice the limit to measure a slow load
+# The load limits: below 100 ms is a limit in seconds by mistake; 5 min is the longest (QAJev waits twice the limit)
+LOAD_MIN_MS, LOAD_MAX_MS = 100, 300_000
 
 
 def _load(value, where):
@@ -421,10 +422,11 @@ def _load(value, where):
     if "ready" not in value:
         raise SuiteError(f"{where}.ready is required: an expression that returns true when a person can play")
     limit = value.get("max_ms")
-    if isinstance(limit, bool) or not isinstance(limit, int) or not 0 < limit <= LOAD_MAX_MS:
-        raise SuiteError(f"{where}.max_ms must be whole milliseconds, 1 to {LOAD_MAX_MS}"
+    if isinstance(limit, bool) or not isinstance(limit, int) or not LOAD_MIN_MS <= limit <= LOAD_MAX_MS:
+        raise SuiteError(f"{where}.max_ms must be whole milliseconds, {LOAD_MIN_MS} to {LOAD_MAX_MS}"
                          + (f"; {limit:g} looks like seconds (write {limit * 1000:g})"
-                            if isinstance(limit, (int, float)) and not isinstance(limit, bool) and 0 < limit < 100
+                            if isinstance(limit, (int, float)) and not isinstance(limit, bool)
+                            and 0 < limit < LOAD_MIN_MS
                             else ""))
     return {"ready": value["ready"], "max_ms": limit, **({"failed": value["failed"]} if "failed" in value else {})}
 
@@ -788,9 +790,9 @@ def parse(data, path=None, devices=None):
                                              *console_keep(item.get("console_keep"), f"{where}.console_keep")])),
             cache=cache(item.get("cache", data.get("cache")), f"{where}.cache"),
         ))
-        if clients and ({"console_keep", "cache"} & set(item) or expect.get("load") or expect.get("input")):
-            raise SuiteError(f"{where}: console_keep, cache, expect.load and expect.input are for a test in QAJev's "
-                             "own tab, not a multiplayer test's clients")
+        if clients and ({"console_keep", "cache"} & set(item)):
+            raise SuiteError(f"{where}: console_keep and cache are for a test in QAJev's own tab, not a multiplayer "
+                             "test's clients")
         if any(s["kind"] == "snapshot" for s in scenarios[-1].steps) and not item.get("state"):
             raise SuiteError(f"{where}: a snapshot reads each client's state: give state: <JS expression>")
 

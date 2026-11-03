@@ -87,7 +87,7 @@ three PNGs; Cloud publication needs the matching CLI and evidence-uploader versi
 
 A game or a demo can pass every check on a fast machine and still take minutes to load for a person. `expect.load`
 times the page from its navigation start to the first animation frame where `ready` returns exactly `true`. Fail
-above `max_ms`, in whole milliseconds (at most 300000). Write `ready` so that it is true only when a person can play:
+above `max_ms`, in whole milliseconds (100 to 300000). Write `ready` so that it is true only when a person can play:
 the level runs and its first frame is drawn. An optional `failed` expression that returns `true` fails the load at
 once, for a page that says its own load failed.
 

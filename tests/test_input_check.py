@@ -54,6 +54,14 @@ def test_an_input_check_is_refused_before_the_browser_when_malformed(extra, says
         _suite(**extra)
 
 
+def test_a_multiplayer_test_cannot_check_input():
+    with pytest.raises(suite.SuiteError, match=r"expect: unknown key\(s\) \['input'\]"):
+        suite.parse({"scenarios": [{"name": "a", "url": "http://127.0.0.1/", "about": "x", "clients": ["p1", "p2"],
+                                    "steps": [{"client": "p1", "js": "1"}],
+                                    "expect": {"input": {"name": "n", "region": REGION, "do": [DRAG],
+                                                         "min_changed": 0.1}}}]})
+
+
 def test_an_input_check_is_planned_positive_and_once():
     parsed = _suite()
     expect = parsed.scenarios[0].expect
