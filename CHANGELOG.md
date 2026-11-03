@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Changed
+
+- `expect.load`: when QAJev cannot read the browser's clock before the navigation, it times the page from the last
+  document's start. `report.json` now keeps `clock` (`navigation` or `document`), and the check's detail says so.
+  Before, that fallback was silent, and a loader page's own time was left out with no word.
+- `expect.input`: tests pin the time guard's bound. For a 0.2 s control, an input of 0.50 s is judged and one of
+  0.51 s is harness.
+
 ## 0.4.47: 4 Nov 2026
 
 ### Added

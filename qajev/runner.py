@@ -486,9 +486,14 @@ def _load_check(session, scenario, opts, run_dir, started):
     limit = spec["max_ms"]
     evidence = {"max_ms": limit, "cache": "cold", **got}
     check = {**verdict.load_planned(spec), "value": evidence}
+    # the browser's clock could not be read before the navigation: a loader page's own time is then left out
+    # (redteam-1 L2, #278)
+    clock = "" if got.get("clock", "navigation") == "navigation" else \
+        "; timed from the last document's start, as the browser's clock could not be read before the navigation"
     if got["ms"] is not None:
         ok = got["ms"] <= limit
-        detail = f"playable at {got['ms'] / 1000:.2f} s" + ("" if ok else f", over the {limit / 1000:g} s limit")
+        detail = f"playable at {got['ms'] / 1000:.2f} s" + ("" if ok else f", over the {limit / 1000:g} s limit") + \
+            clock
         if opts.shots and run_dir is not None:
             try:
                 shot = session.screenshot(run_dir / "shots" / f"{slug(scenario.name)}-load.jpg")
@@ -510,7 +515,7 @@ def _load_check(session, scenario, opts, run_dir, started):
         detail = f"not playable after {got['waited_ms'] / 1000:.1f} s (limit {limit / 1000:g} s)"
     if got.get("error"):
         detail += f"; ready last threw: {got['error']}"
-    return {**check, "ok": False, "detail": detail}, evidence
+    return {**check, "ok": False, "detail": detail + clock}, evidence
 
 
 def run_scenario(session, scenario, *, opts, hosts, run_dir):
