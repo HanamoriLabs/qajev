@@ -54,7 +54,7 @@ def wanted_devices(explicit=None):
 HOOK_KINDS = {"js", "fill", "click", "click_at", "navigate", "wait_for", "key", "react", "sleep", "command", "reload",
               "pad", "drag"}
 EXPECT_KEYS = {"url", "url_regex", "status", "text", "absent", "visible", "js", "fetch", "command", "ignore_case",
-               "looks", "across", "says", "effect", "load", "input"}
+               "looks", "across", "says", "effect", "load", "input", "motion"}
 # The checks only their author can describe, by what `says` gives them in plain words (the test plan, 6 Oct)
 SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
@@ -142,7 +142,8 @@ class Scenario:
     def uses_commands(self):
         hooks = [*self.before, *self.after]
         effect = self.expect.get("effect") or {}
-        hooks += [*effect.get("off", []), *effect.get("on", []), *(self.expect.get("input") or {}).get("do", [])]
+        hooks += [*effect.get("off", []), *effect.get("on", []), *(self.expect.get("input") or {}).get("do", []),
+                  *(self.expect.get("motion") or {}).get("do", [])]
         return any("command" in h for h in hooks) or "command" in self.expect
 
 
@@ -361,7 +362,49 @@ def _expect(value, where):
         out["load"] = _load(out["load"], f"{where}.load")
     if "input" in out:
         out["input"] = _input(out["input"], f"{where}.input")
+    if "motion" in out:
+        out["motion"] = _motion(out["motion"], f"{where}.motion")
     return out
+
+
+def _motion(value, where):
+    """expect.motion: {name, region, seconds?, frames?, min_changed?, min_moving?, tolerance?, max_gap_ms?, looks?,
+    do?}: `frames` captures of the region over `seconds` keep moving, the page's animation frames come without long
+    gaps, and Clef finds no ghosting on a sheet of the frames (29 Oct: a demo passed on one still frame per stage, and
+    a person saw ghost trails and a collapse that never played)."""
+    from . import vision
+
+    if not isinstance(value, dict):
+        raise SuiteError(f"{where} must name the motion and a region")
+    _unknown(where, value, {"name", "region", "seconds", "frames", "min_changed", "min_moving", "tolerance",
+                            "max_gap_ms", "looks", "do"})
+    if not isinstance(value.get("name"), str) or not value["name"].strip() or len(value["name"]) > 200:
+        raise SuiteError(f"{where}.name must be 1–200 characters")
+    seconds = value.get("seconds", 2)
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not 0.5 <= seconds <= 30:
+        raise SuiteError(f"{where}.seconds must be 0.5 to 30")
+    frames = value.get("frames", 8)
+    if isinstance(frames, bool) or not isinstance(frames, int) or not 3 <= frames <= 40:
+        raise SuiteError(f"{where}.frames must be a whole number of captures, 3 to 40")
+    tolerance = value.get("tolerance", 8)
+    if isinstance(tolerance, bool) or not isinstance(tolerance, int) or not 0 <= tolerance <= 255:
+        raise SuiteError(f"{where}.tolerance must be an integer from 0 to 255")
+    gap = value.get("max_gap_ms")
+    if gap is not None and (isinstance(gap, bool) or not isinstance(gap, int) or not 17 <= gap <= 5000):
+        raise SuiteError(f"{where}.max_gap_ms must be whole milliseconds, 17 to 5000")
+    looks = value.get("looks", [])
+    looks = [looks] if isinstance(looks, str) else looks
+    if not isinstance(looks, list) or not all(isinstance(s, str) and s.strip() for s in looks):
+        raise SuiteError(f"{where}.looks must be plain statements Clef judges on a sheet of the frames")
+    try:
+        vision.normalize(looks)
+    except vision.VisionError as e:
+        raise SuiteError(f"{where}.looks: {e}") from None
+    return {"name": value["name"], "region": _region(value.get("region"), f"{where}.region"), "seconds": seconds,
+            "frames": frames, "min_changed": _fraction(value.get("min_changed", 0.001), f"{where}.min_changed"),
+            "min_moving": _fraction(value.get("min_moving", 1), f"{where}.min_moving"), "tolerance": tolerance,
+            **({"max_gap_ms": gap} if gap is not None else {}), "looks": looks,
+            "do": _hooks(value.get("do"), f"{where}.do")}
 
 
 def _region(value, where):
@@ -579,7 +622,7 @@ def has_checks(expect):
     # looks is not a page check: it costs a model call, so it is judged once, at the end, not while Jev moves.
     return page_checks(expect) or bool(expect.get("fetch") or expect.get("command") or expect.get("looks")
                                        or expect.get("across") or expect.get("effect") or expect.get("load")
-                                       or expect.get("input"))
+                                       or expect.get("input") or expect.get("motion"))
 
 
 def _account(raw, base, folder=None):

@@ -849,6 +849,13 @@ DRAW_COUNT_JS = r"""(() => {
   requestAnimationFrame(frame);
 })();"""
 
+# expect.motion's frame gaps: the times of the page's animation frames for $ms ms from the first one.
+FRAME_TIMES_JS = Template("""new Promise(done => {
+  const times = [];
+  const frame = now => { times.push(now); if (now - times[0] < $ms) requestAnimationFrame(frame); else done(times); };
+  requestAnimationFrame(frame);
+})""")
+
 # expect.load's watcher, in the top document before the page's own code: at each animation frame it asks the test's
 # ready (and failed) expressions, and keeps performance.now() (ms since the page's navigation start) at the first frame
 # where one returns exactly true. A throw counts as not yet; the last one is kept for the report.
@@ -1932,6 +1939,15 @@ class Session:
                                               source=DRAW_COUNT_JS)["identifier"]
         with contextlib.suppress(RuntimeError):
             self.evaluate(DRAW_COUNT_JS)
+
+    def frame_times(self, ms):
+        """The page's animation frames for `ms` from now, as requestAnimationFrame gives their times (ms), read in
+        QAJev's own JS world so the page cannot change them. expect.motion reads its gaps with no capture running,
+        since a capture can hold a frame back itself."""
+        got = self.isolated_evaluate(FRAME_TIMES_JS.substitute(ms=json.dumps(float(ms))), timeout_ms=int(ms) + 10000)
+        if not isinstance(got, list) or not all(isinstance(t, (int, float)) and not isinstance(t, bool) for t in got):
+            raise RuntimeError(f"the page's frame times could not be read: {str(got)[:120]}")
+        return got
 
     def watch_load(self, spec):
         """expect.load: put LOAD_WATCH_JS, with the test's expressions, in every document from now on, before the
