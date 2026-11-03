@@ -445,7 +445,8 @@ For a phone's real browser (Chrome on an Android emulator; iOS Safari is not rea
   it under the test's name, so whoever reads the result knows what was, and was not, proven.
 - **Say what each check proves.** A text, an address or an HTTP status says itself ("the page shows “Paid”"). A
   `js`, `url_regex`, `fetch` or `command` check does not: give it `says`, its words in plain language
-  (`--says` with `--expect-js` on the command line). The report and the dashboard open with a **test plan**: each
+  (`--says` with `--expect-js` on the command line). A multiplayer `across` or snapshot check says itself by its
+  `check` name; a bare expression needs `says`, and `qajev plan` says so on its line. The report and the dashboard open with a **test plan**: each
   test's `about` and its checks in these words, a box for each, ticked as the run goes. A test without an `about`,
   or with a check without words, is **NOT DESCRIBED**: the plan flags it and the gate cannot be PASS (it is
   INCOMPLETE), because its pass would not say what it proved. `qajev plan FILE` shows the plan and lists them

@@ -282,7 +282,8 @@ qajev play path/to/game --suite session.yaml
 ## `qajev plan`
 
 A suite's test plan, without running anything (no browser, no cost): each test's `about` and its checks in plain
-words, and the tests that are NOT DESCRIBED. Use it as a lint before you run a suite or send a pull request.
+words, and the tests that are NOT DESCRIBED. A check with no words says what it needs, such as `says` for a bare
+`across` check (`needs` in `--json`). Use it as a lint before you run a suite or send a pull request.
 
 ```bash
 qajev plan shop.qajev.yaml            # a website suite (scenarios:)

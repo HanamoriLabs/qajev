@@ -878,8 +878,8 @@ async def qa_reports(project: str | None = None, limit: int = 20) -> dict:
 
 @server.tool()
 async def qa_plan(suite: str) -> dict:
-    """A suite's test plan without running it (free, no browser): each test's about and its checks in plain words,
-    and `not_described`, the tests that do not say what they prove (a run would be INCOMPLETE), and `absent_only`, the
+    """A suite's test plan without running it (free, no browser): each test's about and its checks in plain words
+    (a check with no words may have `needs`, what to write: a bare across check needs says), and `not_described`, the tests that do not say what they prove (a run would be INCOMPLETE), and `absent_only`, the
     tests whose only checks say a text is absent or sweep settings with no click, fill, drag or wait_for hook (a
     blank page passes them), and `key_goals`, the tests whose goal asks
     Jev to press a key, which it cannot (press it in a `key:` hook), each with the words found. `suite`: a suite file
