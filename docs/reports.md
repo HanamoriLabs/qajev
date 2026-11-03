@@ -94,6 +94,12 @@ canvas that is one flat dark colour. If it is, Clef is not asked: the scenario k
 `canvas_blank`), the looks are not among its checks, and it is **harness**, with the reason "the looks were not
 judged: ...". A check that ran and failed still makes it a failure, with the note. `canvas_dark` turns this off too.
 When this check breaks, the scenario keeps `looks_blank_error`, and Clef judges the image as before.
+With `canvas_capture: page`, QAJev first reads the page's own frame and keeps it as `looks_frame` (`dark`, `image`,
+`transparent`, `draws`, `problem`, `blank`). When the page drew that frame (`draws` above 0) and it is flat dark and
+not transparent, `dark` is true and Clef judges the looks, so a black frame fails on its look. Each judged looks check
+keeps its `probability` (`null` when the model gave no valid one) and its `judge` (`Clef` or `Clef-flash`, the model
+QAJev asked for), with the model id in `judge_model`. A look that failed on its pixels before any model was asked has
+both `null`.
 
 A scenario whose page crashed (Chrome's "Aw, Snap") is **fail**, with stop `page_crashed` and a `page_crashed` record:
 the crashed page's `url` and the `last_step`. A scenario with `cache: cold` keeps `cache: "cold"`. The lines that its
