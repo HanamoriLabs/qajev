@@ -214,6 +214,8 @@ UNLOCK = [{"js": "window.unlock()"}]
     ("after hook 1 of 1", {"after": UNLOCK}),
     ("input 'aim', do hook 1 of 1", {"expect": {"input": {"name": "aim", "region": REGION, "do": UNLOCK,
                                                           "min_changed": 0.2}}}),
+    ("effect 'glow', off hook 1 of 1", {"expect": {"effect": {"name": "glow", "region": REGION, "off": UNLOCK,
+                                                              "on": [{"js": "1"}], "min_changed": 0.01}}}),
     ("effect 'glow', on hook 1 of 1", {"expect": {"effect": {"name": "glow", "region": REGION, "off": [{"js": "1"}],
                                                              "on": UNLOCK, "min_changed": 0.01}}}),
     ("motion 'fall', do hook 1 of 1", {"expect": {"motion": {"name": "fall", "region": REGION, "do": UNLOCK}}}),
@@ -232,6 +234,12 @@ def test_every_check_the_runner_adds_at_run_time_has_plan_words(tmp_path, monkey
     planned = plan.from_results([{**result, "about": scenario.about}])  # report.build gives a result its about
     assert planned[0]["checks"][-1]["words"] == f"the {place} ran and threw no error"
     assert plan.not_described(planned) == []
+
+
+def test_a_hook_check_with_no_place_still_has_plan_words():
+    # runner.py names a hook's check "a js hook ran" when its error has no place. A run never gives one (_run_hooks
+    # names each place), so the words are checked here (redteam-1 L1 on #289)
+    assert plan.words({"check": "a js hook ran"}) == "the js hook ran and threw no error"
 
 
 def test_a_planted_hook_throw_gives_gate_pass_and_the_plan_names_its_check(tmp_path, monkeypatch):
