@@ -22,6 +22,8 @@ BROKE = "TypeError: Cannot read properties of null (reading 'x')\n    at <anonym
     ("Error", "Error", "", None),
     ("STUCK", "", "STUCK", None),
     ("Error: a: b\n    at f (x.js:1:2)", "Error", "a: b", "at f (x.js:1:2)"),
+    ("Uncaught TypeError: x", "TypeError", "x", None),  # the browser's own text before the type (redteam-1 L1, #285)
+    ("Uncaught Error: STUCK\n    at f (x.js:1:2)", "Error", "STUCK", "at f (x.js:1:2)"),
 ])
 def test_a_js_error_gives_its_type_its_message_and_its_first_frame(description, kind, message, frame):
     assert session.thrown(description) == (kind, message, frame)
@@ -122,6 +124,15 @@ def test_a_before_hook_whose_own_code_broke_stays_harness_even_with_hook_throw_f
     assert result["outcome"] == "harness" and result["stop"] == "hook_failed", result["reason"]
     assert ("before hook 1 of 1 (`x.y`): its own code broke: TypeError: Cannot read properties of null (reading "
             "'x') (at <anonymous>:1:6)") in result["reason"]
+
+
+@pytest.mark.parametrize("throw", [None, "fail"])
+def test_a_script_bug_whose_text_starts_with_uncaught_stays_harness(tmp_path, monkeypatch, throw):
+    # redteam-1 L1, #285: "Uncaught TypeError: x" had no type, so with hook_throw: fail the script bug graded fail
+    _, result = _run(tmp_path, monkeypatch, Tab({"x.y": "Uncaught TypeError: x"}), before=[{"js": "x.y"}],
+                     **({"hook_throw": throw} if throw else {}))
+    assert result["outcome"] == "harness" and result["stop"] == "hook_failed", result["reason"]
+    assert "before hook 1 of 1 (`x.y`): its own code broke: TypeError: x" in result["reason"]
 
 
 @pytest.mark.parametrize("suite_value,test_value,outcome", [
