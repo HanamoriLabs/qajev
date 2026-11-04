@@ -1159,7 +1159,7 @@ def _expect_fail(value, expect, clients, about_text, where, hooks=None, hook_thr
             if hook_throw != "fail":  # a throw is then harness, never the fail a planted fault needs
                 raise SuiteError(f"{where}.expect_fail: {want!r} names a js hook, but here a hook that throws grades "
                                  "harness, never fail: give the test or the suite hook_throw: fail")
-            return {"check": want, "words": want}
+            return {"check": want, "words": plan_mod.words({"check": want}) or want}
         if len(hit) != 1:
             raise SuiteError(f"{where}.expect_fail: {want!r} must name exactly one of the test's checks (it names "
                              f"{len(hit)}); its checks: "

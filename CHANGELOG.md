@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- A planted hook throw can give gate PASS again. In 0.4.48, the check `before hook 2 of 2 ran` had no plain words. So
+  the run marked its test NOT DESCRIBED, and the gate was INCOMPLETE. The check now reads "the before hook 2 of 2 ran
+  and threw no error", for every hook place. `qajev plan` lists it for a test whose `expect_fail` names a hook.
+
 ## 0.4.48: 4 Nov 2026
 
 ### Added

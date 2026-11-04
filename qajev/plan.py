@@ -16,6 +16,10 @@ NOT_DESCRIBED = "NOT DESCRIBED"
 
 # A check that describes itself -> its sentence. Checks only their author can describe have no entry here.
 _SELF = [
+    # the check the runner adds for a js hook that threw with hook_throw: fail, named by the hook's place (runner.py
+    # _run_hooks): with no words its test was NOT DESCRIBED, so a planted throw could never PASS (redteam-1 F1, 0.4.48)
+    (r"((?:before|after|.+, (?:do|off|on)) hook \d+ of \d+|a js hook) ran$",
+     lambda m: f"the {m[1].removeprefix('a ')} ran and threw no error"),
     (r"page shows (['\"])(.*)\1( \(any case\))?$", lambda m: f"the page shows “{m[2]}”"),
     (r"page lacks (['\"])(.*)\1( \(any case\))?$", lambda m: f"the page does not show “{m[2]}”"),
     (r"on screen: (['\"])(.*)\1( \(any case\))?$", lambda m: f"“{m[2]}” is on screen"),
@@ -85,7 +89,8 @@ def item(n, name, about, checks, outcome=None):
 
 def from_suite(scenarios):
     """The plan before the run, from the suite: each test with the checks it will run, none ticked yet. A multiplayer
-    test's page checks run on every client ("[p1] ..."), and its snapshot steps check across them."""
+    test's page checks run on every client ("[p1] ..."), and its snapshot steps check across them. A planted hook
+    throw's check ("before hook 2 of 2 ran") comes last, where the runner adds it (redteam-1 F1, 0.4.48)."""
     out = []
     for i, s in enumerate(scenarios, 1):
         checks = verdict.planned(s.expect)
@@ -97,6 +102,9 @@ def from_suite(scenarios):
                 for c in step.get("expect") or [] if step.get("kind") == "snapshot" else []:
                     checks.append({"check": f"snapshot {step['name']}: {c['check']}",
                                    **({"says": c["says"]} if c.get("says") else {})})
+        planted = (getattr(s, "expect_fail", None) or {}).get("check")
+        if planted and planted not in [c["check"] for c in checks]:  # only a hook's check is not in the expect
+            checks.append({"check": planted})
         out.append(item(i, s.name, s.about, checks))
     return out
 
