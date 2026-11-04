@@ -255,6 +255,20 @@ def test_page_change_that_grows_with_time_cannot_pass_for_a_slow_input(tmp_path,
     assert "against the controls as measured it added 25.00%" in result["reason"]
 
 
+def test_a_slow_input_under_its_second_control_fails_and_is_not_harness(tmp_path, monkeypatch):
+    """redteam-1 L1 on #283: the page changes more by itself after the input (3 columns) than before it (1). The input
+    adds 4 columns, only 1 more than the second control: a fail against the controls as measured. Against the first
+    control alone it would add 3 and pass there, so the scaled control would make it harness."""
+    view = View(0, 4, drift={2: 1, 4: 0, 6: 3})
+    result = _timed(tmp_path, monkeypatch, Clock(1.15), view, min_changed=0.25)
+    assert result["outcome"] == "fail", result["reason"]
+    metrics = result["input"]["metrics"]
+    assert metrics["idle"]["fraction"] == pytest.approx(0.125) and metrics["input"]["fraction"] == pytest.approx(0.5)
+    assert metrics["idle_again"]["fraction"] == pytest.approx(0.375)
+    assert metrics["control"] == "before the input" and metrics["margin"] == pytest.approx(0.5 - 0.71875)
+    assert metrics["ok"] is False and "cannot be told apart" not in result["reason"]
+
+
 class Strip(View):
     """A 320 x 200 region, as in the 0.4.47 cloud run: capture n has its first `dark[n]` pixels dark."""
 
