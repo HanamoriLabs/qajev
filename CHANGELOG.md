@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.48: 4 Nov 2026
+
 ### Added
 
 - `qajev plan` says what a bare `across` or snapshot check needs: "this across check needs says: write what it
