@@ -134,7 +134,8 @@ def test_a_tests_own_hook_throw_wins_over_the_suites(tmp_path, monkeypatch, suit
     assert result["outcome"] == outcome, result["reason"]
 
 
-@pytest.mark.parametrize("throw,outcome,failed", [("harness", "harness", []), ("fail", "fail", ["after hook 1 of 1 ran"])])
+@pytest.mark.parametrize("throw,outcome,failed", [
+    ("harness", "harness", []), ("fail", "fail", ["after hook 1 of 1 ran"])])
 def test_an_after_hook_that_throws_never_passes(tmp_path, monkeypatch, throw, outcome, failed):
     # every check passed and nothing was left to run: only the hook's throw keeps this from a pass
     _, result = _run(tmp_path, monkeypatch, Tab({"window.check()": "Error: SAVE_LOST"}),
