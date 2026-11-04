@@ -53,7 +53,8 @@ class HookFailed(RuntimeError):
 
 class HookBroke(HookFailed):
     """A js hook whose own code broke (a TypeError, a ReferenceError or a SyntaxError): harness, as a js check that
-    broke is. Its message gives the error's type, its message and its first stack frame (the Orchestrator, 4 Nov)."""
+    broke is, even with hook_throw: fail. Its message gives the error's type, its message and its first stack frame
+    (the Orchestrator, 4 Nov)."""
 
     def __init__(self, said, source, where=None):
         super().__init__(f"{where or 'a js hook'} (`{source}`): its own code broke: {said}")
@@ -64,9 +65,10 @@ class HookBroke(HookFailed):
 
 
 class HookThrew(HookBroke):
-    """A js hook whose script threw on purpose, such as an Error that names a product state (PLAYER_UNLOCK_INPUT_STUCK,
-    3 Nov): the page's answer, so the test fails on a check named for the hook, "<where> ran" (the Orchestrator, 4 Nov).
-    A HookBroke only to share its fields: the runner catches it first, and it is never harness."""
+    """A js hook whose script threw a plain Error or a value, such as one that names a product state
+    (PLAYER_UNLOCK_INPUT_STUCK, 3 Nov). Its own stop, hook_threw, is harness: most such throws are setup guards. With
+    hook_throw: fail it is the page's answer, and the test fails on a check named for the hook, "<where> ran" (the
+    Orchestrator, 4 Nov). A HookBroke only to share its fields: the runner catches it first."""
 
     def __init__(self, said, source, where=None):
         RuntimeError.__init__(self, f"{where or 'a js hook'} (`{source}`) threw {said}")
@@ -95,7 +97,8 @@ def thrown(description):
 
 def js_hook_error(source, description):
     """A js hook's thrown error -> HookBroke (its own code broke: TypeError, ReferenceError, SyntaxError) or HookThrew
-    (any other throw: the page's answer). Each says the error's type, its message and its first stack frame."""
+    (any other throw: harness, or the page's answer with hook_throw: fail). Each says the error's type, its message
+    and its first stack frame."""
     from .verdict import CHECK_BROKE
 
     kind, message, frame = thrown(description)
@@ -2349,7 +2352,7 @@ class Session:
         if kind == "js":
             try:
                 self.evaluate(value)
-            except PageScriptError as e:  # the script threw: its own bug (harness) or the page's answer (fail)
+            except PageScriptError as e:  # the script threw: its own bug, or a throw the test grades
                 raise js_hook_error(value, e.description) from None
         elif kind == "click":
             found = self.settled(value)

@@ -1,5 +1,6 @@
-"""A js hook that throws on purpose fails the test and names the hook; one whose own code broke is harness (3 Nov: a
-hook threw "PLAYER_UNLOCK_INPUT_STUCK", the product's own state, and QAJev graded it "browser/daemon error")."""
+"""A js hook that throws is harness with its own stop and the error's details, or fails the test with hook_throw: fail;
+one whose own code broke stays harness (3 Nov: a hook threw "PLAYER_UNLOCK_INPUT_STUCK", the product's own state, and
+QAJev said "browser/daemon error"; the Orchestrator, 4 Nov: failing is opt-in, as 3,228 suites throw from setup)."""
 
 import os
 import re
@@ -32,7 +33,7 @@ def _tab(description):
     return tab
 
 
-def test_a_js_hook_that_throws_an_error_is_the_pages_answer():
+def test_a_js_hook_that_throws_an_error_is_a_hook_threw_with_its_place():
     with pytest.raises(session.HookThrew) as caught:
         _tab(STUCK)._run_hook({"js": "window.unlock()"}, "http://127.0.0.1:8877/")
     assert str(caught.value.at("before hook 2 of 3")) == (
@@ -77,63 +78,93 @@ class Tab:
             raise session.js_hook_error(value, self.throws[value])
 
 
-def _run(tmp_path, monkeypatch, tab, **scenario):
+def _run(tmp_path, monkeypatch, tab, suite_keys=None, **scenario):
     monkeypatch.setattr(runner, "wait_for_quiet", lambda _: (True, 0))
     monkeypatch.setattr(runner.time, "sleep", lambda _: None)
     item = {"name": "unlock", "about": "the player unlocks", "url": "http://127.0.0.1:8877/",
             "expect": {"url": "127.0.0.1:8877"}, **scenario}
-    parsed = suite.parse({"devices": ["desktop"], "scenarios": [item]})
+    parsed = suite.parse({"devices": ["desktop"], **(suite_keys or {}), "scenarios": [item]})
     result = runner.run_scenario(tab, parsed.scenarios[0], opts=runner.Options(shots=False),
                                  hosts={"127.0.0.1:8877"}, run_dir=tmp_path)
     return parsed.scenarios[0], result
 
 
-def test_a_before_hook_that_throws_an_error_fails_the_test_and_names_the_hook(tmp_path, monkeypatch):
+def test_a_before_hook_that_throws_an_error_is_harness_by_default_and_names_the_hook(tmp_path, monkeypatch):
+    # (a) the Orchestrator, 4 Nov: most throws are setup guards (3,228 suites), so a throw says nothing by default
     tab = Tab({"window.unlock()": STUCK})
     _, result = _run(tmp_path, monkeypatch, tab, before=[{"js": "1"}, {"js": "window.unlock()"}],
                      after=[{"js": "window.after = 1"}])
-    assert result["outcome"] == "fail" and result["stop"] == "hook_threw", result["reason"]
+    assert result["outcome"] == "harness" and result["stop"] == "hook_threw", result["reason"]
+    assert result["reason"] == ("a js hook threw: before hook 2 of 2 (`window.unlock()`) threw Error: "
+                                "PLAYER_UNLOCK_INPUT_STUCK (at <anonymous>:1:7)")
+    assert all(c["check"] != "before hook 2 of 2 ran" for c in result["checks"])  # no hook check without the opt-in
+    assert {"js": "window.after = 1"} not in tab.calls  # nothing after the throw runs, as after a failed hook
+
+
+def test_a_before_hook_that_throws_an_error_fails_the_test_with_hook_throw_fail(tmp_path, monkeypatch):
+    # (b) the same Error, with the opt-in: the page's answer
+    tab = Tab({"window.unlock()": STUCK})
+    _, result = _run(tmp_path, monkeypatch, tab, before=[{"js": "1"}, {"js": "window.unlock()"}],
+                     after=[{"js": "window.after = 1"}], hook_throw="fail")
+    assert result["outcome"] == "fail" and result["stop"] == "hook_check_failed", result["reason"]
     assert result["checks"][-1] == {"check": "before hook 2 of 2 ran", "ok": False, "detail": (
         "`window.unlock()` threw Error: PLAYER_UNLOCK_INPUT_STUCK (at <anonymous>:1:7)")}
     assert result["checks"][0]["ok"] is True  # the page checks still judge the page
     assert "before hook 2 of 2 ran" in result["reason"] and "PLAYER_UNLOCK_INPUT_STUCK" in result["reason"]
-    assert {"js": "window.after = 1"} not in tab.calls  # nothing after the throw runs, as after a failed hook
+    assert {"js": "window.after = 1"} not in tab.calls
 
 
-def test_a_before_hook_whose_own_code_broke_stays_harness_with_type_message_and_frame(tmp_path, monkeypatch):
-    _, result = _run(tmp_path, monkeypatch, Tab({"x.y": BROKE}), before=[{"js": "x.y"}])
+@pytest.mark.parametrize("throw", [None, "harness", "fail"])
+def test_a_before_hook_whose_own_code_broke_stays_harness_even_with_hook_throw_fail(tmp_path, monkeypatch, throw):
+    # (c) a script bug is never the page's answer
+    _, result = _run(tmp_path, monkeypatch, Tab({"x.y": BROKE}), before=[{"js": "x.y"}],
+                     **({"hook_throw": throw} if throw else {}))
     assert result["outcome"] == "harness" and result["stop"] == "hook_failed", result["reason"]
     assert ("before hook 1 of 1 (`x.y`): its own code broke: TypeError: Cannot read properties of null (reading "
             "'x') (at <anonymous>:1:6)") in result["reason"]
 
 
-def test_an_after_hook_that_throws_fails_the_test_on_its_own_check(tmp_path, monkeypatch):
+@pytest.mark.parametrize("suite_value,test_value,outcome", [
+    ("fail", None, "fail"), ("fail", "harness", "harness"), ("harness", "fail", "fail"), (None, None, "harness")])
+def test_a_tests_own_hook_throw_wins_over_the_suites(tmp_path, monkeypatch, suite_value, test_value, outcome):
+    # (d) a suite-level opt-in that a test turns off gives harness
+    _, result = _run(tmp_path, monkeypatch, Tab({"window.unlock()": STUCK}), before=[{"js": "window.unlock()"}],
+                     suite_keys={"hook_throw": suite_value} if suite_value else None,
+                     **({"hook_throw": test_value} if test_value else {}))
+    assert result["outcome"] == outcome, result["reason"]
+
+
+@pytest.mark.parametrize("throw,outcome,failed", [("harness", "harness", []), ("fail", "fail", ["after hook 1 of 1 ran"])])
+def test_an_after_hook_that_throws_never_passes(tmp_path, monkeypatch, throw, outcome, failed):
+    # every check passed and nothing was left to run: only the hook's throw keeps this from a pass
     _, result = _run(tmp_path, monkeypatch, Tab({"window.check()": "Error: SAVE_LOST"}),
-                     after=[{"js": "window.check()"}])
-    assert result["outcome"] == "fail", result["reason"]
-    assert [c["check"] for c in result["checks"] if not c["ok"]] == ["after hook 1 of 1 ran"]
+                     after=[{"js": "window.check()"}], hook_throw=throw)
+    assert result["outcome"] == outcome, result["reason"]
+    assert [c["check"] for c in result["checks"] if not c["ok"]] == failed
 
 
-def test_an_input_do_hook_that_throws_fails_the_test_and_names_its_place(tmp_path, monkeypatch):
+@pytest.mark.parametrize("throw,outcome", [("harness", "harness"), ("fail", "fail")])
+def test_an_input_do_hook_that_throws_names_its_place(tmp_path, monkeypatch, throw, outcome):
     spec = {"name": "aim", "region": {"name": "view", "x": 0, "y": 0, "width": 8, "height": 8},
             "do": [{"js": "window.aim()"}], "min_changed": 0.2}
     tab = Tab({"window.aim()": "Error: AIM_LOCKED"})
     tab.capture_region_png = lambda region: _png()
-    _, result = _run(tmp_path, monkeypatch, tab, expect={"input": spec})
-    assert result["outcome"] == "fail", result["reason"]
-    assert result["checks"][-1]["check"] == "input 'aim', do hook 1 of 1 ran"
-    assert "capture" not in result["reason"]  # the page's answer, not a capture's trouble
+    _, result = _run(tmp_path, monkeypatch, tab, expect={"input": spec}, hook_throw=throw)
+    assert result["outcome"] == outcome, result["reason"]
+    assert "input 'aim', do hook 1 of 1" in result["reason"] and "AIM_LOCKED" in result["reason"]
+    assert "capture" not in result["reason"]  # the hook's throw, not a capture's trouble
 
 
-def test_an_effect_hook_that_throws_fails_the_test_and_is_not_a_capture_error(tmp_path, monkeypatch):
+@pytest.mark.parametrize("throw,outcome", [("harness", "harness"), ("fail", "fail")])
+def test_an_effect_hook_that_throws_is_not_a_capture_error(tmp_path, monkeypatch, throw, outcome):
     spec = {"name": "glow", "region": {"name": "subject", "x": 0, "y": 0, "width": 8, "height": 8},
             "off": [{"js": "glow(false)"}], "on": [{"js": "glow(true)"}], "min_changed": 0.01}
     tab = Tab({"glow(true)": "Error: GLOW_SHADER_MISSING"})
     tab.capture_region_png = lambda region: _png()
-    _, result = _run(tmp_path, monkeypatch, tab, expect={"effect": spec})
-    assert result["outcome"] == "fail", result["reason"]
-    assert result["checks"][-1]["check"] == "effect 'glow', on hook 1 of 1 ran"
-    assert "capture" not in result["reason"] and "GLOW_SHADER_MISSING" in result["reason"]
+    _, result = _run(tmp_path, monkeypatch, tab, expect={"effect": spec}, hook_throw=throw)
+    assert result["outcome"] == outcome, result["reason"]
+    assert "effect 'glow', on hook 1 of 1" in result["reason"] and "GLOW_SHADER_MISSING" in result["reason"]
+    assert "capture" not in result["reason"]
 
 
 def _png():
@@ -148,13 +179,13 @@ def _png():
 
 def test_a_planted_hook_that_throws_is_graded_a_catch(tmp_path, monkeypatch):
     scenario, result = _run(tmp_path, monkeypatch, Tab({"window.unlock()": STUCK}), before=[{"js": "window.unlock()"}],
-                            about="plants a hook that throws the product's own error",
+                            about="plants a hook that throws the product's own error", hook_throw="fail",
                             expect_fail="before hook 1 of 1 ran")
     assert scenario.expect_fail == {"check": "before hook 1 of 1 ran", "words": "before hook 1 of 1 ran"}
     assert verdict.planted(result, scenario.expect_fail["check"])[0] == "pass"
     # the same test with no throw is the fault not caught
     scenario, result = _run(tmp_path, monkeypatch, Tab({}), before=[{"js": "window.unlock()"}],
-                            about="plants a hook that throws the product's own error",
+                            about="plants a hook that throws the product's own error", hook_throw="fail",
                             expect_fail="before hook 1 of 1 ran")
     assert verdict.planted(result, scenario.expect_fail["check"]) == ("fail", verdict.PLANTED_MISSED)
 
@@ -167,9 +198,42 @@ def test_a_planted_hook_that_throws_is_graded_a_catch(tmp_path, monkeypatch):
 ])
 def test_expect_fail_names_only_a_js_hook_the_test_has(value, before, says):
     item = {"name": "t", "about": "plants a hook that throws", "url": "http://127.0.0.1:8877/", "before": before,
-            "expect": {"url": "8877"}, "expect_fail": value}
+            "expect": {"url": "8877"}, "expect_fail": value, "hook_throw": "fail"}
     with pytest.raises(suite.SuiteError, match=re.escape(says)):
         suite.parse({"devices": ["desktop"], "scenarios": [item]})
+
+
+@pytest.mark.parametrize("keys", [{}, {"hook_throw": "harness"}])
+def test_expect_fail_on_a_hook_needs_hook_throw_fail(keys):
+    item = {"name": "t", "about": "plants a hook that throws", "url": "http://127.0.0.1:8877/",
+            "before": [{"js": "1"}], "expect": {"url": "8877"}, "expect_fail": "before hook 1 of 1 ran", **keys}
+    with pytest.raises(suite.SuiteError, match=re.escape("give the test or the suite hook_throw: fail")):
+        suite.parse({"devices": ["desktop"], "scenarios": [item]})
+
+
+def test_hook_throw_takes_harness_or_fail_and_not_on_a_multiplayer_test():
+    item = {"name": "t", "url": "http://127.0.0.1:8877/", "expect": {"url": "8877"}}
+    with pytest.raises(suite.SuiteError, match=re.escape("hook_throw must be one of ['harness', 'fail']")):
+        suite.parse({"devices": ["desktop"], "hook_throw": True, "scenarios": [item]})
+    with pytest.raises(suite.SuiteError, match=re.escape("scenarios[0].hook_throw must be one of")):
+        suite.parse({"devices": ["desktop"], "scenarios": [{**item, "hook_throw": "pass"}]})
+    room = {"name": "room", "url": "http://127.0.0.1:8877/?p={client}", "clients": 2, "state": "window.s",
+            "expect": {"across": ["clients.length === 2"]}}
+    with pytest.raises(suite.SuiteError, match="a multiplayer test's step hooks grade a throw harness"):
+        suite.parse({"devices": ["desktop"], "scenarios": [{**room, "hook_throw": "fail"}]})
+    parsed = suite.parse({"devices": ["desktop"], "hook_throw": "fail", "scenarios": [item, room]})
+    assert [s.hook_throw for s in parsed.scenarios] == ["fail", "harness"]
+
+
+def test_a_multiplayer_step_hook_that_throws_names_its_own_stop():
+    from qajev import clients
+
+    threw = session.js_hook_error("window.join()", "Error: ROOM_FULL")
+    broke = session.js_hook_error("x.y", "TypeError: x is null")
+    assert clients._first_error([("p1", None, threw)], "step 2 (js)") == (
+        "hook_threw", "[p1] step 2 (js): a js hook (`window.join()`) threw Error: ROOM_FULL")
+    assert clients._first_error([("p2", None, broke)], "step 2 (js)")[0] == "hook_failed"
+    assert clients._first_error([("p2", None, RuntimeError("gone"))], "step 2 (js)")[0] == "browser_error"
 
 
 @pytest.mark.parametrize("error,broke", [("Error: no score", False), ("TypeError: x.toFixed is not a function", True)])

@@ -114,7 +114,9 @@ Outcomes: `pass`; `fail` (the product is wrong); `stuck` (Jev found no way forwa
 look at the screenshot); `harness` (QAJev's own problem: says nothing about the product, never report it as a
 bug); `unverified` (no expectations given); `skipped`. The run's gate is PASS, FAIL or INCOMPLETE. Tell the person
 the gate, each non-pass outcome with its reason, the findings, the cost and the `report_html` path. A page that
-crashes ("Aw, Snap") is `fail`: "the page crashed at <URL>; last step: <step>". To chase a crash, run with
+crashes ("Aw, Snap") is `fail`: "the page crashed at <URL>; last step: <step>". A `js` hook that throws is
+`harness` (stop `hook_threw`, with the hook's place and the error); when the throw is the page's answer, set
+`hook_throw: fail` on the test or the suite, and the test fails on `<place> ran`. To chase a crash, run with
 `cache: cold` (CLI `--cold-cache`, tool `cold_cache: true`): every load skips the cache and the service worker. Give
 `console_keep: [pattern]` (CLI `--console-keep`, tool `console_keep`) to keep the page's matching console lines
 apart from the 50-line cap, under `page_console_kept`. `browser.gpu` names the GPU renderer the run's Chrome drew

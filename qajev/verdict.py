@@ -16,8 +16,9 @@ OUTCOMES = ("pass", "fail", "stuck", "harness", "unverified", "skipped")
 HARNESS_STOPS = {
     "budget_actions", "budget_seconds", "stale", "cost_cap", "guard_missing", "model_error", "browser_error",
     "left_site", "hook_failed", "interrupted", "machine_busy", "viewport_mismatch", "loop", "cap", "guard_blind",
+    "hook_threw",
 }
-PRODUCT_STOPS = {"done", "reached", "checked", "unreachable", "hook_threw"}
+PRODUCT_STOPS = {"done", "reached", "checked", "unreachable", "hook_check_failed"}
 # Stops that mean the run broke before it finished: the checks that did run can never make it a pass. A budget or a
 # stale page is different: Jev wandered, but the page was then judged in full, so its checks still decide.
 BROKEN_STOPS = {"browser_error", "hook_failed", "guard_missing", "left_site", "interrupted", "viewport_mismatch"}
@@ -300,7 +301,9 @@ def classify(stop, checks, *, has_checks, stop_detail=None, not_run=(), actions=
         return "skipped", stop_detail or "skipped"
     if stop == "unreachable":
         return unreachable(url, stop_detail)
-    if stop == "hook_threw":  # a js hook threw on purpose: the page's answer, with or without other checks (4 Nov)
+    if stop == "hook_threw":  # a js hook threw: the test could not set up, whatever the checks that ran say (4 Nov)
+        return "harness", _stop_text(stop, stop_detail)
+    if stop == "hook_check_failed":  # hook_throw: fail: the hook's throw is the page's answer (suite.hook_throw)
         return "fail", why or _stop_text(stop, stop_detail)
     if not has_checks:
         if stop in HARNESS_STOPS:
@@ -435,7 +438,7 @@ def _stop_text(stop, detail) -> str:
         "guard_missing": "guard not present on the page (fail closed)", "model_error": "model call failed",
         "browser_error": "browser/daemon error", "left_site": "left the allowed hosts",
         "hook_failed": "hook failed", "hook_threw": "a js hook threw", "interrupted": "interrupted",
-        "machine_busy": "machine too busy",
+        "hook_check_failed": "a js hook threw (hook_throw: fail)", "machine_busy": "machine too busy",
         "loop": "Jev clicked one target again and again",
         "cap": "the test ran past its cap and QAJev stopped its Chrome",
         "guard_blind": "every other check holds, and QAJev's guard hid what an absent check looks for",

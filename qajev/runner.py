@@ -181,7 +181,7 @@ def _effect_check(session, scenario, run_dir, url):
             frames[state] = session.capture_region_png(spec["region"])
             if not isinstance(frames[state], bytes) or len(frames[state]) > EFFECT_MAX_BYTES:
                 raise PixelError("PNG capture is missing or exceeds the 32 MiB evidence limit")
-        except HookThrew:  # the page's answer, not a capture's trouble: the runner fails the test on it
+        except HookThrew:  # a hook's throw, not a capture's trouble: the runner grades it (suite.hook_throw)
             raise
         except (RuntimeError, ValueError, OSError, TimeoutError) as e:
             raise PixelError(f"effect {spec['name']!r}, {state} capture: {e}") from None
@@ -203,8 +203,8 @@ def _effect_check(session, scenario, run_dir, url):
     return check, evidence
 
 
-# Stops after which no later hook or check runs: the harness's, and a js hook that threw (the test fails on it)
-HALTS = verdict.HARNESS_STOPS | {"hook_threw"}
+# Stops after which no later hook or check runs: the harness's, and a js hook that threw with hook_throw: fail
+HALTS = verdict.HARNESS_STOPS | {"hook_check_failed"}
 
 
 # The input may take at most this much longer than its no-input control (x 1.25, + 0.25 s) for the two changes to be
@@ -687,8 +687,8 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                            "harness", str(e), started)
         stop, detail = "viewport_mismatch", str(e)
         result["capture_viewport"] = e.evidence
-    except HookThrew as e:  # the page's answer: the test fails on the hook (verdict.classify)
-        stop, detail, thrown = "hook_threw", str(e), e
+    except HookThrew as e:  # harness, or the page's answer when the test says so (suite.hook_throw)
+        stop, detail, thrown = _thrown_stop(scenario), str(e), e
     except HookFailed as e:
         stop, detail = "hook_failed", str(e)
     except LeftSite as e:
@@ -779,7 +779,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                         checks[-1]["says"] = says["command"]
                 ran.add("command")
         except HookThrew as e:
-            stop, detail, thrown = "hook_threw", str(e), e
+            stop, detail, thrown = _thrown_stop(scenario), str(e), e
         except HookFailed as e:
             stop, detail = "hook_failed", str(e)
         except ViewportMismatch as e:
@@ -824,7 +824,7 @@ def run_scenario(session, scenario, *, opts, hosts, run_dir):
                                    "latency_ms", "text_latency_ms", "executed_ms", "elapsed_ms")}
             for h in state["history"][-15:]
         ]
-    if thrown is not None:  # the hook's own check: named by its place, so a planted fault can name it
+    if thrown is not None and stop == "hook_check_failed":  # the hook's check, named by its place for expect_fail
         checks.append({"check": f"{thrown.where or 'a js hook'} ran", "ok": False,
                        "detail": f"`{thrown.source}` threw {thrown.said}"})
     result["checks"] = checks
@@ -1231,6 +1231,13 @@ def _doing(session, words):
     """What the test is doing now, in words, for a page that crashes (_crashed_result). Session.begin_test and
     Session.navigate say the rest: run_scenario is at the type checker's limit of paths."""
     session.doing = words
+
+
+def _thrown_stop(scenario):
+    """The stop for a js hook that threw a plain Error: harness (the test could not set up), or a failed check when
+    the test takes the throw as the page's answer (hook_throw: fail; the Orchestrator, 4 Nov). A script bug
+    (TypeError...) is a HookBroke, never a HookThrew: it stays hook_failed."""
+    return "hook_check_failed" if getattr(scenario, "hook_throw", "harness") == "fail" else "hook_threw"
 
 
 def _run_hooks(session, kind, hooks, url, doing=True):
