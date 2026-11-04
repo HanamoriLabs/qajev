@@ -90,7 +90,7 @@ def thrown(description):
     head = lines[0].strip() if lines else ""
     kind, sep, message = head.partition(": ")
     if not sep or not re.fullmatch(r"[A-Za-z_$][\w$]*", kind):
-        kind, message = (head, "") if re.fullmatch(r"[A-Za-z_$][\w$]*Error", head) else ("", head)
+        kind, message = (head, "") if re.fullmatch(r"(?:[A-Za-z_$][\w$]*)?Error", head) else ("", head)
     frame = next((line.strip() for line in lines[1:] if line.strip().startswith("at ")), None)
     return kind, message, frame
 
