@@ -226,10 +226,10 @@ def test_every_check_the_runner_adds_at_run_time_has_plan_words(tmp_path, monkey
     tab = Tab({"window.unlock()": STUCK})
     tab.capture_region_png = lambda region: _png()
     tab.banners = lambda selectors: []
-    _, result = _run(tmp_path, monkeypatch, tab, hook_throw="fail", **keys)
+    scenario, result = _run(tmp_path, monkeypatch, tab, hook_throw="fail", **keys)
     assert result["outcome"] == "fail" and result["stop"] == "hook_check_failed", result["reason"]
     assert result["checks"][-1]["check"] == f"{place} ran"
-    planned = plan.from_results([result])
+    planned = plan.from_results([{**result, "about": scenario.about}])  # report.build gives a result its about
     assert planned[0]["checks"][-1]["words"] == f"the {place} ran and threw no error"
     assert plan.not_described(planned) == []
 
