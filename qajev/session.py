@@ -85,9 +85,10 @@ class PageScriptError(RuntimeError):
 
 def thrown(description):
     """A JavaScript error's description ("Error: no unlock\\n    at <anonymous>:1:7") -> (type, message, first stack
-    frame or None). A thrown value that is not an Error has no type: ("", its text, None)."""
+    frame or None). A thrown value that is not an Error has no type: ("", its text, None). The browser's "Uncaught "
+    before the type is not part of it, so "Uncaught TypeError: x" is a TypeError (redteam-1 L1, #285)."""
     lines = str(description or "").splitlines()
-    head = lines[0].strip() if lines else ""
+    head = lines[0].strip().removeprefix("Uncaught ") if lines else ""
     kind, sep, message = head.partition(": ")
     if not sep or not re.fullmatch(r"[A-Za-z_$][\w$]*", kind):
         kind, message = (head, "") if re.fullmatch(r"(?:[A-Za-z_$][\w$]*)?Error", head) else ("", head)
