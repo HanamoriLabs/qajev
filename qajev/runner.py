@@ -209,7 +209,8 @@ HALTS = verdict.HARNESS_STOPS | {"hook_check_failed"}
 
 # The input may take at most this much longer than its no-input control (x 1.25, + 0.25 s) for the two changes to be
 # compared: a longer input has more time to change by itself (redteam-1 M1, #275). The 0.25 s is a hook's own cost:
-# a drag's start point and its press and release are not paced, and each event waits for the renderer.
+# a drag's start point and its press and release are not paced, and each event waits for the renderer. An input past
+# this bound gets a second control after it, for as long as it took; past the bound of that one too, it is harness.
 INPUT_TIME_RATIO, INPUT_TIME_SLACK_S = 1.25, 0.25
 
 
@@ -247,14 +248,19 @@ def _input_check(session, scenario, run_dir, url):
     if run_dir is None:
         raise PixelError("input comparison needs a report folder for its evidence")
     wait = _input_wait_s(spec["do"])
-    frames, took = {}, {}
+    frames, took, shots, again = {}, {}, [0], False
+
+    def capture(name):
+        shots[0] += 1
+        frames[name] = session.capture_region_png(spec["region"])
+
     try:
-        frames["idle-before"] = session.capture_region_png(spec["region"])
+        capture("idle-before")
         started = time.monotonic()
         time.sleep(wait)
-        frames["idle-after"] = session.capture_region_png(spec["region"])
+        capture("idle-after")
         took["idle"] = time.monotonic() - started
-        frames["input-before"] = session.capture_region_png(spec["region"])
+        capture("input-before")
         started = time.monotonic()
         try:
             _run_hooks(session, f"input {spec['name']!r}, do", spec["do"], url, doing=False)
@@ -262,12 +268,24 @@ def _input_check(session, scenario, run_dir, url):
             raise
         except HookFailed as e:  # the input itself failed, as a before hook would (redteam-1 L1, #275)
             raise HookFailed(f"input {spec['name']!r}, the do hooks: {e}") from None
-        frames["input-after"] = session.capture_region_png(spec["region"])
+        capture("input-after")
         took["input"] = time.monotonic() - started
+        if took["input"] > INPUT_TIME_RATIO * took["idle"] + INPUT_TIME_SLACK_S:
+            # The input took longer than it planned, as on a slow machine (in the 0.4.47 cloud run a 300 ms drag of 15
+            # moves took 1.15 s): measure the change with no input again, after the input, for as long as it took.
+            # Motion the input leaves behind counts as change with no input. The first control stays: the input is
+            # judged against the larger change of the two, so page motion that stops between them (an intro, a camera
+            # easing to rest) cannot pass for the input (redteam-1 B1, #283).
+            again = True
+            capture("again-before")
+            started = time.monotonic()
+            time.sleep(took["input"])
+            capture("again-after")
+            took["again"] = time.monotonic() - started
     except HookFailed:  # a RuntimeError, but not a capture's
         raise
     except (RuntimeError, ValueError, OSError, TimeoutError) as e:
-        raise PixelError(f"input {spec['name']!r}, capture {len(frames) + 1} of 4: {e}") from None
+        raise PixelError(f"input {spec['name']!r}, capture {shots[0]} of {6 if again else 4}: {e}") from None
     for name, contents in frames.items():
         if not isinstance(contents, bytes) or len(contents) > EFFECT_MAX_BYTES:
             raise PixelError(f"input {spec['name']!r}, {name}: PNG capture is missing or exceeds the 32 MiB limit")
@@ -275,29 +293,59 @@ def _input_check(session, scenario, run_dir, url):
     idle, idle_png = compare(frames["idle-before"], frames["idle-after"], tolerance=spec["tolerance"], min_changed=1)
     moved, moved_png = compare(frames["input-before"], frames["input-after"], tolerance=spec["tolerance"],
                                min_changed=1)
-    margin = moved["fraction"] - idle["fraction"]
+    differences = [("idle-difference", idle_png), ("input-difference", moved_png)]
+    controls = {"before the input": idle["fraction"]}
+    if again:
+        second, second_png = compare(frames["again-before"], frames["again-after"], tolerance=spec["tolerance"],
+                                     min_changed=1)
+        differences.append(("again-difference", second_png))
+        controls["after the input"] = second["fraction"]
+    measured = moved["fraction"] - max(controls.values())
+    if again:
+        # The first control lasted only the planned time, and a page whose own change grows with time (a panel that
+        # slides in, a fade, a pan that ends later) changes less in 0.2 s than in a 1.15 s input: the first control
+        # counts at its rate over the input's time, at most the whole region (redteam-1 B2, #283).
+        controls["before the input"] = scaled = min(1.0, idle["fraction"] * took["input"] / took["idle"])
+    # the control with the larger change; on a tie, the one as long as the input (the last)
+    control = max(reversed(controls), key=lambda name: controls[name])
+    margin = moved["fraction"] - controls[control]
     ok = margin >= spec["min_changed"]
-    longer = took["input"] > INPUT_TIME_RATIO * took["idle"] + INPUT_TIME_SLACK_S
+    # only the scaled first control fails it: the page's own change could explain the input's, so it is not judged
+    unsure = again and not ok and measured >= spec["min_changed"]
+    longer = took["input"] > INPUT_TIME_RATIO * took["again" if again else "idle"] + INPUT_TIME_SLACK_S
     stem = "input-" + hashlib.sha256(scenario.name.encode()).hexdigest()[:16]
     metrics = {"idle": {k: idle[k] for k in ("changed", "total", "fraction")} | {"seconds": round(took["idle"], 3)},
                "input": {k: moved[k] for k in ("changed", "total", "fraction")} | {"seconds": round(took["input"], 3)},
                "margin": margin, "min_changed": spec["min_changed"], "tolerance": spec["tolerance"],
-               "ok": ok and not longer}
+               "control": control, "ok": ok and not longer}
+    if again:
+        metrics["idle_again"] = {k: second[k] for k in ("changed", "total", "fraction")} | {
+            "seconds": round(took["again"], 3)}
+        metrics["idle_scaled"] = {"fraction": scaled, "seconds": round(took["input"], 3)}
     evidence = {"name": spec["name"], "region": spec["region"], "metrics": metrics}
-    for name, contents in (*frames.items(), ("idle-difference", idle_png), ("input-difference", moved_png)):
+    for name, contents in (*frames.items(), *differences):
         relative = f"shots/{stem}-{name}.png"
         path = run_dir / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(contents)
         evidence[name] = relative
-    detail = (f"with the input {moved['fraction']:.2%} of pixels changed in {took['input']:.2f} s; with none "
-              f"{idle['fraction']:.2%} in {took['idle']:.2f} s; the input must add {spec['min_changed']:.2%}, "
-              f"it added {margin:.2%}")
-    if longer:  # nothing was judged: the input had more time to change by itself than its control
+    none = f"{idle['fraction']:.2%} in {took['idle']:.2f} s"
+    if again:
+        none += (f" before the input ({scaled:.2%} at that rate over the input's {took['input']:.2f} s) and "
+                 f"{second['fraction']:.2%} in {took['again']:.2f} s after it, judged against the larger ({control})")
+    detail = (f"with the input {moved['fraction']:.2%} of pixels changed in {took['input']:.2f} s; with none {none}; "
+              f"the input must add {spec['min_changed']:.2%}, it added {margin:.2%}")
+    if longer:  # nothing was judged: even the control after the input was too short for the input's own time
         return {**verdict.input_planned(spec), "ok": False, "broke": True, "value": metrics,
-                "detail": f"the input took {took['input']:.2f} s and the no-input control {took['idle']:.2f} s, so "
-                          f"their changes cannot be compared ({detail}); give the do hooks a planned time (a drag's "
-                          "ms, a key's hold_ms, a pad's hold_ms, a react hook's for_s, a sleep)"}, evidence
+                "detail": f"the input took {took['input']:.2f} s and the no-input control {took['again']:.2f} s, so "
+                          f"their changes cannot be compared ({detail}); the control after the input ended before "
+                          "its wait, so this machine's waits cannot be trusted"}, evidence
+    if unsure:  # the measured controls pass it; at the first one's rate over the input's time the page could do it all
+        return {**verdict.input_planned(spec), "ok": False, "broke": True, "value": metrics,
+                "detail": f"the page changed by itself before the input ({idle['fraction']:.2%} in "
+                          f"{took['idle']:.2f} s), and at that rate it could change {scaled:.2%} in the input's "
+                          f"{took['input']:.2f} s, so the input's own change cannot be told apart ({detail}); against "
+                          f"the controls as measured it added {measured:.2%}"}, evidence
     return {**verdict.input_planned(spec), "ok": ok, "detail": detail, "value": metrics}, evidence
 
 
