@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.49: 4 Nov 2026
+
 ### Fixed
 
 - A planted hook throw can give gate PASS again. In 0.4.48, the check `before hook 2 of 2 ran` had no plain words. So
