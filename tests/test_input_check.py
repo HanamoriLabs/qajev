@@ -92,11 +92,13 @@ def png(dark):
 
 
 class View:
-    """A stand-in tab: its region darkens `idle` more columns by itself in each wait (before the idle-after and the
-    input-after captures) and `moved` more columns for the input."""
+    """A stand-in tab: its region darkens `idle` more columns by itself in each wait (before the idle-after, the
+    input-after and a second control's after capture) and `moved` more columns for the input. `drift` maps a capture's
+    number to the columns the page adds by itself before it, in place of `idle`."""
 
-    def __init__(self, idle, moved):
+    def __init__(self, idle, moved, drift=None):
         self.idle, self.moved, self.columns, self.calls = idle, moved, 0, []
+        self.drift = drift if drift is not None else {2: idle, 4: idle, 6: idle}
 
     def set_device(self, *_): pass
     def arm(self, *_): pass
@@ -110,8 +112,7 @@ class View:
 
     def capture_region_png(self, region):
         self.calls.append("capture")
-        if self.calls.count("capture") in (2, 4, 6):  # 6: the end of a second control, after a slow input
-            self.columns += self.idle
+        self.columns += self.drift.get(self.calls.count("capture"), 0)  # 6: the end of a second control
         return png(min(self.columns, 8))
 
 
@@ -130,17 +131,18 @@ def test_only_the_change_the_input_adds_counts(tmp_path, monkeypatch, idle, move
     assert view.calls == ["capture", "capture", "capture", DRAG, "capture"]
     metrics = result["input"]["metrics"]
     assert metrics["margin"] == pytest.approx(margin) and metrics["min_changed"] == 0.25
-    assert metrics["idle"]["total"] == 64 and metrics["input"]["total"] == 64
-    for key in report_files.INPUT_FRAMES:
+    assert metrics["idle"]["total"] == 64 and metrics["input"]["total"] == 64 and "idle_again" not in metrics
+    keys = [key for key in report_files.INPUT_FRAMES if key in result["input"]]
+    assert keys == list(report_files.INPUT_FRAMES[:6])  # no second control: the six frames
+    for key in keys:
         assert (tmp_path / result["input"][key]).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
-    assert sorted(report_files.image_paths({"scenarios": [result]})) == sorted(
-        result["input"][key] for key in report_files.INPUT_FRAMES)
+    assert sorted(report_files.image_paths({"scenarios": [result]})) == sorted(result["input"][key] for key in keys)
     data = report.build(parsed, [result], [], browser={}, started_at=time.time(), strict=False, interrupted=False,
                         run_dir=tmp_path)
     report.write(tmp_path, data)
     for name in ("report.md", "report.html"):
         text = (tmp_path / name).read_text()
-        assert all(result["input"][key] in text for key in report_files.INPUT_FRAMES)
+        assert all(result["input"][key] in text for key in keys)
 
 
 class Clock:
@@ -181,15 +183,17 @@ def test_an_input_longer_than_its_control_gets_a_second_control_as_long_as_it(tm
     metrics = result["input"]["metrics"]
     assert metrics["control"] == control and metrics["ok"] is True
     assert metrics["input"]["seconds"] == hook_s
+    assert metrics["idle"]["seconds"] == 0.2  # the first control always stays
     if control == "before the input":
         assert clock.slept == [0.2] and view.calls == ["capture", "capture", "capture", {"click": "#go"}, "capture"]
-        assert metrics["idle"]["seconds"] == 0.2
+        assert "idle_again" not in metrics
     else:
         assert clock.slept == [0.2, hook_s]
         assert view.calls == ["capture", "capture", "capture", {"click": "#go"}, "capture", "capture", "capture"]
-        assert metrics["idle"]["seconds"] == hook_s
+        assert metrics["idle_again"]["seconds"] == hook_s
         check = next(c for c in result["checks"] if c["check"].startswith("input "))
-        assert f"with none 0.00% in {hook_s:.2f} s after the input" in check["detail"]
+        assert (f"with none 0.00% in 0.20 s before the input and 0.00% in {hook_s:.2f} s after it, judged against the "
+                "larger (after the input)") in check["detail"]
 
 
 @pytest.mark.parametrize("idle,moved,outcome,margin", [(0, 4, "pass", 0.5), (2, 1, "fail", 0.125)])
@@ -201,8 +205,21 @@ def test_a_slow_input_is_judged_on_the_change_its_second_control_sees(tmp_path, 
     assert result["outcome"] == outcome, result["reason"]
     metrics = result["input"]["metrics"]
     assert metrics["control"] == "after the input" and metrics["margin"] == pytest.approx(margin)
-    for key in report_files.INPUT_FRAMES:  # the six PNGs, the idle pair from the second control
+    for key in report_files.INPUT_FRAMES:  # the nine PNGs: both controls and the input
         assert (tmp_path / result["input"][key]).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_page_motion_that_stops_between_the_two_controls_cannot_pass_for_a_slow_input(tmp_path, monkeypatch):
+    """redteam-1 B1, #283: the page moves by itself at first (an intro, a camera easing to rest), on through the slow
+    input's window, and stops before the second control. An input that does nothing must not pass on that motion: it
+    is judged against the larger change of the two controls."""
+    view = View(0, 0, drift={2: 2, 4: 2, 6: 0})
+    result = _timed(tmp_path, monkeypatch, Clock(1.15), view, min_changed=0.25)
+    assert result["outcome"] == "fail", result["reason"]
+    metrics = result["input"]["metrics"]
+    assert metrics["idle"]["fraction"] == pytest.approx(0.25) and metrics["idle_again"]["fraction"] == 0
+    assert metrics["input"]["fraction"] == pytest.approx(0.25)  # all of it the page's own motion
+    assert metrics["control"] == "before the input" and metrics["margin"] == pytest.approx(0.0)
 
 
 # For a 1.00 s input the second control's bound is 0.60 s (1.25 x 0.60 + 0.25): 0.61 s is judged, 0.59 s is not. A
@@ -391,7 +408,7 @@ def test_browser_a_real_drag_turns_a_camera_and_a_camera_that_ignores_it_fails(p
         metrics = evidence["metrics"]
         outcome[query] = (check["ok"], round(metrics["idle"]["fraction"], 3), round(metrics["input"]["fraction"], 3),
                           tab.evaluate("window.moves"))
-        slow[query] = (check.get("broke", False), metrics["control"], metrics["input"]["seconds"])
+        slow[query] = (check.get("broke", False), "idle_again" in metrics, metrics["input"]["seconds"])
     assert outcome["?follow"][0] is True, outcome
     # The planted faults: a camera that ignores the mouse, and one whose world scrolls by itself as much as a drag
     # would move it (a check of the change alone passes there).
@@ -401,9 +418,9 @@ def test_browser_a_real_drag_turns_a_camera_and_a_camera_that_ignores_it_fails(p
     # A handler that takes 60 ms a move runs the 0.3 s drag past its bound (1.25 x 0.3 + 0.25 = 0.625 s), as the 0.4.47
     # cloud run did: both are judged on a second control after the input, not harness, and the planted one fails.
     assert outcome["?slow=60"][0] is True and outcome["?mouse=0&slow=60"][0] is False, outcome
-    for query in ("?slow=60", "?mouse=0&slow=60"):
-        assert slow[query][:2] == (False, "after the input") and slow[query][2] > 0.625, slow
-    assert slow["?follow"][1] == "before the input", slow
+    for query in ("?slow=60", "?mouse=0&slow=60"):  # judged with a second control, not harness
+        assert slow[query][:2] == (False, True) and slow[query][2] > 0.625, slow
+    assert slow["?follow"][1] is False, slow
 
 
 @pytest.mark.skipif(not ENDPOINT or os.uname().sysname != "Linux", reason="requires approved CPU fixture browser")

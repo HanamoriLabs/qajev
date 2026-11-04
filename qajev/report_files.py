@@ -45,8 +45,10 @@ def ux_crop(finding: dict) -> str | None:
     return path if relative(path) and path.startswith("ux/") else None
 
 
-# expect.input's six frames in report.json's `input` (runner._input_check)
-INPUT_FRAMES = ("idle-before", "idle-after", "idle-difference", "input-before", "input-after", "input-difference")
+# expect.input's frames in report.json's `input` (runner._input_check): six, and three more when a slow input got a
+# second no-input control after it
+INPUT_FRAMES = ("idle-before", "idle-after", "idle-difference", "input-before", "input-after", "input-difference",
+                "again-before", "again-after", "again-difference")
 
 
 def image_paths(data: dict) -> list[str]:
