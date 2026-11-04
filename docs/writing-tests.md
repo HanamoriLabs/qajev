@@ -456,8 +456,9 @@ For a phone's real browser (Chrome on an Android emulator; iOS Safari is not rea
 
 A planted fault proves a check can catch a fault: you break the page on purpose, and the check must fail. Mark such
 a test with `expect_fail`, naming the one check it plants against by its `says` text (or its words as `qajev plan`
-prints them). `expect_fail: true` works only on a test with exactly one check. The test must say in `about` what it
-plants.
+prints them). `expect_fail: true` works only on a test with exactly one check. In a test with `hook_throw: fail`, a
+`js` before or after hook that throws on purpose is named by its place, such as `expect_fail: "before hook 1 of 1
+ran"`. The test must say in `about` what it plants.
 
 ```yaml
 - name: wrong price
@@ -541,6 +542,7 @@ cpu_throttle: 1           # run the page's CPU this many times slower (1 to 8), 
 color_scheme: dark        # light | dark: the page's prefers-color-scheme answers so (default: the browser's own)
 cache: cold               # every load skips Chrome's cache and the service worker, as a first visit
 console_keep: ["^\\[boot\\]"]   # the console lines that match are always kept (JavaScript regular expressions)
+hook_throw: fail          # a js hook's thrown Error fails the test on that hook (default: harness)
 
 scenarios:
   - name: the home page loads
@@ -649,6 +651,23 @@ Its `after:` hooks run after the checks: a result an `after:` hook writes can ne
 hook that plays the page and records a result belongs last in `before:`. `expect` js and hook js run in separate
 JavaScript worlds: they share the page's DOM (so a hook can leave its result in a `data-` attribute), not its
 window globals.
+
+A `js` hook that throws, such as `throw new Error("CAPTURE_SIZE_CHANGED")`, stops the test as harness: most such
+throws are setup guards, which say nothing about the product. A rejected Promise and a thrown string count the same
+way. Its stop is `hook_threw`, and its reason gives the hook's place, such as `before hook 2 of 3`, the error's type,
+its message and its first stack frame. Nothing after the hook runs. Places in a check's own hooks read
+`input 'aim', do hook 1 of 1`,
+`sweep 'menus', setting 'logs', do hook 1 of 1`, `effect 'glow', on hook 1 of 2` and `motion 'fall', do hook 1 of 1`.
+
+When a throw is the page's answer, such as `throw new Error("PLAYER_UNLOCK_INPUT_STUCK")`, set `hook_throw: fail` on
+the test or on the suite. A test's own value wins, so `hook_throw: harness` on a test turns a suite's `fail` off. The
+test then fails on a check named for the hook's place, such as `before hook 2 of 3 ran`, with the same details, and
+its stop is `hook_check_failed`. After a `before:` or `after:` hook, the page checks still judge the page. A
+multiplayer test's step hooks always grade a throw harness.
+
+A hook whose own code broke (a `TypeError`, a `ReferenceError` or a `SyntaxError`) says nothing about the page: the
+test is harness even with `hook_throw: fail`. Its stop is `hook_failed`, and its reason gives the hook's place, the
+error's type, its message and its first stack frame.
 
 A `drag` hook drags the real mouse, as a player turns a camera: `{selector: "canvas", x: 200, y: 150, by: {x: 150,
 y: 0}}` presses at the point (CSS pixels, as for `click_at`), moves by `by` in `steps` moves (default 20) over `ms`

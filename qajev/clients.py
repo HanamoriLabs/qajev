@@ -145,15 +145,15 @@ def _trim(snaps):
 
 def _first_error(results, where):
     """The first client error in a together() round, as (stop, detail), or None."""
-    from .session import GuardMissing, HookFailed, LeftSite
+    from .session import GuardMissing, HookFailed, HookThrew, LeftSite
     from .viewport import ViewportMismatch
 
+    kinds = ((HookThrew, "hook_threw"), (HookFailed, "hook_failed"), (GuardMissing, "guard_missing"),
+             (LeftSite, "left_site"), (ViewportMismatch, "viewport_mismatch"))  # a js hook's errors are HookFailed's
     for name, _value, error in results:
         if error is None:
             continue
-        stop = {HookFailed: "hook_failed", GuardMissing: "guard_missing", LeftSite: "left_site",
-                ViewportMismatch: "viewport_mismatch"}.get(
-            type(error), "browser_error")
+        stop = next((stop for kind, stop in kinds if isinstance(error, kind)), "browser_error")
         text = str(error) if stop != "browser_error" else f"{type(error).__name__}: {error}"
         return stop, f"[{name}] {where}: {text}"[:500]
     return None

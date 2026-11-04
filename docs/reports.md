@@ -146,7 +146,7 @@ the test tool are kept apart.**
 | **pass** | every expectation held, and every one of them ran | nothing |
 | **fail** | the product is wrong: a check failed, or the page did not load (a production server that is not answering included: the site is down) | read the reason and the failed checks |
 | **stuck** | Jev looked for a way forward and found none (QAJev also scrolls and looks again, twice) | look at the screenshot: often a real usability problem |
-| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error, a browser error, a failed hook, Jev saying DONE without taking a single action while a check fails (when that check was already false before Jev moved, the reason says so: run the check without a goal to judge the page as it loads, and a false check is then a FAIL), a goal whose checks already held before Jev moved while Jev took no action (QAJev makes Jev act once before such checks count; give the goal a check only it can make true), a local dev server that is not answering ("the server at ... is not answering": start the app), or a `js` check whose own code broke ("the check failed to run: TypeError ...": fix the check) | says nothing about the product; retry or narrow the goal |
+| **harness** | QAJev's side: time or action budget used up, cost cap reached, a page that never stops changing, a model error, a browser error, a failed hook, a `js` hook that threw ("a js hook threw: before hook 2 of 3 (`...`) threw Error: ..."; give the test `hook_throw: fail` when the throw is the page's answer), Jev saying DONE without taking a single action while a check fails (when that check was already false before Jev moved, the reason says so: run the check without a goal to judge the page as it loads, and a false check is then a FAIL), a goal whose checks already held before Jev moved while Jev took no action (QAJev makes Jev act once before such checks count; give the goal a check only it can make true), a local dev server that is not answering ("the server at ... is not answering": start the app), or a `js` check whose own code broke ("the check failed to run: TypeError ...": fix the check) | says nothing about the product; retry or narrow the goal |
 | **unverified** | the scenario had no expectations | add some |
 | **skipped** | a scenario it depends on did not pass, or the machine was too busy | fix that first |
 
@@ -156,7 +156,8 @@ A run that would have changed a production site never gets as far as an outcome:
 starts (exit code 5, `{"outcome": "refused", "reason": ...}` with `--json`), and nothing is reported because nothing
 ran ([Safety](safety.md)).
 
-A run that broke before it finished (a browser error, a failed hook, a guard that went missing) is never a
+A run that broke before it finished (a browser error, a failed hook, a js hook that threw, a guard that went
+missing) is never a
 **pass**, even when every check that ran passed, and neither is a run that stopped before some of its checks or steps
 ran. It is **harness**, and the reason says where it stopped and what never ran: "browser/daemon error: step 4
 (snapshot walking): RuntimeError: ...; 2 check(s) ran and passed; not run: step 5 (js), the final checks".
