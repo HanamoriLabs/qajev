@@ -672,7 +672,8 @@ its message and its first stack frame. Nothing after the hook runs. Places in a 
 When a throw is the page's answer, such as `throw new Error("PLAYER_UNLOCK_INPUT_STUCK")`, set `hook_throw: fail` on
 the test or on the suite. A test's own value wins, so `hook_throw: harness` on a test turns a suite's `fail` off. The
 test then fails on a check named for the hook's place, such as `before hook 2 of 3 ran`, with the same details, and
-its stop is `hook_check_failed`. After a `before:` or `after:` hook, the page checks still judge the page. A
+its stop is `hook_check_failed`. The plan's words for that check are "the before hook 2 of 3 ran and threw no error".
+`qajev plan` lists it for a planted hook throw. After a `before:` or `after:` hook, the page checks still judge the page. A
 multiplayer test's step hooks always grade a throw harness.
 
 A hook whose own code broke (a `TypeError`, a `ReferenceError` or a `SyntaxError`) says nothing about the page: the

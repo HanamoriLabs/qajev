@@ -4,13 +4,15 @@ QAJev said "browser/daemon error"; the Orchestrator, 4 Nov: failing is opt-in, a
 
 import os
 import re
+import time
+from types import SimpleNamespace
 
 import pytest
 from test_ux_dom_live import ENDPOINT
 from test_ux_dom_live import no_model_initialization as no_model_initialization
 from test_ux_dom_live import page as page
 
-from qajev import runner, session, suite, verdict
+from qajev import plan, report, runner, session, suite, verdict
 
 STUCK = "Error: PLAYER_UNLOCK_INPUT_STUCK\n    at <anonymous>:1:7\n    at unlock (game.js:9:3)"
 BROKE = "TypeError: Cannot read properties of null (reading 'x')\n    at <anonymous>:1:6"
@@ -193,13 +195,60 @@ def test_a_planted_hook_that_throws_is_graded_a_catch(tmp_path, monkeypatch):
     scenario, result = _run(tmp_path, monkeypatch, Tab({"window.unlock()": STUCK}), before=[{"js": "window.unlock()"}],
                             about="plants a hook that throws the product's own error", hook_throw="fail",
                             expect_fail="before hook 1 of 1 ran")
-    assert scenario.expect_fail == {"check": "before hook 1 of 1 ran", "words": "before hook 1 of 1 ran"}
+    assert scenario.expect_fail == {"check": "before hook 1 of 1 ran",
+                                    "words": "the before hook 1 of 1 ran and threw no error"}
     assert verdict.planted(result, scenario.expect_fail["check"])[0] == "pass"
     # the same test with no throw is the fault not caught
     scenario, result = _run(tmp_path, monkeypatch, Tab({}), before=[{"js": "window.unlock()"}],
                             about="plants a hook that throws the product's own error", hook_throw="fail",
                             expect_fail="before hook 1 of 1 ran")
     assert verdict.planted(result, scenario.expect_fail["check"]) == ("fail", verdict.PLANTED_MISSED)
+
+
+REGION = {"name": "view", "x": 0, "y": 0, "width": 8, "height": 8}
+UNLOCK = [{"js": "window.unlock()"}]
+
+
+@pytest.mark.parametrize("place,keys", [  # every place a js hook runs (runner._run_hooks), so every check it can add
+    ("before hook 1 of 1", {"before": UNLOCK}),
+    ("after hook 1 of 1", {"after": UNLOCK}),
+    ("input 'aim', do hook 1 of 1", {"expect": {"input": {"name": "aim", "region": REGION, "do": UNLOCK,
+                                                          "min_changed": 0.2}}}),
+    ("effect 'glow', on hook 1 of 1", {"expect": {"effect": {"name": "glow", "region": REGION, "off": [{"js": "1"}],
+                                                             "on": UNLOCK, "min_changed": 0.01}}}),
+    ("motion 'fall', do hook 1 of 1", {"expect": {"motion": {"name": "fall", "region": REGION, "do": UNLOCK}}}),
+    ("sweep 'menus', setting 'logs', do hook 1 of 1", {"expect": {"sweep": {"name": "menus", "settings": [
+        {"name": "logs", "do": UNLOCK}]}}}),
+])
+def test_every_check_the_runner_adds_at_run_time_has_plan_words(tmp_path, monkeypatch, place, keys):
+    # redteam-1 F1 on 0.4.48: the "<place> ran" check of a hook that threw had no plain words, so the run said NOT
+    # DESCRIBED and KA run 1's gate was INCOMPLETE (4 Nov). It is the one check the runner adds that the expect lacks.
+    tab = Tab({"window.unlock()": STUCK})
+    tab.capture_region_png = lambda region: _png()
+    tab.banners = lambda selectors: []
+    scenario, result = _run(tmp_path, monkeypatch, tab, hook_throw="fail", **keys)
+    assert result["outcome"] == "fail" and result["stop"] == "hook_check_failed", result["reason"]
+    assert result["checks"][-1]["check"] == f"{place} ran"
+    planned = plan.from_results([{**result, "about": scenario.about}])  # report.build gives a result its about
+    assert planned[0]["checks"][-1]["words"] == f"the {place} ran and threw no error"
+    assert plan.not_described(planned) == []
+
+
+def test_a_planted_hook_throw_gives_gate_pass_and_the_plan_names_its_check(tmp_path, monkeypatch):
+    # redteam-1 F2 on 0.4.48: KA run 1 graded the planted throw pass, but `qajev plan` could not see the hook's check
+    # (13 of 13 described) and the run's gate was INCOMPLETE
+    scenario, result = _run(tmp_path, monkeypatch, Tab({"window.unlock()": STUCK}), before=UNLOCK, hook_throw="fail",
+                            about="plants a game that never unlocks, so its hook throws",
+                            expect_fail="before hook 1 of 1 ran")
+    before = plan.from_suite([scenario])
+    assert [line["check"] for line in before[0]["checks"]] == [c["check"] for c in result["checks"]]
+    assert before[0]["checks"][-1]["words"] == "the before hook 1 of 1 ran and threw no error"
+    assert plan.not_described(before) == []
+    data = report.build(SimpleNamespace(name="ka", scenarios=[scenario]), [result], [], browser={},
+                        started_at=time.time(), strict=False, interrupted=False, run_dir=tmp_path)
+    assert result["graded"] == "pass", result.get("graded_reason")
+    assert data["gate"] == "PASS" and "not_described" not in data, data.get("not_described")
+    assert result["expected_check"] == "the before hook 1 of 1 ran and threw no error"
 
 
 @pytest.mark.parametrize("value,before,says", [
