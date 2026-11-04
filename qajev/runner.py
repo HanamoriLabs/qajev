@@ -294,16 +294,24 @@ def _input_check(session, scenario, run_dir, url):
     moved, moved_png = compare(frames["input-before"], frames["input-after"], tolerance=spec["tolerance"],
                                min_changed=1)
     differences = [("idle-difference", idle_png), ("input-difference", moved_png)]
-    controls = {"before the input": idle}
+    controls = {"before the input": idle["fraction"]}
     if again:
         second, second_png = compare(frames["again-before"], frames["again-after"], tolerance=spec["tolerance"],
                                      min_changed=1)
         differences.append(("again-difference", second_png))
-        controls["after the input"] = second
+        controls["after the input"] = second["fraction"]
+    measured = moved["fraction"] - max(controls.values())
+    if again:
+        # The first control lasted only the planned time, and a page whose own change grows with time (a panel that
+        # slides in, a fade, a pan that ends later) changes less in 0.2 s than in a 1.15 s input: the first control
+        # counts at its rate over the input's time, at most the whole region (redteam-1 B2, #283).
+        controls["before the input"] = scaled = min(1.0, idle["fraction"] * took["input"] / took["idle"])
     # the control with the larger change; on a tie, the one as long as the input (the last)
-    control = max(reversed(controls), key=lambda name: controls[name]["fraction"])
-    margin = moved["fraction"] - controls[control]["fraction"]
+    control = max(reversed(controls), key=lambda name: controls[name])
+    margin = moved["fraction"] - controls[control]
     ok = margin >= spec["min_changed"]
+    # only the scaled first control fails it: the page's own change could explain the input's, so it is not judged
+    unsure = again and not ok and measured >= spec["min_changed"]
     longer = took["input"] > INPUT_TIME_RATIO * took["again" if again else "idle"] + INPUT_TIME_SLACK_S
     stem = "input-" + hashlib.sha256(scenario.name.encode()).hexdigest()[:16]
     metrics = {"idle": {k: idle[k] for k in ("changed", "total", "fraction")} | {"seconds": round(took["idle"], 3)},
@@ -313,6 +321,7 @@ def _input_check(session, scenario, run_dir, url):
     if again:
         metrics["idle_again"] = {k: second[k] for k in ("changed", "total", "fraction")} | {
             "seconds": round(took["again"], 3)}
+        metrics["idle_scaled"] = {"fraction": scaled, "seconds": round(took["input"], 3)}
     evidence = {"name": spec["name"], "region": spec["region"], "metrics": metrics}
     for name, contents in (*frames.items(), *differences):
         relative = f"shots/{stem}-{name}.png"
@@ -322,8 +331,8 @@ def _input_check(session, scenario, run_dir, url):
         evidence[name] = relative
     none = f"{idle['fraction']:.2%} in {took['idle']:.2f} s"
     if again:
-        none += (f" before the input and {second['fraction']:.2%} in {took['again']:.2f} s after it, judged against "
-                 f"the larger ({control})")
+        none += (f" before the input ({scaled:.2%} at that rate over the input's {took['input']:.2f} s) and "
+                 f"{second['fraction']:.2%} in {took['again']:.2f} s after it, judged against the larger ({control})")
     detail = (f"with the input {moved['fraction']:.2%} of pixels changed in {took['input']:.2f} s; with none {none}; "
               f"the input must add {spec['min_changed']:.2%}, it added {margin:.2%}")
     if longer:  # nothing was judged: even the control after the input was too short for the input's own time
@@ -331,6 +340,12 @@ def _input_check(session, scenario, run_dir, url):
                 "detail": f"the input took {took['input']:.2f} s and the no-input control {took['again']:.2f} s, so "
                           f"their changes cannot be compared ({detail}); the control after the input ended before "
                           "its wait, so this machine's waits cannot be trusted"}, evidence
+    if unsure:  # the measured controls pass it; at the first one's rate over the input's time the page could do it all
+        return {**verdict.input_planned(spec), "ok": False, "broke": True, "value": metrics,
+                "detail": f"the page changed by itself before the input ({idle['fraction']:.2%} in "
+                          f"{took['idle']:.2f} s), and at that rate it could change {scaled:.2%} in the input's "
+                          f"{took['input']:.2f} s, so the input's own change cannot be told apart ({detail}); against "
+                          f"the controls as measured it added {measured:.2%}"}, evidence
     return {**verdict.input_planned(spec), "ok": ok, "detail": detail, "value": metrics}, evidence
 
 

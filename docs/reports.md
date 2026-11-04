@@ -114,8 +114,10 @@ A test with `expect.input` keeps `input`: its `name`, `region`, `metrics` (`idle
 PNGs (`idle-before`, `idle-after`, `idle-difference`, `input-before`, `input-after`, `input-difference`). Report
 downloads keep them all. When the input ran past its planned time, QAJev also measured a second control after the
 input, as long as the input took: `metrics.idle_again` holds its numbers, and three more PNGs show it
-(`again-before`, `again-after`, `again-difference`). The input is then judged against the larger of the two idle
-changes, and `control` names that one (`before the input` or `after the input`).
+(`again-before`, `again-after`, `again-difference`). `metrics.idle_scaled` holds the first control's `fraction` at
+its rate over the input's `seconds`, at most 1. The input is then judged against the larger of `idle_scaled` and
+`idle_again`, `control` names that one (`before the input` or `after the input`), and `margin` is the input's change
+less it.
 
 A test with `expect.motion` keeps `motion`: its `name`, `region`, `metrics` (`pairs`, `moving`, `still_run`, `share`,
 `at`, `min_changed`, `min_moving`, `tolerance`, and `gaps` with `frames`, `seconds`, `fps`, `longest_ms` and `p95_ms`

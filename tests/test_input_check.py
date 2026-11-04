@@ -192,21 +192,34 @@ def test_an_input_longer_than_its_control_gets_a_second_control_as_long_as_it(tm
         assert view.calls == ["capture", "capture", "capture", {"click": "#go"}, "capture", "capture", "capture"]
         assert metrics["idle_again"]["seconds"] == hook_s
         check = next(c for c in result["checks"] if c["check"].startswith("input "))
-        assert (f"with none 0.00% in 0.20 s before the input and 0.00% in {hook_s:.2f} s after it, judged against the "
-                "larger (after the input)") in check["detail"]
+        assert (f"with none 0.00% in 0.20 s before the input (0.00% at that rate over the input's {hook_s:.2f} s) and "
+                f"0.00% in {hook_s:.2f} s after it, judged against the larger (after the input)") in check["detail"]
 
 
-@pytest.mark.parametrize("idle,moved,outcome,margin", [(0, 4, "pass", 0.5), (2, 1, "fail", 0.125)])
-def test_a_slow_input_is_judged_on_the_change_its_second_control_sees(tmp_path, monkeypatch, idle, moved, outcome,
-                                                                       margin):
-    """The second control measures the change with no input after the input: a view that moves 2 columns by itself
-    in each wait still fails, though its input took 1.15 s for a 0.3 s plan."""
+# A view that moves 2 columns by itself in each wait: 0.25 in the 0.2 s first control is 1.4375 at that rate over the
+# 1.15 s input, at most 1, so it is judged against the first control, and it fails on the controls as measured too.
+@pytest.mark.parametrize("idle,moved,outcome,control,margin", [(0, 4, "pass", "after the input", 0.5),
+                                                               (2, 1, "fail", "before the input", 0.375 - 1)])
+def test_a_slow_input_is_judged_against_both_controls(tmp_path, monkeypatch, idle, moved, outcome, control, margin):
+    """The second control measures the change with no input after the input, which took 1.15 s for a 0.3 s plan; the
+    first one counts at its rate over the input's time."""
+    parsed = _suite(do=[{"click": "#go"}], min_changed=0.25)
     result = _timed(tmp_path, monkeypatch, Clock(1.15), View(idle, moved), min_changed=0.25)
     assert result["outcome"] == outcome, result["reason"]
     metrics = result["input"]["metrics"]
-    assert metrics["control"] == "after the input" and metrics["margin"] == pytest.approx(margin)
-    for key in report_files.INPUT_FRAMES:  # the nine PNGs: both controls and the input
+    assert metrics["control"] == control and metrics["margin"] == pytest.approx(margin)
+    assert metrics["idle_scaled"] == {"fraction": pytest.approx(min(1, idle / 8 * 1.15 / 0.2)), "seconds": 1.15}
+    keys = [key for key in report_files.INPUT_FRAMES if key in result["input"]]
+    assert keys == list(report_files.INPUT_FRAMES) and len(keys) == 9  # both controls and the input
+    for key in keys:
         assert (tmp_path / result["input"][key]).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert sorted(report_files.image_paths({"scenarios": [result]})) == sorted(result["input"][key] for key in keys)
+    data = report.build(parsed, [result], [], browser={}, started_at=time.time(), strict=False, interrupted=False,
+                        run_dir=tmp_path)
+    report.write(tmp_path, data)
+    for name in ("report.md", "report.html"):  # redteam-1 L1, #283: the second control's frames are shown too
+        text = (tmp_path / name).read_text()
+        assert all(result["input"][key] in text for key in keys), name
 
 
 def test_page_motion_that_stops_between_the_two_controls_cannot_pass_for_a_slow_input(tmp_path, monkeypatch):
@@ -219,7 +232,61 @@ def test_page_motion_that_stops_between_the_two_controls_cannot_pass_for_a_slow_
     metrics = result["input"]["metrics"]
     assert metrics["idle"]["fraction"] == pytest.approx(0.25) and metrics["idle_again"]["fraction"] == 0
     assert metrics["input"]["fraction"] == pytest.approx(0.25)  # all of it the page's own motion
-    assert metrics["control"] == "before the input" and metrics["margin"] == pytest.approx(0.0)
+    assert metrics["idle_scaled"]["fraction"] == 1  # 0.25 x 1.15 / 0.2, at most the whole region
+    assert metrics["control"] == "before the input" and metrics["margin"] == pytest.approx(0.25 - 1)
+
+
+def test_page_change_that_grows_with_time_cannot_pass_for_a_slow_input(tmp_path, monkeypatch):
+    """redteam-1 B2, #283: the page's own change grows with time (a panel that slides in, a progress bar, a fade) and
+    ends before the second control. The 0.2 s first control sees 1 column, the 1.15 s input window 3, and the input
+    does nothing: against the larger control as measured it adds 0.25 and would pass. At the first control's rate over
+    the input's time the page alone could change 0.72, so the input cannot be told apart: harness, as on 0.4.47."""
+    view = View(0, 0, drift={2: 1, 4: 3, 6: 0})
+    result = _timed(tmp_path, monkeypatch, Clock(1.15), view, min_changed=0.25)
+    assert result["outcome"] == "harness", result["reason"]
+    metrics = result["input"]["metrics"]
+    assert metrics["idle"]["fraction"] == pytest.approx(0.125) and metrics["idle_again"]["fraction"] == 0
+    assert metrics["input"]["fraction"] == pytest.approx(0.375)
+    assert metrics["idle_scaled"] == {"fraction": pytest.approx(0.125 * 1.15 / 0.2), "seconds": 1.15}
+    assert metrics["control"] == "before the input" and metrics["margin"] == pytest.approx(0.375 - 0.71875)
+    assert metrics["ok"] is False
+    assert (f"the page changed by itself before the input (12.50% in 0.20 s), and at that rate it could change "
+            f"{metrics['idle_scaled']['fraction']:.2%} in the input's 1.15 s") in result["reason"]
+    assert "against the controls as measured it added 25.00%" in result["reason"]
+
+
+class Strip(View):
+    """A 320 x 200 region, as in the 0.4.47 cloud run: capture n has its first `dark[n]` pixels dark."""
+
+    def __init__(self, dark):
+        super().__init__(0, 0)
+        self.dark = dark
+
+    def capture_region_png(self, region):
+        self.calls.append("capture")
+        n = self.dark[self.calls.count("capture") - 1]
+        image = Image.new("RGB", (320, 200), "white")
+        image.putdata([(0, 0, 0)] * n + [(255, 255, 255)] * (64000 - n))
+        out = io.BytesIO()
+        image.save(out, format="PNG")
+        return out.getvalue()
+
+
+@pytest.mark.parametrize("input_px,outcome", [(39240, "pass"), (144, "fail")])
+def test_a_nearly_still_page_is_judged_on_a_slow_input_as_in_the_0447_cloud_run(tmp_path, monkeypatch, input_px,
+                                                                                outcome):
+    """The 0.4.47 cloud run's counts: 144 of 64,000 pixels changed with no input, 39,240 with the 1.15 s drag, and 144
+    with a camera that ignores the mouse. At the first control's rate over the input's time the page alone changes
+    1.29%, far under the drag's 61%: a working drag passes and a camera that ignores it fails, neither harness."""
+    view = Strip([0, 144, 144, 144 + input_px, 144 + input_px, 288 + input_px])
+    result = _timed(tmp_path, monkeypatch, Clock(1.15), view, min_changed=0.2)
+    assert result["outcome"] == outcome, result["reason"]
+    metrics = result["input"]["metrics"]
+    assert metrics["idle"]["fraction"] == pytest.approx(0.00225)
+    assert metrics["idle_again"]["fraction"] == pytest.approx(0.00225)
+    assert metrics["idle_scaled"]["fraction"] == pytest.approx(0.00225 * 1.15 / 0.2)
+    assert metrics["control"] == "before the input"
+    assert metrics["margin"] == pytest.approx(input_px / 64000 - 0.00225 * 1.15 / 0.2)
 
 
 # For a 1.00 s input the second control's bound is 0.60 s (1.25 x 0.60 + 0.25): 0.61 s is judged, 0.59 s is not. A

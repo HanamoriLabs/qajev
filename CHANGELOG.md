@@ -18,10 +18,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   Before, a test with one was NOT DESCRIBED, so its gate could never be PASS (0.4.47).
 - `expect.input` on a slow machine: when the input runs past its planned time, QAJev measures the change with no
   input again, after the input, for as long as the input took. It keeps both controls and judges the input against
-  the larger change of the two, so page motion that stops between them cannot pass for the input. `report.json`
-  keeps the second control as `idle_again`, with its three PNGs, and `control` names the one judged against
-  (`before the input` or `after the input`). Before, the check was harness: in the 0.4.47 cloud run, a 300 ms drag
-  of 15 moves took 1.15 s. A second control that is still too short stays harness.
+  the larger change of the two, so page motion that stops between them cannot pass for the input. The first control
+  counts at its rate over the input's time (`idle_scaled`), so a page whose own change grows with time cannot pass
+  either. When only that rate fails the input, the check is harness. `report.json` keeps the second control as
+  `idle_again`, with its three PNGs, and `control` names the one judged against (`before the input` or `after the
+  input`). Before, the check was harness: in the 0.4.47 cloud run, a 300 ms drag of 15 moves took 1.15 s. A second
+  control that is still too short stays harness.
 
 ### Changed
 
