@@ -58,8 +58,9 @@ something on a site, and to catch errors a browser can see.
 
 Outcomes: pass; fail (product wrong, or the page crashed); stuck (Jev found no way forward: verify by hand, often UX);
 harness (budget/stale/loop/cap/model/browser trouble, Jev said DONE without a single action, a goal whose checks
-held before Jev moved and Jev took no action, a local server not answering, or a js check whose own code broke: says
-nothing about the product); unverified (no checks);
+held before Jev moved and Jev took no action, a local server not answering, a js check or hook whose own code
+broke, or a js hook that threw unless the suite sets hook_throw: fail: says nothing about the product); unverified
+(no checks);
 skipped. Gate: PASS, FAIL or INCOMPLETE. A planted fault (expect_fail: the says text of the check it must fail on)
 keeps its outcome; the gate uses `graded`: "pass" when only the named check failed, "fail" when the test passed
 or failed on another check. Stuck and harness keep their grade and make the gate INCOMPLETE.

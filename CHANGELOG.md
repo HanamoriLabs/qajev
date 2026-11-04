@@ -8,6 +8,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 - `qajev plan` says what a bare `across` or snapshot check needs: "this across check needs says: write what it
   proves". The JSON plan line has it as `needs`. A test checks that every check kind has plan words.
+- `hook_throw: fail`, on a test or a suite, makes a `js` hook's thrown `Error` the page's answer. The test fails
+  on a check named for the hook's place, such as `before hook 2 of 3 ran`, and `expect_fail` can name that check.
+  A test's own `hook_throw` wins over the suite's. Without it, a throw stays harness.
 
 ### Fixed
 
@@ -20,6 +23,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Changed
 
+- A `js` hook that throws (`throw new Error("PLAYER_UNLOCK_INPUT_STUCK")`, a rejected Promise, a thrown string)
+  now has its own stop, `hook_threw`. It is still harness, but its reason gives the hook's place, such as `before
+  hook 2 of 3`, the error's type, its message and its first stack frame. Before, the reason said "browser/daemon
+  error". A hook whose own code broke (a `TypeError`, a `ReferenceError` or a `SyntaxError`) stays `hook_failed`
+  and harness, even with `hook_throw: fail`, and its reason gives the same details.
 - `expect.load`: when QAJev cannot read the browser's clock before the navigation, it times the page from the last
   document's start. `report.json` now keeps `clock` (`navigation` or `document`), and the check's detail says so.
   Before, that fallback was silent, and a loader page's own time was left out with no word.

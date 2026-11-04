@@ -51,6 +51,64 @@ class HookFailed(RuntimeError):
     pass
 
 
+class HookBroke(HookFailed):
+    """A js hook whose own code broke (a TypeError, a ReferenceError or a SyntaxError): harness, as a js check that
+    broke is, even with hook_throw: fail. Its message gives the error's type, its message and its first stack frame
+    (the Orchestrator, 4 Nov)."""
+
+    def __init__(self, said, source, where=None):
+        super().__init__(f"{where or 'a js hook'} (`{source}`): its own code broke: {said}")
+        self.said, self.source, self.where = said, source, where
+
+    def at(self, where):
+        return self if self.where else type(self)(self.said, self.source, where)
+
+
+class HookThrew(HookBroke):
+    """A js hook whose script threw a plain Error or a value, such as one that names a product state
+    (PLAYER_UNLOCK_INPUT_STUCK, 3 Nov). Its own stop, hook_threw, is harness: most such throws are setup guards. With
+    hook_throw: fail it is the page's answer, and the test fails on a check named for the hook, "<where> ran" (the
+    Orchestrator, 4 Nov). A HookBroke only to share its fields: the runner catches it first."""
+
+    def __init__(self, said, source, where=None):
+        RuntimeError.__init__(self, f"{where or 'a js hook'} (`{source}`) threw {said}")
+        self.said, self.source, self.where = said, source, where
+
+
+class PageScriptError(RuntimeError):
+    """A page script that threw. `description` is the JavaScript error's own text: its type, message and stack."""
+
+    def __init__(self, description):
+        super().__init__(f"page script failed: {description}")
+        self.description = str(description or "")
+
+
+def thrown(description):
+    """A JavaScript error's description ("Error: no unlock\\n    at <anonymous>:1:7") -> (type, message, first stack
+    frame or None). A thrown value that is not an Error has no type: ("", its text, None)."""
+    lines = str(description or "").splitlines()
+    head = lines[0].strip() if lines else ""
+    kind, sep, message = head.partition(": ")
+    if not sep or not re.fullmatch(r"[A-Za-z_$][\w$]*", kind):
+        kind, message = (head, "") if re.fullmatch(r"(?:[A-Za-z_$][\w$]*)?Error", head) else ("", head)
+    frame = next((line.strip() for line in lines[1:] if line.strip().startswith("at ")), None)
+    return kind, message, frame
+
+
+def js_hook_error(source, description):
+    """A js hook's thrown error -> HookBroke (its own code broke: TypeError, ReferenceError, SyntaxError) or HookThrew
+    (any other throw: harness, or the page's answer with hook_throw: fail). Each says the error's type, its message
+    and its first stack frame."""
+    from .verdict import CHECK_BROKE
+
+    kind, message, frame = thrown(description)
+    said = (f"{kind}: {message}" if kind and message else kind or message or "a value with no text") + (
+        f" ({frame})" if frame else "")
+    short = " ".join(str(source).split())
+    short = short if len(short) <= 60 else short[:57] + "..."
+    return (HookBroke if CHECK_BROKE.match(kind) else HookThrew)(said, short)
+
+
 class LeftSite(RuntimeError):
     pass
 
@@ -1065,10 +1123,12 @@ class Tab:
 
 
 def _evaluated(r):
-    """A Runtime.evaluate answer's value; a page script that threw raises RuntimeError."""
+    """A Runtime.evaluate answer's value; a page script that threw raises PageScriptError (a RuntimeError)."""
     if r.get("exceptionDetails"):
-        detail = r["exceptionDetails"].get("exception", {}).get("description") or r["exceptionDetails"].get("text")
-        raise RuntimeError(f"page script failed: {detail}")
+        exception = r["exceptionDetails"].get("exception", {})
+        value = str(exception["value"]) if "value" in exception else None  # a thrown string or number has no stack
+        detail = exception.get("description") or value or r["exceptionDetails"].get("text")
+        raise PageScriptError(detail)
     return r.get("result", {}).get("value")
 
 
@@ -2290,7 +2350,10 @@ class Session:
     def _run_hook(self, hook, current_url):
         kind, value = next(iter(hook.items()))
         if kind == "js":
-            self.evaluate(value)
+            try:
+                self.evaluate(value)
+            except PageScriptError as e:  # the script threw: its own bug, or a throw the test grades
+                raise js_hook_error(value, e.description) from None
         elif kind == "click":
             found = self.settled(value)
             with self.ux_action({"x": found["x"], "y": found["y"]}, action=f"click {value}"):

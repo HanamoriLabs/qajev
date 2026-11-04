@@ -60,7 +60,7 @@ SAYS_KEYS = {"js", "url_regex", "command", "fetch"}
 SCENARIO_KEYS = {
     "name", "url", "goal", "expect", "settle", "budget", "before", "after", "depends_on", "mode", "device",
     "persona", "speech", "vision", "about", "clients", "steps", "state", "seed", "color_scheme", "expect_fail",
-    "canvas_capture", "canvas_dark", "console_keep", "cache",
+    "canvas_capture", "canvas_dark", "console_keep", "cache", "hook_throw",
 } | set(ux_options.KEYS)
 # A multiplayer scenario (clients.py): N players, each in a browser context of its own, driven by steps.
 MAX_CLIENTS = 12
@@ -71,12 +71,15 @@ SUITE_KEYS = {
     "name", "base_url", "mode", "persona", "device", "budget", "cost_cap_usd", "guard", "speech", "hosts",
     "scenarios", "settle", "motion", "devices", "real_devices", "account", "vision", "about", "allow_destructive",
     "cpu_throttle", "plan", "color_scheme", "tunnel", "browser", "canvas_capture", "canvas_dark", "console_keep",
-    "cache",
+    "cache", "hook_throw",
 } | set(ux_options.KEYS)
 # browser: fresh (the default) runs each test, or each depends_on chain, in its own new Chrome, capped at its
 # budget.seconds + runner.CAP_MARGIN; shared runs every test in one Chrome, one tab per chain (the old way).
 BROWSER_MODES = ("fresh", "shared")
 COLOR_SCHEMES = ("light", "dark")
+# What a js hook that throws a plain Error means: harness (the default: the test could not set up), or fail (the
+# throw is the page's answer). A script bug (TypeError, ReferenceError, SyntaxError) is harness either way.
+HOOK_THROWS = ("harness", "fail")
 # A test account QAJev signs in with before the scenarios (see signin.py); the password is a vault reference.
 ACCOUNT_KEYS = {"name", "email", "password", "login", "totp", "cookie"}
 LOGIN_KEYS = {"url", "open", "tab", "email_field", "password_field", "next", "submit", "signed_in", "code_field",
@@ -131,6 +134,7 @@ class Scenario:
     canvas_dark: str | None = None  # why the main canvas is one flat dark colour on purpose (suite.canvas_dark)
     console_keep: list = field(default_factory=list)  # patterns: the console lines that match are always kept
     cache: str | None = None  # cold: every load of the test skips Chrome's cache and the service worker
+    hook_throw: str = "harness"  # fail: a js hook's thrown Error fails the test on that hook (suite.hook_throw)
 
     @property
     def task(self):
@@ -763,6 +767,8 @@ def parse(data, path=None, devices=None):
     if "canvas_dark" in data:  # one reason would turn the flat dark check off for every test (redteam-1 L5, #228)
         raise SuiteError("suite: canvas_dark goes on each scenario whose canvas is dark on purpose, not on the suite")
     suite_ux = _ux_options(data, "suite")
+    if data.get("hook_throw", "harness") not in HOOK_THROWS:
+        raise SuiteError(f"hook_throw must be one of {list(HOOK_THROWS)}")
     base = data.get("base_url")
     if base and (refused := user_info_refusal(base)):  # first: no later error may quote the URL
         raise SuiteError(f"base_url: {refused}")
@@ -854,6 +860,7 @@ def parse(data, path=None, devices=None):
         for dep in depends:
             if dep not in names or dep == name:
                 raise SuiteError(f"{where}: depends_on {dep!r} must name an earlier scenario")
+        throw = hook_throw(item, data, clients, where)
         budget = {**suite_budget, **(item.get("budget") or {})}
         if int(budget["actions"]) > 60:
             raise SuiteError(f"{where}: budget.actions is capped at 60 (Jev's own limit)")
@@ -878,13 +885,16 @@ def parse(data, path=None, devices=None):
             state=item.get("state"),
             seed=item.get("seed"),
             color_scheme=color_scheme(item.get("color_scheme", data.get("color_scheme")), f"{where}.color_scheme"),
-            expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where),
+            expect_fail=_expect_fail(item.get("expect_fail"), expect, clients, item.get("about"), where,
+                                     hooks={"before": item.get("before") or [], "after": item.get("after") or []},
+                                     hook_throw=throw),
             ux_options=_ux_options({**suite_ux, **_ux_options(item, where)}, where),
             canvas_capture=capture,
             canvas_dark=canvas_dark(item.get("canvas_dark"), f"{where}.canvas_dark"),
             console_keep=list(dict.fromkeys([*console_keep(data.get("console_keep"), "suite.console_keep"),
                                              *console_keep(item.get("console_keep"), f"{where}.console_keep")])),
             cache=cache(item.get("cache", data.get("cache")), f"{where}.cache"),
+            hook_throw=throw,
         ))
         if clients and ({"console_keep", "cache"} & set(item)):
             raise SuiteError(f"{where}: console_keep and cache are for a test in QAJev's own tab, not a multiplayer "
@@ -1099,10 +1109,30 @@ def about(value, where):
     return " ".join(value.split()) or None
 
 
-def _expect_fail(value, expect, clients, about_text, where):
+HOOK_RAN = re.compile(r"(before|after) hook (\d+) of (\d+) ran")
+
+
+def hook_throw(item, data, clients, where):
+    """`hook_throw`, on the test or the suite (the test's wins): harness or fail, for a js hook that throws a plain
+    Error. Harness is the default: 3,228 suites throw from setup guards, such as a capture size that changed, and
+    those say nothing about the product (the Orchestrator, 4 Nov). A multiplayer test's step hooks stay harness."""
+    value = item.get("hook_throw", data.get("hook_throw", "harness"))
+    if value not in HOOK_THROWS:
+        raise SuiteError(f"{where}.hook_throw must be one of {list(HOOK_THROWS)}")
+    if clients is not None:
+        if "hook_throw" in item:
+            raise SuiteError(f"{where}.hook_throw is for a test in QAJev's own tab: a multiplayer test's step "
+                             "hooks grade a throw harness")
+        return "harness"
+    return value
+
+
+def _expect_fail(value, expect, clients, about_text, where, hooks=None, hook_throw="harness"):
     """`expect_fail`: a planted fault, a test meant to fail on one named check (the Orchestrator, 13 Oct). It names
     that check by its `says`, its plain words or its name as `qajev plan` prints them; `true` only when the test has
-    one check. It must say in `about` what it plants. -> {check, words} or None. The gate reads it (verdict.planted)."""
+    one check. A js before or after hook that throws on purpose is named by its place, "before hook 1 of 2 ran", in a
+    test with hook_throw: fail (4 Nov). It must say in `about` what it plants. -> {check, words} or None. The gate
+    reads it (verdict.planted)."""
     if value is None or value is False:
         return None
     if clients is not None:
@@ -1118,6 +1148,18 @@ def _expect_fail(value, expect, clients, about_text, where):
     elif isinstance(value, str) and value.strip():
         want = " ".join(value.split())
         hit = [c for c in checks if want in (c.get("says"), plan_mod.words(c), c["check"])]
+        ran = HOOK_RAN.fullmatch(want)
+        if not hit and ran:  # a js hook that throws on purpose: the runner fails the test on "<place> ran"
+            listed = (hooks or {}).get(ran[1]) or []
+            n, of = int(ran[2]), int(ran[3])
+            js = 1 <= n <= of == len(listed) and isinstance(listed[n - 1], dict) and "js" in listed[n - 1]
+            if not js:
+                raise SuiteError(f"{where}.expect_fail: {want!r} must name one of the test's js {ran[1]} hooks by its "
+                                 f"place (this test has {len(listed)} {ran[1]} hook(s))")
+            if hook_throw != "fail":  # a throw is then harness, never the fail a planted fault needs
+                raise SuiteError(f"{where}.expect_fail: {want!r} names a js hook, but here a hook that throws grades "
+                                 "harness, never fail: give the test or the suite hook_throw: fail")
+            return {"check": want, "words": want}
         if len(hit) != 1:
             raise SuiteError(f"{where}.expect_fail: {want!r} must name exactly one of the test's checks (it names "
                              f"{len(hit)}); its checks: "
