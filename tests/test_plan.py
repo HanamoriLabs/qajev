@@ -220,6 +220,7 @@ def test_every_check_kind_has_plan_words_so_its_test_can_pass():
     region = {"name": "view", "x": 0, "y": 0, "width": 8, "height": 8}
     samples = {
         "url": "/done", "url_regex": "/done$", "status": 200, "text": ["Paid"], "visible": ["Paid"],
+        "absent": ["Sign in"],
         "js": "window.paid === true", "looks": ["The page shows a receipt"],
         "fetch": [{"url": "/api/order", "status": 200}], "command": "true",
         "effect": {"name": "shadow", "region": region, "off": [{"js": "1"}], "on": [{"js": "2"}], "min_changed": 0.01},
@@ -232,7 +233,7 @@ def test_every_check_kind_has_plan_words_so_its_test_can_pass():
     says = {"js": "the order is saved", "url_regex": "the address ends in /done", "fetch": "the order API answers",
             "command": "the shell command runs"}
     # across is a multiplayer check: a scenario with clients, below
-    assert set(samples) | {"absent", "ignore_case", "says", "across"} == suite_mod.EXPECT_KEYS
+    assert set(samples) | {"ignore_case", "says", "across"} == suite_mod.EXPECT_KEYS
     for key, value in samples.items():
         expect = {key: value, **({"says": {key: says[key]}} if key in says else {})}
         scenarios = suite_mod.parse({"devices": ["desktop"], "scenarios": [
@@ -251,10 +252,10 @@ def test_every_check_kind_has_plan_words_so_its_test_can_pass():
     assert room([{"js": "clients.length === 2", "says": "both players joined"}])["described"]
     bare = room(["clients.length === 2"])
     assert not bare["described"]
-    assert bare["checks"][0]["needs"] == "this across check needs says: write what it proves"
+    assert bare["checks"][0].get("needs") == "this across check needs says: write what it proves"
     snap = room([{"check": "roster", "js": "1"}], steps=[{"snapshot": "joined", "expect": ["clients.length === 2"]}])
     assert not snap["described"]
-    assert snap["checks"][-1]["needs"] == "this snapshot check needs says: write what it proves"
+    assert snap["checks"][-1].get("needs") == "this snapshot check needs says: write what it proves"
 
 
 def test_qajev_plan_says_what_a_bare_across_check_needs(tmp_path, capsys):
