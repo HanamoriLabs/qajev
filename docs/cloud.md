@@ -174,6 +174,8 @@ Our QAJev tests run in QAJev Cloud, never on this computer. This computer's mode
   that refusal, and do not rerun it here.
 - Every cloud run spends the team's credits. Run what the change needs: a `qa_smoke` first (no model calls), then the
   project's objectives or one `qa_check` with strict expectations.
+- Write a test plan for each run before it starts, and name it (`plan`, CLI `--plan`). The plan says the exact runs,
+  each with `--runner cloud`, and their cost caps. How to write one: https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/test-plans.md
 
 Our projects: `shop` (enabled for the cloud). Our sites: <https://staging.example.com> (staging),
 <https://example.com> (production, read-only).

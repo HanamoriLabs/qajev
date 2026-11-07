@@ -109,7 +109,8 @@ How to write a check:
    tests whose goal asks Jev to press a key (PRESSES KEYS: Jev cannot, so press it in a `key:` hook).
 6. Name the approved test plan the run follows: `plan:` in a suite, or `plan` on any run tool (CLI `--plan FILE`).
    Its last line is "Approved by the Orchestrator <date> <time> sha256:<qajev plan-hash FILE>". A run without an
-   approved plan warns; with QAJEV_REQUIRE_PLAN=1 it is refused.
+   approved plan warns; with QAJEV_REQUIRE_PLAN=1 it is refused. Write the plan from the template and send it to the
+   approver; never write the approval line yourself. How to write one, with examples: https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/test-plans.md
 
 Outcomes: `pass`; `fail` (the product is wrong); `stuck` (Jev found no way forward, often a usability problem:
 look at the screenshot); `harness` (QAJev's own problem: says nothing about the product, never report it as a
@@ -162,5 +163,6 @@ cost cap low for exploratory runs (`cost_cap: 0.10`). A game's QUIT is hidden to
 - [QAJev Cloud: join a team, set up a computer, and the prompt for cloud agents](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/cloud.md)
 - [Getting started](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/getting-started.md)
 - [Writing tests](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/writing-tests.md)
+- [Test plans: how an agent writes the plan a run follows, with a template and examples](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/test-plans.md)
 - [Mobile apps](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/mobile.md) and [games](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/games.md)
 - [Source code](https://github.com/hanamorilabs/qajev)

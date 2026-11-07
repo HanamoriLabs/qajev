@@ -4,6 +4,7 @@
 
 - [Getting started](getting-started.md): install, add a key, run your first test.
 - [Writing tests](writing-tests.md): goals, expectations, suites, hooks, signed-in areas.
+- [Test plans](test-plans.md): the plan a run follows, how to write it and have it approved, with examples.
 - [Reading a report](reports.md): the gate, outcomes, findings, cost.
 
 **Everyday use**

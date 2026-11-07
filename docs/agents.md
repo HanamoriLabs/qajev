@@ -31,7 +31,8 @@ qa_project_run(project="shop", suite="core")
 
 ## A typical agent loop
 
-1. The agent changes the product.
+1. The agent changes the product, and writes the [test plan](test-plans.md) for the runs it needs. Its approver
+   approves the plan before any run.
 2. `qa_smoke` on the local site: free; it fixes whatever broke.
 3. `qa_project_run` (or `qa_check` for something new) with strict expectations.
 4. It reads the result:

@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Documentation
+
+- New page [Test plans](docs/test-plans.md): how an agent writes the plan a run follows, what goes in each section,
+  what an approver checks, the approval line, and the mistakes that make a plan not approved.
+- New folder `examples/plans/`: a template and 3 complete plans (a read-only check in QAJev Cloud, a waitlist on a
+  local dev server with its suite and a planted fault, and a game's first level). The examples have no approval line.
+- The agent prompt, `llms.txt`, the agents, cloud, CLI, MCP and writing-tests pages link the new page.
+
 ## 0.4.51: 7 Nov 2026
 
 ### Changed

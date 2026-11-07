@@ -1,0 +1,52 @@
+# The suite that examples/plans/2026-11-07-waitlist-local.md approves: a shop's dev server on this machine
+# (npm run dev, http://localhost:3000, with its seed data). Lint it first: qajev plan examples/plans/waitlist.yaml
+name: Waitlist
+about: a visitor can join the waitlist once, and a second join with the same email is refused
+plan: 2026-11-07-waitlist-local.md
+base_url: http://localhost:3000
+device: desktop  # the tests share one email: a phone copy of a join would find it taken
+cost_cap_usd: 0.60
+budget: {actions: 20, seconds: 120}
+
+scenarios:
+  - name: the waitlist form opens
+    about: the home page's "Join the waitlist" link opens the form
+    url: /
+    goal: Open the form to join the waitlist. Stop when the waitlist form is visible.
+    expect:
+      url: /waitlist
+      text: ["Join the waitlist"]
+
+  - name: join the waitlist
+    about: a visitor joins with a name and an email, and the page confirms that email
+    url: /waitlist
+    mode: mutate
+    goal: >-
+      Join the waitlist as Ada Lovelace, with the email ada.test@example.test. Stop when the page says you are on the
+      list.
+    expect:
+      text: ["You are on the list, Ada"]
+      js: "document.querySelector('[data-joined-email]')?.textContent.trim() === 'ada.test@example.test'"
+      says: {js: the page confirms the email that joined}
+
+  - name: a taken email is refused
+    about: a second join with the same email is refused with a clear message, and no second confirmation shows
+    url: /waitlist
+    mode: mutate
+    goal: >-
+      Join the waitlist as Ada Byron, with the email ada.test@example.test. Stop when the page answers.
+    expect:
+      text: ["This email is already on the list"]
+      js: "document.querySelector('[data-joined-email]') === null"
+      says: {js: no second confirmation shows}
+
+  - name: planted - a taken email is let through
+    about: plants the fault where the dev server takes a taken email, so the "no second confirmation" check must catch it
+    url: /waitlist?plant=dup-email
+    mode: mutate
+    goal: >-
+      Join the waitlist as Ada Byron, with the email ada.test@example.test. Stop when the page answers.
+    expect:
+      js: "document.querySelector('[data-joined-email]') === null"
+      says: {js: no second confirmation shows}
+    expect_fail: no second confirmation shows
