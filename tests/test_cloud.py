@@ -419,6 +419,8 @@ def test_a_suite_run_is_filed_under_the_project_that_holds_it(dash, local, monke
     shop_toml = (folder / "shop.toml").read_text()
     (folder / "shop.toml").write_text(shop_toml.replace('name = "shop"', 'name = "shop [beta]"'))
     assert filed(repo / "qa", known=()) is None  # a name the dashboard refuses goes unfiled, so the run still starts
+    (folder / "shop.toml").write_text(shop_toml.replace('name = "shop"', 'name = "shop\\n"'))
+    assert filed(repo / "qa", known=()) is None  # a final newline: the worker refuses it, so it goes unfiled too
     (folder / "shop.toml").write_text(shop_toml)
     (repo / ".qajev").mkdir()
     (repo / ".qajev" / "project.toml").write_text('name = "rooms"\n[env.local]\nbase_url = "http://127.0.0.1:8871"\n')
