@@ -159,6 +159,7 @@ cost cap low for exploratory runs (`cost_cap: 0.10`). A game's QUIT is hidden to
 
 - [Full agent prompt, to paste into CLAUDE.md or AGENTS.md](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/AGENT_PROMPT.md)
 - [MCP server: every tool and parameter](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/mcp.md)
+- [QAJev Cloud: join a team, set up a computer, and the prompt for cloud agents](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/cloud.md)
 - [Getting started](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/getting-started.md)
 - [Writing tests](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/writing-tests.md)
 - [Mobile apps](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/mobile.md) and [games](https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/games.md)

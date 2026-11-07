@@ -18,6 +18,7 @@
 - [Using QAJev from AI agents](agents.md): how agents should work with it.
 - [MCP server](mcp.md): connect Claude Code, Codex, Cursor and others.
 - [Agent prompt](../AGENT_PROMPT.md): copy it into your agent's instructions.
+- [QAJev Cloud](cloud.md): join a team, set up a Mac or a cloud workstation, and the prompt for agents that run in the cloud.
 
 **More**
 

@@ -84,7 +84,7 @@ Every run writes `report.html` (open it in a browser), `report.md` and `report.j
 | **Prove a product works** | store its objectives once, run them any time, see what changed since last time ([Projects](docs/projects.md)) |
 | **Every night** | `qajev nightly --install`: runs every project, tells you only when something changed |
 | **From AI agents** | `qajev mcp` ([MCP](docs/mcp.md), [agents](docs/agents.md), [prompt](AGENT_PROMPT.md)) |
-| **Run in the cloud, not on this Mac** | `qajev mode cloud` (or `--runner cloud` for one run) sends `check`, `run` and `smoke` to QAJev Cloud; `qajev mode local` keeps them here; `--project NAME` sets one project; this Mac's dev servers go through a read-only tunnel; `auto` keeps signed-in runs and runs that write to a dev server here ([CLI](docs/cli.md#qajev-cloud-where-a-run-goes)) |
+| **Run in the cloud, not on this Mac** | `qajev mode cloud` (or `--runner cloud` for one run) sends `check`, `run` and `smoke` to QAJev Cloud; `qajev mode local` keeps them here; `--project NAME` sets one project; this Mac's dev servers go through a read-only tunnel; `auto` keeps signed-in runs and runs that write to a dev server here ([QAJev Cloud](docs/cloud.md), [CLI](docs/cli.md#qajev-cloud-where-a-run-goes)) |
 | **Watch and control runs** | `qajev top`, `qajev dashboard`, `qajev jobs`, `qajev stop`, `qajev cloud-runs` ([Jobs and top](docs/jobs-and-top.md), [The dashboard](docs/dashboard.md)) |
 | **Test a game** | `qajev play path/to/game` ([Games](docs/games.md)) |
 | **Test a mobile app** | `qajev play ios:com.example.app` or `android:com.example.app` ([Mobile](docs/mobile.md)) |
@@ -107,7 +107,7 @@ run your project's objectives, read reports and screenshots, and follow or stop 
 
 [Getting started](docs/getting-started.md) · [Writing tests](docs/writing-tests.md) ·
 [Reading a report](docs/reports.md) · [Projects](docs/projects.md) · [Jobs and top](docs/jobs-and-top.md) ·
-[CLI reference](docs/cli.md) · [MCP](docs/mcp.md) · [Agents](docs/agents.md) · [Games](docs/games.md) ·
+[CLI reference](docs/cli.md) · [MCP](docs/mcp.md) · [Agents](docs/agents.md) · [QAJev Cloud](docs/cloud.md) · [Games](docs/games.md) ·
 [Mobile](docs/mobile.md) · [Safety](docs/safety.md) · [Configuration](docs/configuration.md) · [How it works](docs/how-it-works.md) ·
 [Troubleshooting](docs/troubleshooting.md)
 

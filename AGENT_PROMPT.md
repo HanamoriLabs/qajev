@@ -102,7 +102,8 @@ the reason; do not rerun it here unless the person says so. A signed-in run (`pr
 this machine's `127.0.0.1` or `localhost` (one port, 1024 to 65535) is reached through QAJev Cloud's read-only tunnel
 only when you pass `runner: "cloud"` yourself (a page's POST or WebSocket does not pass); a run that writes to it stays
 here. A suite held by `QAJEV_CLOUD_HOLD` stays here too, unless you pass `runner: "cloud"` with its owner's OK. Or ship the built folder: `serve: "dist"` (CLI `--serve dist[:PORT]`). A cloud run's id
-starts with `r_`: `qa_job` and `qa_stop` take it. Tell the person the run's `url` and `report_url`.
+starts with `r_`: `qa_job` and `qa_stop` take it. Tell the person the run's `url` and `report_url`. When all your
+runs go to the cloud, add the cloud prompt from docs/cloud.md ("The agent prompt").
 
 ### Rules
 

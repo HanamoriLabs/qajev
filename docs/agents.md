@@ -17,6 +17,9 @@ Paste [AGENT_PROMPT.md](../AGENT_PROMPT.md) into the agent's instructions: a `CL
 with strict expectations, how to read the outcomes (and that a `harness` outcome is not a product bug), and the
 safety rules. Edit its last section to name your site and your project.
 
+Do your agents run their tests in QAJev Cloud? Then also paste the cloud prompt from [QAJev Cloud](cloud.md#the-agent-prompt),
+and set the computer up as that page says.
+
 ## 3. Give it a project
 
 Agents do best with stored objectives: write `.qajev/project.toml` in your repository once
