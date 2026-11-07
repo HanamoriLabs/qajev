@@ -18,6 +18,11 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   On Linux, QAJev also checks that the bridge it reached is the game's own socket. Another user's program that
   took the port first stops the run, so a run can never pass on a game that did not run.
 
+### Documentation
+
+- New [QAJev Cloud](docs/cloud.md) guide: join a team, make a key, set up a Mac or a Linux workstation (a Twinbox
+  box as the example), what reaches the cloud, and a prompt for agents whose runs go to the cloud.
+
 ### Fixed
 
 - A smoke page that Chrome could not load because the server answered an error now names that answer: "page did not
