@@ -955,7 +955,7 @@ def run_summary(row):
             "minutes": row.get("minutes"), "tests": dict(counts)}
 
 
-def list_runs(client, hours=24, now=None):
+def list_runs(client, hours: float = 24, now: float | None = None):
     """The cloud runs that started in the last `hours` (1 to 168), newest first, as run_summary rows. A run that has
     not started yet (queued) is listed too. Reads pages of the run list with `before` and stops at the first row older
     than the window, or at LIST_RUNS_MAX rows (`truncated` then says so)."""
