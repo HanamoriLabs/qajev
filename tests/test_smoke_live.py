@@ -6,6 +6,7 @@ A fake browser stands in for Chrome here: no browser starts.
 """
 
 import contextlib
+import json
 from types import SimpleNamespace
 
 from qajev import chrome, live, smoke
@@ -95,7 +96,7 @@ def _failed_page(tmp_path, monkeypatch, error, answer):
 
 
 def test_a_page_chrome_could_not_load_names_the_servers_http_status(tmp_path, monkeypatch):
-    # The workload-gpu proof, 7 Nov 2026: a page that answers 404 failed with only "net::ERR_HTTP_RESPONSE_CODE_FAILURE"
+    # A cloud smoke, 7 Nov 2026: a page that answers 404 failed with only "net::ERR_HTTP_RESPONSE_CODE_FAILURE"
     page, asked = _failed_page(tmp_path, monkeypatch, "net::ERR_HTTP_RESPONSE_CODE_FAILURE", 404)
     assert page["outcome"] == "fail"
     assert page["reason"] == "page did not load: net::ERR_HTTP_RESPONSE_CODE_FAILURE (HTTP 404)"
@@ -112,6 +113,19 @@ def test_another_load_error_asks_the_server_nothing(tmp_path, monkeypatch):
     page, asked = _failed_page(tmp_path, monkeypatch, "net::ERR_CERT_DATE_INVALID", 200)
     assert page["outcome"] == "fail" and page["reason"] == "page did not load: net::ERR_CERT_DATE_INVALID"
     assert asked == []
+
+
+def test_an_attached_browsers_key_stays_out_of_the_run_record(tmp_path, monkeypatch):
+    # redteam-1, 7 Nov 2026: a cloud run's report printed its relay address, one-run key included
+    key = "kQ7fakeRelayKeyOnlyThisTest0x91"
+    monkeypatch.setattr(live, "frames", lambda *a, **k: contextlib.nullcontext())
+    opts = fake_browser(monkeypatch, tmp_path)
+    opts.cdp_url = f"http://127.0.0.1:9432/devtools/browser/{key}"
+    monkeypatch.setattr(chrome, "version", lambda url, timeout=1.0: {"Browser": "fake"})
+    built = smoke.run("https://shop.example/", opts, max_pages=1, device="desktop", settle=0)
+    assert built["browser"]["cdp_url"] == "http://127.0.0.1:9432/devtools/browser/<id>"
+    assert key not in json.dumps(built, default=str)
+    assert chrome.shown_cdp_url("http://127.0.0.1:9350") == "http://127.0.0.1:9350"  # QAJev's own Chrome: no key
 
 
 def test_a_smoke_run_names_its_site_without_the_urls_user_info(tmp_path, monkeypatch):

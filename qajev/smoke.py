@@ -138,7 +138,7 @@ def http_status(url, timeout=15):
 
 def _unreachable(url, error):
     """verdict.unreachable, plus the server's HTTP status when Chrome names none: an error page with no body loads as
-    net::ERR_HTTP_RESPONSE_CODE_FAILURE, with no number (the workload-gpu proof, 7 Nov 2026: a 404)."""
+    net::ERR_HTTP_RESPONSE_CODE_FAILURE, with no number (a cloud smoke of a missing page, 7 Nov 2026: a 404)."""
     outcome, reason = verdict.unreachable(url, error)
     if error == "net::ERR_HTTP_RESPONSE_CODE_FAILURE":
         status = http_status(url)[0]
@@ -273,7 +273,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
         cdp_url = opts.cdp_url.rstrip("/")
         if not chrome.version(cdp_url):
             raise ConfigError(f"no Chrome DevTools endpoint at {cdp_url}")
-        browser = {"cdp_url": cdp_url, "managed": False}
+        browser = {"cdp_url": chrome.shown_cdp_url(cdp_url), "managed": False}
     else:
         owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral or browser_pool.parallel(),
                              port=0 if browser_pool.parallel() else None)
