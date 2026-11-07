@@ -8,10 +8,16 @@ from qajev import providers as P
 @pytest.mark.parametrize("env, jev, key_name", [
     ({"TYPESAFE_API_KEY": "ts-secret"}, "typesafe", "TYPESAFE_API_KEY"),
     ({"OPENROUTER_API_KEY": "or"}, "openrouter", "OPENROUTER_API_KEY"),
-    ({"TYPESAFE_API_KEY": "ts", "OPENROUTER_API_KEY": "or"}, "typesafe", "TYPESAFE_API_KEY"),
+    # OpenRouter is the default: with both keys set, auto sends Jev through OpenRouter
+    ({"TYPESAFE_API_KEY": "ts", "OPENROUTER_API_KEY": "or"}, "openrouter", "OPENROUTER_API_KEY"),
+    # TypeSafe stays a choice for those who want it
+    ({"TYPESAFE_API_KEY": "ts", "OPENROUTER_API_KEY": "or", "QAJEV_JEV_PROVIDER": "typesafe"}, "typesafe",
+     "TYPESAFE_API_KEY"),
     # José's existing jev-ultrafast .env: the text helper's OpenRouter key is enough for Jev too
     ({"TEXT_MODEL_API_KEY": "or", "TEXT_MODEL_BASE_URL": "https://openrouter.ai/api/v1"}, "openrouter",
      "TEXT_MODEL_API_KEY"),
+    ({"TYPESAFE_API_KEY": "ts", "TEXT_MODEL_API_KEY": "or", "TEXT_MODEL_BASE_URL": "https://openrouter.ai/api/v1"},
+     "openrouter", "TEXT_MODEL_API_KEY"),
     ({"TEXT_MODEL_API_KEY": "ds", "TEXT_MODEL_BASE_URL": "https://api.deepseek.com/v1"}, None, None),
     ({"TYPESAFE_API_KEY": "ts", "OPENROUTER_API_KEY": "or", "QAJEV_JEV_PROVIDER": "openrouter"}, "openrouter",
      "OPENROUTER_API_KEY"),
@@ -57,6 +63,8 @@ def test_the_routing_placeholder_never_masks_a_real_key_from_an_env_file(tmp_pat
 
     monkeypatch.setenv("TYPESAFE_API_KEY", P.PLACEHOLDER)
     monkeypatch.delenv("QAJEV_JEV_PROVIDER", raising=False)
+    for name in ("OPENROUTER_API_KEY", "TEXT_MODEL_API_KEY"):  # an OpenRouter key would win over TypeSafe
+        monkeypatch.delenv(name, raising=False)
     env_file = tmp_path / ".env"
     env_file.write_text("TYPESAFE_API_KEY=fake-value-for-test\n")
     load_env(str(env_file))

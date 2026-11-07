@@ -30,7 +30,7 @@ Jev needs one API key, kept in `~/.qajev/.env` (ask the person for it; never inv
 
 ```bash
 mkdir -p ~/.qajev && echo 'OPENROUTER_API_KEY=sk-or-...' >> ~/.qajev/.env
-# or TYPESAFE_API_KEY=... (TypeSafe, Jev's home: https://docs.typesafe.ai)
+# or TYPESAFE_API_KEY=... (TypeSafe, Jev's home: https://docs.typesafe.ai); with both keys set, OpenRouter is used
 # or Cloudflare's open Clef models instead of Jev: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, QAJEV_JEV_PROVIDER=cloudflare
 ```
 

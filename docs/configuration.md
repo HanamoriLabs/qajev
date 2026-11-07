@@ -28,12 +28,12 @@ point every QAJev process it starts at another `.env`, without your settings.
 
 | Variable | For | Default |
 |---|---|---|
+| `OPENROUTER_API_KEY` | Jev's decisions through OpenRouter (the default route), and the text helper | none |
 | `TYPESAFE_API_KEY` | Jev's decisions, through TypeSafe | none |
-| `OPENROUTER_API_KEY` | Jev's decisions through OpenRouter, and the text helper | none |
 | `TEXT_MODEL_API_KEY` | the text helper (what Jev types into fields): any OpenAI-compatible key | the OpenRouter key |
 | `TEXT_MODEL_BASE_URL`, `TEXT_MODEL`, `TEXT_MODEL_REASONING` | the text helper's service, model and reasoning level | OpenRouter, `inception/mercury-2.5`, `none` |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | the decisions by Cloudflare's Clef instead of Jev (Workers AI; a token with Workers AI read access) | none |
-| `QAJEV_JEV_PROVIDER` | `auto`, `typesafe`, `openrouter` or `cloudflare` | `auto`: TypeSafe if its key is set, else OpenRouter; Clef only when set to `cloudflare` |
+| `QAJEV_JEV_PROVIDER` | `auto`, `typesafe`, `openrouter` or `cloudflare` | `auto`: OpenRouter if its key is set, else TypeSafe; Clef only when set to `cloudflare`. With both keys, `typesafe` picks TypeSafe |
 | `TYPESAFE_MODEL` | Jev's model on TypeSafe | `jev-latest` |
 | `QAJEV_OPENROUTER_JEV_MODEL` | Jev's model on OpenRouter | `~typesafe/jev-latest` |
 | `QAJEV_CLEF_MODEL` | Clef's model on Cloudflare: `clef-flash` or `clef` | `clef-flash` |
@@ -160,6 +160,7 @@ launcher settings.
 | Variable | Is | Default |
 |---|---|---|
 | `QAJEV_GODOT` | the Godot binary | `godot` on your PATH, or the macOS app |
+| `QAJEV_GODOT_BRIDGE_PORT` | one fixed port (1024 to 65535) for the Godot game's bridge, for a machine whose firewall opens only that loopback port. A port in use stops the run: it never moves to another port. On Linux, QAJev also checks that the bridge it reached is the game's own socket, and stops the run when another program listens there | the first free port from 9400 to 9449 |
 | `QAJEV_ELECTRON` | the Electron binary, for an Electron project folder without its own | the folder's `node_modules/.bin/electron` |
 
 ## Nightly

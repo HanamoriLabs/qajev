@@ -30,7 +30,7 @@ def test_a_fresh_install_is_not_a_failure_and_says_what_to_add_next(fresh, capsy
     assert cli.main(["doctor", "--offline"]) == 0
     out = capsys.readouterr().out
     assert "NO " not in out
-    assert "Next:" in out and "~/.qajev/.env" in out and "TYPESAFE_API_KEY or OPENROUTER_API_KEY" in out
+    assert "Next:" in out and "~/.qajev/.env" in out and "OPENROUTER_API_KEY or TYPESAFE_API_KEY" in out
     assert "qajev mode cloud" in out
 
 

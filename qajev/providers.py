@@ -1,8 +1,10 @@
 """Where the decisions and the text helper's values come from, chosen by the keys provided.
 
 The decision model (Jev's role) is served three ways with the same request body:
-  TypeSafe    POST https://api.typesafe.ai/v1/systemone   TYPESAFE_API_KEY, model jev-latest
   OpenRouter  POST https://openrouter.ai/api/v1/systemone  OPENROUTER_API_KEY, model ~typesafe/jev-latest
+              (auto's first choice)
+  TypeSafe    POST https://api.typesafe.ai/v1/systemone   TYPESAFE_API_KEY, model jev-latest
+              (auto uses it only when no OpenRouter key is set)
   Cloudflare  POST .../accounts/ID/ai/run/@cf/cloudflare/MODEL  CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN,
               model clef-flash (default) or clef (QAJEV_CLEF_MODEL): Cloudflare's open decision models,
               only with QAJEV_JEV_PROVIDER=cloudflare (never chosen by auto)
@@ -48,12 +50,14 @@ def resolve(env=None):
     or_key, or_name = _openrouter_key(env)
     out: dict[str, object] = {"jev": None, "jev_key_name": None, "jev_url": None, "jev_model": None}
     typesafe_key = env.get("TYPESAFE_API_KEY") if env.get("TYPESAFE_API_KEY") != PLACEHOLDER else None
-    if wanted in {"auto", "typesafe"} and typesafe_key:
-        out.update(jev="typesafe", jev_key_name="TYPESAFE_API_KEY", jev_url=TYPESAFE_URL,
-                   jev_model=env.get("TYPESAFE_MODEL", "jev-latest"))
-    elif wanted in {"auto", "openrouter"} and or_key:
+    # auto prefers OpenRouter: with both keys set, Jev goes through OpenRouter. TypeSafe stays a choice
+    # (QAJEV_JEV_PROVIDER=typesafe), and auto still uses it when it is the only key.
+    if wanted in {"auto", "openrouter"} and or_key:
         out.update(jev="openrouter", jev_key_name=or_name, jev_url=OPENROUTER_SYSTEMONE,
                    jev_model=env.get("QAJEV_OPENROUTER_JEV_MODEL", OPENROUTER_JEV_MODEL))
+    elif wanted in {"auto", "typesafe"} and typesafe_key:
+        out.update(jev="typesafe", jev_key_name="TYPESAFE_API_KEY", jev_url=TYPESAFE_URL,
+                   jev_model=env.get("TYPESAFE_MODEL", "jev-latest"))
     elif wanted == "cloudflare" and env.get("CLOUDFLARE_API_TOKEN") and env.get("CLOUDFLARE_ACCOUNT_ID"):
         # Only when chosen: Cloudflare credentials are often set for wrangler and other tools, with broad scopes;
         # auto must never send page state to Workers AI, or spend, on a token not meant for QAJev.
