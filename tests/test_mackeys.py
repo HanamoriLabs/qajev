@@ -168,8 +168,10 @@ def test_keys_the_helper_could_not_send_fail_by_name(helper_file):
     assert r["checks"][-1]["ok"] is False and "sent 0 of 1" in r["checks"][-1]["detail"]
 
 
-def test_the_expect_checks_judge_what_the_keys_did(helper_file, tmp_path):
+def test_the_expect_checks_judge_what_the_keys_did(helper_file, tmp_path, monkeypatch):
     from qajev.ledger import Ledger
+
+    monkeypatch.setitem(native.play.__kwdefaults__, "wait", 0.0)  # the failing case judges once, with no 10 s wait
 
     expect = {"state": {"new_box_name": "qa-paste-7f3"}, "no_errors": False}
     ok = keys_step(App(), name="paste", value=PASTE, expect=expect, helper=helper_file, run=Helper(),

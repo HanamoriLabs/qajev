@@ -1951,7 +1951,7 @@ def run(suite, opts):
         cdp_url = opts.cdp_url.rstrip("/")
         if not chrome.version(cdp_url):
             raise ConfigError(f"no Chrome DevTools endpoint at {cdp_url}")
-        browser = {"cdp_url": cdp_url, "managed": False}
+        browser = {"cdp_url": chrome.shown_cdp_url(cdp_url), "managed": False}
     else:
         owned = chrome.start(opts.profile, headless=opts.headless, ephemeral=opts.ephemeral or browser_pool.parallel(),
                              port=0 if browser_pool.parallel() else None)

@@ -4,6 +4,14 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- A smoke page that Chrome could not load because the server answered an error now names that answer: "page did not
+  load: net::ERR_HTTP_RESPONSE_CODE_FAILURE (HTTP 404)". Before, the reason had Chrome's error only. QAJev asks the
+  server with one HEAD request, as it already does for links. A server that does not answer adds no number.
+- A run on an attached Chrome (`--cdp-url`) keeps that browser's key out of its record. The Browser line, report.json
+  and the run event show `.../devtools/browser/<id>`, not the id itself. The address there is the browser's key.
+
 ## 0.4.50: 7 Nov 2026
 
 ### Added

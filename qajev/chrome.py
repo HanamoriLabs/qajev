@@ -106,6 +106,12 @@ def listening(port):
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+def shown_cdp_url(cdp_url):
+    """An attached Chrome's address as a run's record shows it: a /devtools/browser/<id> path's id is that browser's
+    key, so the record keeps only `<id>` (a cloud run's relay address held a one-run key, 7 Nov 2026)."""
+    return re.sub(r"(/devtools/browser/)[^/?#]+", r"\1<id>", str(cdp_url))
+
+
 def version(cdp_url, timeout=1.0):
     try:
         with urllib.request.urlopen(f"{cdp_url}/json/version", timeout=timeout) as r:

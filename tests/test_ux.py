@@ -269,7 +269,7 @@ def test_a_goal_the_guard_blocked_is_harness_with_no_struggle_signals(monkeypatc
     monkeypatch.setattr(runner, "wait_for_quiet", lambda opts: (True, 1.0))
     monkeypatch.setattr(runner, "drive", lambda *a, **k: ("blocked", "no way forward"))
     s = suite.parse({"scenarios": [{"name": "download", "url": "https://h/", "goal": "Find where to download Foley.",
-                                    "expect": {"text": "All downloads"}}]})
+                                    "expect": {"text": "All downloads"}, "settle": 0}]})  # no 10 s wait for a no
     result = runner.run_scenario(Page(), s.scenarios[0], opts=runner.Options(), hosts={"h"}, run_dir=None)
     assert result["outcome"] == "harness"
     assert "blocked by the guard: it hid 'Open on the web'" in result["reason"]

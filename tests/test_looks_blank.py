@@ -89,9 +89,9 @@ def test_a_blank_canvas_never_reaches_clef_and_grades_harness_not_fail():
 
 def test_a_blank_canvas_with_other_checks_that_pass_is_harness_and_one_that_fails_still_fails():
     page = Page(jpeg())
-    passed = run(page, {"looks": LOOKS, "status": 200})
+    passed = run(page, {"looks": LOOKS, "status": 200}, settle=0)  # settle 0: a check that says no ends at once
     assert page.calls == [] and passed["outcome"] == "harness", passed
-    failed = run(Page(jpeg(), status=203), {"looks": LOOKS, "status": 200})
+    failed = run(Page(jpeg(), status=203), {"looks": LOOKS, "status": 200}, settle=0)
     assert failed["outcome"] == "fail", failed
     assert "HTTP 203" in failed["reason"] and "the looks were not judged" in failed["reason"], failed["reason"]
 
