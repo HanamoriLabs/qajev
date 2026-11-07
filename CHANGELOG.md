@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Fixed
+
+- `qajev cloud-runs` (MCP `qa_cloud_runs`) shows a box job's test counts. It listed every box job with no tests.
+- `qajev cloud-runs` dates a run that never started (refused before a machine) by when it was made. Such a run was
+  always listed, and an hourly look could page back to the 1000-row cap.
+
 ### Documentation
 
 - New page [Test plans](docs/test-plans.md): how an agent writes the plan a run follows, what goes in each section,

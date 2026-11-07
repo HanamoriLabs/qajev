@@ -23,7 +23,8 @@ The runs start only when all of these hold. I check each one right before the ru
 
 ## The runs
 
-1. `qajev run examples/plans/waitlist.yaml --json` (the suite names this plan with `plan:`).
+1. `qajev run examples/plans/waitlist.yaml --json` (the suite names this plan with `plan:`). In your own project, keep the
+   suite next to this plan in `tools/qa/plans/`, and give that path instead.
 
 One run. Its 4 tests run in order, on desktop only (`device: desktop`): they share one email, so a phone copy of a
 join would find it taken.
