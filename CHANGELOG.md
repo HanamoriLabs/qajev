@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.50: 7 Nov 2026
+
 ### Added
 
 - `qajev cloud-runs --hours 24 --json` and the MCP tool `qa_cloud_runs` list the QAJev Cloud runs of the last hours:
