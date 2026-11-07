@@ -128,8 +128,8 @@ qajev cloud-runs --hours 24  # the team's cloud runs of the last day
   `qajev smoke`; the suite's own project; the repository folder the command starts in (its `.qajev/project.toml`);
   then the one project set up on this computer whose site is the URL's site. `--project` needs the project set up
   on this computer too. So start every command in the project's repository folder. `qajev check` has no
-  `--project`: the folder names its project. The dashboard must know the project too. Today, projects reach the
-  dashboard from the team's own synced computer, so the owner adds yours.
+  `--project`: the folder names its project. The run carries that name even when the dashboard has no such
+  project yet, in QAJev releases after 0.4.50 (0.4.50 and older sent a name only for a project the dashboard knew).
 
 ## Example: agents on a Twinbox box
 
@@ -188,4 +188,5 @@ Our projects: `shop` (enabled for the cloud). Our sites: <https://staging.exampl
   are used up, the month's model spend reached its limit, or the team has too few credits.
 - **"This project does not run on our boxes yet"**: the owner has not enabled the project for the cloud machines.
   Send them its name.
-- **"No project"**: the dashboard does not know the project yet. See [Projects](#what-reaches-the-cloud-and-what-does-not).
+- **"No project"**: QAJev found no project for the run, or the name has characters the dashboard does not take. In
+  QAJev 0.4.50 and older, a project the dashboard did not know also showed this. See [Projects](#what-reaches-the-cloud-and-what-does-not).

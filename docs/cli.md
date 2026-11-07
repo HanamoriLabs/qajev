@@ -380,7 +380,8 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
      A site two projects share names neither. A loopback site (`127.0.0.1`, `localhost`) names no project: any repo
      on the Mac can serve on that port.
 
-  The dashboard must know the project (it is synced from `project.toml`); otherwise the run shows "No project".
+  The run carries the project's name even when the dashboard has not synced that project yet. A name with
+  characters the dashboard does not take (such as brackets) goes unfiled, and the run shows "No project".
 
 - **The key.** `QAJEV_CLOUD_KEY`, else macOS Keychain (service `qajev-cloud-agent`). QAJev never prints it.
   `QAJEV_CLOUD_URL` names another dashboard (default `https://cloud.qajev.com`). `qajev doctor` checks both.

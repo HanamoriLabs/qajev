@@ -415,7 +415,11 @@ def test_a_suite_run_is_filed_under_the_project_that_holds_it(dash, local, monke
     assert filed(repo / "qa") == "shop"
     assert filed(worktree / "qa") == "shop"
     assert filed(tmp_path / "loose") is None  # no project holds it: the dashboard says "No project"
-    assert filed(repo / "qa", known=()) is None  # a project the dashboard does not know is not sent
+    assert filed(repo / "qa", known=()) == "shop"  # sent even before the dashboard knows the project (7 Nov 2026)
+    shop_toml = (folder / "shop.toml").read_text()
+    (folder / "shop.toml").write_text(shop_toml.replace('name = "shop"', 'name = "shop [beta]"'))
+    assert filed(repo / "qa", known=()) is None  # a name the dashboard refuses goes unfiled, so the run still starts
+    (folder / "shop.toml").write_text(shop_toml)
     (repo / ".qajev").mkdir()
     (repo / ".qajev" / "project.toml").write_text('name = "rooms"\n[env.local]\nbase_url = "http://127.0.0.1:8871"\n')
     assert filed(repo / "qa") == "rooms"  # the repo's own project file names it first
@@ -832,7 +836,7 @@ def test_a_project_run_ships_its_project_file(dash, local, tmp_path):
                     '[[objective]]\nname = "home"\nurl = "/"\nabout = "it loads"\nexpect = { text = ["Hi"] }\n')
     assert cli.main(["run", "--project", str(path), "--suite", "core"]) == 0  # runner = "cloud" in the file
     body = dash.created()
-    assert body["args"] == ["run", "--project", "in/shop.toml", "--suite", "core"] and "project" not in body
+    assert body["args"] == ["run", "--project", "in/shop.toml", "--suite", "core"] and body["project"] == "shop"
     assert dash.files["in/shop.toml"] == path.read_bytes() and local == []
 
 
