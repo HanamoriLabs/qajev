@@ -78,6 +78,42 @@ def test_a_smoke_run_starts_the_live_frame_writer_on_its_page_for_the_whole_craw
     assert (page["lcp"], page["cls"]) == (1234, 0.05)
 
 
+def _failed_page(tmp_path, monkeypatch, error, answer):
+    """A page whose load fails with Chrome's `error`; the server's own answer to a plain request is `answer`."""
+
+    class Failing(FakeSession):
+        def navigate(self, _url):
+            return error
+
+    monkeypatch.setattr(live, "frames", lambda *a, **k: contextlib.nullcontext())
+    opts = fake_browser(monkeypatch, tmp_path)
+    monkeypatch.setattr(session_mod, "Session", Failing)
+    asked = []
+    monkeypatch.setattr(smoke, "http_status", lambda url: asked.append(url) or (answer, url, "text/html"))
+    page = smoke.run("https://shop.example/gone", opts, max_pages=1, device="desktop", settle=0)["scenarios"][0]
+    return page, asked
+
+
+def test_a_page_chrome_could_not_load_names_the_servers_http_status(tmp_path, monkeypatch):
+    # The workload-gpu proof, 7 Nov 2026: a page that answers 404 failed with only "net::ERR_HTTP_RESPONSE_CODE_FAILURE"
+    page, asked = _failed_page(tmp_path, monkeypatch, "net::ERR_HTTP_RESPONSE_CODE_FAILURE", 404)
+    assert page["outcome"] == "fail"
+    assert page["reason"] == "page did not load: net::ERR_HTTP_RESPONSE_CODE_FAILURE (HTTP 404)"
+    assert asked == ["https://shop.example/gone"]
+
+
+def test_a_status_the_server_does_not_give_adds_no_number(tmp_path, monkeypatch):
+    page, _ = _failed_page(tmp_path, monkeypatch, "net::ERR_HTTP_RESPONSE_CODE_FAILURE", "URLError: timed out")
+    assert page["outcome"] == "fail"
+    assert page["reason"] == "page did not load: net::ERR_HTTP_RESPONSE_CODE_FAILURE"
+
+
+def test_another_load_error_asks_the_server_nothing(tmp_path, monkeypatch):
+    page, asked = _failed_page(tmp_path, monkeypatch, "net::ERR_CERT_DATE_INVALID", 200)
+    assert page["outcome"] == "fail" and page["reason"] == "page did not load: net::ERR_CERT_DATE_INVALID"
+    assert asked == []
+
+
 def test_a_smoke_run_names_its_site_without_the_urls_user_info(tmp_path, monkeypatch):
     # redteam, 13 Oct: the name was "smoke {netloc}", so "alice:s3cret@host" reached the report folder's name on the Mac
     monkeypatch.setattr(live, "frames", lambda *a, **k: contextlib.nullcontext())

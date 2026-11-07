@@ -136,6 +136,17 @@ def http_status(url, timeout=15):
     return "no answer", url, ""
 
 
+def _unreachable(url, error):
+    """verdict.unreachable, plus the server's HTTP status when Chrome names none: an error page with no body loads as
+    net::ERR_HTTP_RESPONSE_CODE_FAILURE, with no number (the workload-gpu proof, 7 Nov 2026: a 404)."""
+    outcome, reason = verdict.unreachable(url, error)
+    if error == "net::ERR_HTTP_RESPONSE_CODE_FAILURE":
+        status = http_status(url)[0]
+        if isinstance(status, int):
+            reason += f" (HTTP {status})"
+    return outcome, reason
+
+
 DOWNLOAD = re.compile(r"(/downloads?\b|\.(dmg|pkg|exe|msi|msix|zip|7z|rar|gz|tgz|bz2|xz|apk|aab|ipa|deb|rpm|"
                       r"appimage|iso|img|jar)$)", re.I)
 
@@ -337,7 +348,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
                                   checks=[{"check": "link answers with HTTP < 400", "ok": ok,
                                            "detail": None if ok else f"HTTP {status}"}])
                 elif error:
-                    outcome, reason = verdict.unreachable(url, error)
+                    outcome, reason = _unreachable(url, error)
                     result.update(outcome=outcome, reason=reason, stop="unreachable")
                 else:
                     facts = _examine(session, result, page, dev, settle=settle, host=host, opts=opts, run_dir=run_dir)
@@ -374,7 +385,7 @@ def run(start_url, opts, *, max_pages=20, device=None, devices=None, check_links
                         session.configure_ux(opts, run_dir, page)
                     error = session.navigate(first["url"])
                     if error:
-                        outcome, reason = verdict.unreachable(first["url"], error)
+                        outcome, reason = _unreachable(first["url"], error)
                         result.update(outcome=outcome, reason=reason, stop="unreachable")
                     else:
                         _examine(session, result, page, other, settle=settle, host=host, opts=opts, run_dir=run_dir)

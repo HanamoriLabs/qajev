@@ -275,7 +275,7 @@ def test_a_failed_sign_in_says_where_the_browser_was_and_what_the_page_said():
     assert signin.page_seen(page) == "/welcome: Loading your workspace…"
 
 
-def test_open_clicks_its_steps_in_order_and_finds_a_button_by_its_text(tmp_path):
+def test_open_clicks_its_steps_in_order_and_finds_a_button_by_its_text(tmp_path, monkeypatch):
     # Foley, 13 Oct: "Sign in or create account" opens a panel, and "Sign in with email" in it shows the form. The first
     # has no CSS selector of its own (class "gear" is shared), so a step can name the button's visible text.
     steps = [{"text": "Sign in or create account"}, "button.brand.plain"]
@@ -284,6 +284,8 @@ def test_open_clicks_its_steps_in_order_and_finds_a_button_by_its_text(tmp_path)
     assert signin.sign_in(page, account, timeout=5)["ok"] and page.closed == 0
     assert '"Sign in or create account"' in signin.PICK_TEXT_JS % ('"Sign in or create account"', '"open"')
     page = FormPage("http://127.0.0.1:4000/", closed=2)  # one step too few: the form never shows
+    wait = signin._wait  # each wait for the form that never shows is 10 s: 1 s proves the same
+    monkeypatch.setattr(signin, "_wait", lambda session, until, timeout: wait(session, until, min(timeout, 1)))
     with pytest.raises(signin.SignInFailed, match="no email or username field"):
         signin.sign_in(page, {**account, "login": {**account["login"], "open": steps[:1]}}, timeout=1)
 
