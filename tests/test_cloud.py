@@ -1397,6 +1397,26 @@ def test_cloud_runs_lists_queued_runs_and_says_when_it_stops_at_the_cap(dash, mo
     assert (out["runs"][0]["gate"], out["runs"][0]["started_at"], out["runs"][0]["tests"]) == ("queued", None, {})
 
 
+def test_cloud_runs_dates_a_run_that_never_started_by_when_it_was_made(dash):
+    # A run refused before a machine has no started_at. Dated by created_at, a refused run from 30 h ago ends the list,
+    # as the worker sorts it; before, it was always listed and the look paged back to the cap (redteam-1, #292 L1).
+    refused = listed(2, None, gate="stopped", tests=[], created_at=iso(30), sort_at=iso(30))
+    dash.run_list = [listed(1, 1), refused, listed(3, 31)]
+    out = cloud.list_runs(cloud.connect(), 24, now=NOW.timestamp())
+    assert [r["id"] for r in out["runs"]] == ["r_1"]
+    dash.run_list = [listed(1, None, gate="queued", tests=[], created_at=iso(0.1), sort_at=iso(0.1)), listed(2, 25)]
+    assert [r["id"] for r in cloud.list_runs(cloud.connect(), 24, now=NOW.timestamp())["runs"]] == ["r_1"]
+
+
+def test_cloud_runs_shows_a_box_jobs_counts_when_it_sends_no_test_list(dash):
+    # A box job's tests are not sent one by one: the row has tests [] and its counts (redteam-1, #292 V1).
+    job = listed(1, 1, tests=[], counts={"pass": 513, "fail": 0, "stuck": 0, "harness": 0})
+    both = listed(2, 2, tests=["pass", "fail"], counts={"pass": 1, "fail": 1, "stuck": 0, "harness": 0})
+    dash.run_list = [job, both, listed(3, 3, tests=[], counts={"pass": True, "fail": "2"})]
+    rows = cloud.list_runs(cloud.connect(), 24, now=NOW.timestamp())["runs"]
+    assert [r["tests"] for r in rows] == [{"pass": 513}, {"pass": 1, "fail": 1}, {}]
+
+
 def test_cloud_runs_says_so_when_the_dashboard_has_no_runs(dash):
     assert cloud.list_runs(cloud.connect(), 24, now=NOW.timestamp()) == {"hours": 24, "runs": [], "truncated": False}
     assert list_looks(dash) == [{"limit": ["200"]}]

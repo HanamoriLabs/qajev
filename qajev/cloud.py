@@ -948,6 +948,10 @@ def run_summary(row):
     No run name, test name, reason or file: what a run holds stays on its own page (José, 7 Nov: the hourly look reads
     counts, gates and run times only)."""
     counts = collections.Counter(str(t) for t in row.get("tests") or [])
+    stored = row.get("counts")
+    if not counts and isinstance(stored, dict):  # a box job sends its counts, not each test (redteam-1, #292 V1)
+        counts = collections.Counter({str(k): v for k, v in stored.items()
+                                      if isinstance(v, int) and not isinstance(v, bool) and v > 0})
     where = row.get("where") or {}
     return {"id": row.get("id"), "gate": row.get("gate"), "project": row.get("project"), "kind": row.get("kind"),
             "where": where.get("label"), "box": where.get("box"), "started_at": row.get("started_at"),
@@ -956,8 +960,9 @@ def run_summary(row):
 
 def list_runs(client, hours: float = 24, now: float | None = None):
     """The cloud runs that started in the last `hours` (1 to 168), newest first, as run_summary rows. A run that has
-    not started yet (queued) is listed too. Reads pages of the run list with `before` and stops at the first row older
-    than the window, or at LIST_RUNS_MAX rows (`truncated` then says so)."""
+    not started (queued, or refused before a machine) is dated by when it was made, as the worker sorts it. Reads pages
+    of the run list with `before` and stops at the first row older than the window, or at LIST_RUNS_MAX rows
+    (`truncated` then says so)."""
     if isinstance(hours, bool) or not isinstance(hours, (int, float)) or not 0 < hours <= LIST_HOURS_MAX:
         raise CloudError(f"hours must be more than 0 and at most {LIST_HOURS_MAX}", EXIT_CONFIG)
     since = (time.time() if now is None else now) - hours * 3600
@@ -967,6 +972,8 @@ def list_runs(client, hours: float = 24, now: float | None = None):
         page = client.get("/api/v1/runs?" + urllib.parse.urlencode(query)) or {}
         for row in page.get("runs") or []:
             started = _time(row.get("started_at"))
+            if started is None:  # never started: the worker sorts it by created_at (redteam-1, #292 L1)
+                started = _time(row.get("created_at"))
             if started is not None and started < since:
                 return client.redact({"hours": hours, "runs": rows, "truncated": False})
             if len(rows) == LIST_RUNS_MAX:
