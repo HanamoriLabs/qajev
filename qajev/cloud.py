@@ -39,7 +39,8 @@ DASHBOARD_TTL_S = 60  # one look at the dashboard serves a minute of runs
 _dashboard_cache: dict = {}
 DEFAULT_URL = "https://cloud.qajev.com"
 KEYCHAIN_SERVICE = "qajev-cloud-agent"
-# The project names the dashboard takes on a run (worker/src/validate.ts NAME, at most 200 characters)
+# The project names the dashboard takes on a run (worker/src/validate.ts NAME, at most 200 characters).
+# fullmatch: re.match with $ also takes a name that ends in a newline, which the worker refuses (redteam-1 L1, #299)
 PROJECT_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 '._:@+\-/~]*$")
 KINDS = ("check", "run", "smoke")  # websites; play (games, native and mobile apps) stays on this Mac for now
 EXIT_CONFIG, EXIT_TROUBLE = 3, 4  # as cli.py: a setting to fix; the dashboard could not take or finish the run
@@ -805,7 +806,7 @@ def submit(client, plan, ended=None):
         body = {"kind": plan.kind, "args": plan.args, "runner": "cloud", "surface": "web", "files": declared,
                 "name": plan.name}
         project = json.loads(_public_upload(json.dumps(plan.project).encode())) if plan.project else None
-        if not (isinstance(project, str) and len(project) <= 200 and PROJECT_LABEL.match(project)):
+        if not (isinstance(project, str) and len(project) <= 200 and PROJECT_LABEL.fullmatch(project)):
             project = None  # none, a name the privacy filter changed, or one the dashboard refuses: unfiled
         # The label goes even when the dashboard has no such project yet: a check, run or smoke may name its project
         # before that project is synced, and our boxes take a run only by its label (José, 7 Nov 2026: a partner's
