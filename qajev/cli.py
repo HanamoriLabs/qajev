@@ -428,6 +428,12 @@ def build_parser():
     jobs.add_argument("--limit", type=int, default=20)
     jobs.add_argument("--json", action="store_true")
 
+    cloud_runs = sub.add_parser("cloud-runs", help="QAJev Cloud runs of the last hours, newest first: id, gate, "
+                                                   "project, kind, where, start time, minutes and test counts")
+    cloud_runs.add_argument("--hours", type=float, default=24, help="how far back to look (more than 0, at most 168; "
+                                                                    "default 24)")
+    cloud_runs.add_argument("--json", action="store_true", help="print {hours, runs, truncated} as JSON")
+
     stop = sub.add_parser("stop", help="stop a job (it closes its browser and keeps the scenarios that finished)")
     stop.add_argument("job", help="a job id, or a cloud run's id (r_...)")
     stop.add_argument("--json", action="store_true")
@@ -2215,6 +2221,28 @@ def _cloud_job(args, stopping=False):
     return 0
 
 
+def cmd_cloud_runs(args):
+    """`qajev cloud-runs`: the QAJev Cloud runs of the last --hours, summary fields only (cloud.run_summary)."""
+    from . import cloud
+
+    try:
+        out = cloud.list_runs(cloud.connect(), args.hours)
+    except cloud.CloudError as e:
+        return _failure(args, str(e), e.code, report=False)
+    if args.json:
+        print(json.dumps(out, indent=2))
+        return 0
+    runs = out["runs"]
+    more = f" (the first {len(runs)}; there are more)" if out["truncated"] else ""
+    print(f"{len(runs)} QAJev Cloud run{'' if len(runs) == 1 else 's'} in the last {args.hours:g} h{more}")
+    for r in runs:
+        tests = ", ".join(f"{n} {k}" for k, n in sorted(r["tests"].items())) or "no tests"
+        minutes = "" if r["minutes"] is None else f"{r['minutes']} min"
+        print(f"  {r['id']}  {str(r['gate']):<10} {str(r['started_at'] or 'not started'):<20} {minutes:>7}  "
+              f"{r['kind'] or ''}  {r['where'] or ''}  {r['project'] or 'no project'}  {tests}"[:200])
+    return 0
+
+
 def main(argv=None):
     global _job_dir
     _job_dir = None
@@ -2243,7 +2271,7 @@ def main(argv=None):
                 "browser": cmd_browser, "doctor": cmd_doctor,
                 "secret": cmd_secret, "account": cmd_account,
                 "report": cmd_report, "init": cmd_init, "mcp": cmd_mcp, "projects": cmd_projects,
-                "reports": cmd_reports, "jobs": cmd_jobs, "stop": cmd_stop,
+                "reports": cmd_reports, "jobs": cmd_jobs, "cloud-runs": cmd_cloud_runs, "stop": cmd_stop,
                 "top": cmd_top, "nightly": cmd_nightly, "rerun": cmd_rerun, "dashboard": cmd_dashboard,
                 "play": cmd_play, "plan": cmd_plan, "plan-hash": cmd_plan_hash, "tunnel": cmd_tunnel,
                 "mode": cmd_runner, "runner": cmd_runner}
