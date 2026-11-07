@@ -1057,6 +1057,20 @@ async def qa_screenshot(run_dir: str, scenario: str | None = None, limit: int = 
 
 
 @server.tool()
+async def qa_cloud_runs(hours: float = 24) -> dict:
+    """QAJev Cloud runs of the last `hours` (more than 0, at most 168), newest first: id, gate, project, kind,
+    where (and box), started_at, minutes and test counts. Summary fields only: no run or test names, reasons or
+    files. `truncated` is true when there were more than 1000. qa_job(id) gives one run in detail."""
+    from . import cloud
+
+    try:
+        client = await asyncio.to_thread(cloud.connect)
+        return await asyncio.to_thread(cloud.list_runs, client, hours)
+    except cloud.CloudError as e:
+        raise ToolError(str(e)) from None
+
+
+@server.tool()
 async def qa_jobs(limit: int = 20) -> dict:
     """Every QAJev run on this machine, newest first (any agent's or terminal's): state (queued, running, done,
     stopped, failed, lost), progress, gate, run folder. `holder` is the run using the browser right now."""

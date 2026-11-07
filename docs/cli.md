@@ -398,6 +398,11 @@ QAJEV_RUNNER=auto qajev smoke https://shop.example/
   top-up on the Credits page starts it, and QAJev Cloud ends it after 2 hours without one, with no charge.
 - **`--background`** returns the cloud run's id (`r_...`) and address at once. `qajev jobs r_...` shows its state;
   `qajev stop r_...` stops it.
+- **`qajev cloud-runs [--hours N] [--json]`** lists the cloud runs of the last N hours (default 24, at most 168),
+  newest first, queued runs too. Each row has the id, gate, project, kind, where (and `box` when one of our boxes ran
+  it), start time, minutes and test counts. It shows no run name, test name, reason or file. `--json` prints
+  `{"hours", "runs": [{"id", "gate", "project", "kind", "where", "box", "started_at", "minutes", "tests"}],
+  "truncated"}`. `truncated` is true when there were more than 1000 runs. MCP: `qa_cloud_runs`.
 - **Ctrl-C** while QAJev follows a cloud run stops that run, says `stopped cloud run r_...`, and exits `130`. When the
   stop fails, it says `could not stop cloud run r_..., so it may still run`, with the error, the address and
   `qajev stop r_...`.

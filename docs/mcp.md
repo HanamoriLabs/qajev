@@ -58,6 +58,7 @@ Then give your agent the [agent prompt](../AGENT_PROMPT.md), so it knows when an
 | `qa_report` | read a run's report (JSON or Markdown); a cloud run's id fetches its report and screenshots | free |
 | `qa_screenshot` | see a run's screenshots as images (default: the first scenario that did not pass) | free |
 | `qa_jobs` | every run on the machine: queued, running, recent (anyone's) | free |
+| `qa_cloud_runs` | the QAJev Cloud runs of the last `hours` (default 24, at most 168): id, gate, project, kind, where, start time, minutes and test counts; no run or test names | free |
 | `qa_job` | one run: progress, what Jev is doing now, scenarios finished so far, the report once done (a cloud run's `r_...` id: its state from QAJev Cloud) | free |
 | `qa_stop` | stop a run (it cleans up and keeps what finished; a cloud run's `r_...` id: QAJev Cloud stops it) | free |
 | `qa_rerun` | run a finished job again: by default only its failed, stuck and harness tests | as the run |

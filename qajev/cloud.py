@@ -13,7 +13,9 @@ The rules (José, 11 Oct):
 """
 
 import argparse
+import collections
 import contextlib
+import datetime
 import hashlib
 import json
 import os
@@ -927,6 +929,53 @@ def status(client, run_id):
 
 def stop(client, run_id):
     return client.post(f"/api/v1/runs/{urllib.parse.quote(run_id)}/stop") or {}
+
+
+LIST_HOURS_MAX = 168  # a week: the run list is a look at recent work, not an export
+LIST_RUNS_MAX = 1000  # at most this many rows, so one look reads a few pages, never the whole history
+LIST_PAGE = 200  # the dashboard's largest page
+
+
+def _time(text):
+    """An ISO 8601 time from the dashboard as seconds since the epoch, or None."""
+    try:
+        return datetime.datetime.fromisoformat(str(text).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def run_summary(row):
+    """One row of the dashboard's run list, summary fields only: id, project, kind, where, gate, times and test counts.
+    No run name, test name, reason or file: what a run holds stays on its own page (José, 7 Nov: the hourly look reads
+    counts, gates and run times only)."""
+    counts = collections.Counter(str(t) for t in row.get("tests") or [])
+    where = row.get("where") or {}
+    return {"id": row.get("id"), "gate": row.get("gate"), "project": row.get("project"), "kind": row.get("kind"),
+            "where": where.get("label"), "box": where.get("box"), "started_at": row.get("started_at"),
+            "minutes": row.get("minutes"), "tests": dict(counts)}
+
+
+def list_runs(client, hours: float = 24, now: float | None = None):
+    """The cloud runs that started in the last `hours` (1 to 168), newest first, as run_summary rows. A run that has
+    not started yet (queued) is listed too. Reads pages of the run list with `before` and stops at the first row older
+    than the window, or at LIST_RUNS_MAX rows (`truncated` then says so)."""
+    if isinstance(hours, bool) or not isinstance(hours, (int, float)) or not 0 < hours <= LIST_HOURS_MAX:
+        raise CloudError(f"hours must be more than 0 and at most {LIST_HOURS_MAX}", EXIT_CONFIG)
+    since = (time.time() if now is None else now) - hours * 3600
+    rows, before = [], None
+    while True:
+        query = {"limit": str(LIST_PAGE), **({"before": before} if before else {})}
+        page = client.get("/api/v1/runs?" + urllib.parse.urlencode(query)) or {}
+        for row in page.get("runs") or []:
+            started = _time(row.get("started_at"))
+            if started is not None and started < since:
+                return client.redact({"hours": hours, "runs": rows, "truncated": False})
+            if len(rows) == LIST_RUNS_MAX:
+                return client.redact({"hours": hours, "runs": rows, "truncated": True})
+            rows.append(run_summary(row))
+        before = page.get("next_before")
+        if not before or not page.get("runs"):
+            return client.redact({"hours": hours, "runs": rows, "truncated": False})
 
 
 def done(run):
