@@ -55,6 +55,8 @@ With MCP, call the `qa_*` tools. Without MCP, run the `qajev` command with `--js
    (`tools/qa/plans/<date>-<name>.md`) whose last line is "Approved by the Orchestrator <date> <time>
    sha256:<qajev plan-hash FILE>". Give it as `plan:` in a suite or `plan` on any run tool (`--plan FILE`). A plan
    edited after its approval is not approved. Without one the run warns; with `QAJEV_REQUIRE_PLAN=1` it is refused.
+   Write the plan before the run, from the template, and send its path to the approver. Never write the approval
+   line yourself. How to write one, what goes in it and full examples: https://raw.githubusercontent.com/hanamorilabs/qajev/HEAD/docs/test-plans.md
 
 Every website test also runs in a phone view by default: a scenario's phone copy is named `... (phone)`. A
 failure that only shows on the phone is a real mobile bug; report it as such. To also test in a phone's real

@@ -105,7 +105,7 @@ run your project's objectives, read reports and screenshots, and follow or stop 
 
 ## Documentation
 
-[Getting started](docs/getting-started.md) · [Writing tests](docs/writing-tests.md) ·
+[Getting started](docs/getting-started.md) · [Writing tests](docs/writing-tests.md) · [Test plans](docs/test-plans.md) ·
 [Reading a report](docs/reports.md) · [Projects](docs/projects.md) · [Jobs and top](docs/jobs-and-top.md) ·
 [CLI reference](docs/cli.md) · [MCP](docs/mcp.md) · [Agents](docs/agents.md) · [QAJev Cloud](docs/cloud.md) · [Games](docs/games.md) ·
 [Mobile](docs/mobile.md) · [Safety](docs/safety.md) · [Configuration](docs/configuration.md) · [How it works](docs/how-it-works.md) ·

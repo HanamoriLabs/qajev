@@ -343,7 +343,8 @@ prints the sha256 of the whole file, for a new approval line at its end.
 
 ## The approved test plan on a run
 
-`qajev run`, `check`, `smoke` and `play` take `--plan FILE`: the approved test plan this run follows. It overrides a
+`qajev run`, `check`, `smoke` and `play` take `--plan FILE`: the approved test plan this run follows
+([how to write one](test-plans.md)). It overrides a
 suite's `plan:`. A run without an approved plan prints `qajev: warning: no approved test plan: ...` and runs; with
 `QAJEV_REQUIRE_PLAN=1` it is refused before the queue and before Chrome (exit `3`, "needs an approved test plan"). The
 report shows the plan's path and its approval line, or a banner "No approved test plan". `qajev doctor` says which

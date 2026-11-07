@@ -503,7 +503,8 @@ check, or more than one, is refused before the run (exit 3), and `qajev plan` re
 
 Before a run, write down what it will prove and have it approved. The plan is a Markdown file in the project, for
 example `tools/qa/plans/2026-10-08-checkout.md`: why the run exists, each test and what a pass means, the fault each
-test catches, and what you expect. The approver adds one line at the end:
+test catches, and what you expect. [Test plans](test-plans.md) says how to write one, with a template and full
+examples. The approver adds one line at the end:
 
 ```text
 Approved by the Orchestrator 8 Oct 2026 10:34 sha256:<qajev plan-hash FILE>
