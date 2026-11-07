@@ -818,7 +818,8 @@ def cmd_plan_hash(args):
         return 0
     if status["problem"] == planfile.TEXT_AFTER:  # added after the approval: a new line at the end covers it all
         print(f"sha256:{planfile.digest(text)}")
-        print(f"{args.file}: {planfile.words(status)}; this sha256 is for a new approval line at its end", file=sys.stderr)
+        print(f"{args.file}: {planfile.words(status)}; this sha256 is for a new approval line at its end",
+              file=sys.stderr)
         return 0
     print(f"sha256:{status['sha256']}")
     print(f"{args.file}: {planfile.words(status)}", file=sys.stderr)
