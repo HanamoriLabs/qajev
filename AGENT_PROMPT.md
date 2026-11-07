@@ -28,6 +28,7 @@ Use it to check that a change actually works for a user, before you say it does.
 | Run again only what did not pass | `qa_rerun` / `qajev rerun JOB --failed` | a few cents |
 | What did a run find? | `qa_report`, `qa_screenshot` / `qajev report RUN_DIR` | free |
 | What is running right now, and can I stop it? | `qa_jobs`, `qa_job`, `qa_stop` / `qajev jobs`, `qajev stop ID` | free |
+| Which QAJev Cloud runs ran lately, and how did they end? | `qa_cloud_runs` / `qajev cloud-runs --hours 24` | free |
 | Is QAJev set up correctly? | `qa_doctor` / `qajev doctor` | free |
 | Where do runs go (this machine or the cloud)? | `qa_mode` / `qajev mode` | free |
 

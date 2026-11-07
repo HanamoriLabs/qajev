@@ -9,6 +9,8 @@ import signal
 import subprocess
 import threading
 import time
+import urllib.parse
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 
@@ -101,6 +103,7 @@ class FakeDashboard:
         self.refuse_put = False
         self.default_runner = "cloud"  # the Settings page's "Where runs go by default"
         self.projects = set()  # the projects the dashboard knows (synced from project.toml)
+        self.run_list = []  # GET /api/v1/runs: rows newest first, each with the worker's sort time in "sort_at"
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -138,6 +141,12 @@ class FakeDashboard:
                     return self._reply(200, me)
                 if self.path.startswith("/api/v1/projects/") and self.path.rsplit("/", 1)[1] in outer.projects:
                     return self._reply(200, {"name": self.path.rsplit("/", 1)[1]})
+                if self.path.startswith("/api/v1/runs?"):  # the list: `limit`, then `before` from next_before
+                    q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                    limit, before = int(q["limit"][0]), q.get("before", [None])[0]
+                    rows = [r for r in outer.run_list if before is None or r["sort_at"] < before][:limit]
+                    return self._reply(200, {"runs": rows, "total": len(outer.run_list),
+                                             "next_before": rows[-1]["sort_at"] if len(rows) == limit else None})
                 if self.path == f"/api/v1/runs/{RUN}":
                     run = outer.runs.pop(0) if len(outer.runs) > 1 else outer.runs[0]
                     return self._reply(200, {"id": RUN, **run})
@@ -1327,3 +1336,97 @@ def test_mcp_qa_report_reads_a_cloud_run_too(dash):
     assert out["scenarios"][0]["name"] == "a" and out["screenshots"] == 1
     assert out["kept_in"].endswith(f"cloud-reports/{RUN}")
     assert asyncio.run(mcp_server.qa_report(RUN, markdown=True))["markdown"] == "# Run a\n"
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The cloud run list (José, 7 Nov 2026: an hourly look reads counts, gates and run times only, never a run's content)
+
+NOW = datetime(2026, 11, 7, 8, 0, tzinfo=timezone.utc)
+
+
+def iso(hours_ago, now=NOW):
+    return (now - timedelta(hours=hours_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def listed(i, hours_ago, now=NOW, **extra):
+    """A row as the worker's GET /api/v1/runs gives it (docs/api-shapes.md), with the sort time it pages by."""
+    at = None if hours_ago is None else iso(hours_ago, now)
+    return {"id": f"r_{i}", "gate": "pass", "name": f"Secret plan name {i}", "project": "shop", "kind": "smoke",
+            "where": {"kind": "cloud", "label": "cloud · linux"}, "tests": ["pass"], "minutes": 3,
+            "started_at": at, "sort_at": at or iso(0, now), **extra}
+
+
+def list_looks(dash):
+    return [urllib.parse.parse_qs(urllib.parse.urlsplit(p).query) for m, p, _ in dash.sent("GET")
+            if p.startswith("/api/v1/runs?")]
+
+
+def test_cloud_runs_pages_back_and_stops_at_the_first_run_older_than_the_window(dash, monkeypatch):
+    monkeypatch.setattr(cloud, "LIST_PAGE", 2)
+    dash.run_list = [listed(1, 1), listed(2, 2), listed(3, 5), listed(4, 23), listed(5, 25), listed(6, 30)]
+    out = cloud.list_runs(cloud.connect(), 24, now=NOW.timestamp())
+    assert [r["id"] for r in out["runs"]] == ["r_1", "r_2", "r_3", "r_4"]
+    assert out["truncated"] is False and out["hours"] == 24
+    # Page 1 has no `before`; each later page starts after the last row of the one before. Page 3 holds r_5 (25 h ago),
+    # so the list stops there and never asks for page 4.
+    assert list_looks(dash) == [{"limit": ["2"]}, {"limit": ["2"], "before": [iso(2)]},
+                                {"limit": ["2"], "before": [iso(23)]}]
+
+
+def test_cloud_runs_rows_carry_summary_fields_only(dash):
+    dash.run_list = [listed(1, 1, gate="fail", tests=["pass", "pass", "fail", "stuck"],
+                            where={"kind": "cloud", "label": "box-a", "box": "box-a"})]
+    out = cloud.list_runs(cloud.connect(), 24, now=NOW.timestamp())
+    assert out["runs"] == [{"id": "r_1", "gate": "fail", "project": "shop", "kind": "smoke", "where": "box-a",
+                            "box": "box-a", "started_at": iso(1), "minutes": 3,
+                            "tests": {"pass": 2, "fail": 1, "stuck": 1}}]
+    assert "Secret plan name" not in json.dumps(out)  # the run's name is its content: it stays on the run page
+
+
+def test_cloud_runs_lists_queued_runs_and_says_when_it_stops_at_the_cap(dash, monkeypatch):
+    monkeypatch.setattr(cloud, "LIST_RUNS_MAX", 3)
+    dash.run_list = [listed(1, None, gate="queued", tests=[], minutes=None), listed(2, 1), listed(3, 2), listed(4, 3)]
+    out = cloud.list_runs(cloud.connect(), 24, now=NOW.timestamp())
+    assert [r["id"] for r in out["runs"]] == ["r_1", "r_2", "r_3"] and out["truncated"] is True
+    assert (out["runs"][0]["gate"], out["runs"][0]["started_at"], out["runs"][0]["tests"]) == ("queued", None, {})
+
+
+def test_cloud_runs_says_so_when_the_dashboard_has_no_runs(dash):
+    assert cloud.list_runs(cloud.connect(), 24, now=NOW.timestamp()) == {"hours": 24, "runs": [], "truncated": False}
+    assert list_looks(dash) == [{"limit": ["200"]}]
+
+
+@pytest.mark.parametrize("hours", [0, -1, 168.5, True, "24"])
+def test_cloud_runs_refuses_a_window_outside_one_week(dash, hours):
+    with pytest.raises(cloud.CloudError, match="at most 168") as e:
+        cloud.list_runs(cloud.connect(), hours)
+    assert e.value.code == 3
+    assert list_looks(dash) == []
+
+
+def test_cli_cloud_runs_prints_json_and_text_and_never_the_key(dash, capsys):
+    now = datetime.now(timezone.utc)
+    dash.run_list = [listed(1, 1, now=now, project=f"shop {KEY}"), listed(2, 30, now=now)]
+    assert cli.main(["cloud-runs", "--hours", "2", "--json"]) == 0
+    o, e = capsys.readouterr()
+    data = json.loads(o)
+    assert data["hours"] == 2 and [r["id"] for r in data["runs"]] == ["r_1"] and e == ""
+    assert data["runs"][0]["project"] == "shop [redacted]"
+    assert cli.main(["cloud-runs"]) == 0
+    o, e = capsys.readouterr()
+    assert o.startswith("1 QAJev Cloud run in the last 24 h\n") and "r_1" in o and "1 pass" in o and e == ""
+    assert KEY not in o
+
+
+def test_cli_cloud_runs_without_a_key_says_how_to_add_one(monkeypatch, capsys):
+    assert cli.main(["cloud-runs", "--json"]) == 3
+    o, e = capsys.readouterr()
+    assert json.loads(o)["exit_code"] == 3 and "no QAJev Cloud agent key" in e
+
+
+def test_mcp_qa_cloud_runs_gives_the_same_list(dash):
+    dash.run_list = [listed(1, 1, now=datetime.now(timezone.utc))]
+    out = asyncio.run(mcp_server.qa_cloud_runs(hours=24))
+    assert [r["id"] for r in out["runs"]] == ["r_1"] and "name" not in out["runs"][0]
+    with pytest.raises(ToolError, match="at most 168"):
+        asyncio.run(mcp_server.qa_cloud_runs(hours=200))

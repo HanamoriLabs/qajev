@@ -4,6 +4,12 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- `qajev cloud-runs --hours 24 --json` and the MCP tool `qa_cloud_runs` list the QAJev Cloud runs of the last hours:
+  id, gate, project, kind, where, start time, minutes and test counts. They show no run or test names, reasons or
+  files. Before, QAJev could look at one cloud run only (`qajev jobs r_...`).
+
 ## 0.4.49: 4 Nov 2026
 
 ### Fixed
