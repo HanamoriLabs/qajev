@@ -93,7 +93,8 @@ def spliced_base64():
     base64.b64encode(JPEG).decode()[:20] + f"/Users/{PERSON}/x" + base64.b64encode(JPEG).decode()[20:],  # not base64
     spliced_base64(),  # not strict base64, though a loose decode reads it as a clean JPEG
     # an image whose bytes read as text, where the text cleaner keeps the web URL: only the binary check sees the path
-    base64.b64encode(b"RIFF\x24\x00\x00\x00WEBPVP8 " + f" see https://example.test/Users/{PERSON}/a.png ".encode()).decode(),
+    base64.b64encode(b"RIFF\x24\x00\x00\x00WEBPVP8 "
+                     + f" see https://example.test/Users/{PERSON}/a.png ".encode()).decode(),
 ))
 def test_a_frame_that_is_not_a_clean_image_is_left_out_and_the_rest_goes(data):
     sent = sanitize_request("POST", EVENTS, [{"kind": "frame", "data": data}, {"kind": "step", "text": "ok"}])

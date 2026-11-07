@@ -166,7 +166,8 @@ def test_every_test_on_a_software_chrome_that_asks_for_the_gpu_stops_before_it_s
     for name in stopped:
         assert got[name]["outcome"] == "harness" and got[name]["stop"] == "software_gpu", got[name]
         assert got[name]["reason"] == runner.software_gpu(scenarios[1], drew, adapter), got[name]
-        assert got[name]["reason"].startswith("canvas_capture asks for a hardware GPU, but ") and not got[name]["checks"]
+        assert got[name]["reason"].startswith("canvas_capture asks for a hardware GPU, but ")
+        assert not got[name]["checks"]
         assert got[name]["cost_usd"] == 0.0
     assert got["plain"]["browser_gpu"] == drew and all("browser_gpu" not in got[n] for n in stopped)
 

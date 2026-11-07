@@ -226,9 +226,10 @@ def answer_dialog(raw_cdp, pending, session_id, transport):
 def take_answered_dialogs():
     """The page dialogs answered since the last call, for the next probe's `dialogs`."""
     transport = getattr(_jev, "transport", None)
-    taken = list(getattr(transport, "dialogs", None) or [])
-    if taken:
-        transport.dialogs.clear()
+    dialogs = getattr(transport, "dialogs", None)
+    taken = list(dialogs or [])
+    if taken and dialogs is not None:
+        dialogs.clear()
     return taken
 
 
@@ -1225,7 +1226,7 @@ class Session:
         try:
             yield
         finally:
-            if entered:
+            if entered and observer:
                 observer.safe(observer.after)
 
     def call(self, method, **params):
@@ -1465,9 +1466,9 @@ class Session:
         return data["data"], evidence
 
     def _settle_geometry(self):
-        """Wait until the page holds still (viewport.STABLE). None when the wait itself could not run. It runs in QAJev's
-        own JS world: the DOM is the page's, the timers are QAJev's, so a page that replaces setInterval cannot stall it
-        (redteam L1, #255)."""
+        """Wait until the page holds still (viewport.STABLE). None when the wait itself could not run. It runs in
+        QAJev's own JS world: the DOM is the page's, the timers are QAJev's, so a page that replaces setInterval cannot
+        stall it (redteam L1, #255)."""
         try:
             result = self.isolated_evaluate(viewport.STABLE, timeout_ms=viewport.STABLE_MAX_MS + 2000)
         except TransportLost:
@@ -2082,8 +2083,9 @@ class Session:
         state = None
 
         def since(t):  # ms from the navigation to the time t of the current document
-            return max(0, round(state["origin"] + t - started)) if started is not None and state.get("origin") \
-                else round(t)
+            if started is not None and state and state.get("origin"):
+                return max(0, round(state["origin"] + t - started))
+            return round(t)
 
         while time.monotonic() < deadline and self.page_crash() is None:
             with contextlib.suppress(RuntimeError, TimeoutError):

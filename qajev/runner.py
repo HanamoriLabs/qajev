@@ -574,7 +574,9 @@ def _load_check(session, scenario, opts, run_dir, started):
     return {**check, "ok": False, "detail": detail + clock}, evidence
 
 
-def run_scenario(session, scenario, *, opts, hosts, run_dir):
+def run_scenario(session, scenario, *, opts, hosts, run_dir):  # pyright: ignore[reportGeneralTypeIssues]
+    # SHORTCUT: basedpyright stops at this function's size ("too complex to analyze"). Its parts move into helpers
+    # when it next changes for a feature; until then this line keeps the type check meaningful for the rest.
     from .session import GuardMissing, HookFailed, HookThrew, LeftSite, require_transport, transport_error
     from .viewport import ViewportMismatch
 
@@ -1634,8 +1636,9 @@ def _fresh_chain(payload, messages):
         handed = True
         out = run_group(chain, opts=opts, cdp_url=owned["cdp_url"], suite_meta=suite_meta, run_dir=run_dir,
                         ledger=ledger)
-        if getattr(opts, "signed_here", None):
-            say("signin", opts.signed_here)
+        signed_here = getattr(opts, "signed_here", None)
+        if signed_here:
+            say("signin", signed_here)
         say("done", {"results": out["results"], "ledger": out["ledger"], "load_waited": opts.load_waited})
     finally:
         if not handed:  # its sign-in's daemon (a failed sign-in, say): as try_sign_in does

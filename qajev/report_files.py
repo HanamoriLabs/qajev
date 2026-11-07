@@ -42,7 +42,7 @@ def ux_details(scenario: dict) -> dict | None:
 def ux_crop(finding: dict) -> str | None:
     """UX crops belong to the run's UX folder, never an absolute path or an external URL."""
     path = finding.get("screenshot")
-    return path if relative(path) and path.startswith("ux/") else None
+    return path if isinstance(path, str) and relative(path) and path.startswith("ux/") else None
 
 
 # expect.input's frames in report.json's `input` (runner._input_check): six, and three more when a slow input got a
