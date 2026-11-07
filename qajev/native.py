@@ -102,6 +102,27 @@ def free_port():
     raise NativeError(f"no free port in {PORTS.start}-{PORTS.stop - 1}")
 
 
+GODOT_BRIDGE_PORT = "QAJEV_GODOT_BRIDGE_PORT"
+
+
+def godot_bridge_port(env=None):
+    """The port a Godot game's bridge listens on: QAJEV_GODOT_BRIDGE_PORT when it is set (a machine whose firewall
+    opens only that one loopback port), else the first free port in PORTS. A fixed port that is in use is an error,
+    never a quiet move to another port: the firewall would block that one."""
+    env = os.environ if env is None else env
+    raw = (env.get(GODOT_BRIDGE_PORT) or "").strip()
+    if not raw:
+        return free_port()
+    if not re.fullmatch(r"[0-9]{1,5}", raw) or not 1024 <= int(raw) <= 65535:
+        raise NativeError(f"{GODOT_BRIDGE_PORT} must be a port number from 1024 to 65535, not {raw[:20]!r}")
+    port = int(raw)
+    with socket.socket() as s:
+        if s.connect_ex(("127.0.0.1", port)) == 0:
+            raise NativeError(f"{GODOT_BRIDGE_PORT}={port}: another program listens on that port. "
+                              f"Stop it, or unset {GODOT_BRIDGE_PORT} to use a free port")
+    return port
+
+
 def adapter_path(adapter):
     """A bundled adapter by name (suho) or a path to one."""
     if not adapter:
@@ -170,7 +191,7 @@ class GodotGame:
         self.close()
 
     def start(self):
-        self.port = free_port()
+        self.port = godot_bridge_port()
         # A throwaway save folder: a test never touches the player's real save. The owner pid is in its name,
         # so the reaper can find what a dead run left behind. A relaunch keeps it: the saves of the first launch
         # are what the next one continues from; the seed goes in only once, on the first launch.

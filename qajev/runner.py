@@ -1921,7 +1921,7 @@ def run(suite, opts):
     try:
         models = providers.describe(providers.resolve())
         if any(s.goal for s in scenarios) and models["jev"] == "none":
-            raise ConfigError("goals need TYPESAFE_API_KEY or an OpenRouter key (OPENROUTER_API_KEY) for Jev, or "
+            raise ConfigError("goals need an OpenRouter key (OPENROUTER_API_KEY) or TYPESAFE_API_KEY for Jev, or "
                               "QAJEV_JEV_PROVIDER=cloudflare with CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN for "
                               "Clef; see `qajev doctor`")
     except providers.ProviderError as e:

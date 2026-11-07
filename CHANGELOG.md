@@ -4,6 +4,18 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Changed
+
+- With both keys set, Jev's decisions now go through OpenRouter, not TypeSafe. `auto` picks OpenRouter first, and
+  TypeSafe when it holds the only key. `QAJEV_JEV_PROVIDER=typesafe` still picks TypeSafe. The report's route line
+  says which one a run used.
+
+### Added
+
+- `QAJEV_GODOT_BRIDGE_PORT` gives a Godot game's bridge one fixed loopback port, for a machine whose firewall opens
+  only that port. A port that another program holds stops the run before the game starts. It never moves to another
+  port, which the firewall would block. Without the variable, QAJev takes the first free port, as before.
+
 ### Fixed
 
 - A smoke page that Chrome could not load because the server answered an error now names that answer: "page did not
