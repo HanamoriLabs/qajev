@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from qajev import cli, native
+from qajev import cli
 from qajev.app import AppProcess, app_spec
 from qajev.cli import main
 from qajev.config import HOME

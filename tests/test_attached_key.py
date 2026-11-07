@@ -1,5 +1,5 @@
-"""An attached Chrome's address (`--cdp-url .../devtools/browser/<id>`) holds that browser's key: a run keeps the key out
-of everything it records or prints (redteam-1's L1 and L2 on #295, 7 Nov 2026). No browser starts here."""
+"""An attached Chrome's address (`--cdp-url .../devtools/browser/<id>`) holds that browser's key: a run keeps the
+key out of everything it records or prints (redteam-1's L1 and L2 on #295, 7 Nov 2026). No browser starts here."""
 
 import json
 from types import SimpleNamespace
