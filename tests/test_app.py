@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from qajev import cli, native
+from qajev import cli
 from qajev.app import AppProcess, app_spec
 from qajev.cli import main
 from qajev.config import HOME
@@ -458,8 +458,6 @@ def test_play_refuses_a_fixture_outside_the_test_domains_at_load(tmp_path, monke
 
 def test_a_token_the_app_leaks_into_its_log_is_redacted_from_the_report(tmp_path, monkeypatch, project, capsys):
     leaked = "tb_test_token_only_this_test_d41c"  # remembered by no other test, so only app.files can redact it
-    # The app's error line fails the step's no-errors check: judge it once, with no 10 s wait for it to clear
-    monkeypatch.setitem(native.play.__kwdefaults__, "wait", 0.0)
     seed = fixture(tmp_path, token=leaked)
     _approved(tmp_path, PLAN)
     suite = _files_suite(tmp_path, seed).replace('TWINBOX_API: "http://127.0.0.1:8790"}',
