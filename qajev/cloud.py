@@ -39,6 +39,8 @@ DASHBOARD_TTL_S = 60  # one look at the dashboard serves a minute of runs
 _dashboard_cache: dict = {}
 DEFAULT_URL = "https://cloud.qajev.com"
 KEYCHAIN_SERVICE = "qajev-cloud-agent"
+# The project names the dashboard takes on a run (worker/src/validate.ts NAME, at most 200 characters)
+PROJECT_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 '._:@+\-/~]*$")
 KINDS = ("check", "run", "smoke")  # websites; play (games, native and mobile apps) stays on this Mac for now
 EXIT_CONFIG, EXIT_TROUBLE = 3, 4  # as cli.py: a setting to fix; the dashboard could not take or finish the run
 POLL_S = 10  # seconds between two looks at a cloud run
@@ -771,14 +773,6 @@ def _sha256(path):
     return h.hexdigest()
 
 
-def _known_project(client, name):
-    """The project's name when the dashboard has it (synced from project.toml), so the run is filed with it."""
-    try:
-        return name if client.get(f"/api/v1/projects/{urllib.parse.quote(name)}") else None
-    except CloudError:
-        return None
-
-
 def submit(client, plan, ended=None):
     """Queue the run and upload its files. -> the run id. An upload that fails stops the run (it would sit queued for
     ever) and raises CloudError with the run's id and address. ended: a callable that says the caller gave up (a
@@ -811,7 +805,11 @@ def submit(client, plan, ended=None):
         body = {"kind": plan.kind, "args": plan.args, "runner": "cloud", "surface": "web", "files": declared,
                 "name": plan.name}
         project = json.loads(_public_upload(json.dumps(plan.project).encode())) if plan.project else None
-        project = _known_project(client, project) if project else None
+        if not (isinstance(project, str) and len(project) <= 200 and PROJECT_LABEL.match(project)):
+            project = None  # none, a name the privacy filter changed, or one the dashboard refuses: unfiled
+        # The label goes even when the dashboard has no such project yet: a check, run or smoke may name its project
+        # before that project is synced, and our boxes take a run only by its label (José, 7 Nov 2026: a partner's
+        # projects live only on his machine, and his runs reached the boxes with no project).
         for key, value in (("model", plan.model), ("sees_screen", plan.sees_screen), ("project", project),
                            ("serve", {"path": "site", "port": plan.port} if plan.serve_root else None),
                            ("tunnel", plan.tunnel or ({"port": plan.tunnel_port} if plan.tunnel_port else None))):

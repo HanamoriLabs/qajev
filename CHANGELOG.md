@@ -6,6 +6,9 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ### Changed
 
+- A cloud run (`--runner cloud`) now always carries its project's name, also before the project is synced to the
+  dashboard. Before, a run of a project that only your machine knew reached QAJev Cloud with no project, so a cloud
+  that takes approved projects only refused it.
 - With both keys set, Jev's decisions now go through OpenRouter, not TypeSafe. `auto` picks OpenRouter first, and
   TypeSafe when it holds the only key. `QAJEV_JEV_PROVIDER=typesafe` still picks TypeSafe. The report's route line
   says which one a run used.
