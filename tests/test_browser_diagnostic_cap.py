@@ -23,7 +23,8 @@ def test_page_diagnostic_source_boundary(page, site, length, kind):
     events = {
         "console": "console.error(text)",
         "exception": "dispatchEvent(new ErrorEvent('error', {message:text}))",
-        "rejection": "dispatchEvent(new PromiseRejectionEvent('unhandledrejection', {promise:Promise.resolve(),reason:text}))",
+        "rejection": "dispatchEvent(new PromiseRejectionEvent('unhandledrejection', "
+                     "{promise:Promise.resolve(),reason:text}))",
         "resource": "const image = document.createElement('img'); Object.defineProperty(image,'src',{value:text}); "
                     "document.body.append(image); "
                     "image.dispatchEvent(new Event('error'))",

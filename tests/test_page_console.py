@@ -1,7 +1,7 @@
 """Page log/info measurements use the same bounded scenario diagnostics as warn/error."""
 
-import json
 import http.server
+import json
 import os
 import threading
 import time
@@ -151,7 +151,8 @@ def test_page_log_and_info_reach_the_report_without_changing_the_verdict(page, s
       }};
     """)
     parsed = suite.parse({"scenarios": [{
-        "name": "page " + level, "url": site + "/ux-clean.html", "about": "logging measurements leaves a true check passing",
+        "name": "page " + level, "url": site + "/ux-clean.html",
+        "about": "logging measurements leaves a true check passing",
         "before": [{"js": f"window.consoleReturn = console.{level}('measured', {{difference:0.29,minimum:0.3}})"}],
         "settle": 0, "expect": {"js": "true", "says": {"js": "The local fixture check returns true"}},
     }]})

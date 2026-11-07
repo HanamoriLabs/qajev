@@ -413,7 +413,8 @@ class Observer:
                 missing = [m for m in missing if m not in ("report.json", REFUSED.format("report.json"))]
                 if len(content) > MAX_FILE:
                     raise ObserverError("The source result exceeds the report upload budget.")
-                files.append({"path": "report.json", "sha256": hashlib.sha256(content).hexdigest(), "size": len(content)})
+                files.append({"path": "report.json", "sha256": hashlib.sha256(content).hexdigest(),
+                              "size": len(content)})
                 sources["report.json"] = content
         rec = {"id": local, "kind": "run", "project": project,
                "title": sanitize_text(str(data.get("suite") or job.get("title") or local), 160),
@@ -457,7 +458,8 @@ class Observer:
         return len(missing)
 
     def inventory(self) -> dict[str, int]:
-        counts = {"jobs": 0, "historical_reports": 0, "missing_evidence": 0, "no_project": 0, "refused": 0, "invalid": 0}
+        counts = {"jobs": 0, "historical_reports": 0, "missing_evidence": 0, "no_project": 0, "refused": 0,
+                  "invalid": 0}
         seen = set()
         jobs = self.home / "jobs"
         for folder in sorted(jobs.iterdir()) if jobs.is_dir() else []:

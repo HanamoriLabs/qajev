@@ -429,7 +429,8 @@ def sanitize_request(method: str, path: str, body: Any, *, paths=None) -> Any:
     if method == "POST" and isinstance(body, list) and _EVENTS_ROUTE.fullmatch(path.split("?", 1)[0].split("#", 1)[0]):
         kept = []
         for event, public in zip(body, clean):
-            if isinstance(event, dict) and isinstance(public, dict) and event.get("kind") == "frame" and "data" in event:
+            is_frame = isinstance(event, dict) and event.get("kind") == "frame" and "data" in event
+            if is_frame and isinstance(public, dict):
                 if not _clean_frame(event["data"], paths):
                     continue
                 public["data"] = event["data"]

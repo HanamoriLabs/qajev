@@ -237,7 +237,8 @@ def late_font_site():
     released = threading.Event()
     words = " ".join(["Late font ready"] + ["word"] * 60)
     page = ('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Late font</title>'
-            '<body style="margin:0;background:rgb(19,47,83);color:white"><p style="font:40px/1.2 Late,monospace;margin:0">'
+            '<body style="margin:0;background:rgb(19,47,83);color:white">'
+            '<p style="font:40px/1.2 Late,monospace;margin:0">'
             f'{words}</p><script>addEventListener("load",()=>{{const face=new FontFace("Late","url(/late.ttf)",'
             '{sizeAdjust:"900%"});document.fonts.add(face);face.load();});</script>').encode()
 
@@ -436,7 +437,8 @@ def test_real_scrollbar_flash_at_start_up_is_waited_out_before_the_first_capture
 
 
 # A page that replaces the timers the wait for stable geometry would use in the page's own JS world (redteam L1, #255).
-FROZEN_PAGE = (b'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Frozen</title>'
+FROZEN_PAGE = (b'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
+               b'<title>Frozen</title>'
                b'<script>window.setInterval=()=>0;</script>'
                b'<body style="margin:0;background:rgb(19,47,83);color:white"><p>Timers replaced</p>')
 

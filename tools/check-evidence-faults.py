@@ -21,7 +21,8 @@ F = 'qajev/report_files.py'
 
 FAULTS = [
     ('D01-string-detail', V, 'return False, public or "returned an empty string", public',
-     'return False, public[:190] or "returned an empty string", public', UNIT+'test_failed_js_keeps_the_complete_reason_and_value'),
+     'return False, public[:190] or "returned an empty string", public',
+     UNIT+'test_failed_js_keeps_the_complete_reason_and_value'),
     ('D02-error-detail', V, 'clean_data(f"error: {r[\'error\']}")',
      'clean_data(f"error: {r[\'error\']}")[:190]', UNIT+'test_failed_js_keeps_the_complete_reason_and_value'),
     ('D03-object-value', V, 'bound_json(clean_data(value))', 'bound_json(clean_data(value))[:200]',
@@ -34,10 +35,13 @@ FAULTS = [
      UNIT+'test_malformed_structured_js_results_still_fail'),
     ('D07-evidence-shape', V, 'isinstance(value.get("evidence"), dict)', 'True',
      UNIT+'test_malformed_structured_js_results_still_fail'),
-    ('D08-measured-verdict', V, 'return value["ok"], None if value["ok"] else bound_text(public["says"]), bound_json(public)',
-     'return True, None, bound_json(public)', UNIT+'test_explicit_js_result_keeps_measured_evidence_and_the_authors_plan_words'),
+    ('D08-measured-verdict', V,
+     'return value["ok"], None if value["ok"] else bound_text(public["says"]), bound_json(public)',
+     'return True, None, bound_json(public)',
+     UNIT+'test_explicit_js_result_keeps_measured_evidence_and_the_authors_plan_words'),
     ('D09-evidence-wire', V, 'evidence=clean_evidence(measured["evidence"]), evidence_type="js"',
-     'evidence={}, evidence_type="js"', UNIT+'test_explicit_js_result_keeps_measured_evidence_and_the_authors_plan_words'),
+     'evidence={}, evidence_type="js"',
+     UNIT+'test_explicit_js_result_keeps_measured_evidence_and_the_authors_plan_words'),
     ('D10-evidence-marker', V, 'evidence_type="js"', 'evidence_type="image"',
      UNIT+'test_explicit_js_result_keeps_measured_evidence_and_the_authors_plan_words'),
     ('D11-measured-value', V, 'bound_json(public)', 'bound_json(public)[:200]',
@@ -61,7 +65,8 @@ FAULTS = [
      UNIT+'test_error_envelope_wins_over_an_apparent_structured_success'),
     ('D20-full-error-finding', V, 'clean_data(str(err.get("detail", "")))',
      'clean_data(str(err.get("detail", "")))[:190]', UNIT+'test_console_error_findings_keep_the_complete_diagnostic'),
-    ('D21-full-browser-error', G, "{ kind: 'console', detail: text }", "{ kind: 'console', detail: text.slice(0, 500) }",
+    ('D21-full-browser-error', G, "{ kind: 'console', detail: text }",
+     "{ kind: 'console', detail: text.slice(0, 500) }",
      LIVE+'test_browser_keeps_long_check_values_and_errors'),
     ('D22-key-cleaning', D, 'name = redact(key)', 'name = key',
      UNIT+'test_diagnostic_cleaning_preserves_json_numbers_and_cleans_nested_keys'),
@@ -138,11 +143,13 @@ FAULTS = [
      UNIT+'test_item_bound_counts_utf8_bytes_without_splitting_a_character'),
     ('B06-clean-before-item-cut', V, 'public = bound_text(clean_data(value))', 'public = clean_data(bound_text(value))',
      UNIT+'test_item_bound_cleans_the_whole_secret_and_path_before_cutting'),
-    ('B07-page-error-wire', V, 'bound_text(clean_data(str(err.get("detail", ""))))', 'clean_data(str(err.get("detail", "")))',
+    ('B07-page-error-wire', V, 'bound_text(clean_data(str(err.get("detail", ""))))',
+     'clean_data(str(err.get("detail", "")))',
      UNIT+'test_page_error_findings_bound_each_oversized_item'),
     ('B08-error-wire', V, 'bound_text(clean_data(f"error: {r[\'error\']}"))', 'clean_data(f"error: {r[\'error\']}")',
      UNIT+'test_all_js_diagnostic_wires_bound_oversized_text[error]'),
-    ('B09-shown-wire', V, 'bound_text(clean_data(str(r.get("shown") or r["type"])))', 'clean_data(str(r.get("shown") or r["type"]))',
+    ('B09-shown-wire', V, 'bound_text(clean_data(str(r.get("shown") or r["type"])))',
+     'clean_data(str(r.get("shown") or r["type"]))',
      UNIT+'test_all_js_diagnostic_wires_bound_oversized_text[shown]'),
     ('B10-measured-reason-wire', V, 'else bound_text(public["says"])', 'else public["says"]',
      UNIT+'test_all_js_diagnostic_wires_bound_oversized_text[measured]'),
@@ -159,9 +166,11 @@ FAULTS = [
     ('B15-evidence-marker', D, 'return {"_qajev_truncated": f"[truncated {len(shown)} characters]"}',
      'return {"_qajev_truncated": "truncated"}',
      UNIT+'test_structured_evidence_has_its_own_item_boundary'),
-    ('B16-character-count', D, '{len(text) - len(kept)} characters', '{len(encoded) - len(kept.encode("utf-8"))} characters',
+    ('B16-character-count', D, '{len(text) - len(kept)} characters',
+     '{len(encoded) - len(kept.encode("utf-8"))} characters',
      UNIT+'test_item_bound_counts_utf8_bytes_without_splitting_a_character'),
-    ('B17-evidence-wire', V, 'evidence=clean_evidence(measured["evidence"])', 'evidence=clean_data(measured["evidence"])',
+    ('B17-evidence-wire', V, 'evidence=clean_evidence(measured["evidence"])',
+     'evidence=clean_data(measured["evidence"])',
      UNIT+'test_structured_evidence_has_its_own_item_boundary'),
     ('J01-object-value-json', V, 'got {kind}", bound_json(clean_data(value))',
      'got {kind}", bound_text(json.dumps(clean_data(value)))',
@@ -205,7 +214,8 @@ FAULTS = [
      'tests/test_page_console.py::test_browser_keeps_later_warning_or_error_after_fifty_routine_lines'),
     ('P09-browser-omissions', G, '      pageConsoleOmitted++;\n', '',
      'tests/test_page_console.py::test_browser_keeps_later_warning_or_error_after_fifty_routine_lines'),
-    ('P10-scenario-omissions', D, '            result["page_console_omitted"] = result.get("page_console_omitted", 0) + 1\n', '',
+    ('P10-scenario-omissions', D,
+     '            result["page_console_omitted"] = result.get("page_console_omitted", 0) + 1\n', '',
      'tests/test_page_console.py::test_later_warning_or_error_replaces_a_routine_line_across_reads'),
 ]
 
@@ -251,9 +261,11 @@ def main():
             try:
                 (stage / path).write_text(text.replace(before, after, 1))
                 failed = helper.run_test(stage, test, out / (name + '-fault'), args.endpoint)
-                assert failed['exit'] == 1 and not failed['errors'] and not failed['skipped'] and failed['assertion_failure'], (
+                assert (failed['exit'] == 1 and not failed['errors'] and not failed['skipped']
+                        and failed['assertion_failure']), (
                     name, 'fault missed or not an assertion failure', str(out / (name + '-fault.log')), failed)
-                records.append({'fault': name, 'test': test, 'control': control, 'fault_result': failed, 'caught': True})
+                records.append({'fault': name, 'test': test, 'control': control, 'fault_result': failed,
+                'caught': True})
                 print(json.dumps({'fault': name, 'caught': True}), flush=True)
             finally:
                 (stage / path).write_bytes(originals[path])
