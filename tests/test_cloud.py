@@ -1375,10 +1375,10 @@ def test_cloud_runs_pages_back_and_stops_at_the_first_run_older_than_the_window(
 
 def test_cloud_runs_rows_carry_summary_fields_only(dash):
     dash.run_list = [listed(1, 1, gate="fail", tests=["pass", "pass", "fail", "stuck"],
-                            where={"kind": "cloud", "label": "workload-cpu", "box": "workload-cpu"})]
+                            where={"kind": "cloud", "label": "box-a", "box": "box-a"})]
     out = cloud.list_runs(cloud.connect(), 24, now=NOW.timestamp())
-    assert out["runs"] == [{"id": "r_1", "gate": "fail", "project": "shop", "kind": "smoke", "where": "workload-cpu",
-                            "box": "workload-cpu", "started_at": iso(1), "minutes": 3,
+    assert out["runs"] == [{"id": "r_1", "gate": "fail", "project": "shop", "kind": "smoke", "where": "box-a",
+                            "box": "box-a", "started_at": iso(1), "minutes": 3,
                             "tests": {"pass": 2, "fail": 1, "stuck": 1}}]
     assert "Secret plan name" not in json.dumps(out)  # the run's name is its content: it stays on the run page
 
