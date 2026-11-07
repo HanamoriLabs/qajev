@@ -1093,7 +1093,7 @@ def cmd_play(args):
     if args.goal:
         try:
             if providers.describe(providers.resolve())["jev"] == "none":
-                return _fail(args, "a goal needs a decision model: TYPESAFE_API_KEY or an OpenRouter key (Jev), "
+                return _fail(args, "a goal needs a decision model: an OpenRouter key or TYPESAFE_API_KEY (Jev), "
                              "or QAJEV_JEV_PROVIDER=cloudflare with CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN "
                              "(Clef); see `qajev doctor`", EXIT_CONFIG)
         except providers.ProviderError as e:
@@ -1508,7 +1508,7 @@ def cmd_doctor(args):
     ok = all(c["ok"] for c in checks)
     ready = not any(c["level"] == "todo" for c in checks)
     nxt = [] if ready else [
-        "Put one model key in ~/.qajev/.env: TYPESAFE_API_KEY or OPENROUTER_API_KEY (for Jev, which reads the page).",
+        "Put one model key in ~/.qajev/.env: OPENROUTER_API_KEY or TYPESAFE_API_KEY (for Jev, which reads the page).",
         "Or run your tests in QAJev Cloud instead: qajev mode cloud (it needs a cloud key; the cloud line above says "
         "where QAJev looks for it).",
         "Then run qajev doctor again.",

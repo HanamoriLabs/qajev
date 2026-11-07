@@ -45,7 +45,7 @@ On a machine with no GPU device (no `/dev/dri`, as in many containers and sandbo
 crash Xvfb while it starts GLX. Chrome then says it has no display. Start Xvfb without GLX:
 `xvfb-run -a -s '-screen 0 1280x800x24 -extension GLX' qajev run ...`.
 
-**"goals need TYPESAFE_API_KEY or an OpenRouter key ... or QAJEV_JEV_PROVIDER=cloudflare ..."**
+**"goals need an OpenRouter key (OPENROUTER_API_KEY) or TYPESAFE_API_KEY ... or QAJEV_JEV_PROVIDER=cloudflare ..."**
 Add one key to `~/.qajev/.env` ([Getting started](getting-started.md)). `qajev smoke` needs no key. Cloudflare
 credentials alone are not used: Clef needs `QAJEV_JEV_PROVIDER=cloudflare` too.
 
@@ -219,7 +219,8 @@ Check that `qajev mcp` runs from the agent's environment (use the full path from
 agent's session.
 
 **A game will not start**
-For Godot, set `QAJEV_GODOT` to the Godot binary if it is not on your PATH. For an Electron project folder, install
+For Godot, set `QAJEV_GODOT` to the Godot binary if it is not on your PATH. "QAJEV_GODOT_BRIDGE_PORT=N: another
+program listens on that port" means the fixed bridge port is taken: stop that program, or unset the variable. For an Electron project folder, install
 its dependencies (so `node_modules/.bin/electron` exists), or set `QAJEV_ELECTRON`.
 
 Still stuck? [Open an issue](https://github.com/hanamorilabs/qajev/issues) with the output of `qajev doctor` and,

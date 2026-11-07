@@ -40,7 +40,7 @@ def _commit(root):
     return head.stdout.strip() + ("+dirty" if dirty.stdout.strip() else "")
 
 # Keys QAJev needs. Values are never printed; `doctor` reports presence only.
-# Goals need a Jev route (TYPESAFE_API_KEY, or an OpenRouter key); see providers.py.
+# Goals need a Jev route (an OpenRouter key, or TYPESAFE_API_KEY); see providers.py.
 DEFAULTS = {
     "TYPESAFE_MODEL": "jev-latest",
     "TEXT_MODEL_BASE_URL": "https://openrouter.ai/api/v1",
