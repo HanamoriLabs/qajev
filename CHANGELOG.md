@@ -4,6 +4,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+## 0.4.51: 7 Nov 2026
+
 ### Changed
 
 - A cloud run (`--runner cloud`) now always carries its project's name, also before the project is synced to the
