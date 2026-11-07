@@ -5,11 +5,11 @@ import os
 from urllib.parse import urlsplit
 
 import pytest
+from test_check_evidence import LONG, document
 from test_ux_dom_live import ENDPOINT
 from test_ux_dom_live import no_model_initialization as no_model_initialization
 from test_ux_dom_live import page as page
 from test_ux_dom_live import site as site
-from test_check_evidence import LONG, document
 
 from qajev import config, diagnostics, report, runner, suite, verdict
 
@@ -157,7 +157,8 @@ def test_rendered_report_opens_complete_values_without_executing_measurement_tex
     frame = session.call("Page.getFrameTree")["frameTree"]["frame"]["id"]
     session.call("Page.setDocumentContent", frameId=frame, html=(folder / "report.html").read_text())
     shown = session.evaluate("""(() => {
-      const details = [...document.querySelectorAll('details')].find(d => d.querySelector('summary').textContent === 'Returned value');
+      const details = [...document.querySelectorAll('details')]
+        .find(d => d.querySelector('summary').textContent === 'Returned value');
       details.querySelector('summary').click();
       return {open:details.open, text:details.querySelector('pre').textContent,
               injected:window.injected || null, images:document.querySelectorAll('img[src^="javascript:"]').length,

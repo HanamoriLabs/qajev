@@ -4,7 +4,6 @@
 import os
 
 import pytest
-
 from test_live import browser, session, site  # noqa: F401  (the fixture server and its Chrome)
 
 pytestmark = pytest.mark.skipif(os.environ.get("QAJEV_LIVE") != "1", reason="set QAJEV_LIVE=1 (starts a local Chrome)")
