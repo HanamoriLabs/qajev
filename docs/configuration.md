@@ -160,7 +160,7 @@ launcher settings.
 | Variable | Is | Default |
 |---|---|---|
 | `QAJEV_GODOT` | the Godot binary | `godot` on your PATH, or the macOS app |
-| `QAJEV_GODOT_BRIDGE_PORT` | one fixed port (1024 to 65535) for the Godot game's bridge, for a machine whose firewall opens only that loopback port. A port in use stops the run: it never moves to another port | the first free port from 9400 to 9449 |
+| `QAJEV_GODOT_BRIDGE_PORT` | one fixed port (1024 to 65535) for the Godot game's bridge, for a machine whose firewall opens only that loopback port. A port in use stops the run: it never moves to another port. On Linux, QAJev also checks that the bridge it reached is the game's own socket, and stops the run when another program listens there | the first free port from 9400 to 9449 |
 | `QAJEV_ELECTRON` | the Electron binary, for an Electron project folder without its own | the folder's `node_modules/.bin/electron` |
 
 ## Nightly

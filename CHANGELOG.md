@@ -15,6 +15,8 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
 - `QAJEV_GODOT_BRIDGE_PORT` gives a Godot game's bridge one fixed loopback port, for a machine whose firewall opens
   only that port. A port that another program holds stops the run before the game starts. It never moves to another
   port, which the firewall would block. Without the variable, QAJev takes the first free port, as before.
+  On Linux, QAJev also checks that the bridge it reached is the game's own socket. Another user's program that
+  took the port first stops the run, so a run can never pass on a game that did not run.
 
 ### Fixed
 
