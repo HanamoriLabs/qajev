@@ -11,6 +11,7 @@ All notable changes to QAJev. The format follows [Keep a Changelog](https://keep
   server with one HEAD request, as it already does for links. A server that does not answer adds no number.
 - A run on an attached Chrome (`--cdp-url`) keeps that browser's key out of its record. The Browser line, report.json
   and the run event show `.../devtools/browser/<id>`, not the id itself. The address there is the browser's key.
+  The "no Chrome DevTools endpoint at ..." error shows it the same way.
 
 ## 0.4.50: 7 Nov 2026
 
