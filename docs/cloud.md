@@ -54,7 +54,7 @@ Then give QAJev the key. QAJev never prints it.
 
   ```bash
   mkdir -p ~/.qajev && touch ~/.qajev/.env && chmod 600 ~/.qajev/.env
-  sed -i -E '/^[[:space:]]*(export[[:space:]]+)?QAJEV_CLOUD_KEY=/d' ~/.qajev/.env   # removes an old key
+  sed -i -E '/^[[:space:]]*(export[[:space:]]+)?QAJEV_CLOUD_KEY[[:space:]]*=/d' ~/.qajev/.env   # removes an old key
   printf 'QAJev Cloud key: '; IFS= read -rs k; echo
   [ -s ~/.qajev/.env ] && [ -n "$(tail -c1 ~/.qajev/.env)" ] && echo >> ~/.qajev/.env
   printf 'QAJEV_CLOUD_KEY=%s\n' "$k" >> ~/.qajev/.env; unset k
@@ -73,8 +73,8 @@ qajev mode cloud      # this computer's runs go to QAJev Cloud from now on
 qajev doctor          # the "cloud" line says where the key was found, and that the dashboard answers
 ```
 
-`qajev doctor` does not send the key. The first run proves the key: `qajev smoke https://example.com/ --runner cloud
---project NAME`, with a project the owner enabled, must show a run address. A refused key gives HTTP 401 or 403.
+`qajev doctor` does not send the key. The first run proves the key: in the repository folder of a project the owner
+enabled, `qajev smoke https://example.com/ --runner cloud` must show a run address. A refused key gives HTTP 401 or 403.
 
 `qajev mode local` sends them back to this computer. `--runner cloud` on one command sends only that run.
 
@@ -92,9 +92,12 @@ prompt), after the general [agent prompt](../AGENT_PROMPT.md).
 
 ## 4. Run a test
 
+Start in the project's repository folder, so QAJev knows the project (see [Projects](#what-reaches-the-cloud-and-what-does-not)):
+
 ```bash
-qajev smoke https://staging.example.com/ --runner cloud --project shop
-qajev check https://staging.example.com/pricing -g "Find the Pro price. Stop when it shows." -t '$29' --runner cloud --project shop
+cd ~/code/shop
+qajev smoke https://staging.example.com/ --runner cloud
+qajev check https://staging.example.com/pricing -g "Find the Pro price. Stop when it shows." -t '$29' --runner cloud
 qajev run suites/shop.yaml --runner cloud
 qajev run suites/local.yaml --runner cloud --serve dist:5173   # ships your built folder; the suite opens 127.0.0.1:5173
 ```
@@ -121,9 +124,12 @@ qajev cloud-runs --hours 24  # the team's cloud runs of the last day
   [CLI reference](cli.md#qajev-cloud-where-a-run-goes) for the full list.
 - **A cloud run never falls back to your computer.** When it cannot go, it stops and says why.
 - **Projects.** A run goes to the cloud machines only with a project the owner enabled for them (see
-  [What you need](#what-you-need)). Name it with `--project NAME`, or keep a `.qajev/project.toml` in the repository.
-  The dashboard must know the project too. Today, projects reach the dashboard from the team's own synced computer,
-  so the owner adds yours.
+  [What you need](#what-you-need)). QAJev finds a run's project in this order: `--project NAME` on `qajev run` and
+  `qajev smoke`; the suite's own project; the repository folder the command starts in (its `.qajev/project.toml`);
+  then the one project set up on this computer whose site is the URL's site. `--project` needs the project set up
+  on this computer too. So start every command in the project's repository folder. `qajev check` has no
+  `--project`: the folder names its project. The dashboard must know the project too. Today, projects reach the
+  dashboard from the team's own synced computer, so the owner adds yours.
 
 ## Example: agents on a Twinbox box
 
@@ -163,8 +169,9 @@ Our QAJev tests run in QAJev Cloud, never on this computer. This computer's mode
   asks.
 - Never print, copy or ask for the QAJev Cloud key. Never open `~/.qajev/.env` or the Keychain item. QAJev finds the
   key itself; `qajev doctor` says whether it is found.
-- Always name the project (`project: "NAME"`, CLI `--project NAME`). The cloud refuses a run of a project that is
-  not enabled for it; report that refusal, and do not rerun it here.
+- Start every QAJev run in the project's repository folder, so the cloud knows its project. `qa_project_run` takes
+  the project by name (`project: "NAME"`). The cloud refuses a run of a project that is not enabled for it; report
+  that refusal, and do not rerun it here.
 - Every cloud run spends the team's credits. Run what the change needs: a `qa_smoke` first (no model calls), then the
   project's objectives or one `qa_check` with strict expectations.
 
