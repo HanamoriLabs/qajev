@@ -1,4 +1,4 @@
-"""QAJEV_GODOT_BRIDGE_PORT: a Godot game's bridge on one fixed loopback port, for a machine whose firewall opens only it."""
+"""QAJEV_GODOT_BRIDGE_PORT: a Godot game's bridge on one fixed loopback port, for a firewall that opens only it."""
 
 import socket
 import sys
